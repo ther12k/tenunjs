@@ -8,6 +8,8 @@ status: accepted
 
 # Mobile platform requirements
 
+The frozen OS, device, GPU, and toolchain baseline for both platforms lives in [supported-baseline-matrix.md](supported-baseline-matrix.md); this file defines required platform integration, the matrix defines what must run.
+
 ## iOS
 
 - Metal-backed Skia surface on supported devices.
