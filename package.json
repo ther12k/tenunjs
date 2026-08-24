@@ -1,0 +1,10 @@
+{
+  "name": "tenunjs-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "bun": ">=1.2"
+  }
+}
