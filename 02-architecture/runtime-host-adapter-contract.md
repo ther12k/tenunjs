@@ -30,10 +30,14 @@ Values crossing the boundary are limited to: `f64`, `i64`, booleans, UTF-8 strin
 
 ## Interruption rules
 
-- The embedder sets a deadline before evaluation; the adapter polls the interrupt flag between bytecode dispatch units (both candidate runtimes support this).
-- On deadline expiry: evaluation aborts with `TENUN_JS_ERR_TIMEOUT`, partial state is discarded, the VM stays usable after `tenun_js_pump(0)`.
+- The adapter exposes an embedder-owned `volatile int*` flag via `tenun_js_interrupt_flag`. Timing policy belongs entirely to the embedder: a watchdog thread writes a nonzero value when its own deadline expires.
+- The adapter polls the flag between bytecode dispatch units (both candidate runtimes support this). A nonzero flag aborts the running evaluation with `TENUN_JS_ERR_TIMEOUT`; partial state is discarded.
+- The embedder clears the flag; afterwards the VM is fully usable — this recovery is part of the ABI smoke suite.
 - Native code must remain responsive even while JS is stalled: scroll/animation continuity (principle 7) depends on this boundary holding.
-- Interrupt handling adds no allocations inside the polling path.
+
+## ABI conformance gate
+
+The header in `spikes/runtime/` is the canonical interface. Every runtime/layout candidate PR must compile and run `abi_smoke.c` **and** the same file as C++ (proving the `extern "C"` guard) with `-Wall -Wextra -Werror`, linked against the release cdylib, from outside the crate. The header carries `_Static_assert`s for every cross-boundary struct; first-consumer amendments must update this doc in the same commit.
 
 ## Bundle contract
 

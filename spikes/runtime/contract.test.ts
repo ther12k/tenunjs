@@ -8,6 +8,11 @@ describe("runtime host adapter contract", () => {
   test("header declares ABI v1 with fail-closed statuses", () => {
     const header = readFileSync(new URL("./tenun_js_adapter.h", import.meta.url), "utf8");
     expect(header).toContain("#define TENUN_JS_ABI_VERSION 1u");
+    expect(header).toContain('extern \"C\"');
+    expect(header).toContain("_Static_assert");
+    expect(header).toContain(
+      "tenun_js_register_host_fn(tenun_js_vm* vm, const char* name, tenun_js_host_fn fn);"
+    );
     for (const status of [
       "TENUN_JS_ERR_BUNDLE_DIGEST",
       "TENUN_JS_ERR_TIMEOUT",
