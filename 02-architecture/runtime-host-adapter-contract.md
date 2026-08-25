@@ -22,6 +22,7 @@ The engine never names its JavaScript runtime (`adr-0007`). Candidates implement
 | `tenun_js_pump(vm, max_jobs)` | Drain queued microtasks/jobs up to `max_jobs`, returns drained count. Non-blocking. |
 | `tenun_js_interrupt_flag(vm)` | Install/point-to the polling flag checked by the runtime loop. |
 | `tenun_js_last_error(vm)` | Message + line/column when the runtime provides them; empty string when not. |
+| `tenun_js_last_result(vm, out)` | Completion value of the last successful evaluation as one bounded value; fails with `TENUN_JS_ERR_VALUE_BOUNDS` for unrepresentable results. Added by first-consumer amendment during TN-011/TN-012. |
 
 ## Bounded host values
 

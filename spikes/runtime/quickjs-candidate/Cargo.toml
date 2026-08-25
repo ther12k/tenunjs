@@ -1,0 +1,18 @@
+[package]
+name = "tenun_js_quickjs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rquickjs = { version = "0.9", features = ["full"] }
+sha2 = "0.10"
+
+[[bin]]
+name = "spike-runner"
+path = "src/main.rs"
+
+[profile.release]
+debug = true
