@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "label": "yoga-spike-v2",
-  "timestamp_utc": "2026-08-25T11:11:57.905Z",
+  "timestamp_utc": "2026-08-25T11:12:26.334Z",
   "source": {
-    "commit": "cb41f890b11b65de8f71c28738f255475b3cd01a",
-    "dirty": true,
-    "changed_files": 1
+    "commit": "a4fa6292ca7d4572452c5fb0f09dffe9e078a524",
+    "dirty": false,
+    "changed_files": 0
   },
   "host": {
     "os": "linux",
@@ -24,9 +24,9 @@
   "steps": [
     {
       "name": "shared-c-driver",
-      "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o /tmp/rc_y && bun spikes/layout/export-corpus.ts > /tmp/cf_y.txt && /tmp/rc_y /tmp/cf_y.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so",
+      "command": "/tmp/rc_y /tmp/cf_y.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so",
       "exit_code": 0,
-      "duration_ms": 126,
+      "duration_ms": 6,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nALL 8 CASES PASS via spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so\n",
       "stderr_tail": "",
       "timed_out": false
@@ -34,7 +34,7 @@
   ],
   "reproducibility": {
     "commands": [
-      "bun run benchmarks/architecture/run.ts --label yoga-spike-v2 --step shared-c-driver \"cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o /tmp/rc_y && bun spikes/layout/export-corpus.ts > /tmp/cf_y.txt && /tmp/rc_y /tmp/cf_y.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so\""
+      "bun run benchmarks/architecture/run.ts --label yoga-spike-v2 --step shared-c-driver \"/tmp/rc_y /tmp/cf_y.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so\""
     ]
   }
 }
