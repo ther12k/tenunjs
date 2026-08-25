@@ -96,6 +96,8 @@ fn to_taffy_style(s: &StyleC) -> taffy::Style {
             height: dim(s.height),
         },
         flex_grow: s.flex_grow,
+        // kill engine defaults: spike subset is grow-only
+        flex_shrink: 0.0,
         flex_direction: match s.direction {
             1 => FlexDirection::Column,
             _ => FlexDirection::Row,
