@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "label": "quickjs-spike-v2",
+  "timestamp_utc": "2026-08-25T10:47:53.345Z",
+  "source": {
+    "commit": "31c90a38eca8de9e88b7772c9f149df66aee055f",
+    "dirty": false,
+    "changed_files": 0
+  },
+  "host": {
+    "os": "linux",
+    "arch": "x64",
+    "kernel": "Linux 7.0.0-30-generic",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
+    "mem_total_bytes": 16454041600
+  },
+  "tools": {
+    "bun": "1.4.0",
+    "node": "v24.11.0",
+    "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "clang++": "not-found",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)"
+  },
+  "steps": [
+    {
+      "name": "abi-smoke-c",
+      "command": "cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -Wl,-rpath,/home/ther12k/Workspace/Learning/tenunjs/spikes/runtime/quickjs-candidate/target/release -o /tmp/abi_smoke_v2 && /tmp/abi_smoke_v2",
+      "exit_code": 0,
+      "duration_ms": 87,
+      "stdout_tail": "ABI SMOKE PASS\n",
+      "stderr_tail": "",
+      "timed_out": false
+    }
+  ],
+  "reproducibility": {
+    "commands": [
+      "bun run benchmarks/architecture/run.ts --label quickjs-spike-v2 --step abi-smoke-c \"cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -Wl,-rpath,/home/ther12k/Workspace/Learning/tenunjs/spikes/runtime/quickjs-candidate/target/release -o /tmp/abi_smoke_v2 && /tmp/abi_smoke_v2\""
+    ]
+  }
+}
