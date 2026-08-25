@@ -2,11 +2,9 @@ use std::fs;
 
 use serde::Deserialize;
 use tenun_layout_yoga::{
-    ConstraintC,
-    StyleC,
     tenun_layout_compute, tenun_layout_node_add_child, tenun_layout_node_create,
     tenun_layout_node_set_measure, tenun_layout_node_set_style, tenun_layout_result, BoxC,
-    NodeData, TENUN_LAYOUT_OK,
+    ConstraintC, NodeData, StyleC, TENUN_LAYOUT_OK,
 };
 
 #[derive(Deserialize)]
@@ -64,14 +62,17 @@ struct ExpBox {
 }
 
 fn tuple(b: &ExpBox) -> (f64, f64, f64, f64) {
-    (b.x as f64, b.y as f64, b.width as f64, b.height as f64)
+    (b.x, b.y, b.width, b.height)
 }
 
 fn box_tuple(b: &BoxC) -> (f64, f64, f64, f64) {
     (b.x as f64, b.y as f64, b.width as f64, b.height as f64)
 }
 
-static mut MEASURE_SLOTS: Vec<Box<[f64; 2]>> = Vec::new();
+use std::cell::RefCell;
+thread_local! {
+    static MEASURE_SLOTS: RefCell<Vec<[f64; 2]>> = const { RefCell::new(Vec::new()) };
+}
 
 extern "C" fn stub_measure(userdata: *mut u8, _c: ConstraintC, out: *mut BoxC) {
     unsafe {
@@ -107,9 +108,11 @@ unsafe fn build(node: &JsonNode) -> *mut NodeData {
     };
     assert_eq!(tenun_layout_node_set_style(n, &style), TENUN_LAYOUT_OK);
     if let Some(m) = &node.measure {
-        MEASURE_SLOTS.push(Box::new([m.width as f64, m.height as f64]));
-        let ptr = MEASURE_SLOTS.last().unwrap().as_ptr() as *mut u8;
-        tenun_layout_node_set_measure(n, Some(stub_measure), ptr);
+        MEASURE_SLOTS.with(|slots| {
+            slots.borrow_mut().push([m.width as f64, m.height as f64]);
+            let ptr = slots.borrow().last().unwrap().as_ptr() as *mut u8;
+            tenun_layout_node_set_measure(n, Some(stub_measure), ptr);
+        });
     }
     for child in &node.children {
         tenun_layout_node_add_child(n, build(child));
@@ -121,7 +124,8 @@ unsafe fn collect(node: *const NodeData, out: &mut Vec<BoxC>) {
     out.push(*tenun_layout_result(node));
     let n = node as *mut NodeData;
     for i in 0..(*n).children.len() {
-        let child = *(&(*n).children).get(i).unwrap();
+        let children = &(*n).children;
+        let child = children[i];
         collect(child, out);
     }
 }
@@ -148,7 +152,7 @@ fn main() {
     let mut paths: Vec<_> = fs::read_dir(dir)
         .expect("corpus dir")
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().map_or(false, |e| e == "json"))
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
         .collect();
     paths.sort();
 
