@@ -92,13 +92,14 @@ fn main() {
         }
 
         println!("== two-VM callback isolation (review regression) ==");
-        if tenun_js_register_host_fn(vm_a, c"onFirstFrame".as_ptr() as *const u8, Some(host_a)) != TENUN_JS_OK
+        if tenun_js_register_host_fn(vm_a, c"onFirstFrame".as_ptr() as *const u8, Some(host_a))
+            != TENUN_JS_OK
             || tenun_js_register_host_fn(vm_b, c"onFirstFrame".as_ptr() as *const u8, Some(host_b))
                 != TENUN_JS_OK
         {
             fail("registrations");
         }
-        
+
         for round in 0..2 {
             eval_ok(vm_a, "onFirstFrame(); 11");
             if last_result(vm_a) != Some(11.0) {

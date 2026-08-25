@@ -96,7 +96,6 @@ pub struct TenunJsVm {
     state: VmState,
 }
 
-
 impl TenunJsVm {
     fn set_error(&self, msg: &str) {
         *self.state.last_error.borrow_mut() = Some((msg.to_string(), -1, -1));
@@ -323,7 +322,7 @@ unsafe fn register_impl(vm: &TenunJsVm, name: *const u8, fn_ptr: Option<HostFn>)
     // no thread-local singletons, no cross-VM leakage. The closure is `Fn`
     // because every capture is copied by value.
     let vm_ptr = vm as *const TenunJsVm as *mut TenunJsVm;
-        let res: rquickjs::Result<()> = vm.context.with(|ctx| {
+    let res: rquickjs::Result<()> = vm.context.with(|ctx| {
         ctx.globals().set(
             fname.as_str(),
             Func::from(move |ctx, _args: Rest<Value>| {
@@ -346,9 +345,7 @@ unsafe fn register_impl(vm: &TenunJsVm, name: *const u8, fn_ptr: Option<HostFn>)
 fn value_c_to_js(ctx: Ctx, out: ValueC) -> rquickjs::Value {
     unsafe {
         match out.kind {
-            TENUN_JS_VALUE_BOOL => {
-                rquickjs::Value::new_bool(ctx.clone(), out.as_.bool_value != 0)
-            }
+            TENUN_JS_VALUE_BOOL => rquickjs::Value::new_bool(ctx.clone(), out.as_.bool_value != 0),
             TENUN_JS_VALUE_F64 => rquickjs::Value::new_float(ctx.clone(), out.as_.f64v),
             TENUN_JS_VALUE_I64 => match i32::try_from(out.as_.i64v) {
                 Ok(i) => rquickjs::Value::new_int(ctx.clone(), i),
@@ -443,4 +440,3 @@ pub unsafe extern "C" fn tenun_js_last_error(vm: *mut TenunJsVm) -> ErrorC {
     }
     err
 }
-
