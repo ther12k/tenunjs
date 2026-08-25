@@ -12,6 +12,7 @@ describe("runtime host adapter contract", () => {
       "TENUN_JS_ERR_BUNDLE_DIGEST",
       "TENUN_JS_ERR_TIMEOUT",
       "TENUN_JS_ERR_VALUE_BOUNDS",
+      "tenun_js_last_result",
     ]) {
       expect(header).toContain(status);
     }

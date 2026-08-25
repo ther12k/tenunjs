@@ -65,5 +65,6 @@ tenun_js_status tenun_js_register_host_fn(tenun_js_vm* vm, const char* name, ten
 int64_t tenun_js_pump(tenun_js_vm* vm, int64_t max_jobs);
 volatile int* tenun_js_interrupt_flag(tenun_js_vm* vm);
 tenun_js_error tenun_js_last_error(tenun_js_vm* vm);
+tenun_js_status tenun_js_last_result(tenun_js_vm* vm, tenun_js_value* out);
 
 #endif
