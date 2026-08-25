@@ -68,6 +68,9 @@ def main() -> None:
         repro = (data.get("reproducibility") or {}).get("commands") or []
         if not repro:
             fail(f"{label}: reproducibility commands absent")
+        for cmd in repro:
+            if "/home/" in cmd or "/tmp/" in cmd:
+                fail(f"{label}: reproduction command contains machine-local path: {cmd[:80]}")
         if on_main:
             # recorded evidence must describe an ancestor of current main;
             # strict equality available via TENUN_EVIDENCE_REQUIRE_HEAD=1

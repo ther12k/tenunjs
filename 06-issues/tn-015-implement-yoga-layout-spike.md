@@ -26,6 +26,8 @@ depends_on:
 
 > **Status note (2026-08-25):** ABI conformance + per-node measure registry landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
 
+> **Status note (2026-08-25, review 2):** Layout lifecycle safety landed (PR this wave); blocked pending shared negative conformance in CI, backend semantic parity sign-off, and replayable evidence.
+
 ## Required outcome
 
 Yoga candidate passes layout, intrinsic measurement, incremental update, and toolchain tests.

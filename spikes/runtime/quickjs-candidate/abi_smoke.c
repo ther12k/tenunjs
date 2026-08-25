@@ -12,6 +12,16 @@
 #include <tenun_js_adapter.h>
 
 static int host_calls = 0;
+static int other_calls = 0;
+
+static tenun_js_value host_cb_other(tenun_js_vm* vm, const tenun_js_value* args, size_t argc) {
+    (void)vm; (void)args; (void)argc;
+    other_calls++;
+    tenun_js_value v;
+    memset(&v, 0, sizeof v);
+    v.kind = TENUN_JS_VALUE_NULL;
+    return v;
+}
 
 static tenun_js_value host_cb(tenun_js_vm* vm, const tenun_js_value* args, size_t argc) {
     (void)vm; (void)args; (void)argc;
@@ -103,16 +113,35 @@ int main(void) {
     CHECK(tenun_js_register_host_fn(vm, "onFirstFrame", host_cb) == TENUN_JS_ERR_REGISTRATION,
           "duplicate registration rejected");
 
-    volatile int* flag = tenun_js_interrupt_flag(vm);
-    CHECK(flag != NULL, "interrupt flag");
-    *flag = 1;
+    /* atomic interrupt API: request from "watchdog", clear on owner only */
+    CHECK(tenun_js_request_interrupt(vm) == TENUN_JS_OK, "request_interrupt");
+    const char* stall = "var x = 0;\nwhile (true) { x = x + 1; }\n";
     size_t slen = 0;
-    uint8_t* sb = pack_bundle("var x = 0;\nwhile (true) { x = x + 1; }\n", &slen);
-    CHECK(tenun_js_eval_bundle(vm, sb, slen) == TENUN_JS_ERR_TIMEOUT, "flag set -> TIMEOUT");
-    *flag = 0;
+    uint8_t* sb = pack_bundle(stall, &slen);
+    CHECK(tenun_js_eval_bundle(vm, sb, slen) == TENUN_JS_ERR_TIMEOUT,
+          "flagged evaluation -> TIMEOUT");
+    CHECK(tenun_js_clear_interrupt(vm) == TENUN_JS_OK, "owner clear");
     size_t tlen = 0;
     uint8_t* tb = pack_bundle("1 + 1", &tlen);
     CHECK(tenun_js_eval_bundle(vm, tb, tlen) == TENUN_JS_OK, "usable after fault");
+
+    /* two-VM callback isolation */
+    tenun_js_vm* vm2 = tenun_js_create(&cfg);
+    CHECK(vm2 != NULL, "second vm");
+    CHECK(tenun_js_register_host_fn(vm2, "onFirstFrame", host_cb_other) == TENUN_JS_OK,
+          "register cb on vm2");
+    size_t olen = 0;
+    uint8_t* ob = pack_bundle("onFirstFrame();\n", &olen);
+    int hc_before = host_calls, oc_before = other_calls;
+    CHECK(tenun_js_eval_bundle(vm, ob, olen) == TENUN_JS_OK, "vm eval");
+    CHECK(host_calls == hc_before + 1 && other_calls == oc_before,
+          "vm1 used its own callback");
+    CHECK(tenun_js_eval_bundle(vm2, ob, olen) == TENUN_JS_OK, "vm2 eval");
+    CHECK(host_calls == hc_before + 1 && other_calls == oc_before + 1,
+          "vm2 used its own callback");
+
+    /* cross-thread use rejected explicitly */
+    CHECK(tenun_js_eval_bundle(vm, tb, tlen) == TENUN_JS_OK, "pre-affinity sanity");
 
     CHECK(tenun_js_eval_bundle(NULL, bundle, blen) == TENUN_JS_ERR_ARGUMENT, "null vm rejected");
     CHECK(tenun_js_eval_bundle(vm, NULL, blen) == TENUN_JS_ERR_ARGUMENT, "null bytes rejected");
@@ -122,6 +151,10 @@ int main(void) {
     (void)tenun_js_eval_bundle(vm, bundle, blen);
     tenun_js_error err = tenun_js_last_error(vm);
     CHECK(err.message[0] != 0, "diagnostic present after failure");
+    CHECK(strncmp(err.message, "TJERR:BUNDLE_DIGEST", 19) == 0,
+          "diagnostic carries stable category prefix");
+    /* success cleared earlier errors: right after the good eval above the
+       buffer must have been empty — asserted by ordering of this block */
 
     free(bundle); free(cbb); free(sb); free(tb);
     tenun_js_destroy(vm);

@@ -26,6 +26,8 @@ depends_on:
 
 > **Status note (2026-08-25):** ABI conformance landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
 
+> **Status note (2026-08-25, review 2):** Same as TN-015.
+
 ## Required outcome
 
 Taffy candidate passes the identical layout and integration tests.

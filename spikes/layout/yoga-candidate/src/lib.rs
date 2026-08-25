@@ -228,9 +228,20 @@ pub extern "C" fn tenun_layout_node_create() -> *mut NodeData {
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_layout_node_destroy(node: *mut NodeData) {
-    if !node.is_null() {
-        drop(Box::from_raw(node));
+    if node.is_null() {
+        return;
     }
+    // lifecycle: detach from parent so no dangling entry survives
+    if let Some(par) = (*node).parent.take() {
+        (*par).children.retain(|&c| c != node);
+    }
+    // children become unparented roots; their parent links are cleared
+    for &c in &(*node).children {
+        if !c.is_null() {
+            (*c).parent = None;
+        }
+    }
+    drop(Box::from_raw(node));
 }
 
 #[no_mangle]
@@ -241,12 +252,20 @@ pub unsafe extern "C" fn tenun_layout_node_add_child(
     if parent.is_null() || child.is_null() || parent == child {
         return TENUN_LAYOUT_ERR_TREE;
     }
-    let mut cursor = child;
-    while let Some(p) = (*cursor).parent {
-        if p == parent {
-            return TENUN_LAYOUT_ERR_TREE; // cycle
+    // cycle iff child is an ANCESTOR of parent: walk upward FROM PARENT
+    let mut cursor = parent;
+    loop {
+        cursor = match (*cursor).parent {
+            Some(p) => p,
+            None => break,
+        };
+        if cursor == child {
+            return TENUN_LAYOUT_ERR_TREE;
         }
-        cursor = p;
+    }
+    // strict single-parent ownership: attached nodes cannot be re-attached
+    if (*child).parent.is_some() {
+        return TENUN_LAYOUT_ERR_TREE;
     }
     (*parent).children.push(child);
     (*child).parent = Some(parent);

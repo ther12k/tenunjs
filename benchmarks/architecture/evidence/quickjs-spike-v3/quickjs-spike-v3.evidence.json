@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "label": "quickjs-spike-v3",
+  "timestamp_utc": "2026-08-25T14:22:04.092Z",
+  "source": {
+    "commit": "22d8016c6b2c02758a21d627570cdcd61fdc1431",
+    "dirty": true,
+    "changed_files": 10
+  },
+  "host": {
+    "os": "linux",
+    "arch": "x64",
+    "kernel": "Linux 7.0.0-30-generic",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
+    "mem_total_bytes": 16454041600
+  },
+  "tools": {
+    "bun": "1.4.0",
+    "node": "v24.11.0",
+    "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "clang++": "not-found",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)"
+  },
+  "steps": [
+    {
+      "name": "release-build",
+      "command": "cd spikes/runtime/quickjs-candidate && cargo build --release",
+      "exit_code": 0,
+      "duration_ms": 1282,
+      "stdout_tail": "",
+      "stderr_tail": "   Compiling tenun_js_quickjs v0.1.0 (/home/ther12k/Workspace/Learning/tenunjs/spikes/runtime/quickjs-candidate)\n    Finished `release` profile [optimized + debuginfo] target(s) in 1.19s\n",
+      "timed_out": false
+    },
+    {
+      "name": "conformance-runner",
+      "command": "cd spikes/runtime/quickjs-candidate && ./target/release/spike-runner",
+      "exit_code": 0,
+      "duration_ms": 127,
+      "stdout_tail": "== create / abi rejection ==\n== two-VM callback isolation (review regression) ==\nPASS A→11 B→22 interleaved, no leakage\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST reported verbatim\nPASS last_error cleared on success\n== cross-thread request allowed, clear is owner-only ==\nPASS cross-thread request_interrupt → TIMEOUT in 120.536404ms\nPASS VM recovered after owner clear\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY on cross-thread eval\n== duplicate registration rejected ==\nPASS ERR_REGISTRATION\n== null/oversized arguments fail closed ==\nPASS null/oversized rejected\n== microtask pump + bool return kind ==\nPASS pumped 1 job(s)\nALL PASS\n",
+      "stderr_tail": "",
+      "timed_out": false
+    },
+    {
+      "name": "abi-smoke-c11",
+      "command": "cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -Wl,-rpath,spikes/runtime/quickjs-candidate/target/release -o spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
+      "exit_code": 0,
+      "duration_ms": 194,
+      "stdout_tail": "",
+      "stderr_tail": "",
+      "timed_out": false
+    },
+    {
+      "name": "abi-smoke-run",
+      "command": "/tmp/sm 2>/dev/null; spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
+      "exit_code": 0,
+      "duration_ms": 11,
+      "stdout_tail": "ABI SMOKE PASS\n",
+      "stderr_tail": "",
+      "timed_out": false
+    }
+  ],
+  "reproducibility": {
+    "commands": [
+      "bun run benchmarks/architecture/run.ts --label quickjs-spike-v3 --step release-build \"cd spikes/runtime/quickjs-candidate && cargo build --release\" --step conformance-runner \"cd spikes/runtime/quickjs-candidate && ./target/release/spike-runner\" --step abi-smoke-c11 \"cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -Wl,-rpath,spikes/runtime/quickjs-candidate/target/release -o spikes/runtime/quickjs-candidate/target/release/abi_smoke_c\" --step abi-smoke-run \"/tmp/sm 2>/dev/null; spikes/runtime/quickjs-candidate/target/release/abi_smoke_c\""
+    ]
+  }
+}

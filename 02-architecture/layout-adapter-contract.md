@@ -25,10 +25,18 @@ The engine never names its layout implementation (`adr-0008`). Candidates implem
 
 Intrinsic measurement enters via `tenun_layout_measure_fn(userdata, constraint, out)` — an explicit-userdata function pointer stored per node by `tenun_layout_node_set_measure(node, fn, userdata)`. Implementations must forward actual available-space constraints and invoke the stored callback per node (no shared/global context). The corpus includes single-leaf (006) and two-sibling (007/008) measurement cases to prove per-node isolation.
 
+## Lifecycle and ownership (amended 2026-08-25, review 2)
+
+- **Strict single-parent ownership.** An attached node cannot be re-attached elsewhere; `add_child` returns `TENUN_LAYOUT_ERR_TREE`. Reparenting requires an explicit detach API in a later ABI version — there is none at spike scope.
+- **Cycle rule:** adding `child` under `parent` is rejected when `child` is an ancestor of `parent` (walk runs upward from parent). Self-attach is rejected. Regression cases: A→B then B→A; A→B→C then C→A; self; duplicate.
+- **`node_destroy` detaches** the node from its parent and clears its children's parent links (children survive as unparented roots). Double destroy is a safe no-op on null but freeing an arbitrary handle twice remains caller error until the generation registry lands (#142 H1).
+- **Measured root is rejected** with `TENUN_LAYOUT_ERR_TREE` by BOTH candidates (parity fixed 2026-08-25).
+- Every exported entry point null-checks handles and contains panics; results read zeros before first successful compute.
+
 ## Fail-closed rules
 
 - Unknown enum values passed across the adapter abort the layout pass with `TENUN_LAYOUT_ERR_STYLE`, never clamp silently.
-- Cycle creation through misused APIs returns `TENUN_LAYOUT_ERR_TREE`; the backend must not hang.
+- Cycles and duplicate attachment return `TENUN_LAYOUT_ERR_TREE` per the lifecycle rules above; the backend must not hang.
 - Results before a completed compute pass read as zeros, not stale garbage.
 
 ## ABI conformance gate

@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-014: Freeze the layout backend adapter and conformance corpus"
 summary: "Renderer-neutral layout API and fixture corpus shared by candidates."
 type: issue
-status: partial
+status: blocked
 issue_id: "TN-014"
 milestone: "M0"
 priority: "P0"
@@ -24,6 +24,8 @@ depends_on:
 | Gate impact | Milestone/gate critical |
 
 > **Status note (2026-08-25):** Contract frozen but corpus coverage incomplete vs TN-014 scope; expansion tracked in #142 (M1).
+
+> **Status note (2026-08-25, review 2):** Blocked by reversed cycle detection (FIXED 2026-08-25 review 2) — regression cases live in shared C runner; node ownership/lifecycle now specified (strict single-parent, detach-on-destroy). Remaining: corpus expansion M1.
 
 ## Required outcome
 

@@ -26,6 +26,8 @@ depends_on:
 
 > **Status note (2026-08-25):** ABI conformance fixed (PR #143) and C/C++ smoke green; remains blocked pending CI gate + full evidence regeneration (#142).
 
+> **Status note (2026-08-25, review 2):** Blocked by interrupt atomicity (fixed: atomic request/clear API), callback isolation (fixed: per-eval stash), complete value bridging (partial: zero-arg spike bridge, full kinds in TN-025), exact diagnostics (done), and reproducible device evidence.
+
 ## Required outcome
 
 QuickJS-NG candidate passes representative startup, event, microtask, host-call, and diagnostics tests.

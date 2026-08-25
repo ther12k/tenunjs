@@ -41,6 +41,44 @@ static void stub_measure(void* userdata, tenun_layout_constraint c, tenun_layout
 #define MAX_NODES 256
 #define MAX_EXPECT 64
 
+
+/* ---- negative / lifecycle conformance (review 2, findings 1+3+7) ---- */
+static int neg_failures = 0;
+#define NEGCHECK(cond, msg) do { if (!(cond)) { printf("FAIL NEG %s\n", msg); neg_failures++; } } while (0)
+
+static void run_negative_suite(void) {
+    tenun_layout_node* A = api.create();
+    tenun_layout_node* B = api.create();
+    tenun_layout_node* C = api.create();
+    tenun_layout_node* D = api.create();
+    tenun_layout_style empty;
+    memset(&empty, 0, sizeof empty);
+
+    NEGCHECK(api.add_child(A, A) == TENUN_LAYOUT_ERR_TREE, "self-cycle");
+    NEGCHECK(api.add_child(A, B) == TENUN_LAYOUT_OK, "attach A->B");
+    NEGCHECK(api.add_child(B, A) == TENUN_LAYOUT_ERR_TREE, "cycle B->A");
+    NEGCHECK(api.add_child(B, C) == TENUN_LAYOUT_OK, "attach B->C");
+    NEGCHECK(api.add_child(C, A) == TENUN_LAYOUT_ERR_TREE, "deep cycle C->A");
+    NEGCHECK(api.add_child(A, B) == TENUN_LAYOUT_ERR_TREE, "duplicate attach");
+    NEGCHECK(api.add_child(D, B) == TENUN_LAYOUT_ERR_TREE, "reparent without detach");
+    tenun_layout_style badstyle = empty;
+    badstyle.direction = 7;
+    NEGCHECK(api.set_style(C, &badstyle) == TENUN_LAYOUT_ERR_STYLE, "unknown enum");
+    const tenun_layout_box* pre = api.result(B);
+    NEGCHECK(pre->x == 0 && pre->y == 0 && pre->width == 0 && pre->height == 0,
+             "precompute zeros");
+    NEGCHECK(api.add_child(NULL, B) == TENUN_LAYOUT_ERR_TREE, "null parent");
+    NEGCHECK(api.compute(NULL, 10, 10) == TENUN_LAYOUT_ERR_TREE, "null compute");
+
+    /* destroy attached child detaches: parent stays computable, no dangling */
+    api.destroy(B);
+    NEGCHECK(api.add_child(D, C) == TENUN_LAYOUT_OK, "re-attach after destroy allowed");
+    NEGCHECK(api.compute(A, 100, 100) == TENUN_LAYOUT_OK, "parent usable after child destroy");
+    api.destroy(NULL);
+
+    if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
+}
+
 int main(int argc, char** argv) {
     if (argc != 3) {
         fprintf(stderr, "usage: %s <corpus.txt> <candidate.so>\n", argv[0]);
@@ -145,7 +183,12 @@ int main(int argc, char** argv) {
                 continue;
             }
             int bad = 0;
-            for (int i = 1; i < ncount && i - 1 < ecount; i++) {
+            if (ncount - 1 != ecount) {
+                printf("FAIL %s: %d nodes vs %d expected boxes\n", case_id, ncount - 1, ecount);
+                failures++;
+                continue;
+            }
+            for (int i = 1; i < ncount; i++) {
                 const tenun_layout_box* b = api.result(nodes[i]);
                 tenun_layout_box e = expect[i - 1];
                 if (memcmp(b, &e, sizeof e) != 0) bad = 1;
@@ -165,6 +208,8 @@ int main(int argc, char** argv) {
         }
     }
     fclose(f);
+    run_negative_suite();
+    failures += neg_failures;
     free(nodes); free(slots);
     dlclose(so);
     if (failures) {

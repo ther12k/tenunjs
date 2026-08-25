@@ -22,6 +22,7 @@ typedef enum {
   TENUN_JS_ERR_VALUE_BOUNDS = 8,
   TENUN_JS_ERR_REGISTRATION = 9,
   TENUN_JS_ERR_ARGUMENT = 10,
+  TENUN_JS_ERR_AFFINITY = 11,
 } tenun_js_status;
 
 typedef struct tenun_js_vm tenun_js_vm;
@@ -81,12 +82,28 @@ tenun_js_status tenun_js_register_host_fn(tenun_js_vm* vm, const char* name, ten
 int64_t tenun_js_pump(tenun_js_vm* vm, int64_t max_jobs);
 
 /*
- * Returns the embedder-owned interrupt flag for this VM. The adapter polls it
- * between bytecode dispatch units; a nonzero value aborts the running
- * evaluation with TENUN_JS_ERR_TIMEOUT. The VM stays usable afterwards; the
- * embedder clears the flag. Timing policy belongs entirely to the embedder.
+ * Interrupt protocol (amended 2026-08-25, review 2): the embedder requests
+ * interruption through these functions; storage is adapter-owned and accessed
+ * with defined atomics only — no raw flag pointer crosses the ABI.
+ *
+ *   tenun_js_request_interrupt: a watchdog may call from ANY thread.
+ *   tenun_js_clear_interrupt  : must be called on the VM owner thread after
+ *                               a TENUN_JS_ERR_TIMEOUT before further use.
  */
-volatile int* tenun_js_interrupt_flag(tenun_js_vm* vm);
+tenun_js_status tenun_js_request_interrupt(tenun_js_vm* vm);
+tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
+
+/*
+ * Error semantics: last_error is CLEARED on every successful call and fully
+ * overwritten by every failing call (no stale diagnostics). Messages carry a
+ * stable "TJERR:<CATEGORY>" prefix.
+ *
+ * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
+ * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.
+ *
+ * String/byte values returned through tenun_js_value point to adapter-owned
+ * storage valid until the next adapter call on the same VM.
+ */
 
 tenun_js_status tenun_js_last_result(tenun_js_vm* vm, tenun_js_value* out);
 tenun_js_error tenun_js_last_error(tenun_js_vm* vm);
