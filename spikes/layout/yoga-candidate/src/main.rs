@@ -2,6 +2,7 @@ use std::fs;
 
 use serde::Deserialize;
 use tenun_layout_yoga::{
+    ConstraintC,
     StyleC,
     tenun_layout_compute, tenun_layout_node_add_child, tenun_layout_node_create,
     tenun_layout_node_set_measure, tenun_layout_node_set_style, tenun_layout_result, BoxC,
@@ -70,6 +71,16 @@ fn box_tuple(b: &BoxC) -> (f64, f64, f64, f64) {
     (b.x as f64, b.y as f64, b.width as f64, b.height as f64)
 }
 
+static mut MEASURE_SLOTS: Vec<Box<[f64; 2]>> = Vec::new();
+
+extern "C" fn stub_measure(userdata: *mut u8, _c: ConstraintC, out: *mut BoxC) {
+    unsafe {
+        let slot = &*(userdata as *const [f64; 2]);
+        (*out).width = slot[0] as f32;
+        (*out).height = slot[1] as f32;
+    }
+}
+
 unsafe fn build(node: &JsonNode) -> *mut NodeData {
     let n = tenun_layout_node_create();
     let style = StyleC {
@@ -96,7 +107,9 @@ unsafe fn build(node: &JsonNode) -> *mut NodeData {
     };
     assert_eq!(tenun_layout_node_set_style(n, &style), TENUN_LAYOUT_OK);
     if let Some(m) = &node.measure {
-        tenun_layout_node_set_measure(n, m.width, m.height);
+        MEASURE_SLOTS.push(Box::new([m.width as f64, m.height as f64]));
+        let ptr = MEASURE_SLOTS.last().unwrap().as_ptr() as *mut u8;
+        tenun_layout_node_set_measure(n, Some(stub_measure), ptr);
     }
     for child in &node.children {
         tenun_layout_node_add_child(n, build(child));
