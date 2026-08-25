@@ -28,10 +28,26 @@ pub struct BoxC {
     pub height: f32,
 }
 
+pub type MeasureFn = extern "C" fn(userdata: *mut u8, constraint: ConstraintC, out: *mut BoxC);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ConstraintC {
+    pub available_width: f32,
+    pub available_height: f32,
+}
+
+#[derive(Clone, Copy)]
+pub struct MeasureHook {
+    pub func: MeasureFn,
+    pub userdata: *mut u8,
+}
+
 pub struct NodeData {
     pub style: StyleC,
-    pub measure: Option<(f32, f32)>,
+    pub measure: Option<MeasureHook>,
     pub children: Vec<*mut NodeData>,
+    pub parent: Option<*mut NodeData>,
     pub result: BoxC,
 }
 
@@ -50,6 +66,7 @@ impl NodeData {
             },
             measure: None,
             children: Vec::new(),
+            parent: None,
             result: BoxC {
                 x: 0.0,
                 y: 0.0,
@@ -101,9 +118,9 @@ fn to_taffy_style(s: &StyleC) -> taffy::Style {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MeasureCtx {
-    pub width: f32,
-    pub height: f32,
+    pub hook: MeasureHook,
 }
 
 type SpikeTree = TaffyTree<MeasureCtx>;
@@ -117,15 +134,9 @@ fn build_tree(
         let data = &mut *node;
         let style = to_taffy_style(&data.style);
         let id = if data.children.is_empty() {
-            if let Some((mw, mh)) = data.measure {
+            if let Some(hook) = data.measure {
                 taffy
-                    .new_leaf_with_context(
-                        style,
-                        MeasureCtx {
-                            width: mw,
-                            height: mh,
-                        },
-                    )
+                    .new_leaf_with_context(style, MeasureCtx { hook })
                     .map_err(|_| TENUN_LAYOUT_ERR_TREE)?
             } else {
                 taffy.new_leaf(style).map_err(|_| TENUN_LAYOUT_ERR_TREE)?
@@ -175,8 +186,23 @@ pub unsafe extern "C" fn tenun_layout_node_destroy(node: *mut NodeData) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn tenun_layout_node_add_child(parent: *mut NodeData, child: *mut NodeData) {
+pub unsafe extern "C" fn tenun_layout_node_add_child(
+    parent: *mut NodeData,
+    child: *mut NodeData,
+) -> i32 {
+    if parent.is_null() || child.is_null() || parent == child {
+        return TENUN_LAYOUT_ERR_TREE;
+    }
+    let mut cursor = child;
+    while let Some(p) = (*cursor).parent {
+        if p == parent {
+            return TENUN_LAYOUT_ERR_TREE;
+        }
+        cursor = p;
+    }
     (*parent).children.push(child);
+    (*child).parent = Some(parent);
+    TENUN_LAYOUT_OK
 }
 
 #[no_mangle]
@@ -199,10 +225,10 @@ pub unsafe extern "C" fn tenun_layout_node_set_style(
 #[no_mangle]
 pub unsafe extern "C" fn tenun_layout_node_set_measure(
     node: *mut NodeData,
-    width: f32,
-    height: f32,
+    measure_fn: Option<MeasureFn>,
+    userdata: *mut u8,
 ) {
-    (*node).measure = Some((width, height));
+    (*node).measure = measure_fn.map(|func| MeasureHook { func, userdata });
 }
 
 #[no_mangle]
@@ -223,9 +249,24 @@ pub unsafe extern "C" fn tenun_layout_compute(
             match taffy.compute_layout_with_measure(
                 root_id,
                 available,
-                |_known, _space, _id, ctx, _style| Size {
-                    width: ctx.as_deref().map(|c| c.width).unwrap_or(0.0),
-                    height: ctx.as_deref().map(|c| c.height).unwrap_or(0.0),
+                |known, space, _id, ctx, _style| {
+                    let (hook, _) = match ctx.as_deref() {
+                        Some(c) => (c.hook, 0u8),
+                        None => return Size { width: 0.0, height: 0.0 },
+                    };
+                    let mut out = BoxC { x: 0.0, y: 0.0, width: 0.0, height: 0.0 };
+                    let constraint = ConstraintC {
+                        available_width: match space.width {
+                            AvailableSpace::Definite(v) => v,
+                            _ => f32::INFINITY,
+                        },
+                        available_height: match space.height {
+                            AvailableSpace::Definite(v) => v,
+                            _ => f32::INFINITY,
+                        },
+                    };
+                    (hook.func)(hook.userdata, constraint, &mut out);
+                    Size { width: out.width, height: out.height }
                 },
             ) {
                 Ok(()) => {

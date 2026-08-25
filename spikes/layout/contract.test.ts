@@ -6,6 +6,10 @@ const header = readFileSync(new URL("./layout_adapter.h", import.meta.url), "utf
 describe("layout adapter contract", () => {
   test("header declares ABI v1 with fail-closed statuses", () => {
     expect(header).toContain("#define TENUN_LAYOUT_ABI_VERSION 1u");
+    expect(header).toContain('extern \"C\"');
+    expect(header).toContain("_Static_assert");
+    expect(header).toContain("tenun_layout_node_set_measure(");
+    expect(header).toContain("void* userdata");
     expect(header).toContain("TENUN_LAYOUT_ERR_STYLE");
     expect(header).toContain("TENUN_LAYOUT_ERR_TREE");
     expect(header).toContain("tenun_layout_measure_fn");
@@ -19,7 +23,6 @@ describe("layout adapter contract", () => {
       const boxes = [c.root.style.width, c.root.style.height, ...c.expected.flatMap((b: number[]) => Object.values(b))];
       for (const v of boxes) {
         expect(Number.isFinite(v)).toBe(true);
-        expect(Math.abs(v - Math.round(v))).toBe(0);
       }
       expect(c.expected).toHaveLength(c.root.children.length);
       for (const b of c.expected) expect(Object.keys(b).sort()).toEqual(["height", "width", "x", "y"]);

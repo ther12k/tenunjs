@@ -1,0 +1,58 @@
+{
+  "case_id": "007",
+  "name": "two-measured-siblings",
+  "viewport": {
+    "width": 200,
+    "height": 100
+  },
+  "root": {
+    "style": {
+      "width": 200,
+      "height": 100,
+      "flex_grow": 0,
+      "direction": "row",
+      "gap": 0,
+      "padding": 0,
+      "justify_content": "flex_start",
+      "align_items": "center"
+    },
+    "children": [
+      {
+        "style": {
+          "width": null,
+          "height": null
+        },
+        "measure": {
+          "width": 40,
+          "height": 20
+        },
+        "children": []
+      },
+      {
+        "style": {
+          "width": null,
+          "height": null
+        },
+        "measure": {
+          "width": 90,
+          "height": 20
+        },
+        "children": []
+      }
+    ]
+  },
+  "expected": [
+    {
+      "x": 0,
+      "y": 40,
+      "width": 40,
+      "height": 20
+    },
+    {
+      "x": 40,
+      "y": 40,
+      "width": 90,
+      "height": 20
+    }
+  ]
+}
