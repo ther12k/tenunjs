@@ -24,9 +24,16 @@ The engine never names its JavaScript runtime (`adr-0007`). Candidates implement
 | `tenun_js_last_error(vm)` | Message + line/column when the runtime provides them; empty string when not. |
 | `tenun_js_last_result(vm, out)` | Completion value of the last successful evaluation as one bounded value; fails with `TENUN_JS_ERR_VALUE_BOUNDS` for unrepresentable results. Added by first-consumer amendment during TN-011/TN-012. |
 
-## Bounded host values
+## Bounded host values (implemented in full — review 2 finding #5 closed)
 
-Values crossing the boundary are limited to: `f64`, `i64`, booleans, UTF-8 strings ≤ 64 KiB, byte buffers ≤ 1 MiB, and `null`. Objects, arrays, and functions do not cross in v0.x adapters. Oversized values fail with `TENUN_JS_ERR_VALUE_BOUNDS` — no silent truncation.
+Both directions marshal all six kinds: `null`, `bool`, `f64`, `i64`, UTF-8 `string` ≤ 64 KiB, `bytes` ≤ 1 MiB.
+
+- **Foreign tags**: `kind` is a raw u32; implementations range-check before reading the union. Invalid tags fail with `TENUN_JS_ERR_VALUE_BOUNDS`.
+- **UTF-8 policy**: string payloads that are not valid UTF-8 are rejected (`VALUE_BOUNDS`), never mangled.
+- **Pointer rules**: null data with nonzero length fails; null data with length 0 is an empty value.
+- **Oversize JS→host arguments** are DROPPED with `TJERR:VALUE_BOUNDS` recorded and a reduced argc (documented truncation of the argument LIST, never of content); oversize host RETURNS throw a `TJERR:VALUE_BOUNDS` exception into JS.
+- **Ownership**: string/byte payloads point to adapter-owned storage valid until the next adapter call on the same VM.
+- **Failure visibility**: callback-return failures surface as JS exceptions carrying the TJERR category, so they survive eval success.
 
 ## Interruption rules
 

@@ -155,6 +155,7 @@ unsafe fn apply_style(node: &mut yoga::Node, s: &StyleC) -> Result<(), i32> {
         _ => Align::Stretch,
     });
     node.set_flex_grow(s.flex_grow);
+    node.set_flex_shrink(0.0);
     node.set_width(unit(s.width));
     node.set_height(unit(s.height));
     node.set_gap(Gutter::Column, unit(s.gap));
