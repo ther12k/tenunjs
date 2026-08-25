@@ -1,0 +1,14 @@
+{
+  "case_id": "004",
+  "name": "center-both-axes",
+  "viewport": { "width": 300, "height": 100 },
+  "root": {
+    "style": { "width": 300, "height": 100, "flex_grow": 0, "direction": "row", "gap": 0, "padding": 0, "justify_content": "center", "align_items": "center" },
+    "children": [
+      { "style": { "width": 60, "height": 40 }, "children": [] }
+    ]
+  },
+  "expected": [
+    { "x": 120, "y": 30, "width": 60, "height": 40 }
+  ]
+}

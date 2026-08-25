@@ -1,0 +1,16 @@
+{
+  "case_id": "001",
+  "name": "fixed-children-row",
+  "viewport": { "width": 400, "height": 100 },
+  "root": {
+    "style": { "width": 400, "height": 100, "flex_grow": 0, "direction": "row", "gap": 0, "padding": 0, "justify_content": "flex_start", "align_items": "stretch" },
+    "children": [
+      { "style": { "width": 150, "height": 50 }, "children": [] },
+      { "style": { "width": 150, "height": 50 }, "children": [] }
+    ]
+  },
+  "expected": [
+    { "x": 0, "y": 0, "width": 150, "height": 50 },
+    { "x": 150, "y": 0, "width": 150, "height": 50 }
+  ]
+}
