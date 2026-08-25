@@ -24,7 +24,7 @@ describe("evidence harness", () => {
     expect(failStep.stderr_tail).toContain("boom");
   });
 
-  test("writes reproducible evidence packet", async () => {
+  test("writes reproducible evidence packet", async () => { // long timeout for CI cold caches
     const repoRoot = new URL("../../", import.meta.url).pathname;
     const evidence = await assembleEvidence("selftest", repoRoot, [step("probe", "true")], ["self-test"]);
     const file = await writeEvidence(evidence, "/tmp/tenunjs-evidence-test");
@@ -33,5 +33,5 @@ describe("evidence harness", () => {
     expect(parsed.label).toBe("selftest");
     expect(parsed.steps).toHaveLength(1);
     expect(parsed.timestamp_utc).toBeString();
-  });
+  }, 30000);
 });

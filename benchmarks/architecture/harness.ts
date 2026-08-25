@@ -66,8 +66,13 @@ export function collectSource(repoRoot: string): Evidence["source"] {
 export function collectTools(names: string[]): Record<string, string> {
   const tools: Record<string, string> = {};
   for (const t of names) {
+    const present = run("sh", ["-c", `command -v ${t} >/dev/null 2>&1`]);
+    if (!present.ok) {
+      tools[t] = "not-found";
+      continue;
+    }
     const v = run(t, ["--version"]);
-    tools[t] = v.ok ? v.out.split("\n")[0] : "not-found";
+    tools[t] = v.ok ? (v.out.split("\n")[0] || "present") : "present";
   }
   return tools;
 }
