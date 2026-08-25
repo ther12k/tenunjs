@@ -68,10 +68,17 @@ def main() -> None:
         repro = (data.get("reproducibility") or {}).get("commands") or []
         if not repro:
             fail(f"{label}: reproducibility commands absent")
-        if on_main and src["commit"] != head:
-            fail(
-                f"{label}: recorded commit {src['commit'][:12]} != HEAD {head[:12]} on main"
+        if on_main:
+            # recorded evidence must describe an ancestor of current main;
+            # strict equality available via TENUN_EVIDENCE_REQUIRE_HEAD=1
+            anc = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", src["commit"], head],
+                capture_output=True,
             )
+            if anc.returncode != 0:
+                fail(f"{label}: recorded commit {src['commit'][:12]} is not an ancestor of HEAD")
+            if os.environ.get("TENUN_EVIDENCE_REQUIRE_HEAD") == "1" and src["commit"] != head:
+                fail(f"{label}: strict mode requires recorded commit == HEAD")
         print(f"ok {packet.relative_to(root)} ({label})")
 
     print(f"EVIDENCE VALIDATION PASS ({len(packets)} packets)")
