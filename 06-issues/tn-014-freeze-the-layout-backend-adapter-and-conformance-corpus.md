@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-014: Freeze the layout backend adapter and conformance corpus"
 summary: "Renderer-neutral layout API and fixture corpus shared by candidates."
 type: issue
-status: ready
+status: partial
 issue_id: "TN-014"
 milestone: "M0"
 priority: "P0"
@@ -22,6 +22,8 @@ depends_on:
 | Dependencies | TN-006 |
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
+
+> **Status note (2026-08-25):** Contract frozen but corpus coverage incomplete vs TN-014 scope; expansion tracked in #142 (M1).
 
 ## Required outcome
 

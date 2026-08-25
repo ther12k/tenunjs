@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-016: Implement Taffy layout spike"
 summary: "Taffy candidate passes the identical layout and integration tests."
 type: issue
-status: ready
+status: blocked
 issue_id: "TN-016"
 milestone: "M0"
 priority: "P0"
@@ -23,6 +23,8 @@ depends_on:
 | Dependencies | TN-005, TN-014 |
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
+
+> **Status note (2026-08-25):** ABI conformance landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
 
 ## Required outcome
 

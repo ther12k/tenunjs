@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-011: Implement QuickJS-NG runtime spike"
 summary: "QuickJS-NG candidate passes representative startup, event, microtask, host-call, and diagnostics tests."
 type: issue
-status: ready
+status: blocked
 issue_id: "TN-011"
 milestone: "M0"
 priority: "P0"
@@ -23,6 +23,8 @@ depends_on:
 | Dependencies | TN-005, TN-010 |
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
+
+> **Status note (2026-08-25):** ABI conformance fixed (PR #143) and C/C++ smoke green; remains blocked pending CI gate + full evidence regeneration (#142).
 
 ## Required outcome
 

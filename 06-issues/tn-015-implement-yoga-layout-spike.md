@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-015: Implement Yoga layout spike"
 summary: "Yoga candidate passes layout, intrinsic measurement, incremental update, and toolchain tests."
 type: issue
-status: ready
+status: blocked
 issue_id: "TN-015"
 milestone: "M0"
 priority: "P0"
@@ -23,6 +23,8 @@ depends_on:
 | Dependencies | TN-005, TN-014 |
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
+
+> **Status note (2026-08-25):** ABI conformance + per-node measure registry landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
 
 ## Required outcome
 
