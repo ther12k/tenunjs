@@ -1,3 +1,7 @@
+// FFI spike scope: full per-fn # Safety sections arrive with the production
+// engine surface (M2+); cross-boundary rules live in the contract doc beside
+// each header.
+#![allow(clippy::missing_safety_doc)]
 use std::cell::{Cell, RefCell};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -94,14 +98,7 @@ struct VmState {
 pub struct TenunJsVm {
     runtime: Runtime,
     context: Context,
-    state: Arc<VmState>,
-}
-
-fn null_value() -> ValueC {
-    ValueC {
-        kind: ValueKindC::Null,
-        as_: unsafe { std::mem::zeroed() },
-    }
+    state: VmState,
 }
 
 fn now_ms() -> i64 {
@@ -139,7 +136,7 @@ fn validate_bundle(bytes: &[u8]) -> Result<&[u8], i32> {
 }
 
 #[no_mangle]
-pub extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm {
+pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm {
     catch_unwind(AssertUnwindSafe(|| {
         if cfg.is_null() {
             return std::ptr::null_mut();
@@ -176,21 +173,21 @@ pub extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm {
         Box::into_raw(Box::new(TenunJsVm {
             runtime: rt,
             context: ctx,
-            state: Arc::new(VmState {
+            state: VmState {
                 interrupted,
                 interrupt_flag: flag,
                 host_fn: RefCell::new(None),
                 host_name: RefCell::new(String::new()),
                 last_error: RefCell::new(None),
                 result_f64: Cell::new(f64::NAN),
-            }),
+            },
         }))
     }))
-    .unwrap_or_else(|_| std::ptr::null_mut())
+    .unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]
-pub extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
+pub unsafe extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
     catch_unwind(AssertUnwindSafe(|| {
         if !vm.is_null() {
             unsafe { drop(Box::from_raw(vm)) };
@@ -313,11 +310,11 @@ unsafe fn register_impl(vm: *mut TenunJsVm, name: *const u8, fn_ptr: Option<Host
     let context = vm.context.clone();
     TRAMPOLINE_VM.with(|c| c.set(vm));
     TRAMPOLINE_FN.with(|c| c.set(fn_ptr));
-    let res: rquickjs::Result<()> = context
-        .with(|ctx: Ctx| -> rquickjs::Result<()> {
-            ctx.globals().set(fname.as_str(), Func::from(js_trampoline))?;
-            Ok(())
-        });
+    let res: rquickjs::Result<()> = context.with(|ctx: Ctx| -> rquickjs::Result<()> {
+        ctx.globals()
+            .set(fname.as_str(), Func::from(js_trampoline))?;
+        Ok(())
+    });
     drop(context);
     if res.is_err() {
         return TENUN_JS_ERR_REGISTRATION;

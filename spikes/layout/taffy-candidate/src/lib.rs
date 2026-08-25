@@ -1,3 +1,7 @@
+// FFI spike scope: full per-fn # Safety sections arrive with the production
+// engine surface (M2+); cross-boundary rules live in the contract doc beside
+// each header.
+#![allow(clippy::missing_safety_doc)]
 use std::collections::HashMap;
 
 use taffy::prelude::*;
@@ -249,12 +253,22 @@ pub unsafe extern "C" fn tenun_layout_compute(
             match taffy.compute_layout_with_measure(
                 root_id,
                 available,
-                |known, space, _id, ctx, _style| {
+                |_known, space, _id, ctx, _style| {
                     let (hook, _) = match ctx.as_deref() {
                         Some(c) => (c.hook, 0u8),
-                        None => return Size { width: 0.0, height: 0.0 },
+                        None => {
+                            return Size {
+                                width: 0.0,
+                                height: 0.0,
+                            }
+                        }
                     };
-                    let mut out = BoxC { x: 0.0, y: 0.0, width: 0.0, height: 0.0 };
+                    let mut out = BoxC {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 0.0,
+                        height: 0.0,
+                    };
                     let constraint = ConstraintC {
                         available_width: match space.width {
                             AvailableSpace::Definite(v) => v,
@@ -266,7 +280,10 @@ pub unsafe extern "C" fn tenun_layout_compute(
                         },
                     };
                     (hook.func)(hook.userdata, constraint, &mut out);
-                    Size { width: out.width, height: out.height }
+                    Size {
+                        width: out.width,
+                        height: out.height,
+                    }
                 },
             ) {
                 Ok(()) => {

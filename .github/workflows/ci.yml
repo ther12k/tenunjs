@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      # --frozen-lockfile activates automatically once bun.lock exists (first dep added)
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  verify-rust:
+    runs-on: ubuntu-latest
+    env:
+      BINDGEN_EXTRA_CLANG_ARGS: ${{ format('-I{0}', '/usr/lib/gcc/x86_64-linux-gnu/13/include') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Resolve gcc include dir for bindgen
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
+      - name: fmt + clippy + test
+        run: ./.github/scripts/verify-rust.sh
+
+  verify-abi:
+    runs-on: ubuntu-latest
+    needs: [verify-rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      - name: Resolve gcc include dir for bindgen
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
+      - run: bun install --frozen-lockfile
+      - run: ./.github/scripts/verify-abi.sh
+
+  verify-evidence:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 ./.github/scripts/verify-evidence.py

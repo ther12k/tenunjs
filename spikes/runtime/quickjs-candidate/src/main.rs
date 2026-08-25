@@ -101,9 +101,7 @@ fn main() {
         let flag_addr = flag as usize;
         let handle = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(150));
-            unsafe {
-                std::ptr::write_volatile(flag_addr as *mut i32, 1);
-            }
+            std::ptr::write_volatile(flag_addr as *mut i32, 1);
         });
         let t0 = std::time::Instant::now();
         let stall =

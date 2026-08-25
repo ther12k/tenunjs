@@ -1,3 +1,7 @@
+// FFI spike scope: full per-fn # Safety sections arrive with the production
+// engine surface (M2+); cross-boundary rules live in the contract doc beside
+// each header.
+#![allow(clippy::missing_safety_doc)]
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -164,8 +168,8 @@ type Arena = Vec<Box<yoga::Node>>;
 struct BuildCtx<'a> {
     arena: &'a mut Arena,
     pairs: &'a mut Vec<(usize, *mut NodeData)>,
-    measured: &'a mut Vec<(*mut NodeData, usize, usize)>, // (arena_idx of measured leaf, its NodeData ptr key later filled after insert)
-    hooks_added: &'a mut Vec<usize>,       // yoga raw refs registered during this build
+    // (leaf node ptr, parent arena idx, position under parent)
+    measured: &'a mut Vec<(*mut NodeData, usize, usize)>,
 }
 
 unsafe fn build_all(
@@ -293,7 +297,6 @@ pub unsafe extern "C" fn tenun_layout_compute(
             arena: &mut arena,
             pairs: &mut pairs,
             measured: &mut measured,
-            hooks_added: &mut hooks_added,
         };
         match build_all(node, &mut bx, None) {
             Ok(root_idx) => {
