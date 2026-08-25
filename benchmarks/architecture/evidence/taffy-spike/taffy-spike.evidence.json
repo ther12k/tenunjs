@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "label": "taffy-spike",
+  "timestamp_utc": "2026-08-25T09:17:45.425Z",
+  "source": {
+    "commit": "f418dedbedbb7b326f4e649ae83615272301a78f",
+    "dirty": true,
+    "changed_files": 5
+  },
+  "host": {
+    "os": "linux",
+    "arch": "x64",
+    "kernel": "Linux 7.0.0-30-generic",
+    "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
+    "mem_total_bytes": 16454041600
+  },
+  "tools": {
+    "bun": "1.4.0",
+    "node": "v24.11.0",
+    "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "clang++": "not-found",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)"
+  },
+  "steps": [
+    {
+      "name": "corpus-run",
+      "command": "cd spikes/layout/taffy-candidate && cargo run --release --quiet",
+      "exit_code": 0,
+      "duration_ms": 62,
+      "stdout_tail": "PASS ../corpus/001-fixed-children-row.json\nPASS ../corpus/002-grow-distribute.json\nPASS ../corpus/003-column-gap.json\nPASS ../corpus/004-center-both-axes.json\nPASS ../corpus/005-nested-padding.json\nPASS ../corpus/006-measure-callback.json\n== incremental mutation check ==\nPASS incremental grow redistribution\n",
+      "stderr_tail": "",
+      "timed_out": false
+    },
+    {
+      "name": "release-build",
+      "command": "cd spikes/layout/taffy-candidate && cargo build --release",
+      "exit_code": 0,
+      "duration_ms": 65,
+      "stdout_tail": "",
+      "stderr_tail": "    Finished `release` profile [optimized + debuginfo] target(s) in 0.01s\n",
+      "timed_out": false
+    }
+  ],
+  "reproducibility": {
+    "commands": [
+      "bun run benchmarks/architecture/run.ts --label taffy-spike --step corpus-run \"cd spikes/layout/taffy-candidate && cargo run --release --quiet\" --step release-build \"cd spikes/layout/taffy-candidate && cargo build --release\""
+    ]
+  }
+}

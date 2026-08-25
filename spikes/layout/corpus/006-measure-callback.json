@@ -1,0 +1,14 @@
+{
+  "case_id": "006",
+  "name": "measure-callback-leaf",
+  "viewport": { "width": 200, "height": 100 },
+  "root": {
+    "style": { "width": 200, "height": 100, "flex_grow": 0, "direction": "row", "gap": 0, "padding": 0, "justify_content": "flex_start", "align_items": "center" },
+    "children": [
+      { "style": { "width": null, "height": null }, "measure": { "width": 50, "height": 20 }, "children": [] }
+    ]
+  },
+  "expected": [
+    { "x": 0, "y": 40, "width": 50, "height": 20 }
+  ]
+}
