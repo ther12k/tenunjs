@@ -45,7 +45,17 @@ export function collectHost(): Evidence["host"] {
 
 export function collectSource(repoRoot: string): Evidence["source"] {
   const commit = run("git", ["-C", repoRoot, "rev-parse", "HEAD"]);
-  const status = run("git", ["-C", repoRoot, "status", "--porcelain"]);
+  // evidence packets are outputs, not source: exclude this directory from
+  // dirtiness so a packet can truthfully describe the tree that produced it
+  const status = run("git", [
+    "-C",
+    repoRoot,
+    "status",
+    "--porcelain",
+    "--",
+    ".",
+    ":(exclude)benchmarks/architecture/evidence",
+  ]);
   return {
     commit: commit.ok ? commit.out : "no-git",
     dirty: !commit.ok || status.out.length > 0,
