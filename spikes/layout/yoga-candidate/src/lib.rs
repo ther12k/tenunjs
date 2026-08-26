@@ -218,12 +218,25 @@ extern "C" fn spike_measure(
     }
 }
 
+/// Dimensions accept NaN (=undefined) or finite non-negative points only;
+/// infinities and negatives are style errors, never engine-dependent UB.
+fn valid_dim(v: f32) -> bool {
+    v.is_nan() || (v.is_finite() && v >= 0.0)
+}
+
+fn style_valid(s: &StyleC) -> bool {
+    s.flex_grow >= 0.0
+        && s.gap >= 0.0
+        && s.padding >= 0.0
+        && valid_dim(s.width)
+        && valid_dim(s.height)
+        && s.direction <= 1
+        && s.justify_content <= 1
+        && s.align_items <= 1
+}
+
 unsafe fn apply_style(node: &mut yoga::Node, s: &StyleC) -> Result<(), i32> {
-    if !(s.flex_grow >= 0.0 && s.gap >= 0.0 && s.padding >= 0.0)
-        || s.direction > 1
-        || s.justify_content > 1
-        || s.align_items > 1
-    {
+    if !style_valid(s) {
         return Err(TENUN_LAYOUT_ERR_STYLE);
     }
     node.set_flex_direction(match s.direction {
@@ -401,11 +414,7 @@ pub unsafe extern "C" fn tenun_layout_node_set_style(
             Err(e) => return e,
         };
         let s = &*style;
-        if !(s.flex_grow >= 0.0 && s.gap >= 0.0 && s.padding >= 0.0)
-            || s.direction > 1
-            || s.justify_content > 1
-            || s.align_items > 1
-        {
+        if !style_valid(s) {
             return TENUN_LAYOUT_ERR_STYLE;
         }
         (*node).style = *s;

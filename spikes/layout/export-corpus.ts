@@ -12,7 +12,16 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith(".json")).sort()) {
     const w = Number.isFinite(s.width) ? s.width : "nan";
     const h = Number.isFinite(s.height) ? s.height : "nan";
     let line = `NODE ${n.children.length} ${w} ${h} ${s.flex_grow ?? 0} ${s.direction === "column" ? 1 : 0} ${s.gap ?? 0} ${s.padding ?? 0} ${s.justify_content === "center" ? 1 : 0} ${s.align_items === "center" ? 1 : 0}`;
-    if (n.measure) line += ` MEASURE ${n.measure.width} ${n.measure.height}`;
+    if (n.measure) {
+      // constraint-forwarding strategy: definite queries answer avail-2*pad;
+      // non-definite queries (engine max-content probing) answer the explicit
+      // fallback pair, keeping cross-engine probe outcomes comparable
+      if (n.measure.strategy === "avail") {
+        line += ` MEASUREAVAIL ${n.measure.pad_w} ${n.measure.pad_h} ${n.measure.fb_w} ${n.measure.fb_h}`;
+      } else {
+        line += ` MEASURE ${n.measure.width} ${n.measure.height}`;
+      }
+    }
     console.log(line);
     for (const k of n.children) walk(k);
   };

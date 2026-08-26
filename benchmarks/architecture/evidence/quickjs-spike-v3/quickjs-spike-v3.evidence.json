@@ -1,10 +1,10 @@
 {
   "schema_version": 2,
   "label": "quickjs-spike-v3",
-  "timestamp_utc": "2026-08-26T16:25:29.049Z",
+  "timestamp_utc": "2026-08-26T16:47:29.602Z",
   "build_profile": "release",
   "source": {
-    "commit": "ffc0056590618bc7c8b9efcd6d3692de2605c08e",
+    "commit": "0c43f408149b3ea5f762e4d1569cb479be2f8ce2",
     "dirty": false,
     "changed_files": 0
   },
@@ -34,17 +34,17 @@
       "name": "release-build",
       "command": "cd spikes/runtime/quickjs-candidate && cargo build --release",
       "exit_code": 0,
-      "duration_ms": 92,
+      "duration_ms": 151,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized + debuginfo] target(s) in 0.05s\n",
+      "stderr_tail": "    Finished `release` profile [optimized + debuginfo] target(s) in 0.07s\n",
       "timed_out": false
     },
     {
       "name": "conformance-runner",
       "command": "cd spikes/runtime/quickjs-candidate && ./target/release/spike-runner",
       "exit_code": 0,
-      "duration_ms": 127,
-      "stdout_tail": "== create / abi rejection ==\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS i64/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.155658ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\nALL PASS\n",
+      "duration_ms": 131,
+      "stdout_tail": "== create / abi rejection ==\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS i64/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.41037ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\nALL PASS\n",
       "stderr_tail": "",
       "timed_out": false
     },
@@ -52,7 +52,7 @@
       "name": "abi-smoke-compile",
       "command": "cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -o spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 297,
+      "duration_ms": 64,
       "stdout_tail": "",
       "stderr_tail": "",
       "timed_out": false
@@ -61,7 +61,7 @@
       "name": "abi-smoke-run",
       "command": "LD_LIBRARY_PATH=spikes/runtime/quickjs-candidate/target/release spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 4,
+      "duration_ms": 10,
       "stdout_tail": "ABI SMOKE PASS\n",
       "stderr_tail": "",
       "timed_out": false

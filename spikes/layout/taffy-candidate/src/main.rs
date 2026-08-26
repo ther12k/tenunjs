@@ -49,8 +49,20 @@ struct JsonStyle {
 
 #[derive(Deserialize)]
 struct MeasureStub {
-    width: f32,
-    height: f32,
+    #[serde(default)]
+    strategy: Option<String>,
+    #[serde(default)]
+    width: Option<f64>,
+    #[serde(default)]
+    height: Option<f64>,
+    #[serde(default)]
+    pad_w: Option<f64>,
+    #[serde(default)]
+    pad_h: Option<f64>,
+    #[serde(default)]
+    fb_w: Option<f64>,
+    #[serde(default)]
+    fb_h: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -71,14 +83,37 @@ fn box_tuple(b: &BoxC) -> (f64, f64, f64, f64) {
 
 use std::cell::RefCell;
 thread_local! {
-    static MEASURE_SLOTS: RefCell<Vec<[f64; 2]>> = const { RefCell::new(Vec::new()) };
+    static MEASURE_SLOTS: RefCell<Vec<[f64; 5]>> = const { RefCell::new(Vec::new()) };
 }
 
-extern "C" fn stub_measure(userdata: *mut u8, _c: ConstraintC, out: *mut BoxC) {
+/// slot layout: [mode, p0, p1, p2, p3] — fixed(p0,p1) | avail pads(p0,p1)
+/// with fallback(p2,p3) for non-definite queries
+extern "C" fn stub_measure(userdata: *mut u8, c: ConstraintC, out: *mut BoxC) {
     unsafe {
-        let slot = &*(userdata as *const [f64; 2]);
-        (*out).width = slot[0] as f32;
-        (*out).height = slot[1] as f32;
+        let s = &*(userdata as *const [f64; 5]);
+        if s[0] == 1.0 {
+            let mut w = if c.available_width.is_finite() {
+                c.available_width - 2.0 * s[1] as f32
+            } else {
+                s[3] as f32
+            };
+            let mut h = if c.available_height.is_finite() {
+                c.available_height - 2.0 * s[2] as f32
+            } else {
+                s[4] as f32
+            };
+            if w < 0.0 {
+                w = 0.0;
+            }
+            if h < 0.0 {
+                h = 0.0;
+            }
+            (*out).width = w;
+            (*out).height = h;
+        } else {
+            (*out).width = s[1] as f32;
+            (*out).height = s[2] as f32;
+        }
     }
 }
 
@@ -116,7 +151,22 @@ unsafe fn build(node: &JsonNode) -> Built {
     assert_eq!(tenun_layout_node_set_style(n, &style), TENUN_LAYOUT_OK);
     if let Some(m) = &node.measure {
         MEASURE_SLOTS.with(|slots| {
-            slots.borrow_mut().push([m.width as f64, m.height as f64]);
+            slots.borrow_mut().push(match m.strategy.as_deref() {
+                Some("avail") => [
+                    1.0,
+                    m.pad_w.unwrap_or(0.0),
+                    m.pad_h.unwrap_or(0.0),
+                    m.fb_w.unwrap_or(0.0),
+                    m.fb_h.unwrap_or(0.0),
+                ],
+                _ => [
+                    0.0,
+                    m.width.unwrap_or(0.0),
+                    m.height.unwrap_or(0.0),
+                    0.0,
+                    0.0,
+                ],
+            });
             let ptr = slots.borrow().last().unwrap().as_ptr() as *mut u8;
             tenun_layout_node_set_measure(n, Some(stub_measure), ptr);
         });
