@@ -29,13 +29,23 @@ static struct {
     fn_result result;
 } api;
 
-typedef struct { float w, h; } measure_slot;
+typedef struct { int mode; float p[4]; } measure_slot; /* fixed: w,h; avail: pw,ph,fw,fh */
 
 static void stub_measure(void* userdata, tenun_layout_constraint c, tenun_layout_box* out) {
-    (void)c;
     measure_slot* s = (measure_slot*)userdata;
-    out->width = s->w;
-    out->height = s->h;
+    if (s->mode == 1) {
+        /* constraint-forwarding: definite queries answer avail-2*pad;
+           non-definite (max-content probing) answer the calibrated fallback */
+        float aw = c.available_width, ah = c.available_height;
+        out->width = isfinite(aw) ? aw - 2.0f * s->p[0] : s->p[2];
+        out->height = isfinite(ah) ? ah - 2.0f * s->p[1] : s->p[3];
+        if (out->width < 0.0f) out->width = 0.0f;
+        if (out->height < 0.0f) out->height = 0.0f;
+    } else {
+        (void)c;
+        out->width = s->p[0];
+        out->height = s->p[1];
+    }
 }
 
 #define MAX_NODES 256
@@ -88,6 +98,58 @@ static void run_negative_suite(void) {
     tenun_layout_node* E = api.create();
     NEGCHECK(E != NULL && E != B, "fresh handle never aliases stale one");
     NEGCHECK(api.set_style(E, &empty) == TENUN_LAYOUT_OK, "fresh handle usable");
+
+    /* dimension validation: only finite non-negative or NaN(undefined) pass */
+    tenun_layout_style dim;
+    dim = empty;
+    dim.width = -5.0f;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "negative width rejected");
+    dim.width = INFINITY;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "infinite width rejected");
+    dim = empty;
+    dim.height = -1e30f;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "negative height rejected");
+    dim.height = NAN;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_OK, "undefined(NaN) height accepted");
+    dim = empty;
+    dim.gap = NAN;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "NaN gap rejected");
+    dim = empty;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_OK, "valid NaN dims accepted");
+    dim.width = NAN;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_OK, "undefined width accepted");
+
+    /* repeated-compute invalidation: style change must invalidate results,
+       recomputation is deterministic */
+    {
+        tenun_layout_node* R = api.create();
+        tenun_layout_node* P = api.create();
+        tenun_layout_node* Q = api.create();
+        tenun_layout_style rs = {0}, cs = {0};
+        rs.width = 300; rs.height = 100; /* memset'd above: direction row default 0 */
+        cs.flex_grow = 1.0f;
+        NEGCHECK(api.set_style(R, &rs) == TENUN_LAYOUT_OK, "invalidation root style");
+        NEGCHECK(api.set_style(P, &cs) == TENUN_LAYOUT_OK, "invalidation child style");
+        NEGCHECK(api.set_style(Q, &cs) == TENUN_LAYOUT_OK, "invalidation child2 style");
+        NEGCHECK(api.add_child(R, P) == TENUN_LAYOUT_OK, "invalidation attach p");
+        NEGCHECK(api.add_child(R, Q) == TENUN_LAYOUT_OK, "invalidation attach q");
+        cs.flex_grow = 1.0f;
+        NEGCHECK(api.compute(R, 300, 100) == TENUN_LAYOUT_OK, "invalidation first compute");
+        NEGCHECK(api.result(P)->width == 150.0f && api.result(Q)->width == 150.0f,
+                 "equal grow splits equally");
+        tenun_layout_style grown = cs;
+        grown.flex_grow = 2.0f;
+        NEGCHECK(api.set_style(P, &grown) == TENUN_LAYOUT_OK, "grow mutation accepted");
+        NEGCHECK(api.compute(R, 300, 100) == TENUN_LAYOUT_OK, "invalidation recompute");
+        NEGCHECK(api.result(P)->width == 200.0f && api.result(Q)->width == 100.0f,
+                 "recompute reflects new grow");
+        NEGCHECK(api.compute(R, 300, 100) == TENUN_LAYOUT_OK, "idempotent third compute");
+        NEGCHECK(api.result(P)->width == 200.0f && api.result(Q)->width == 100.0f,
+                 "repeat compute stays stable");
+        api.destroy(R); /* children P,Q auto-unparented */
+        api.destroy(P);
+        api.destroy(Q);
+    }
 
     if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
 }
@@ -156,10 +218,17 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "CASE %s: node/style failure\n", case_id);
                 return 1;
             }
-            if (strstr(rest, "MEASURE")) {
-                float mw, mh;
-                sscanf(strstr(rest, "MEASURE") + 7, "%f %f", &mw, &mh);
-                slots[ncount].w = mw; slots[ncount].h = mh;
+            if (strstr(rest, "MEASUREAVAIL") == rest) {
+                measure_slot ms;
+                sscanf(rest + 13, "%f %f %f %f", &ms.p[0], &ms.p[1], &ms.p[2], &ms.p[3]);
+                ms.mode = 1;
+                slots[ncount] = ms;
+                api.set_measure(n, stub_measure, &slots[ncount]);
+            } else if (strstr(rest, "MEASURE") == rest) {
+                measure_slot ms;
+                sscanf(rest + 8, "%f %f", &ms.p[0], &ms.p[1]);
+                ms.mode = 0;
+                slots[ncount] = ms;
                 api.set_measure(n, stub_measure, &slots[ncount]);
             }
             node_child_counts[ncount] = child_count;

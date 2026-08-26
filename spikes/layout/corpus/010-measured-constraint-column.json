@@ -1,0 +1,18 @@
+{
+  "case_id": "010",
+  "name": "measured-definite-constraint-column",
+  "viewport": { "width": 140, "height": 220 },
+  "root": {
+    "style": { "width": 140, "height": 220, "flex_grow": 0, "direction": "column", "gap": 0, "padding": 0, "justify_content": "flex_start", "align_items": "center" },
+    "children": [
+      {
+        "style": { "width": null, "height": null },
+        "measure": { "strategy": "avail", "pad_w": 20, "pad_h": 100, "fb_w": 100, "fb_h": 20 },
+        "children": []
+      }
+    ]
+  },
+  "expected": [
+    { "x": 20, "y": 0, "width": 100, "height": 20 }
+  ]
+}

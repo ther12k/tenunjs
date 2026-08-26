@@ -27,6 +27,8 @@ depends_on:
 
 > **Status note (2026-08-25, review 2):** Blocked by reversed cycle detection (FIXED 2026-08-25 review 2) — regression cases live in shared C runner; node ownership/lifecycle now specified (strict single-parent, detach-on-destroy). Remaining: corpus expansion M1.
 
+> **Status note (2026-08-26, M1 via #142):** Corpus expanded 8 → 10 JSON cases plus a wider shared-driver negative suite, all parity-executed on both backends. Landed: constraint-forwarding measurement (`avail` strategy with calibrated unbounded-query fallbacks; engine probe divergence between Yoga/Taffy documented in fixtures), style-mutation invalidation + repeated-compute stability checks, NaN/Inf/negative dimension fail-closed validation (both adapters), stale-handle/double-destroy conformance (H1). Deferred to the production engine surface — the frozen spike style subset cannot express them without an ABI break: min/max constraints, flex-basis and shrink semantics beyond the grow-only pin, percentage units, RTL direction hooks, scale-factor/rounding accumulation rules, mid-tree reorder API (destroy-detach is covered). These remain part of TN-014's scope for the engine phase, not silently dropped.
+
 ## Required outcome
 
 Renderer-neutral layout API and fixture corpus shared by candidates.
