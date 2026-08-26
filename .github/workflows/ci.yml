@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # pushes from some credential types do not raise push/pull_request events;
+  # dispatch keeps CI runnable for those sessions
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -4,9 +4,10 @@
 #![allow(clippy::missing_safety_doc)]
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread::ThreadId;
 
 use rquickjs::function::{Func, Rest};
@@ -25,6 +26,7 @@ pub const TENUN_JS_ERR_VALUE_BOUNDS: i32 = 8;
 pub const TENUN_JS_ERR_REGISTRATION: i32 = 9;
 pub const TENUN_JS_ERR_ARGUMENT: i32 = 10;
 pub const TENUN_JS_ERR_AFFINITY: i32 = 11;
+pub const TENUN_JS_ERR_HANDLE: i32 = 12;
 
 const ABI_VERSION: u32 = 1;
 const MAX_STRING_BYTES: usize = 65536;
@@ -120,6 +122,153 @@ impl TenunJsVm {
     }
 }
 
+// ---- opaque handle registry (H1): slot + generation -------------------------
+//
+// The `tenun_js_vm*` values crossing the ABI are NOT pointers into the VM;
+// they encode (slot, generation). destroy() bumps the slot's generation, so
+// every use-after-destroy and double-destroy fails closed with ERR_HANDLE
+// instead of reaching freed memory. Slots recycle; a (slot, generation) pair
+// is never reissued.
+//
+// Split storage keeps this free of unsafe Send impls: the global registry
+// holds only Send+Sync data (generation + the interrupt flag Arc) so the
+// cross-thread watchdog path never touches VM memory; the VM boxes live in a
+// thread-local owner map, which is also what makes affinity detection exact.
+struct GlobalSlot {
+    generation: u32,
+    flag: Arc<AtomicI32>,
+}
+
+struct HandleRegistry {
+    slots: Vec<GlobalSlot>,
+    free: Vec<u32>,
+}
+
+static HANDLE_REGISTRY: LazyLock<Mutex<HandleRegistry>> = LazyLock::new(|| {
+    Mutex::new(HandleRegistry {
+        slots: Vec::new(),
+        free: Vec::new(),
+    })
+});
+
+struct OwnedVm {
+    generation: u32,
+    vm: Box<TenunJsVm>,
+}
+
+thread_local! {
+    static OWNER_VMS: RefCell<HashMap<u32, OwnedVm>> = RefCell::new(HashMap::new());
+}
+
+fn lock_registry() -> std::sync::MutexGuard<'static, HandleRegistry> {
+    // poison-tolerant: a panic in one caller must not brick the process
+    HANDLE_REGISTRY
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+const HANDLE_GEN_SHIFT: u64 = 32;
+
+fn encode_handle(slot: u32, generation: u32) -> *mut TenunJsVm {
+    (((generation as u64) << HANDLE_GEN_SHIFT) | (slot as u64 + 1)) as *mut TenunJsVm
+}
+
+fn decode_handle(handle: *mut TenunJsVm) -> Option<(u32, u32)> {
+    if handle.is_null() {
+        return None;
+    }
+    let bits = handle as usize as u64;
+    let slot = (bits & 0xFFFF_FFFF).checked_sub(1)? as u32;
+    Some((slot, (bits >> HANDLE_GEN_SHIFT) as u32))
+}
+
+fn registry_insert(vm: TenunJsVm) -> *mut TenunJsVm {
+    let boxed = Box::new(vm);
+    let flag = boxed.state.flag.clone();
+    let mut reg = lock_registry();
+    let (slot, generation) = match reg.free.pop() {
+        Some(slot) => {
+            let s = &mut reg.slots[slot as usize];
+            s.flag = flag;
+            (slot, s.generation)
+        }
+        None => {
+            reg.slots.push(GlobalSlot {
+                generation: 1,
+                flag,
+            });
+            ((reg.slots.len() - 1) as u32, 1)
+        }
+    };
+    OWNER_VMS.with(|m| {
+        m.borrow_mut().insert(
+            slot,
+            OwnedVm {
+                generation,
+                vm: boxed,
+            },
+        );
+    });
+    encode_handle(slot, generation)
+}
+
+/// Null handles map to ERR_ARGUMENT (existing contract). Handles whose slot
+/// generation no longer matches — destroyed, forged, or from another library
+/// instance — map to ERR_HANDLE. A live handle presented on the wrong thread
+/// maps to ERR_AFFINITY without ever touching that thread's memory.
+fn registry_resolve(handle: *mut TenunJsVm) -> Result<*mut TenunJsVm, i32> {
+    let (slot, generation) = match decode_handle(handle) {
+        Some(pair) => pair,
+        None => return Err(TENUN_JS_ERR_ARGUMENT),
+    };
+    let globally_live = {
+        let reg = lock_registry();
+        reg.slots
+            .get(slot as usize)
+            .is_some_and(|s| s.generation == generation)
+    };
+    if !globally_live {
+        return Err(TENUN_JS_ERR_HANDLE);
+    }
+    OWNER_VMS.with(|m| {
+        let map = m.borrow();
+        match map.get(&slot) {
+            Some(owned) if owned.generation == generation => {
+                Ok(&*owned.vm as *const TenunJsVm as *mut TenunJsVm)
+            }
+            // globally live but not on this thread: affinity, not invalidity
+            _ => Err(TENUN_JS_ERR_AFFINITY),
+        }
+    })
+}
+
+/// Owner-thread destroy only: the Box lives in this thread's map, so a
+/// destroy racing from another thread is a safe no-op (documented contract).
+fn registry_release(handle: *mut TenunJsVm) {
+    let Some((slot, generation)) = decode_handle(handle) else {
+        return;
+    };
+    let taken = OWNER_VMS.with(|m| {
+        let mut map = m.borrow_mut();
+        match map.remove(&slot) {
+            Some(owned) if owned.generation == generation => Some(owned),
+            _ => None, // stale handle (already destroyed) — no-op
+        }
+    });
+    if taken.is_some() {
+        let mut reg = lock_registry();
+        if reg
+            .slots
+            .get(slot as usize)
+            .is_some_and(|s| s.generation == generation)
+        {
+            reg.slots[slot as usize].generation += 1; // this handle can never validate again
+            reg.free.push(slot);
+        }
+    }
+    // `taken` drops the VM here, outside every lock
+}
+
 fn status_cat(status: i32) -> &'static str {
     match status {
         TENUN_JS_ERR_BUNDLE_MAGIC => "BUNDLE_MAGIC",
@@ -132,6 +281,7 @@ fn status_cat(status: i32) -> &'static str {
         TENUN_JS_ERR_REGISTRATION => "REGISTRATION",
         TENUN_JS_ERR_ARGUMENT => "ARGUMENT",
         TENUN_JS_ERR_AFFINITY => "AFFINITY",
+        TENUN_JS_ERR_HANDLE => "HANDLE",
         _ => "UNKNOWN",
     }
 }
@@ -157,11 +307,23 @@ fn validate_bundle(bytes: &[u8]) -> Result<&[u8], i32> {
     Ok(&bytes[48..])
 }
 
+#[derive(Clone, Copy)]
+struct EvalVm {
+    raw: *mut TenunJsVm,
+    // the handle the embedder passed in — what host callbacks receive back
+    handle: *mut TenunJsVm,
+}
+
 thread_local! {
     // set on the OWNER thread immediately before each evaluation and cleared
     // afterwards; host callbacks can only fire inside that window, so the
     // stash always identifies the executing VM — never another registration
-    static EVAL_VM: Cell<*mut TenunJsVm> = const { Cell::new(std::ptr::null_mut()) };
+    static EVAL_VM: Cell<EvalVm> = const {
+        Cell::new(EvalVm {
+            raw: std::ptr::null_mut(),
+            handle: std::ptr::null_mut(),
+        })
+    };
 }
 
 /// JS -> bounded value. Oversized strings/byte payloads fail with
@@ -287,11 +449,11 @@ fn bound_to_js<'js>(ctx: Ctx<'js>, out: &ValueC) -> Result<Value<'js>, i32> {
 /// comes from the per-eval stash, so two VMs interleaved on one thread can
 /// never observe each other's callbacks.
 fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<Value<'js>> {
-    let vmp = EVAL_VM.with(|c| c.get());
-    if vmp.is_null() {
+    let ev = EVAL_VM.with(|c| c.get());
+    if ev.raw.is_null() {
         return Ok(Value::new_null(ctx));
     }
-    let vm = unsafe { &*vmp };
+    let vm = unsafe { &*ev.raw };
     let stored = match vm.state.host_fn.borrow().as_ref() {
         Some(f) => *f,
         None => return Ok(Value::new_null(ctx)),
@@ -306,7 +468,7 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
             // documented truncation semantics: arg dropped from the tail
         }
     }
-    let out = stored(vmp, converted.as_ptr(), n);
+    let out = stored(ev.handle, converted.as_ptr(), n);
     bound_to_js(ctx.clone(), &out).map_err(|code| {
         let msg = format!("TJERR:{}: host callback return rejected", status_cat(code));
         vm.set_error(status_cat(code), "host callback return rejected");
@@ -349,7 +511,7 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
             Ok(c) => c,
             Err(_) => return std::ptr::null_mut(),
         };
-        Box::into_raw(Box::new(TenunJsVm {
+        registry_insert(TenunJsVm {
             runtime: rt,
             context: ctx,
             state: VmState {
@@ -361,25 +523,24 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                 last_error: RefCell::new(None),
                 result_f64: Cell::new(f64::NAN),
             },
-        }))
+        })
     }))
     .unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
-    catch_unwind(AssertUnwindSafe(|| {
-        if !vm.is_null() {
-            drop(Box::from_raw(vm));
-        }
-    }))
-    .ok();
+    catch_unwind(AssertUnwindSafe(|| registry_release(vm))).ok();
 }
 
-unsafe fn eval_checked(vm: *mut TenunJsVm, bytes: *const u8, len: usize) -> i32 {
-    if vm.is_null() || bytes.is_null() || len > MAX_BUNDLE_BYTES {
+unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> i32 {
+    if bytes.is_null() || len > MAX_BUNDLE_BYTES {
         return TENUN_JS_ERR_ARGUMENT;
     }
+    let vm = match registry_resolve(handle) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
     let vm = &*vm;
     if !vm.owner_ok() {
         vm.set_error("AFFINITY", "VM used from non-owner thread");
@@ -403,13 +564,23 @@ unsafe fn eval_checked(vm: *mut TenunJsVm, bytes: *const u8, len: usize) -> i32 
     // buffers handed to C expire at the next adapter call
     vm.state.buffers.borrow_mut().clear();
     vm.state.interrupted.store(false, Ordering::SeqCst);
-    EVAL_VM.with(|c| c.set(vm as *const TenunJsVm as *mut TenunJsVm));
+    EVAL_VM.with(|c| {
+        c.set(EvalVm {
+            raw: vm as *const TenunJsVm as *mut TenunJsVm,
+            handle,
+        })
+    });
 
     let result: Result<Option<f64>, rquickjs::Error> = vm
         .context
         .with(|ctx| ctx.eval(code.as_bytes()).map(|v: Value<'_>| v.as_number()));
 
-    EVAL_VM.with(|c| c.set(std::ptr::null_mut()));
+    EVAL_VM.with(|c| {
+        c.set(EvalVm {
+            raw: std::ptr::null_mut(),
+            handle: std::ptr::null_mut(),
+        })
+    });
     match result {
         Ok(num) => {
             vm.state.result_f64.set(num.unwrap_or(f64::NAN));
@@ -453,10 +624,14 @@ pub unsafe extern "C" fn tenun_js_eval_bundle(
     catch_unwind(AssertUnwindSafe(|| eval_checked(vm, bytes, len))).unwrap_or(TENUN_JS_ERR_ARGUMENT)
 }
 
-unsafe fn register_checked(vm: *mut TenunJsVm, name: *const u8, fn_ptr: Option<HostFn>) -> i32 {
-    if vm.is_null() || name.is_null() || fn_ptr.is_none() {
+unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Option<HostFn>) -> i32 {
+    if name.is_null() || fn_ptr.is_none() {
         return TENUN_JS_ERR_ARGUMENT;
     }
+    let vm = match registry_resolve(handle) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
     let vm = &*vm;
     if !vm.owner_ok() {
         vm.set_error("AFFINITY", "registration from non-owner thread");
@@ -513,9 +688,13 @@ pub unsafe extern "C" fn tenun_js_register_host_fn(
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64 {
     catch_unwind(AssertUnwindSafe(|| {
-        if vm.is_null() || max_jobs < 0 {
+        if max_jobs < 0 {
             return -1i64;
         }
+        let vm = match registry_resolve(vm) {
+            Ok(p) => p,
+            Err(_) => return -1i64,
+        };
         let vm = &*vm;
         if !vm.owner_ok() {
             return -1i64;
@@ -534,13 +713,22 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_request_interrupt(vm: *mut TenunJsVm) -> i32 {
-    // deliberately NOT affinity-checked: watchdog threads may call freely
+    // deliberately NOT affinity-checked: watchdog threads may call freely.
+    // The flag Arc is cloned while the registry lock is held, so a concurrent
+    // destroy can never leave this touching freed memory.
     catch_unwind(AssertUnwindSafe(|| {
-        if vm.is_null() {
-            return TENUN_JS_ERR_ARGUMENT;
-        }
-        let vm = &*vm;
-        vm.state.flag.store(1, Ordering::SeqCst);
+        let (slot, generation) = match decode_handle(vm) {
+            Some(pair) => pair,
+            None => return TENUN_JS_ERR_ARGUMENT,
+        };
+        let flag = {
+            let reg = lock_registry();
+            match reg.slots.get(slot as usize) {
+                Some(s) if s.generation == generation => s.flag.clone(),
+                _ => return TENUN_JS_ERR_HANDLE,
+            }
+        };
+        flag.store(1, Ordering::SeqCst);
         TENUN_JS_OK
     }))
     .unwrap_or(TENUN_JS_ERR_ARGUMENT)
@@ -549,9 +737,10 @@ pub unsafe extern "C" fn tenun_js_request_interrupt(vm: *mut TenunJsVm) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_clear_interrupt(vm: *mut TenunJsVm) -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
-        if vm.is_null() {
-            return TENUN_JS_ERR_ARGUMENT;
-        }
+        let vm = match registry_resolve(vm) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
         let vm = &*vm;
         if !vm.owner_ok() {
             vm.set_error("AFFINITY", "clear_interrupt from non-owner thread");
@@ -567,9 +756,13 @@ pub unsafe extern "C" fn tenun_js_clear_interrupt(vm: *mut TenunJsVm) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut ValueC) -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
-        if vm.is_null() || out.is_null() {
-            return TENUN_JS_ERR_VALUE_BOUNDS;
+        if out.is_null() {
+            return TENUN_JS_ERR_ARGUMENT;
         }
+        let vm = match registry_resolve(vm) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
         let vm = &*vm;
         let v = vm.state.result_f64.get();
         if v.is_nan() {
@@ -580,19 +773,22 @@ pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut Valu
         }
         TENUN_JS_OK
     }))
-    .unwrap_or(TENUN_JS_ERR_VALUE_BOUNDS)
+    .unwrap_or(TENUN_JS_ERR_ARGUMENT)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_last_error(vm: *mut TenunJsVm) -> ErrorC {
+    // by-value return has no channel for a status: null and stale handles
+    // yield the empty fallback rather than touching freed memory
     let fallback = ErrorC {
         message: [0u8; 256],
         line: -1,
         column: -1,
     };
-    if vm.is_null() {
-        return fallback;
-    }
+    let vm = match registry_resolve(vm) {
+        Ok(p) => p,
+        Err(_) => return fallback,
+    };
     let vm = &*vm;
     let mut err = fallback;
     if let Some(msg) = &*vm.state.last_error.borrow() {

@@ -23,8 +23,17 @@ typedef enum {
   TENUN_JS_ERR_REGISTRATION = 9,
   TENUN_JS_ERR_ARGUMENT = 10,
   TENUN_JS_ERR_AFFINITY = 11,
+  TENUN_JS_ERR_HANDLE = 12,
 } tenun_js_status;
 
+/*
+ * Opaque handle registry (review 2026-08-25, H1): tenun_js_vm* values are
+ * registry tokens (slot + generation), NOT pointers. Never dereference or
+ * forge them. After tenun_js_destroy, every later use of that handle fails
+ * closed with TENUN_JS_ERR_HANDLE (tenun_js_last_error returns an empty
+ * diagnostic instead); double destroy is a safe no-op; handle values are
+ * never reissued, so a stale handle can never alias a fresh VM.
+ */
 typedef struct tenun_js_vm tenun_js_vm;
 
 typedef struct {

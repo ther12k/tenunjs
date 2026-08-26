@@ -82,7 +82,14 @@ extern "C" fn stub_measure(userdata: *mut u8, _c: ConstraintC, out: *mut BoxC) {
     }
 }
 
-unsafe fn build(node: &JsonNode) -> *mut NodeData {
+// mirror of the JSON tree carrying only ABI handles — internals are never
+// reachable through the adapter surface
+struct Built {
+    handle: *mut NodeData,
+    children: Vec<Built>,
+}
+
+unsafe fn build(node: &JsonNode) -> Built {
     let n = tenun_layout_node_create();
     let style = StyleC {
         width: node.style.width.unwrap_or(f32::NAN),
@@ -114,31 +121,32 @@ unsafe fn build(node: &JsonNode) -> *mut NodeData {
             tenun_layout_node_set_measure(n, Some(stub_measure), ptr);
         });
     }
-    for child in &node.children {
-        tenun_layout_node_add_child(n, build(child));
+    let children: Vec<Built> = node.children.iter().map(|c| build(c)).collect();
+    for c in &children {
+        tenun_layout_node_add_child(n, c.handle);
     }
-    n
+    Built {
+        handle: n,
+        children,
+    }
 }
 
-unsafe fn collect(node: *const NodeData, out: &mut Vec<BoxC>) {
-    out.push(*tenun_layout_result(node));
-    let n = node as *mut NodeData;
-    for i in 0..(*n).children.len() {
-        let children = &(*n).children;
-        let child = children[i];
-        collect(child, out);
+unsafe fn collect(b: &Built, out: &mut Vec<BoxC>) {
+    out.push(*tenun_layout_result(b.handle));
+    for c in &b.children {
+        collect(c, out);
     }
 }
 
 unsafe fn run_case(path: &std::path::Path) -> Result<(), String> {
     let case: Case = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    let root = build(&case.root);
-    let status = tenun_layout_compute(root, case.viewport.width, case.viewport.height);
+    let built = build(&case.root);
+    let status = tenun_layout_compute(built.handle, case.viewport.width, case.viewport.height);
     if status != TENUN_LAYOUT_OK {
         return Err(format!("compute status {}", status));
     }
     let mut all = Vec::new();
-    collect(root as *const NodeData, &mut all);
+    collect(&built, &mut all);
     let actual: Vec<(f64, f64, f64, f64)> = all[1..].iter().map(box_tuple).collect();
     let expected: Vec<(f64, f64, f64, f64)> = case.expected.iter().map(tuple).collect();
     if actual != expected {
@@ -214,9 +222,10 @@ fn main() {
         };
         assert_eq!(tenun_layout_node_set_style(c0, &grown), TENUN_LAYOUT_OK);
         assert_eq!(tenun_layout_compute(root, 300.0, 100.0), TENUN_LAYOUT_OK);
-        let mut boxes = Vec::new();
-        collect(root as *const NodeData, &mut boxes);
-        let widths = (boxes[1].width as f64, boxes[2].width as f64);
+        let widths = (
+            (*tenun_layout_result(c0)).width as f64,
+            (*tenun_layout_result(c1)).width as f64,
+        );
         if widths == (200.0, 100.0) {
             println!("PASS incremental grow redistribution");
         } else {

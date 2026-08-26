@@ -15,8 +15,19 @@ typedef enum {
   TENUN_LAYOUT_OK = 0,
   TENUN_LAYOUT_ERR_STYLE = 1,
   TENUN_LAYOUT_ERR_TREE = 2,
+  TENUN_LAYOUT_ERR_HANDLE = 3,
 } tenun_layout_status;
 
+/*
+ * Opaque handle registry (review 2026-08-25, H1): tenun_layout_node* values
+ * are registry tokens (slot + generation), NOT pointers. Never dereference
+ * or forge them. After tenun_layout_node_destroy, every later use of that
+ * handle fails closed with TENUN_LAYOUT_ERR_HANDLE
+ * (tenun_layout_result returns NULL instead); double destroy is a safe
+ * no-op; handle values are never reissued, so a stale handle can never alias
+ * a fresh node. The spike layout contract is single-threaded: handles
+ * presented on a non-creating thread resolve as stale.
+ */
 typedef struct tenun_layout_node tenun_layout_node;
 
 typedef enum {

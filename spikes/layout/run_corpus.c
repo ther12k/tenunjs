@@ -76,6 +76,19 @@ static void run_negative_suite(void) {
     NEGCHECK(api.compute(A, 100, 100) == TENUN_LAYOUT_OK, "parent usable after child destroy");
     api.destroy(NULL);
 
+    /* stale-handle conformance (H1 registry): every use after destroy fails
+       closed; double destroy is a safe no-op; handles are never reissued */
+    NEGCHECK(api.set_style(B, &empty) == TENUN_LAYOUT_ERR_HANDLE, "stale set_style");
+    NEGCHECK(api.add_child(A, B) == TENUN_LAYOUT_ERR_HANDLE, "stale child attach");
+    NEGCHECK(api.add_child(B, C) == TENUN_LAYOUT_ERR_HANDLE, "stale parent attach");
+    NEGCHECK(api.compute(B, 10, 10) == TENUN_LAYOUT_ERR_HANDLE, "stale compute");
+    NEGCHECK(api.result(B) == NULL, "stale result yields NULL");
+    api.set_measure(B, stub_measure, NULL); /* stale set_measure: no-op, no crash */
+    api.destroy(B);                          /* double destroy: safe no-op */
+    tenun_layout_node* E = api.create();
+    NEGCHECK(E != NULL && E != B, "fresh handle never aliases stale one");
+    NEGCHECK(api.set_style(E, &empty) == TENUN_LAYOUT_OK, "fresh handle usable");
+
     if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
 }
 

@@ -158,6 +158,30 @@ int main(void) {
 
     free(bundle); free(cbb); free(sb); free(tb);
     tenun_js_destroy(vm);
+
+    /* stale-handle conformance (H1 registry): every use after destroy fails
+       closed; double destroy is a safe no-op; handles are never reissued */
+    size_t hlen = 0;
+    uint8_t* hb = pack_bundle("1", &hlen);
+    CHECK(tenun_js_eval_bundle(vm, hb, hlen) == TENUN_JS_ERR_HANDLE, "stale eval rejected");
+    CHECK(tenun_js_register_host_fn(vm, "probe", host_cb) == TENUN_JS_ERR_HANDLE,
+          "stale register rejected");
+    CHECK(tenun_js_pump(vm, 4) == -1, "stale pump fails");
+    CHECK(tenun_js_request_interrupt(vm) == TENUN_JS_ERR_HANDLE, "stale interrupt rejected");
+    CHECK(tenun_js_clear_interrupt(vm) == TENUN_JS_ERR_HANDLE, "stale clear rejected");
+    tenun_js_value sv;
+    memset(&sv, 0, sizeof sv);
+    CHECK(tenun_js_last_result(vm, &sv) == TENUN_JS_ERR_HANDLE, "stale last_result rejected");
+    tenun_js_error stale_err = tenun_js_last_error(vm);
+    CHECK(stale_err.message[0] == 0, "stale last_error -> empty fallback");
+    tenun_js_destroy(vm); /* double destroy: safe no-op */
+    tenun_js_vm* fresh = tenun_js_create(&cfg);
+    CHECK(fresh != NULL && fresh != vm, "fresh handle never aliases stale one");
+    CHECK(tenun_js_eval_bundle(fresh, hb, hlen) == TENUN_JS_OK, "fresh vm usable");
+    tenun_js_destroy(fresh);
+    tenun_js_destroy(vm2);
+    free(hb);
+
     printf("ABI SMOKE PASS\n");
     return 0;
 }
