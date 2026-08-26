@@ -2,6 +2,10 @@
 // engine surface (M2+); cross-boundary rules live in the contract doc beside
 // each header.
 #![allow(clippy::missing_safety_doc)]
+// Vec<Box<T>> in deferred-drop storage is required for heap address stability:
+// when an object is logically destroyed mid-operation, outer frames hold active
+// raw pointers/references that must continue pointing to valid heap memory.
+#![allow(clippy::vec_box)]
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
@@ -144,10 +148,11 @@ fn lock_global() -> std::sync::MutexGuard<'static, GlobalRegistry> {
 
 const NONCE_SHIFT: u64 = 48;
 const GEN_SHIFT: u64 = 28;
+const MAX_GENERATION: u32 = 0xF_FFFF; // 20-bit generation ceiling before slot retirement
 
 fn encode_handle(nonce: u16, slot: u32, generation: u32) -> *mut NodeData {
     (((nonce as u64) << NONCE_SHIFT)
-        | (((generation as u64) & 0xF_FFFF) << GEN_SHIFT)
+        | (((generation as u64) & (MAX_GENERATION as u64)) << GEN_SHIFT)
         | ((slot as u64 + 1) & 0xFFF_FFFF)) as *mut NodeData
 }
 
@@ -160,7 +165,7 @@ fn decode_handle(handle: *mut NodeData) -> Option<(u16, u32, u32)> {
     Some((
         (bits >> NONCE_SHIFT) as u16,
         slot as u32,
-        ((bits >> GEN_SHIFT) & 0xF_FFFF) as u32,
+        ((bits >> GEN_SHIFT) & (MAX_GENERATION as u64)) as u32,
     ))
 }
 
@@ -172,11 +177,10 @@ struct OwnedNode {
 thread_local! {
     static OWNER_NODES: RefCell<HashMap<u32, OwnedNode>> = RefCell::new(HashMap::new());
     /// Nodes destroyed while a top-level operation may still hold references
-    /// (compute runs C measure callbacks) are parked here and freed at the
-    /// next adapter entry drain — Rust raw pointers gathered before the
-    /// callback stay valid until then, and post-callback result writes are
-    /// liveness-checked anyway.
-    static DEFERRED_DROPS: RefCell<Vec<NodeData>> = const { RefCell::new(Vec::new()) };
+    /// (compute runs C measure callbacks) are parked here as heap Boxes and
+    /// freed at the next adapter entry drain — preserving the Box allocation
+    /// keeps Rust heap addresses strictly stable for in-flight pointers.
+    static DEFERRED_DROPS: RefCell<Vec<Box<NodeData>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Frees everything parked by mid-operation destroys. Called at every
@@ -209,7 +213,7 @@ impl OpGuard {
 impl Drop for OpGuard {
     fn drop(&mut self) {
         OP_DEPTH.with(|d| {
-            d.set(d.get() - 1);
+            d.set(d.get().saturating_sub(1));
             if d.get() == 0 {
                 drain_deferred();
             }
@@ -300,8 +304,12 @@ fn registry_release(handle: *mut NodeData) {
                 && meta.owner == std::thread::current().id()
         });
         if live {
-            reg.slots[slot as usize].generation += 1;
-            reg.free.push(slot);
+            let next_gen = reg.slots[slot as usize].generation.saturating_add(1);
+            reg.slots[slot as usize].generation = next_gen;
+            // retire slot permanently if 20-bit generation ceiling is reached
+            if next_gen <= MAX_GENERATION {
+                reg.free.push(slot);
+            }
         }
         live
     };
@@ -322,7 +330,8 @@ fn registry_release(handle: *mut NodeData) {
                 }
             }
         }
-        DEFERRED_DROPS.with(|d| d.borrow_mut().push(*owned.node));
+        // preserve the Box allocation directly to maintain heap address stability
+        DEFERRED_DROPS.with(|d| d.borrow_mut().push(owned.node));
     }
 }
 

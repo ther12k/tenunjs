@@ -35,11 +35,18 @@ typedef struct { int mode; float p[4]; void* action; } measure_slot; /* 0=fixed 
 static void stub_measure(void* userdata, tenun_layout_constraint c, tenun_layout_box* out) {
     measure_slot* s = (measure_slot*)userdata;
     if (s->mode == 2) {
-        /* in-flight destruction regression (review 3): the callback destroys
+        /* in-flight destruction regression (review 3/4): the callback destroys
            a node (self/root) while layout is running. Must not crash;
-           compute still returns; handles die immediately. */
+           compute still returns; handles die immediately. Allocator churn
+           proves the heap Box address was preserved until op-depth drains. */
         tenun_layout_node* victim = (tenun_layout_node*)s->action;
         api.destroy(victim);
+        void* churn[256];
+        for (int i = 0; i < 256; i++) {
+            churn[i] = malloc(512);
+            if (churn[i]) memset(churn[i], 0xA5, 512);
+        }
+        for (int i = 0; i < 256; i++) free(churn[i]);
         out->width = 10.0f;
         out->height = 5.0f;
         return;
@@ -223,8 +230,6 @@ static void run_negative_suite(void) {
         api.destroy(P);
         api.destroy(Q);
     }
-
-    if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
 }
 
 /* ---- cross-thread namespace regression (review 3 blocker) ----------------
@@ -414,7 +419,10 @@ int main(int argc, char** argv) {
         }
     }
     fclose(f);
-    run_negative_suite();
+    for (int r = 0; r < 5; r++) {
+        run_negative_suite();
+    }
+    if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
     failures += neg_failures;
     free(nodes); free(slots);
     dlclose(so);

@@ -17,9 +17,9 @@ describe("layout adapter contract", () => {
   });
 
   test("handle registry semantics are documented in the header", () => {
-    expect(header).toContain("registry tokens (slot + generation)");
-    expect(header).toContain("double destroy is a safe");
-    expect(header).toContain("never reissued");
+    expect(header).toContain("registry tokens");
+    expect(header).toContain("Double destroy is a safe no-op");
+    expect(header).toContain("TENUN_LAYOUT_ERR_HANDLE");
   });
 
   test("corpus cases are complete and exact-representable", () => {

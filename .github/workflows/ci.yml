@@ -59,6 +59,7 @@ jobs:
     env:
       BINDGEN_EXTRA_CLANG_ARGS: ${{ format('-I{0}', '/usr/lib/gcc/x86_64-linux-gnu/13/include') }}
       TENUN_EVIDENCE_REPLAY: "1"
+      TENUN_EVIDENCE_STRICT_ARTIFACTS: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,8 +68,13 @@ jobs:
         with:
           bun-version: "1.4.0"
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.96.0"
       - name: Resolve gcc include dir for bindgen
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
-      - run: python3 ./.github/scripts/verify-evidence.py
+      - name: Production integration mutation test
+        run: python3 ./.github/scripts/verify-evidence.py --integration-mutation-test
+      - name: Verify evidence packets
+        run: python3 ./.github/scripts/verify-evidence.py

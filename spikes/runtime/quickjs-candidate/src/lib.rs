@@ -2,6 +2,10 @@
 // engine surface (M2+); cross-boundary rules live in the contract doc beside
 // each header.
 #![allow(clippy::missing_safety_doc)]
+// Vec<Box<T>> in deferred-drop storage is required for heap address stability:
+// when an object is logically destroyed mid-operation, outer frames hold active
+// raw pointers/references that must continue pointing to valid heap memory.
+#![allow(clippy::vec_box)]
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -163,9 +167,11 @@ struct OwnedVm {
 
 thread_local! {
     /// VM boxes destroyed while an operation may still hold references
-    /// (a host callback destroying its own VM mid-eval) are parked here and
-    /// freed at public-entry boundaries via op-depth guards
-    static DEFERRED_VMS: RefCell<Vec<TenunJsVm>> = const { RefCell::new(Vec::new()) };
+    /// (a host callback destroying its own VM mid-eval) are parked here as
+    /// heap Boxes and freed at public-entry boundaries via op-depth guards.
+    /// Preserving the Box allocation maintains address stability so outer
+    /// stack frames and references continue pointing to valid heap memory.
+    static DEFERRED_VMS: RefCell<Vec<Box<TenunJsVm>>> = const { RefCell::new(Vec::new()) };
     /// nesting depth of public adapter entries; only the 1 -> 0 transition
     /// drains parked boxes so nested calls from callbacks cannot free memory
     /// the outer frame still references
@@ -307,13 +313,16 @@ fn registry_release(handle: *mut TenunJsVm) {
             .get(slot as usize)
             .is_some_and(|s| s.generation == generation)
         {
-            reg.slots[slot as usize].generation += 1; // this handle can never validate again
-            reg.free.push(slot);
+            if let Some(next_gen) = reg.slots[slot as usize].generation.checked_add(1) {
+                reg.slots[slot as usize].generation = next_gen;
+                reg.free.push(slot);
+            }
+            // generation overflow: slot retired permanently
         }
-        // review-3 hardening: never free synchronously — a host callback may
-        // be destroying its own VM while outer frames hold references to it
+        // review-3/4 hardening: park the Box directly to maintain address
+        // stability for any outer stack frames holding references to this VM
         if let Some(owned) = taken {
-            DEFERRED_VMS.with(|d| d.borrow_mut().push(*owned.vm));
+            DEFERRED_VMS.with(|d| d.borrow_mut().push(owned.vm));
         }
     }
 }

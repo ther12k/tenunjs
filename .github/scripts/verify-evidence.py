@@ -335,15 +335,63 @@ def selftest() -> None:
 
 
 # --------------------------------------------------------------------------
+# integration mutation test: executes the exact production verifier command
+# against real committed packets with synthetic mutations in a sandbox
+# --------------------------------------------------------------------------
+
+def integration_mutation_test() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script_path = root / ".github/scripts/verify-evidence.py"
+    real_packets = sorted((root / "benchmarks/architecture/evidence").glob("*/*.evidence.json"))
+    if not real_packets:
+        fail("integration mutation test: no real packets found to mutate")
+
+    target = real_packets[0]
+    original_data = json.loads(target.read_text())
+
+    mutations = [
+        ("fake artifact sha256", lambda d: d["artifacts"][0].update(sha256="00" * 32)),
+        ("fake artifact bytes", lambda d: d["artifacts"][0].update(bytes=1)),
+        ("tampered inputs digest", lambda d: d.update(inputs_digest="00" * 32)),
+        ("tampered build profile", lambda d: d.update(build_profile="debug")),
+        ("failed step exit code", lambda d: d["steps"][0].update(exit_code=1)),
+    ]
+
+    for name, mutate in mutations:
+        with tempfile.TemporaryDirectory(prefix="ev-mut-") as td:
+            td_path = Path(td)
+            packet_dir = td_path / target.parent.name
+            packet_dir.mkdir(parents=True, exist_ok=True)
+            mutated_data = json.loads(json.dumps(original_data))
+            mutate(mutated_data)
+            (packet_dir / target.name).write_text(json.dumps(mutated_data, indent=2))
+
+            env = dict(os.environ)
+            env["TENUN_EVIDENCE_DIR"] = str(td_path)
+            env["TENUN_EVIDENCE_REPLAY"] = "1"
+            env["TENUN_EVIDENCE_STRICT_ARTIFACTS"] = "1"
+            res = subprocess.run([sys.executable, str(script_path)], env=env, capture_output=True, text=True)
+            if res.returncode == 0:
+                fail(f"integration mutation test: mutation '{name}' was ACCEPTED by production verifier! Output:\n{res.stdout}\n{res.stderr}")
+            print(f"ok mutation '{name}' rejected as expected (exit={res.returncode})")
+
+    print("INTEGRATION MUTATION TEST PASS (all production mutations rejected by verifier)")
+
+
+# --------------------------------------------------------------------------
 
 def main() -> None:
     argv = sys.argv[1:]
     if "--selftest" in argv:
         selftest()
         return
+    if "--integration-mutation-test" in argv:
+        integration_mutation_test()
+        return
 
     root = Path(__file__).resolve().parents[2]
-    packets = sorted((root / "benchmarks/architecture/evidence").glob("*/*.evidence.json"))
+    ev_dir = Path(os.environ.get("TENUN_EVIDENCE_DIR", root / "benchmarks/architecture/evidence"))
+    packets = sorted(ev_dir.glob("*/*.evidence.json"))
     if not packets:
         fail("no evidence packets found")
 
@@ -378,10 +426,16 @@ def main() -> None:
                         print(f"  - {e}")
                     sys.exit(1)
 
-        mode = " (+replayed, manifest compared)" if do_replay else ""
+        mode = ""
+        if do_replay:
+            strict_note = ", strict manifest compared" if os.environ.get("TENUN_EVIDENCE_STRICT_ARTIFACTS") == "1" else ", paths verified"
+            mode = f" (+replayed{strict_note})"
         print(f"ok {packet.relative_to(root)} ({label}){mode}")
 
-    suffix = ", replayed & compared" if do_replay else ""
+    suffix = ""
+    if do_replay:
+        strict_note = ", strict manifest compared" if os.environ.get("TENUN_EVIDENCE_STRICT_ARTIFACTS") == "1" else ", paths verified"
+        suffix = f", replayed{strict_note}"
     print(f"EVIDENCE VALIDATION PASS ({len(packets)} packets{suffix})")
 
 
