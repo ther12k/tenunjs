@@ -28,6 +28,8 @@ depends_on:
 
 > **Status note (2026-08-25, review 2):** Same as TN-015.
 
+> **Status note (2026-08-27, review 3):** Same as TN-015: conforms to hardened layout contract, shares identical C runner suite and 10-case parity. Blocked only on physical-device evidence (H4).
+
 ## Required outcome
 
 Taffy candidate passes the identical layout and integration tests.

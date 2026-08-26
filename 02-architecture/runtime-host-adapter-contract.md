@@ -20,7 +20,8 @@ The engine never names its JavaScript runtime (`adr-0007`). Candidates implement
 | `tenun_js_eval_bundle(vm, bytes, len)` | Execute one bundle (see below). Returns typed status; diagnostics via `tenun_js_last_error`. |
 | `tenun_js_register_host_fn(vm, name, fn)` | Register one native function callable from JS by fixed name. Duplicate registration fails. |
 | `tenun_js_pump(vm, max_jobs)` | Drain queued microtasks/jobs up to `max_jobs`, returns drained count. Non-blocking. |
-| `tenun_js_interrupt_flag(vm)` | Install/point-to the polling flag checked by the runtime loop. |
+| `tenun_js_request_interrupt(vm)` | Request asynchronous interruption of the running VM. Thread-safe: may be called from any watchdog thread. |
+| `tenun_js_clear_interrupt(vm)` | Clear the interrupt state. Owner-thread only: must be called before further evaluations on the VM. |
 | `tenun_js_last_error(vm)` | Message + line/column when the runtime provides them; empty string when not. |
 | `tenun_js_last_result(vm, out)` | Completion value of the last successful evaluation as one bounded value; fails with `TENUN_JS_ERR_VALUE_BOUNDS` for unrepresentable results. Added by first-consumer amendment during TN-011/TN-012. |
 
@@ -35,11 +36,12 @@ Both directions marshal all six kinds: `null`, `bool`, `f64`, `i64`, UTF-8 `stri
 - **Ownership**: string/byte payloads point to adapter-owned storage valid until the next adapter call on the same VM.
 - **Failure visibility**: callback-return failures surface as JS exceptions carrying the TJERR category, so they survive eval success.
 
-## Interruption rules
+## Interruption rules (atomic API — amended review 2 / review 3)
 
-- The adapter exposes an embedder-owned `volatile int*` flag via `tenun_js_interrupt_flag`. Timing policy belongs entirely to the embedder: a watchdog thread writes a nonzero value when its own deadline expires.
-- The adapter polls the flag between bytecode dispatch units (both candidate runtimes support this). A nonzero flag aborts the running evaluation with `TENUN_JS_ERR_TIMEOUT`; partial state is discarded.
-- The embedder clears the flag; afterwards the VM is fully usable — this recovery is part of the ABI smoke suite.
+- The adapter manages an internal atomic interrupt flag accessed via `tenun_js_request_interrupt` and `tenun_js_clear_interrupt`. Timing policy belongs entirely to the embedder: a watchdog thread calls `tenun_js_request_interrupt` when its own deadline expires (cross-thread safe by design).
+- The adapter polls the internal atomic between bytecode dispatch units. When set, running evaluation aborts with `TENUN_JS_ERR_TIMEOUT`; partial state is discarded.
+- The embedder calls `tenun_js_clear_interrupt` on the owner thread; afterwards the VM is fully usable — this recovery is part of the ABI smoke suite.
+- Cross-thread clear returns `TENUN_JS_ERR_AFFINITY`.
 - Native code must remain responsive even while JS is stalled: scroll/animation continuity (principle 7) depends on this boundary holding.
 
 ## ABI conformance gate

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
 export type StepResult = {
   name: string;
@@ -16,10 +16,12 @@ export type StepResult = {
 export type ArtifactHash = { path: string; sha256: string; bytes: number };
 
 export type Evidence = {
-  schema_version: 2;
+  schema_version: 3;
   label: string;
   timestamp_utc: string;
   build_profile: "release";
+  /** sha256 over every input file that shapes the built artifacts/replays */
+  inputs_digest: string;
   source: { commit: string; dirty: boolean; changed_files: number };
   host: { os: string; arch: string; kernel: string; cpu_model: string; mem_total_bytes: number };
   tools: Record<string, string>;
@@ -97,6 +99,35 @@ export function step(name: string, cmd: string): StepResult {
   };
 }
 
+/**
+ * Deterministic digest over all inputs that shape artifacts or replays:
+ * everything under spikes/ and benchmarks/architecture/, excluding build
+ * output (any target segment) and the committed evidence directory itself.
+ * Files are hashed by content and folded in sorted repo-relative order.
+ * The Python validator implements byte-for-byte the same specification.
+ */
+export function computeInputsDigest(repoRoot: string): string {
+  const roots = ["spikes", "benchmarks/architecture"];
+  const files: string[] = [];
+  const walk = (abs: string) => {
+    for (const e of readdirSync(abs, { withFileTypes: true })) {
+      if (e.name === "target" || e.name === "evidence") continue;
+      const absChild = join(abs, e.name);
+      const rel = relative(repoRoot, absChild).split("\\").join("/");
+      if (e.isDirectory()) walk(absChild);
+      else files.push(rel);
+    }
+  };
+  for (const r of roots) walk(join(repoRoot, r));
+  files.sort();
+  const h = createHash("sha256");
+  for (const f of files) {
+    const contentHash = createHash("sha256").update(readFileSync(join(repoRoot, f))).digest("hex");
+    h.update(`${f}\0${contentHash}\n`);
+  }
+  return h.digest("hex");
+}
+
 /** Hashes release artifacts (paths are repo-relative) at packet time. */
 export function hashArtifacts(repoRoot: string, paths: string[]): ArtifactHash[] {
   return paths.map((p) => {
@@ -117,10 +148,11 @@ export async function assembleEvidence(
   artifactPaths: string[]
 ): Promise<Evidence> {
   return {
-    schema_version: 2,
+    schema_version: 3,
     label,
     timestamp_utc: new Date().toISOString(),
     build_profile: "release",
+    inputs_digest: computeInputsDigest(repoRoot),
     source: collectSource(repoRoot),
     host: collectHost(),
     tools: collectTools(["bun", "node", "cc", "clang++", "rustc"]),

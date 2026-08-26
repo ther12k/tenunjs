@@ -45,7 +45,11 @@ const evidence = await assembleEvidence(
   ],
   artifactPaths
 );
-const file = await writeEvidence(evidence, new URL(`evidence/${label}`, import.meta.url).pathname);
+// Replay (TENUN_EVIDENCE_OUT set by the validator) must not overwrite the
+// committed packet: results land in the sandbox dir for comparison instead.
+const outDir =
+  process.env.TENUN_EVIDENCE_OUT ?? new URL(`evidence/${label}`, import.meta.url).pathname;
+const file = await writeEvidence(evidence, outDir);
 const failed = results.filter((r) => r.exit_code !== 0);
 console.log(`evidence: ${file}`);
 console.log(`steps: ${results.length} (${failed.length} failed)`);

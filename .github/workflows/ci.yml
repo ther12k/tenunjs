@@ -69,4 +69,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Resolve gcc include dir for bindgen
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
+      - name: Validator mutation selftest
+        run: python3 ./.github/scripts/verify-evidence.py --selftest
       - run: python3 ./.github/scripts/verify-evidence.py
