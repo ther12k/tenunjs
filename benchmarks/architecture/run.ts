@@ -23,21 +23,15 @@ if (steps.length === 0) {
   process.exit(64);
 }
 
-// artifacts recorded in the packet must be built before invocation
+// artifacts hashed into the packet may be produced BY the recorded steps,
+// so there is no pre-invocation existence check — a missing file surfaces
+// as an error when hashing after the steps complete
 const artifactPaths = argv.filter((a, i) => i > 0 && argv[i - 1] === "--artifact");
 if (artifactPaths.length === 0) {
   console.error("at least one --artifact <repo-relative-path> is required (H3 artifact hashes)");
   process.exit(64);
 }
 const repoRoot = new URL("../../", import.meta.url).pathname;
-for (const p of artifactPaths) {
-  try {
-    await Bun.file(new URL(`../../${p}`, import.meta.url)).arrayBuffer();
-  } catch {
-    console.error(`artifact not found: ${p} (build release targets first)`);
-    process.exit(64);
-  }
-}
 
 const results = steps.map((s) => step(s.name, s.command));
 const evidence = await assembleEvidence(
