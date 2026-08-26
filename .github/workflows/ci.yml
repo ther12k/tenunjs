@@ -52,10 +52,21 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: ./.github/scripts/verify-abi.sh
 
+  # replays every evidence packet's reproducibility chain from a clean
+  # checkout (H3): rebuilds cdylibs, reruns drivers, requires ALL PASS
   verify-evidence:
     runs-on: ubuntu-latest
+    env:
+      BINDGEN_EXTRA_CLANG_ARGS: ${{ format('-I{0}', '/usr/lib/gcc/x86_64-linux-gnu/13/include') }}
+      TENUN_EVIDENCE_REPLAY: "1"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history so ancestry checks are decidable
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve gcc include dir for bindgen
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
       - run: python3 ./.github/scripts/verify-evidence.py
