@@ -369,7 +369,12 @@ fn valid_dim(v: f32) -> bool {
 
 fn style_valid(s: &StyleC) -> bool {
     // +Inf satisfies `>= 0.0`, so scalars need explicit finiteness (review 3)
-    s.flex_grow.is_finite() && s.flex_grow >= 0.0 && s.gap.is_finite() && s.gap >= 0.0 && s.padding.is_finite() && s.padding >= 0.0
+    s.flex_grow.is_finite()
+        && s.flex_grow >= 0.0
+        && s.gap.is_finite()
+        && s.gap >= 0.0
+        && s.padding.is_finite()
+        && s.padding >= 0.0
         && valid_dim(s.width)
         && valid_dim(s.height)
         && s.direction <= 1
