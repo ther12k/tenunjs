@@ -24,7 +24,7 @@ cc -std=c++17 -Wall -Werror -Wextra -I"$QJS/.." -x c++ "$QJS/abi_smoke.c" \
 
 echo "== shared layout corpus driver vs both candidates =="
 bun spikes/layout/export-corpus.ts > /tmp/corpus_flat.txt
-cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o /tmp/run_corpus
+cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -pthread -o /tmp/run_corpus
 /tmp/run_corpus /tmp/corpus_flat.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so
 /tmp/run_corpus /tmp/corpus_flat.txt spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so
 

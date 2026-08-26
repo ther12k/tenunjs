@@ -133,6 +133,11 @@ impl TenunJsVm {
 // Split storage keeps this free of unsafe Send impls: the global registry
 // holds only Send+Sync data (generation + the interrupt flag Arc) so the
 // cross-thread watchdog path never touches VM memory; the VM boxes live in a
+// thread-local owner map (review-3 hardening: destroyed VMs are PARKED, not
+// freed — a host callback may destroy its own VM mid-eval while outer frames
+// still hold references; parked boxes drain at public-entry boundaries via
+// op-depth guards. Reentrant eval/pump/register on a VM that is already
+// evaluating is rejected fail-closed with ERR_HANDLE.)
 // thread-local owner map, which is also what makes affinity detection exact.
 struct GlobalSlot {
     generation: u32,
@@ -154,6 +159,46 @@ static HANDLE_REGISTRY: LazyLock<Mutex<HandleRegistry>> = LazyLock::new(|| {
 struct OwnedVm {
     generation: u32,
     vm: Box<TenunJsVm>,
+}
+
+thread_local! {
+    /// VM boxes destroyed while an operation may still hold references
+    /// (a host callback destroying its own VM mid-eval) are parked here and
+    /// freed at public-entry boundaries via op-depth guards
+    static DEFERRED_VMS: RefCell<Vec<TenunJsVm>> = const { RefCell::new(Vec::new()) };
+    /// nesting depth of public adapter entries; only the 1 -> 0 transition
+    /// drains parked boxes so nested calls from callbacks cannot free memory
+    /// the outer frame still references
+    static OP_DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+struct OpGuard;
+
+impl OpGuard {
+    fn enter() -> Self {
+        OP_DEPTH.with(|d| {
+            if d.get() == 0 {
+                drain_deferred();
+            }
+            d.set(d.get() + 1);
+        });
+        OpGuard
+    }
+}
+
+impl Drop for OpGuard {
+    fn drop(&mut self) {
+        OP_DEPTH.with(|d| {
+            d.set(d.get().saturating_sub(1));
+            if d.get() == 0 {
+                drain_deferred();
+            }
+        });
+    }
+}
+
+fn drain_deferred() {
+    DEFERRED_VMS.with(|d| d.borrow_mut().clear());
 }
 
 thread_local! {
@@ -265,8 +310,12 @@ fn registry_release(handle: *mut TenunJsVm) {
             reg.slots[slot as usize].generation += 1; // this handle can never validate again
             reg.free.push(slot);
         }
+        // review-3 hardening: never free synchronously — a host callback may
+        // be destroying its own VM while outer frames hold references to it
+        if let Some(owned) = taken {
+            DEFERRED_VMS.with(|d| d.borrow_mut().push(*owned.vm));
+        }
     }
-    // `taken` drops the VM here, outside every lock
 }
 
 fn status_cat(status: i32) -> &'static str {
@@ -312,6 +361,9 @@ struct EvalVm {
     raw: *mut TenunJsVm,
     // the handle the embedder passed in — what host callbacks receive back
     handle: *mut TenunJsVm,
+    // registry slot of the evaluating VM; reentrant adapter calls targeting
+    // it fail closed (review 3)
+    slot: u32,
 }
 
 thread_local! {
@@ -322,6 +374,7 @@ thread_local! {
         Cell::new(EvalVm {
             raw: std::ptr::null_mut(),
             handle: std::ptr::null_mut(),
+            slot: u32::MAX,
         })
     };
 }
@@ -478,6 +531,7 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm {
+    let _g = OpGuard::enter();
     catch_unwind(AssertUnwindSafe(|| {
         if cfg.is_null() {
             return std::ptr::null_mut();
@@ -530,6 +584,7 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
 
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
+    let _g = OpGuard::enter();
     catch_unwind(AssertUnwindSafe(|| registry_release(vm))).ok();
 }
 
@@ -537,11 +592,22 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
     if bytes.is_null() || len > MAX_BUNDLE_BYTES {
         return TENUN_JS_ERR_ARGUMENT;
     }
+    let _g = OpGuard::enter();
+    let (slot, _generation) = match decode_handle(handle) {
+        Some(p) => p,
+        None => return TENUN_JS_ERR_ARGUMENT,
+    };
     let vm = match registry_resolve(handle) {
         Ok(p) => p,
         Err(e) => return e,
     };
     let vm = &*vm;
+    // reentrancy: a host callback calling eval back into the VM that is
+    // currently evaluating would corrupt the per-eval stash; fail closed
+    if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+        vm.set_error("HANDLE", "reentrant adapter call on evaluating VM");
+        return TENUN_JS_ERR_HANDLE;
+    }
     if !vm.owner_ok() {
         vm.set_error("AFFINITY", "VM used from non-owner thread");
         return TENUN_JS_ERR_AFFINITY;
@@ -568,6 +634,7 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
         c.set(EvalVm {
             raw: vm as *const TenunJsVm as *mut TenunJsVm,
             handle,
+            slot,
         })
     });
 
@@ -579,6 +646,7 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
         c.set(EvalVm {
             raw: std::ptr::null_mut(),
             handle: std::ptr::null_mut(),
+            slot: u32::MAX,
         })
     });
     match result {
@@ -628,11 +696,20 @@ unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Opti
     if name.is_null() || fn_ptr.is_none() {
         return TENUN_JS_ERR_ARGUMENT;
     }
+    let _g = OpGuard::enter();
+    let (slot, _) = match decode_handle(handle) {
+        Some(p) => p,
+        None => return TENUN_JS_ERR_ARGUMENT,
+    };
     let vm = match registry_resolve(handle) {
         Ok(p) => p,
         Err(e) => return e,
     };
     let vm = &*vm;
+    if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+        vm.set_error("HANDLE", "reentrant registration on evaluating VM");
+        return TENUN_JS_ERR_HANDLE;
+    }
     if !vm.owner_ok() {
         vm.set_error("AFFINITY", "registration from non-owner thread");
         return TENUN_JS_ERR_AFFINITY;
@@ -690,6 +767,14 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
     catch_unwind(AssertUnwindSafe(|| {
         if max_jobs < 0 {
             return -1i64;
+        }
+        let _g = OpGuard::enter();
+        let (slot, _) = match decode_handle(vm) {
+            Some(p) => p,
+            None => return -1i64,
+        };
+        if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+            return -1i64; // reentrant pump during evaluation
         }
         let vm = match registry_resolve(vm) {
             Ok(p) => p,
@@ -756,6 +841,7 @@ pub unsafe extern "C" fn tenun_js_clear_interrupt(vm: *mut TenunJsVm) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut ValueC) -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
+        let _g = OpGuard::enter();
         if out.is_null() {
             return TENUN_JS_ERR_ARGUMENT;
         }

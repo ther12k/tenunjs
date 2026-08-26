@@ -28,6 +28,8 @@ depends_on:
 
 > **Status note (2026-08-25, review 2):** Layout lifecycle safety landed (PR this wave); blocked pending shared negative conformance in CI, backend semantic parity sign-off, and replayable evidence.
 
+> **Status note (2026-08-27, review 3):** Layout candidate implementation conforms to hardened layout contract: process-global handle namespace (random per-instance nonce + global slot allocator), deferred destruction with op-depth guards, explicit finite scalar and viewport validation, sanitized measure-callback output, and parity across the 10-case corpus and negative suite in CI. Blocked only on physical-device evidence (H4).
+
 ## Required outcome
 
 Yoga candidate passes layout, intrinsic measurement, incremental update, and toolchain tests.
