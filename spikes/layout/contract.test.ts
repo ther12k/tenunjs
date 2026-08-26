@@ -12,7 +12,14 @@ describe("layout adapter contract", () => {
     expect(header).toContain("void* userdata");
     expect(header).toContain("TENUN_LAYOUT_ERR_STYLE");
     expect(header).toContain("TENUN_LAYOUT_ERR_TREE");
+    expect(header).toContain("TENUN_LAYOUT_ERR_HANDLE");
     expect(header).toContain("tenun_layout_measure_fn");
+  });
+
+  test("handle registry semantics are documented in the header", () => {
+    expect(header).toContain("registry tokens (slot + generation)");
+    expect(header).toContain("double destroy is a safe");
+    expect(header).toContain("never reissued");
   });
 
   test("corpus cases are complete and exact-representable", () => {

@@ -399,6 +399,52 @@ fn main() {
         }
         println!("PASS duplicate/pump/null/oversize all fail-closed");
 
+        println!("== handle registry: stale + double destroy ==");
+        let vm_h = tenun_js_create(&cfg);
+        if vm_h.is_null() {
+            fail("handle-registry vm");
+        }
+        let hb = pack_bundle("1");
+        if tenun_js_eval_bundle(vm_h, hb.as_ptr(), hb.len()) != TENUN_JS_OK {
+            fail("handle-registry vm unusable");
+        }
+        let stale = vm_h;
+        tenun_js_destroy(vm_h);
+        if tenun_js_eval_bundle(stale, hb.as_ptr(), hb.len()) != TENUN_JS_ERR_HANDLE {
+            fail("stale eval must be ERR_HANDLE");
+        }
+        if tenun_js_register_host_fn(stale, c"probe".as_ptr() as *const u8, Some(host_a))
+            != TENUN_JS_ERR_HANDLE
+        {
+            fail("stale register must be ERR_HANDLE");
+        }
+        if tenun_js_pump(stale, 4) != -1 {
+            fail("stale pump must fail");
+        }
+        if tenun_js_request_interrupt(stale) != TENUN_JS_ERR_HANDLE {
+            fail("stale interrupt must be ERR_HANDLE");
+        }
+        if tenun_js_clear_interrupt(stale) != TENUN_JS_ERR_HANDLE {
+            fail("stale clear must be ERR_HANDLE");
+        }
+        let mut hv: ValueC = std::mem::zeroed();
+        if tenun_js_last_result(stale, &mut hv) != TENUN_JS_ERR_HANDLE {
+            fail("stale last_result must be ERR_HANDLE");
+        }
+        if !last_err(stale).is_empty() {
+            fail("stale last_error must be the empty fallback");
+        }
+        tenun_js_destroy(stale); // double destroy: safe no-op
+        let vm_h2 = tenun_js_create(&cfg);
+        if vm_h2.is_null() || vm_h2 == stale {
+            fail("fresh handle must never alias a destroyed one");
+        }
+        if tenun_js_eval_bundle(vm_h2, hb.as_ptr(), hb.len()) != TENUN_JS_OK {
+            fail("fresh vm after destroys must be usable");
+        }
+        tenun_js_destroy(vm_h2);
+        println!("PASS stale/double-destroy/alias all fail-closed");
+
         tenun_js_destroy(vm_a);
         tenun_js_destroy(vm_b);
         println!("ALL PASS");

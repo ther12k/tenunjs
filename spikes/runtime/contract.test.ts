@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const fixtures = ["hello.js", "callback.js", "stall.js"];
+const header = readFileSync(new URL("./tenun_js_adapter.h", import.meta.url), "utf8");
 
 describe("runtime host adapter contract", () => {
   test("header declares ABI v1 with fail-closed statuses", () => {
-    const header = readFileSync(new URL("./tenun_js_adapter.h", import.meta.url), "utf8");
     expect(header).toContain("#define TENUN_JS_ABI_VERSION 1u");
     expect(header).toContain('extern \"C\"');
     expect(header).toContain("_Static_assert");
@@ -17,10 +17,17 @@ describe("runtime host adapter contract", () => {
       "TENUN_JS_ERR_BUNDLE_DIGEST",
       "TENUN_JS_ERR_TIMEOUT",
       "TENUN_JS_ERR_VALUE_BOUNDS",
+      "TENUN_JS_ERR_HANDLE",
       "tenun_js_last_result",
     ]) {
       expect(header).toContain(status);
     }
+  });
+
+  test("handle registry semantics are documented in the header", () => {
+    expect(header).toContain("registry tokens (slot + generation)");
+    expect(header).toContain("double destroy is a safe no-op");
+    expect(header).toContain("never reissued");
   });
 
   test("fixture checksums match manifest (drift check)", () => {
