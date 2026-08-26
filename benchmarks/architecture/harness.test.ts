@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { assembleEvidence, collectHost, collectSource, step, writeEvidence } from "./harness";
+import {
+  assembleEvidence,
+  collectHost,
+  collectSource,
+  hashArtifacts,
+  step,
+  writeEvidence,
+} from "./harness";
 
 describe("evidence harness", () => {
   test("collects host and source metadata", () => {
@@ -24,14 +31,32 @@ describe("evidence harness", () => {
     expect(failStep.stderr_tail).toContain("boom");
   });
 
+  test("hashes artifacts with repo-relative paths (H3)", () => {
+    const repoRoot = new URL("../../", import.meta.url).pathname;
+    const arts = hashArtifacts(repoRoot, ["package.json"]);
+    expect(arts).toHaveLength(1);
+    expect(arts[0].path).toBe("package.json");
+    expect(arts[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(arts[0].bytes).toBeGreaterThan(0);
+  });
+
   test("writes reproducible evidence packet", async () => { // long timeout for CI cold caches
     const repoRoot = new URL("../../", import.meta.url).pathname;
-    const evidence = await assembleEvidence("selftest", repoRoot, [step("probe", "true")], ["self-test"]);
+    const evidence = await assembleEvidence(
+      "selftest",
+      repoRoot,
+      [step("probe", "true")],
+      ["self-test"],
+      ["package.json"]
+    );
     const file = await writeEvidence(evidence, "/tmp/tenunjs-evidence-test");
     const parsed = JSON.parse(readFileSync(file, "utf8"));
-    expect(parsed.schema_version).toBe(1);
+    expect(parsed.schema_version).toBe(2);
+    expect(parsed.build_profile).toBe("release");
     expect(parsed.label).toBe("selftest");
     expect(parsed.steps).toHaveLength(1);
+    expect(parsed.artifacts).toHaveLength(1);
+    expect(parsed.artifacts[0].path).toBe("package.json");
     expect(parsed.timestamp_utc).toBeString();
   }, 30000);
 });

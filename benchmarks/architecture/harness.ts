@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type StepResult = {
@@ -12,13 +13,18 @@ export type StepResult = {
   timed_out: boolean;
 };
 
+export type ArtifactHash = { path: string; sha256: string; bytes: number };
+
 export type Evidence = {
-  schema_version: 1;
+  schema_version: 2;
   label: string;
   timestamp_utc: string;
+  build_profile: "release";
   source: { commit: string; dirty: boolean; changed_files: number };
   host: { os: string; arch: string; kernel: string; cpu_model: string; mem_total_bytes: number };
   tools: Record<string, string>;
+  /** release cdylibs exercised by the recorded steps, hashed at packet time */
+  artifacts: ArtifactHash[];
   steps: StepResult[];
   reproducibility: { commands: string[] };
 };
@@ -91,14 +97,34 @@ export function step(name: string, cmd: string): StepResult {
   };
 }
 
-export async function assembleEvidence(label: string, repoRoot: string, steps: StepResult[], commands: string[]): Promise<Evidence> {
+/** Hashes release artifacts (paths are repo-relative) at packet time. */
+export function hashArtifacts(repoRoot: string, paths: string[]): ArtifactHash[] {
+  return paths.map((p) => {
+    const buf = readFileSync(join(repoRoot, p));
+    return {
+      path: p,
+      sha256: createHash("sha256").update(buf).digest("hex"),
+      bytes: buf.length,
+    };
+  });
+}
+
+export async function assembleEvidence(
+  label: string,
+  repoRoot: string,
+  steps: StepResult[],
+  commands: string[],
+  artifactPaths: string[]
+): Promise<Evidence> {
   return {
-    schema_version: 1,
+    schema_version: 2,
     label,
     timestamp_utc: new Date().toISOString(),
+    build_profile: "release",
     source: collectSource(repoRoot),
     host: collectHost(),
     tools: collectTools(["bun", "node", "cc", "clang++", "rustc"]),
+    artifacts: hashArtifacts(repoRoot, artifactPaths),
     steps,
     reproducibility: { commands },
   };
