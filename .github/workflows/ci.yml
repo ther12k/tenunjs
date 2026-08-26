@@ -67,8 +67,6 @@ jobs:
         with:
           bun-version: "1.4.0"
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.96.0"
       - name: Resolve gcc include dir for bindgen
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
