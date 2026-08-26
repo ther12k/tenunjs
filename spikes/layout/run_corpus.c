@@ -6,6 +6,7 @@
  */
 #include <dlfcn.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,10 +30,20 @@ static struct {
     fn_result result;
 } api;
 
-typedef struct { int mode; float p[4]; } measure_slot; /* fixed: w,h; avail: pw,ph,fw,fh */
+typedef struct { int mode; float p[4]; void* action; } measure_slot; /* 0=fixed w,h; 1=avail-2*pad; 2=destroy handle in action */
 
 static void stub_measure(void* userdata, tenun_layout_constraint c, tenun_layout_box* out) {
     measure_slot* s = (measure_slot*)userdata;
+    if (s->mode == 2) {
+        /* in-flight destruction regression (review 3): the callback destroys
+           a node (self/root) while layout is running. Must not crash;
+           compute still returns; handles die immediately. */
+        tenun_layout_node* victim = (tenun_layout_node*)s->action;
+        api.destroy(victim);
+        out->width = 10.0f;
+        out->height = 5.0f;
+        return;
+    }
     if (s->mode == 1) {
         /* constraint-forwarding: definite queries answer avail-2*pad;
            non-definite (max-content probing) answer the calibrated fallback */
@@ -115,9 +126,71 @@ static void run_negative_suite(void) {
     dim.gap = NAN;
     NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "NaN gap rejected");
     dim = empty;
+    dim.gap = INFINITY;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "infinite gap rejected");
+    dim = empty;
+    dim.padding = INFINITY;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "infinite padding rejected");
+    dim = empty;
+    dim.flex_grow = INFINITY;
+    NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_ERR_STYLE, "infinite flex_grow rejected");
+    dim = empty;
+    NEGCHECK(api.compute(E, INFINITY, 100.0f) == TENUN_LAYOUT_ERR_TREE,
+             "infinite viewport rejected");
+    NEGCHECK(api.compute(E, 100.0f, NAN) == TENUN_LAYOUT_ERR_TREE, "NaN viewport rejected");
+    NEGCHECK(api.compute(E, -1.0f, 100.0f) == TENUN_LAYOUT_ERR_TREE,
+             "negative viewport rejected");
+    dim = empty;
     NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_OK, "valid NaN dims accepted");
     dim.width = NAN;
     NEGCHECK(api.set_style(E, &dim) == TENUN_LAYOUT_OK, "undefined width accepted");
+
+    /* in-flight destruction (review 3): measure callback destroys itself and
+       then the root; layout must survive deterministically on BOTH engines */
+    {
+        tenun_layout_node* R2 = api.create();
+        tenun_layout_node* M = api.create();
+        tenun_layout_style rs2 = {0}, ms = {0};
+        rs2.width = 200; rs2.height = 50;
+        ms.width = NAN; ms.height = NAN;
+        api.set_style(R2, &rs2);
+        api.set_style(M, &ms);
+        static measure_slot self_slot; /* static: stub reads after scope */
+        self_slot.mode = 2;
+        self_slot.action = M;
+        api.add_child(R2, M);
+        api.set_measure(M, stub_measure, &self_slot);
+        NEGCHECK(api.compute(R2, 300, 60) == TENUN_LAYOUT_OK, "self-destroy compute survives");
+        NEGCHECK(api.result(M) == NULL, "destroyed measure node result dead");
+        NEGCHECK(api.set_style(M, &empty) == TENUN_LAYOUT_ERR_HANDLE,
+                 "measure-destroyed node handle invalid immediately");
+        /* root destruction from inside its own layout */
+        tenun_layout_node* R3 = api.create();
+        tenun_layout_node* C3 = api.create();
+        tenun_layout_style cs3 = {0};
+        cs3.width = NAN;
+        cs3.height = NAN; /* undefined sizes force the engines to measure */
+        api.set_style(R3, &rs2);
+        api.set_style(C3, &cs3);
+        static measure_slot root_slot;
+        root_slot.mode = 2;
+        root_slot.action = R3;
+        api.add_child(R3, C3);
+        api.set_measure(C3, stub_measure, &root_slot);
+        /* root dies mid-layout: compute still completes deterministically,
+           survivors stay readable, dead handles gate their own results */
+        NEGCHECK(api.compute(R3, 300, 60) == TENUN_LAYOUT_OK,
+                 "root-destroy compute survives");
+        NEGCHECK(api.result(C3) != NULL, "surviving child still readable");
+        NEGCHECK(api.result(R3) == NULL, "destroyed root result gated");
+        api.destroy(NULL);
+    }
+
+    /* ---- cross-thread namespace regression (review 3 blocker) ---------- */
+    {
+        extern int run_cross_thread_checks(void); /* defined below */
+        NEGCHECK(run_cross_thread_checks() == 0, "cross-thread checks pass");
+    }
 
     /* repeated-compute invalidation: style change must invalidate results,
        recomputation is deterministic */
@@ -152,6 +225,57 @@ static void run_negative_suite(void) {
     }
 
     if (neg_failures == 0) printf("ALL NEGATIVE CHECKS PASS\n");
+}
+
+/* ---- cross-thread namespace regression (review 3 blocker) ----------------
+ * Deterministic reproduction of the pure-TLS collision: the first node on
+ * any fresh thread must NOT alias a token created elsewhere, and foreign
+ * tokens presented here must fail closed WITHOUT killing the owner's node.
+ */
+static tenun_layout_node* g_main_node;
+static int g_collided;      /* thread's first token == main's token */
+static int g_foreign_ops_leaked; /* foreign ops succeeded or broke owner */
+
+static void* cross_thread_worker(void* arg) {
+    (void)arg;
+    tenun_layout_node* mine = api.create(); /* first node on this thread */
+    if (mine == g_main_node || mine == NULL) {
+        g_collided = 1;
+        return NULL;
+    }
+    /* every mutation of main's node from HERE must fail closed */
+    if (api.set_style(g_main_node, &(tenun_layout_style){0}) != TENUN_LAYOUT_ERR_HANDLE)
+        g_foreign_ops_leaked++;
+    if (api.add_child(mine, g_main_node) != TENUN_LAYOUT_ERR_HANDLE &&
+        api.add_child(mine, g_main_node) != TENUN_LAYOUT_ERR_TREE)
+        g_foreign_ops_leaked++;
+    if (api.compute(g_main_node, 10, 10) != TENUN_LAYOUT_ERR_HANDLE &&
+        api.compute(g_main_node, 10, 10) != TENUN_LAYOUT_ERR_TREE)
+        g_foreign_ops_leaked++;
+    /* destroy-noop from foreign thread: token must survive for its owner */
+    api.destroy(g_main_node);
+    /* my own node fully usable from my own thread */
+    tenun_layout_style s = {0};
+    s.width = 5;
+    if (api.set_style(mine, &s) != TENUN_LAYOUT_OK) g_foreign_ops_leaked++;
+    return NULL;
+}
+
+int run_cross_thread_checks(void) {
+    g_main_node = api.create(); /* first node on MAIN thread: slot-0/gen-1 class */
+    g_collided = 0;
+    g_foreign_ops_leaked = 0;
+    pthread_t t;
+    int rc = pthread_create(&t, NULL, cross_thread_worker, NULL);
+    if (rc != 0) return -1; /* infra failure, surfaced as NEGCHECK msg */
+    pthread_join(t, NULL);
+    int failures = g_collided + g_foreign_ops_leaked;
+    /* main's node must be fully alive after the foreign no-op destroy */
+    tenun_layout_style s = {0};
+    s.width = 7;
+    if (api.set_style(g_main_node, &s) != TENUN_LAYOUT_OK) failures++;
+    api.destroy(g_main_node);
+    return failures;
 }
 
 int main(int argc, char** argv) {

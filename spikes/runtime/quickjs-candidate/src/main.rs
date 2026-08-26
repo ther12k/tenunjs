@@ -78,6 +78,40 @@ extern "C" fn ret_null_data(_vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -
     out
 }
 
+extern "C" fn host_self_destroy(vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
+    // destroy our OWN VM while this callback is inside an evaluation
+    unsafe { tenun_js_destroy(vm) }
+    null_value()
+}
+
+static REENT_EVAL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+static REENT_REG: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+static REENT_PUMP: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1);
+
+extern "C" fn host_reenter(vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
+    let b = pack_bundle("1");
+    unsafe {
+        REENT_EVAL.store(
+            tenun_js_eval_bundle(vm, b.as_ptr(), b.len()),
+            Ordering::SeqCst,
+        );
+        REENT_REG.store(
+            tenun_js_register_host_fn(vm, c"again".as_ptr() as *const u8, Some(host_a)),
+            Ordering::SeqCst,
+        );
+        REENT_PUMP.store(tenun_js_pump(vm, 4), Ordering::SeqCst);
+    }
+    let mut out: ValueC = unsafe { std::mem::zeroed() };
+    out.kind = VK_NULL;
+    out
+}
+
+fn null_value() -> ValueC {
+    let mut out: ValueC = unsafe { std::mem::zeroed() };
+    out.kind = VK_NULL;
+    out
+}
+
 fn f64_value(v: f64) -> ValueC {
     let mut out: ValueC = unsafe { std::mem::zeroed() };
     out.kind = VK_F64;
@@ -444,6 +478,64 @@ fn main() {
         }
         tenun_js_destroy(vm_h2);
         println!("PASS stale/double-destroy/alias all fail-closed");
+
+        println!("== in-flight destruction + reentrancy (review 3) ==");
+        let vm_x = tenun_js_create(&cfg);
+        if vm_x.is_null() {
+            fail("vm_x");
+        }
+        if tenun_js_register_host_fn(
+            vm_x,
+            c"selfDestruct".as_ptr() as *const u8,
+            Some(host_self_destroy),
+        ) != TENUN_JS_OK
+        {
+            fail("self-destruct registration");
+        }
+        // callback destroys its OWN VM mid-eval: eval completes over the
+        // parked VM, handle dies immediately afterwards
+        eval_ok(vm_x, "selfDestruct(); 7"); // completes over parked zombie
+                                            // the now-dead handle gates every later read — including results
+        if tenun_js_eval_bundle(vm_x, cb_src.as_ptr(), cb_src.len()) != TENUN_JS_ERR_HANDLE {
+            fail("eval after in-flight destroy must be ERR_HANDLE");
+        }
+        if tenun_js_register_host_fn(vm_x, c"x2".as_ptr() as *const u8, Some(host_a))
+            != TENUN_JS_ERR_HANDLE
+        {
+            fail("register after in-flight destroy must be ERR_HANDLE");
+        }
+        if tenun_js_clear_interrupt(vm_x) != TENUN_JS_ERR_HANDLE {
+            fail("clear_interrupt after in-flight destroy must be ERR_HANDLE");
+        }
+        tenun_js_destroy(vm_x); // double destroy over parked zombie: safe no-op
+
+        let vm_y = tenun_js_create(&cfg);
+        if vm_y.is_null() {
+            fail("vm_y");
+        }
+        if tenun_js_register_host_fn(vm_y, c"poke".as_ptr() as *const u8, Some(host_reenter))
+            != TENUN_JS_OK
+        {
+            fail("reentrancy registration");
+        }
+        REENT_EVAL.store(0, Ordering::SeqCst);
+        REENT_REG.store(0, Ordering::SeqCst);
+        REENT_PUMP.store(1, Ordering::SeqCst);
+        eval_ok(vm_y, "poke(); 3");
+        if last_result(vm_y) != Some(3.0) {
+            fail("reentrancy completion value");
+        }
+        if REENT_EVAL.load(Ordering::SeqCst) != TENUN_JS_ERR_HANDLE
+            || REENT_REG.load(Ordering::SeqCst) != TENUN_JS_ERR_HANDLE
+        {
+            fail("reentrant eval/register must fail closed with ERR_HANDLE");
+        }
+        if REENT_PUMP.load(Ordering::SeqCst) != -1 {
+            fail("reentrant pump must fail");
+        }
+        eval_ok(vm_y, "4"); // vm_y remains healthy
+        tenun_js_destroy(vm_y);
+        println!("PASS self-destroy mid-eval + reentrant calls all fail-closed");
 
         tenun_js_destroy(vm_a);
         tenun_js_destroy(vm_b);
