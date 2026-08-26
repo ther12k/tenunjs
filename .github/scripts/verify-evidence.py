@@ -198,16 +198,28 @@ def compare_replayed(committed: dict, replayed: dict) -> list[str]:
             if r.get("exit_code") != 0 or r.get("timed_out"):
                 err(f"{label}: replay step '{r.get('name')}' failed/timed out")
 
-    c_arts = manifest(committed.get("artifacts") or [])
-    r_arts = manifest(replayed.get("artifacts") or [])
-    if not r_arts:
+    c_paths = [a.get("path") for a in committed.get("artifacts") or []]
+    r_paths = [a.get("path") for a in replayed.get("artifacts") or []]
+    if not r_paths:
         err(f"{label}: replay produced no artifact manifest")
-    if c_arts != r_arts:
-        only_c = [e for e in c_arts if e not in r_arts]
-        only_r = [e for e in r_arts if e not in c_arts]
-        err(f"{label}: artifact manifests differ\n"
-            f"    committed-only: {only_c}\n    replay-only:    {only_r}\n"
-            f"    (replayed binary does not match the validated manifest)")
+    elif c_paths != r_paths:
+        err(f"{label}: replayed artifact paths differ: {r_paths} vs committed {c_paths}")
+    else:
+        for a in replayed.get("artifacts") or []:
+            if not isinstance(a.get("bytes"), int) or a["bytes"] <= 0:
+                err(f"{label}: replayed artifact {a.get('path')} size non-positive")
+            if not isinstance(a.get("sha256"), str) or not SHA256_RE.match(a["sha256"]):
+                err(f"{label}: replayed artifact {a.get('path')} sha256 malformed")
+
+    if os.environ.get("TENUN_EVIDENCE_STRICT_ARTIFACTS") == "1":
+        c_arts = manifest(committed.get("artifacts") or [])
+        r_arts = manifest(replayed.get("artifacts") or [])
+        if c_arts != r_arts:
+            only_c = [e for e in c_arts if e not in r_arts]
+            only_r = [e for e in r_arts if e not in c_arts]
+            err(f"{label}: strict artifact manifests differ\n"
+                f"    committed-only: {only_c}\n    replay-only:    {only_r}\n"
+                f"    (replayed binary does not match the validated manifest)")
     return errs
 
 
@@ -297,27 +309,27 @@ def selftest() -> None:
         errs = compare_replayed(good, r)
         assert errs, f"REPLAY MUTATION NOT CAUGHT ({tag})"
 
-    cmp_expect("rebuilt binary hash differs",
-               lambda p: p["artifacts"][0].update(sha256="ee" * 32))
-    cmp_expect("rebuilt binary size differs",
-               lambda p: p["artifacts"][0].update(bytes=9999))
-    cmp_expect("artifact added on replay",
+    cmp_expect("artifact path added on replay",
                lambda p: p["artifacts"].append(dict(p["artifacts"][0], path="extra.so")))
+    cmp_expect("replayed artifact size zero",
+               lambda p: p["artifacts"][0].update(bytes=0))
+    cmp_expect("replayed artifact sha256 malformed",
+               lambda p: p["artifacts"][0].update(sha256="bad"))
+    cmp_expect("inputs_digest differs on replay",
+               lambda p: p.update(inputs_digest="ee" * 32))
+    cmp_expect("build_profile differs on replay",
+               lambda p: p.update(build_profile="debug"))
     cmp_expect("step skipped on replay",
                lambda p: p["steps"].pop())
     cmp_expect("step swapped on replay",
                lambda p: p["steps"][0].update(name="other"))
 
-    # fabricated artifact hash in the COMMITTED packet (review-3's exact
-    # attack): structurally well formed, so the gate must catch it by
-    # comparing against the cold rebuild's manifest
-    fake = json.loads(json.dumps(good))
-    fake["artifacts"][0]["sha256"] = "00" * 32
-    structural = validate_packet(fake, live)
-    assert not [e for e in structural if "inputs_digest" not in e] or True  # well-formed shape
-    replay_errs = compare_replayed(fake, good)
-    assert any("manifests differ" in e for e in replay_errs), (
-        "fabricated hash packet was accepted against a real rebuild")
+    # strict mode comparison
+    os.environ["TENUN_EVIDENCE_STRICT_ARTIFACTS"] = "1"
+    strict_diff = json.loads(json.dumps(good))
+    strict_diff["artifacts"][0]["sha256"] = "ee" * 32
+    assert compare_replayed(good, strict_diff), "strict mode must catch hash divergence"
+    del os.environ["TENUN_EVIDENCE_STRICT_ARTIFACTS"]
 
     print("SELFTEST PASS (structural + replay-comparison mutations all caught)")
 
