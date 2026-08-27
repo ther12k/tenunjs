@@ -19,14 +19,28 @@ typedef enum {
 } tenun_layout_status;
 
 /*
- * Opaque handle registry (review 2026-08-25, H1): tenun_layout_node* values
- * are registry tokens (slot + generation), NOT pointers. Never dereference
- * or forge them. After tenun_layout_node_destroy, every later use of that
- * handle fails closed with TENUN_LAYOUT_ERR_HANDLE
- * (tenun_layout_result returns NULL instead); double destroy is a safe
- * no-op; handle values are never reissued, so a stale handle can never alias
- * a fresh node. The spike layout contract is single-threaded: handles
- * presented on a non-creating thread resolve as stale.
+ * Opaque handle registry (H1, review-3/4): tenun_layout_node* values are
+ * process-global registry tokens [nonce:16 | generation:20 | slot+1:28], NOT
+ * raw pointers.
+ *
+ * Lifecycle & safety:
+ *   - tenun_layout_node_destroy logically invalidates the handle immediately.
+ *   - If destroyed reentrantly (e.g. from within a measure callback during
+ *     active compute), the underlying node allocation remains parked until
+ *     outer compute exits, preserving heap address stability and preventing
+ *     use-after-free.
+ *   - Subsequent calls on a destroyed handle fail closed with
+ *     TENUN_LAYOUT_ERR_HANDLE (tenun_layout_result returns NULL).
+ *   - Double destroy is a safe no-op.
+ *   - Tokens presented on a foreign thread resolve as ERR_HANDLE fail-closed;
+ *     foreign destroy is a safe no-op that leaves owner state intact.
+ *   - Nonce reduces accidental collision across multiple library instances.
+ *
+ * Measurement sanitization policy:
+ *   - Intrinsic measure callback outputs must be finite and non-negative.
+ *   - Non-finite (NaN/Inf) or negative values written by a hook are sanitized
+ *     (clamped to 0.0) before reaching the engine, guaranteeing scene
+ *     containment and engine safety.
  */
 typedef struct tenun_layout_node tenun_layout_node;
 

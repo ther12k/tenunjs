@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "taffy-spike-v3",
-  "timestamp_utc": "2026-08-26T19:01:35.556Z",
+  "timestamp_utc": "2026-08-26T23:27:18.883Z",
   "build_profile": "release",
-  "inputs_digest": "9747d0be5141896792cd45b16e4c1551bcd9e6cff58fc31b87681adc53812bd8",
+  "inputs_digest": "00f8e6dcbdad753d6b18324479315fe689d695cd3f33e88d57f87accec33e753",
   "source": {
-    "commit": "ad6111e849acb26c5738f30a3170c346617c8616",
+    "commit": "182468da6e4308abb8a191db5e5e6e4d74075f85",
     "dirty": false,
     "changed_files": 0
   },
@@ -26,8 +26,8 @@
   "artifacts": [
     {
       "path": "spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so",
-      "sha256": "ef070f57a593c59d967bbcc528490df7b8c3bd370b827a65ef863f231be28bc0",
-      "bytes": 6182384
+      "sha256": "a57fb75cac3434f7d3ddb728322d8433998a2d6caf76d752a225a4d6f1a1b5ad",
+      "bytes": 6176824
     }
   ],
   "steps": [
@@ -35,7 +35,7 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/taffy-candidate && cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 55,
+      "duration_ms": 50,
       "stdout_tail": "",
       "stderr_tail": "    Finished `release` profile [optimized + debuginfo] target(s) in 0.01s\n",
       "timed_out": false
@@ -44,7 +44,7 @@
       "name": "shared-c-driver",
       "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o spikes/layout/taffy-candidate/target/release/run_corpus && bun spikes/layout/export-corpus.ts > spikes/layout/taffy-candidate/target/release/corpus_flat.txt && spikes/layout/taffy-candidate/target/release/run_corpus spikes/layout/taffy-candidate/target/release/corpus_flat.txt spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so",
       "exit_code": 0,
-      "duration_ms": 217,
+      "duration_ms": 179,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nPASS 009\nPASS 010\nALL NEGATIVE CHECKS PASS\nALL 10 CASES PASS via spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so\n",
       "stderr_tail": "",
       "timed_out": false

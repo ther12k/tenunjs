@@ -16,7 +16,7 @@ The engine never names its JavaScript runtime (`adr-0007`). Candidates implement
 | Function | Contract |
 | --- | --- |
 | `tenun_js_create(cfg)` | Create an isolated VM. Fails closed on unsupported config values; never falls back silently. |
-| `tenun_js_destroy(vm)` | Synchronous teardown; pending jobs are discarded, not run. Safe to call after a timeout fault. |
+| `tenun_js_destroy(vm)` | Logical teardown: handle is invalidated immediately (subsequent calls return `TENUN_JS_ERR_HANDLE`). If called reentrantly from a host callback during active evaluation, the underlying VM Box is parked until outer evaluation exits, preserving heap address stability and preventing use-after-free. Safe to call after a timeout fault; double destroy is a safe no-op. |
 | `tenun_js_eval_bundle(vm, bytes, len)` | Execute one bundle (see below). Returns typed status; diagnostics via `tenun_js_last_error`. |
 | `tenun_js_register_host_fn(vm, name, fn)` | Register one native function callable from JS by fixed name. Duplicate registration fails. |
 | `tenun_js_pump(vm, max_jobs)` | Drain queued microtasks/jobs up to `max_jobs`, returns drained count. Non-blocking. |

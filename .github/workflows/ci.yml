@@ -71,4 +71,7 @@ jobs:
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
-      - run: python3 ./.github/scripts/verify-evidence.py
+      - name: Production integration mutation test
+        run: python3 ./.github/scripts/verify-evidence.py --integration-mutation-test
+      - name: Verify evidence packets
+        run: python3 ./.github/scripts/verify-evidence.py

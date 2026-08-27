@@ -24,11 +24,7 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
-> **Status note (2026-08-25):** ABI conformance + per-node measure registry landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
-
-> **Status note (2026-08-25, review 2):** Layout lifecycle safety landed (PR this wave); blocked pending shared negative conformance in CI, backend semantic parity sign-off, and replayable evidence.
-
-> **Status note (2026-08-27, review 3):** Layout candidate implementation conforms to hardened layout contract: process-global handle namespace (random per-instance nonce + global slot allocator), deferred destruction with op-depth guards, explicit finite scalar and viewport validation, sanitized measure-callback output, and parity across the 10-case corpus and negative suite in CI. Blocked only on physical-device evidence (H4).
+> **Status note (2026-08-27, review 4):** Layout candidate implementation conforms to hardened layout contract: process-global handle namespace (random per-instance nonce + global slot allocator), address-preserving deferred destruction (heap Box retention across op-depth guards), 20-bit generation retirement, explicit finite scalar and viewport validation, sanitized measure-callback output, and parity across the 10-case corpus and negative suite in CI. Blocked only on physical-device evidence (H4).
 
 ## Required outcome
 

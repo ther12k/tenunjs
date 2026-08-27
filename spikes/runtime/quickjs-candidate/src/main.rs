@@ -81,6 +81,12 @@ extern "C" fn ret_null_data(_vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -
 extern "C" fn host_self_destroy(vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
     // destroy our OWN VM while this callback is inside an evaluation
     unsafe { tenun_js_destroy(vm) }
+    // Allocator churn (review 4): allocate and dirty many heap blocks; if VM
+    // memory was prematurely freed, this churn would overwrite it before the
+    // outer eval_checked frame resumes.
+    let mut churn: Vec<Vec<u8>> = (0..1000).map(|i| vec![(i & 0xFF) as u8; 1024]).collect();
+    churn.sort();
+    std::hint::black_box(&churn);
     null_value()
 }
 

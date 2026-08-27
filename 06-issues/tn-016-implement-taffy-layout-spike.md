@@ -24,11 +24,7 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
-> **Status note (2026-08-25):** ABI conformance landed (PR #144); blocked pending CI gate + full evidence regeneration (#142).
-
-> **Status note (2026-08-25, review 2):** Same as TN-015.
-
-> **Status note (2026-08-27, review 3):** Same as TN-015: conforms to hardened layout contract, shares identical C runner suite and 10-case parity. Blocked only on physical-device evidence (H4).
+> **Status note (2026-08-27, review 4):** Same as TN-015: conforms to hardened layout contract, shares identical C runner suite, address-preserving Box retention, and 10-case parity. Blocked only on physical-device evidence (H4).
 
 ## Required outcome
 
