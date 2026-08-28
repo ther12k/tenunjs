@@ -84,7 +84,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libclang-18-dev
-          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include) -I/usr/lib/llvm-18/include" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
       - name: Production integration mutation test
