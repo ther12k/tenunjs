@@ -99,7 +99,22 @@ struct VmState {
     /// valid until the next adapter call on this VM
     buffers: RefCell<Vec<Vec<u8>>>,
     last_error: RefCell<Option<String>>,
-    result_f64: Cell<f64>,
+    /// completion value of the last successful evaluation (review 5: all six
+    /// bounded kinds; oversized/unrepresentable completions are flagged)
+    result: RefCell<OwnedResult>,
+}
+
+/// Full bounded-kind completion value owned by the adapter. Strings/bytes
+/// live in the same buffer pool as callback marshalling values.
+enum OwnedResult {
+    Null,
+    F64(f64),
+    I64(i64),
+    Bool(bool),
+    String(Vec<u8>),
+    Bytes(Vec<u8>),
+    /// completion existed but cannot cross the ABI within documented caps
+    Unrepresentable,
 }
 
 pub struct TenunJsVm {
@@ -376,16 +391,30 @@ struct EvalVm {
 }
 
 thread_local! {
-    // set on the OWNER thread immediately before each evaluation and cleared
-    // afterwards; host callbacks can only fire inside that window, so the
-    // stash always identifies the executing VM — never another registration
-    static EVAL_VM: Cell<EvalVm> = const {
-        Cell::new(EvalVm {
-            raw: std::ptr::null_mut(),
-            handle: std::ptr::null_mut(),
-            slot: u32::MAX,
-        })
-    };
+    // STACK of evaluation contexts (review 5): a host callback may legally
+    // evaluate a DIFFERENT VM (cross-VM nesting); each eval pushes its
+    // context and pops/restores the previous one on exit, so the trampoline
+    // always finds the context of the VM actually executing. Same-VM
+    // reentrancy is rejected before the push.
+    static EVAL_VM: RefCell<Vec<EvalVm>> = const { RefCell::new(Vec::new()) };
+}
+
+fn eval_vm_push(ev: EvalVm) {
+    EVAL_VM.with(|s| s.borrow_mut().push(ev));
+}
+
+fn eval_vm_pop() {
+    EVAL_VM.with(|s| {
+        s.borrow_mut().pop();
+    });
+}
+
+fn eval_vm_current() -> Option<EvalVm> {
+    EVAL_VM.with(|s| s.borrow().last().copied())
+}
+
+fn eval_vm_has_slot(slot: u32) -> bool {
+    EVAL_VM.with(|s| s.borrow().iter().any(|ev| ev.slot == slot))
 }
 
 /// JS -> bounded value. Oversized strings/byte payloads fail with
@@ -511,10 +540,9 @@ fn bound_to_js<'js>(ctx: Ctx<'js>, out: &ValueC) -> Result<Value<'js>, i32> {
 /// comes from the per-eval stash, so two VMs interleaved on one thread can
 /// never observe each other's callbacks.
 fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<Value<'js>> {
-    let ev = EVAL_VM.with(|c| c.get());
-    if ev.raw.is_null() {
+    let Some(ev) = eval_vm_current() else {
         return Ok(Value::new_null(ctx));
-    }
+    };
     let vm = unsafe { &*ev.raw };
     let stored = match vm.state.host_fn.borrow().as_ref() {
         Some(f) => *f,
@@ -549,11 +577,21 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
         if c.abi_version != ABI_VERSION {
             return std::ptr::null_mut();
         }
+        // fail-closed config (review 5): unsupported values are REJECTED,
+        // never silently ignored. interrupt_poll_ms is reserved-for-future
+        // and must be 0; heap limits must be 0 (unlimited) or within the
+        // supported 32-bit range the runtime can enforce exactly.
+        if c.interrupt_poll_ms != 0 {
+            return std::ptr::null_mut();
+        }
+        if c.max_heap_bytes > u32::MAX as u64 {
+            return std::ptr::null_mut();
+        }
         let rt = match Runtime::new() {
             Ok(rt) => rt,
             Err(_) => return std::ptr::null_mut(),
         };
-        if c.max_heap_bytes > 0 && c.max_heap_bytes <= u32::MAX as u64 {
+        if c.max_heap_bytes > 0 {
             rt.set_memory_limit(c.max_heap_bytes as usize);
         }
         let interrupted = Arc::new(AtomicBool::new(false));
@@ -584,7 +622,7 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                 host_fn: RefCell::new(None),
                 buffers: RefCell::new(Vec::new()),
                 last_error: RefCell::new(None),
-                result_f64: Cell::new(f64::NAN),
+                result: RefCell::new(OwnedResult::Null),
             },
         })
     }))
@@ -595,6 +633,46 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
 pub unsafe extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
     let _g = OpGuard::enter();
     catch_unwind(AssertUnwindSafe(|| registry_release(vm))).ok();
+}
+
+/// Completion-value bridge (review 5): the last evaluation result is exposed
+/// as a full bounded value. Kinds that cannot cross the ABI (objects,
+/// functions, oversized strings/bytes) become `Unrepresentable` and surface
+/// as TENUN_JS_ERR_VALUE_BOUNDS from tenun_js_last_result — never silent
+/// coercion to null.
+fn owned_from_value(_vm: &TenunJsVm, v: &Value<'_>) -> OwnedResult {
+    if v.is_undefined() || v.is_null() {
+        return OwnedResult::Null;
+    }
+    if let Some(b) = v.as_bool() {
+        return OwnedResult::Bool(b);
+    }
+    if let Some(i) = v.as_int() {
+        return OwnedResult::I64(i as i64);
+    }
+    if let Some(f) = v.as_number() {
+        return OwnedResult::F64(f);
+    }
+    if let Some(sv) = v.as_string() {
+        if let Ok(text) = sv.to_string() {
+            if text.len() <= MAX_STRING_BYTES {
+                return OwnedResult::String(text.as_bytes().to_vec());
+            }
+        }
+        return OwnedResult::Unrepresentable;
+    }
+    if let Some(obj) = v.as_object() {
+        if obj.is_array_buffer() {
+            if let Some(ab) = obj.as_array_buffer() {
+                if let Some(raw) = ab.as_bytes() {
+                    if raw.len() <= MAX_BYTES {
+                        return OwnedResult::Bytes(raw.to_vec());
+                    }
+                }
+            }
+        }
+    }
+    OwnedResult::Unrepresentable
 }
 
 unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> i32 {
@@ -613,7 +691,7 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
     let vm = &*vm;
     // reentrancy: a host callback calling eval back into the VM that is
     // currently evaluating would corrupt the per-eval stash; fail closed
-    if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+    if eval_vm_has_slot(slot) {
         vm.set_error("HANDLE", "reentrant adapter call on evaluating VM");
         return TENUN_JS_ERR_HANDLE;
     }
@@ -639,28 +717,21 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
     // buffers handed to C expire at the next adapter call
     vm.state.buffers.borrow_mut().clear();
     vm.state.interrupted.store(false, Ordering::SeqCst);
-    EVAL_VM.with(|c| {
-        c.set(EvalVm {
-            raw: vm as *const TenunJsVm as *mut TenunJsVm,
-            handle,
-            slot,
-        })
+    eval_vm_push(EvalVm {
+        raw: vm as *const TenunJsVm as *mut TenunJsVm,
+        handle,
+        slot,
     });
 
-    let result: Result<Option<f64>, rquickjs::Error> = vm
-        .context
-        .with(|ctx| ctx.eval(code.as_bytes()).map(|v: Value<'_>| v.as_number()));
-
-    EVAL_VM.with(|c| {
-        c.set(EvalVm {
-            raw: std::ptr::null_mut(),
-            handle: std::ptr::null_mut(),
-            slot: u32::MAX,
-        })
+    let result: Result<OwnedResult, rquickjs::Error> = vm.context.with(|ctx| {
+        let v: Value<'_> = ctx.eval(code.as_bytes())?;
+        Ok(owned_from_value(vm, &v))
     });
+
+    eval_vm_pop();
     match result {
-        Ok(num) => {
-            vm.state.result_f64.set(num.unwrap_or(f64::NAN));
+        Ok(owned) => {
+            *vm.state.result.borrow_mut() = owned;
             vm.clear_error();
             TENUN_JS_OK
         }
@@ -715,7 +786,7 @@ unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Opti
         Err(e) => return e,
     };
     let vm = &*vm;
-    if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+    if eval_vm_has_slot(slot) {
         vm.set_error("HANDLE", "reentrant registration on evaluating VM");
         return TENUN_JS_ERR_HANDLE;
     }
@@ -774,7 +845,12 @@ pub unsafe extern "C" fn tenun_js_register_host_fn(
 #[no_mangle]
 pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64 {
     catch_unwind(AssertUnwindSafe(|| {
+        // argument validation happens before any VM touch: record diagnostic
+        // through the registry only when the handle is resolvable
         if max_jobs < 0 {
+            if let Ok(p) = registry_resolve(vm) {
+                (*p).set_error("ARGUMENT", "negative max_jobs");
+            }
             return -1i64;
         }
         let _g = OpGuard::enter();
@@ -782,11 +858,16 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
             Some(p) => p,
             None => return -1i64,
         };
-        if EVAL_VM.with(|c| c.get().slot == slot && !c.get().raw.is_null()) {
+        if eval_vm_has_slot(slot) {
+            if let Ok(p) = registry_resolve(vm) {
+                (*p).set_error("HANDLE", "reentrant pump during evaluation");
+            }
             return -1i64; // reentrant pump during evaluation
         }
         let vm = match registry_resolve(vm) {
             Ok(p) => p,
+            // unresolvable here means stale or cross-thread: last_error is
+            // either unreachable (zombie) or foreign-thread state — no write
             Err(_) => return -1i64,
         };
         let vm = &*vm;
@@ -800,6 +881,7 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
                 _ => break,
             }
         }
+        vm.clear_error();
         drained
     }))
     .unwrap_or(-1)
@@ -809,7 +891,9 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
 pub unsafe extern "C" fn tenun_js_request_interrupt(vm: *mut TenunJsVm) -> i32 {
     // deliberately NOT affinity-checked: watchdog threads may call freely.
     // The flag Arc is cloned while the registry lock is held, so a concurrent
-    // destroy can never leave this touching freed memory.
+    // destroy can never leave this touching freed memory. Per header contract
+    // (review 5): this path never touches last_error — it is the one
+    // documented cross-thread exception to clear/overwrite semantics.
     catch_unwind(AssertUnwindSafe(|| {
         let (slot, generation) = match decode_handle(vm) {
             Some(pair) => pair,
@@ -859,12 +943,37 @@ pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut Valu
             Err(e) => return e,
         };
         let vm = &*vm;
-        let v = vm.state.result_f64.get();
-        if v.is_nan() {
-            (*out).kind = VK_NULL;
-        } else {
-            (*out).kind = VK_F64;
-            (*out).as_.f64v = v;
+        let result = vm.state.result.borrow();
+        match &*result {
+            OwnedResult::Null => {
+                (*out).kind = VK_NULL;
+            }
+            OwnedResult::F64(v) => {
+                (*out).kind = VK_F64;
+                (*out).as_.f64v = *v;
+            }
+            OwnedResult::I64(v) => {
+                (*out).kind = VK_I64;
+                (*out).as_.i64v = *v;
+            }
+            OwnedResult::Bool(v) => {
+                (*out).kind = VK_BOOL;
+                (*out).as_.bool_value = *v as i32;
+            }
+            OwnedResult::String(bytes) => {
+                let (ptr, len) = vm.store_bytes(bytes);
+                (*out).kind = VK_STRING;
+                (*out).as_.string = StrC { data: ptr, len };
+            }
+            OwnedResult::Bytes(bytes) => {
+                let (ptr, len) = vm.store_bytes(bytes);
+                (*out).kind = VK_BYTES;
+                (*out).as_.bytes = StrC { data: ptr, len };
+            }
+            OwnedResult::Unrepresentable => {
+                vm.set_error("VALUE_BOUNDS", "completion value is not representable");
+                return TENUN_JS_ERR_VALUE_BOUNDS;
+            }
         }
         TENUN_JS_OK
     }))

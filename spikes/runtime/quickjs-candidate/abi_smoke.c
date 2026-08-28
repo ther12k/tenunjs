@@ -88,12 +88,17 @@ int main(void) {
     CHECK(sizeof(tenun_js_value) == 24, "value ABI size");
     CHECK(sizeof(tenun_js_error) == 264, "error ABI size");
 
-    tenun_js_config cfg = { TENUN_JS_ABI_VERSION, 64ull*1024*1024, 1 };
+    tenun_js_config cfg = { TENUN_JS_ABI_VERSION, 64ull*1024*1024, 0 };
     tenun_js_vm* vm = tenun_js_create(&cfg);
     CHECK(vm != NULL, "create");
 
-    tenun_js_config bad = { 99, 0, 1 };
+    tenun_js_config bad = { 99, 0, 0 };
     CHECK(tenun_js_create(&bad) == NULL, "wrong abi rejected");
+    /* fail-closed config (review 5): reserved poll field and oversize heap */
+    tenun_js_config bad_poll = { TENUN_JS_ABI_VERSION, 0, 5 };
+    CHECK(tenun_js_create(&bad_poll) == NULL, "nonzero interrupt_poll_ms rejected");
+    tenun_js_config bad_heap = { TENUN_JS_ABI_VERSION, (uint64_t)UINT32_MAX + 1, 0 };
+    CHECK(tenun_js_create(&bad_heap) == NULL, "oversize max_heap_bytes rejected");
 
     const char* hello = "function run() { return 42; }\nrun();\n";
     size_t blen = 0;
@@ -103,7 +108,8 @@ int main(void) {
     tenun_js_value res;
     memset(&res, 0xAB, sizeof res);
     CHECK(tenun_js_last_result(vm, &res) == TENUN_JS_OK, "last_result status");
-    CHECK(res.kind == TENUN_JS_VALUE_F64 && res.as.f64 == 42.0, "completion value is 42");
+    /* review 5: full-kind completion bridge — integer 42 surfaces as I64 */
+    CHECK(res.kind == TENUN_JS_VALUE_I64 && res.as.i64 == 42, "completion value is 42 (I64)");
 
     CHECK(tenun_js_register_host_fn(vm, "onFirstFrame", host_cb) == TENUN_JS_OK, "register cb");
     size_t cblen = 0;

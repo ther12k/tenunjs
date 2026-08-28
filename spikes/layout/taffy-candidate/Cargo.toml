@@ -16,4 +16,4 @@ name = "corpus"
 path = "src/main.rs"
 
 [profile.release]
-debug = true
+strip = "symbols"

@@ -103,15 +103,29 @@ tenun_js_status tenun_js_request_interrupt(tenun_js_vm* vm);
 tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
 
 /*
- * Error semantics: last_error is CLEARED on every successful call and fully
- * overwritten by every failing call (no stale diagnostics). Messages carry a
- * stable "TJERR:<CATEGORY>" prefix.
+ * Error semantics (clarified review 5): last_error is CLEARED on every
+ * successful OWNER-THREAD adapter call and overwritten by every failing one
+ * (no stale diagnostics). Messages carry a stable "TJERR:<CATEGORY>" prefix.
+ * Per-call exceptions, by design:
+ *   - tenun_js_request_interrupt: cross-thread watchdog path; NEVER touches
+ *     owner-thread VM state, so it neither sets nor clears last_error.
+ *   - tenun_js_last_error itself: a query, not an operation — it neither
+ *     sets nor clears diagnostics.
+ *   - pump: success clears; failures (stale handle / reentrancy) record
+ *     diagnostics; per-job runtime failures inside a pumped job belong to
+ *     that job's own evaluation status.
  *
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.
  *
  * String/byte values returned through tenun_js_value point to adapter-owned
  * storage valid until the next adapter call on the same VM.
+ *
+ * Completion values (review 5): tenun_js_last_result returns the FULL
+ * bounded kind of the last successful evaluation — null, bool, f64, i64,
+ * string, or bytes. Completions that cannot cross the ABI (objects,
+ * functions, oversized strings/bytes) return TENUN_JS_ERR_VALUE_BOUNDS with
+ * a TJERR:VALUE_BOUNDS diagnostic; they are never silently coerced to null.
  */
 
 tenun_js_status tenun_js_last_result(tenun_js_vm* vm, tenun_js_value* out);

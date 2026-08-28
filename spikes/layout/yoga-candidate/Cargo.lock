@@ -338,8 +338,6 @@ checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 [[package]]
 name = "yoga"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7112f23e5bbd1375b8f58707a29a2950e3c5497eadefd53a5e6ce212029cde28"
 dependencies = [
  "bindgen",
  "cc",

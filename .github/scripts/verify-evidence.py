@@ -10,13 +10,17 @@ Structural gate (always on), per committed packet:
     the packet claims to describe must be exactly what is in the checkout,
     so committed packets cannot quietly outlive their fixtures
 
-Replay gate (TENUN_EVIDENCE_REPLAY=1, set by CI):
+Replay gate (TENUN_EVIDENCE_REPLAY=1, set by CI) — review-5 policy:
+  - identity model: the packet's inputs_digest must equal the live tree's
+    digest (evidence files themselves are excluded from the digest — chosen
+    canonical identity; exact-HEAD is unachievable for self-referential
+    evidence commits), and the recorded commit must be an ancestor of HEAD
   - executes the TRUSTED chain from .github/scripts/replay/<label>.sh (not
     shell commands taken from the packet itself) against a cold checkout,
     writing the regenerated packet into a sandbox directory
-  - compares sandbox vs committed packet deterministically: artifact
-    manifest (path/sha256/bytes for every artifact), step names + commands,
-    build profile — a rebuild that produces different binaries fails
+  - TENUN_EVIDENCE_STRICT_ARTIFACTS=1 (always set in CI): the rebuilt
+    artifact manifest (path, sha256, bytes) must EQUAL the committed packet's
+    manifest, not merely share paths
 
 Self test (--selftest):
   - structural validator and comparator are pure functions; this mode feeds
