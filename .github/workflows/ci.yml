@@ -75,9 +75,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.0"
+      # exact toolchain pin: evidence packets record compiler version and
+      # artifacts must be bit-identical to local generation (review-5)
       - uses: dtolnay/rust-toolchain@stable
-      - name: Resolve gcc include dir for bindgen
-        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
+        with:
+          toolchain: "1.96.0"
+      - name: Pin libclang to 18 (bindings must match local generation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-18-dev
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include) -I/usr/lib/llvm-18/include" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
       - name: Production integration mutation test
