@@ -53,12 +53,17 @@ jobs:
       - run: ./.github/scripts/verify-abi.sh
 
   # replays every evidence packet's reproducibility chain from a clean
-  # checkout (H3): rebuilds cdylibs, reruns drivers, requires ALL PASS
+  # checkout (H3): rebuilds cdylibs, reruns drivers, requires ALL PASS.
+  # Strict artifact manifest comparison is ALWAYS ON for the production
+  # verification run (review-5); TENUN_EVIDENCE_DIR may override packets
+  # only in explicit mutation-test child processes.
   verify-evidence:
     runs-on: ubuntu-latest
     env:
       BINDGEN_EXTRA_CLANG_ARGS: ${{ format('-I{0}', '/usr/lib/gcc/x86_64-linux-gnu/13/include') }}
       TENUN_EVIDENCE_REPLAY: "1"
+      TENUN_EVIDENCE_STRICT_ARTIFACTS: "1"
+      TENUN_EVIDENCE_REQUIRE_HEAD: "1"
     steps:
       - uses: actions/checkout@v4
         with:

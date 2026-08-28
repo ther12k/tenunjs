@@ -23,9 +23,9 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
-> **Status note (2026-08-27, rebaselined via #142):**
+> **Status note (2026-08-27, review 5):**
 > - **M1 frozen-spike expressible scope:** **PASS**. 10 JSON cases with constraint-forwarding measurement (`avail` strategy with calibrated unbounded-query fallbacks), style-mutation invalidation + repeated-compute stability, full finite scalar/viewport gating, sanitized measure outputs, and deferred-drop lifetime safety.
-> - **M1 original TN-014 deferred scope:** **PARTIAL / DEFERRED to TN-026 (engine phase)**. Features inexpressible in the frozen M0 spike ABI without breaking backwards compatibility (min/max constraints, flex-basis and shrink semantics beyond the grow-only pin, percentage units, RTL direction hooks, scale-factor/rounding accumulation rules, and mid-tree reordering) are formally tracked under `TN-026`.
+> - **M1 original TN-014 deferred scope:** **PARTIAL / DEFERRED to production engine phase — [TN-040](tn-040-implement-selected-layout-adapter.md) (implement selected layout adapter)** for min/max constraints, flex-basis and shrink semantics beyond the grow-only pin, percentage units, RTL direction hooks, and scale-factor/rounding accumulation rules; **[TN-041](tn-041-implement-intrinsic-measurement-callbacks.md) (intrinsic measurement callbacks)** for the production measurement contract. These features are inexpressible in the frozen M0 spike ABI without breaking backwards compatibility.
 
 ## Required outcome
 

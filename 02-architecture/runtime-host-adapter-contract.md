@@ -42,7 +42,22 @@ Both directions marshal all six kinds: `null`, `bool`, `f64`, `i64`, UTF-8 `stri
 - The adapter polls the internal atomic between bytecode dispatch units. When set, running evaluation aborts with `TENUN_JS_ERR_TIMEOUT`; partial state is discarded.
 - The embedder calls `tenun_js_clear_interrupt` on the owner thread; afterwards the VM is fully usable — this recovery is part of the ABI smoke suite.
 - Cross-thread clear returns `TENUN_JS_ERR_AFFINITY`.
+- `tenun_js_request_interrupt` is the one documented exception to the clear/overwrite diagnostic rule: as a cross-thread watchdog path it never touches owner-thread VM state (neither sets nor clears `last_error`).
 - Native code must remain responsive even while JS is stalled: scroll/animation continuity (principle 7) depends on this boundary holding.
+
+## Completion values (review 5)
+
+`tenun_js_last_result` returns the last successful evaluation's completion as a **full bounded value** — all six kinds (`null`, `bool`, `f64`, `i64`, `string`, `bytes`). Completions that cannot cross the ABI (objects, functions, strings > 64 KiB, buffers > 1 MiB) fail with `TENUN_JS_ERR_VALUE_BOUNDS` and a `TJERR:VALUE_BOUNDS` diagnostic; silent coercion to null is a contract violation.
+
+## Config validation (review 5)
+
+`tenun_js_create` fails closed (returns NULL) on unsupported configuration values:
+
+- `abi_version` ≠ 1.
+- `max_heap_bytes` > `UINT32_MAX` (beyond the enforced range).
+- `interrupt_poll_ms` ≠ 0 (reserved for future use; nonzero values would silently fake enforcement, so they are rejected).
+
+Documented supported values (`max_heap_bytes` = 0 for unlimited, or any value ≤ `UINT32_MAX`; `interrupt_poll_ms` = 0) always succeed.
 
 ## ABI conformance gate
 

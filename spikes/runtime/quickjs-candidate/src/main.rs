@@ -90,6 +90,7 @@ extern "C" fn host_self_destroy(vm: *mut TenunJsVm, _a: *const ValueC, _c: usize
     null_value()
 }
 
+static NEST_B_CALLS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 static REENT_EVAL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 static REENT_REG: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 static REENT_PUMP: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1);
@@ -178,7 +179,12 @@ fn eval_ok(vm: *mut TenunJsVm, src: &str) {
 fn last_result(vm: *mut TenunJsVm) -> Option<f64> {
     let mut v: ValueC = unsafe { std::mem::zeroed() };
     unsafe { tenun_js_last_result(vm, &mut v) };
-    (v.kind == VK_F64).then_some(unsafe { v.as_.f64v })
+    // integer completions surface as VK_I64 (review 5 full-kind bridge)
+    match v.kind {
+        VK_F64 => Some(unsafe { v.as_.f64v }),
+        VK_I64 => Some(unsafe { v.as_.i64v } as f64),
+        _ => None,
+    }
 }
 
 fn last_err(vm: *mut TenunJsVm) -> String {
@@ -192,7 +198,7 @@ fn main() {
         let cfg = ConfigC {
             abi_version: 1,
             max_heap_bytes: 64 * 1024 * 1024,
-            interrupt_poll_ms: 1,
+            interrupt_poll_ms: 0, // reserved field must be zero (review 5)
         };
         let bad_cfg = ConfigC {
             abi_version: 99,
@@ -200,10 +206,38 @@ fn main() {
             interrupt_poll_ms: 1,
         };
 
-        println!("== create / abi rejection ==");
+        println!("== create / abi + config rejection ==");
         if !tenun_js_create(&bad_cfg).is_null() {
             fail("wrong ABI version accepted");
         }
+        // unsupported config values must fail closed (review 5)
+        let bad_heap_cfg = ConfigC {
+            abi_version: 1,
+            max_heap_bytes: (u32::MAX as u64) + 1,
+            interrupt_poll_ms: 0,
+        };
+        if !tenun_js_create(&bad_heap_cfg).is_null() {
+            fail("oversized max_heap_bytes accepted");
+        }
+        let bad_poll_cfg = ConfigC {
+            abi_version: 1,
+            max_heap_bytes: 0,
+            interrupt_poll_ms: 5,
+        };
+        if !tenun_js_create(&bad_poll_cfg).is_null() {
+            fail("nonzero reserved interrupt_poll_ms accepted");
+        }
+        let ok_cfg = ConfigC {
+            abi_version: 1,
+            max_heap_bytes: 0,
+            interrupt_poll_ms: 0,
+        };
+        let ok_vm = tenun_js_create(&ok_cfg);
+        if ok_vm.is_null() {
+            fail("documented supported config rejected");
+        }
+        tenun_js_destroy(ok_vm);
+        println!("PASS unsupported heap/poll configs rejected; supported config accepted");
         let vm_a = tenun_js_create(&cfg);
         let vm_b = tenun_js_create(&cfg);
         if vm_a.is_null() || vm_b.is_null() {
@@ -542,6 +576,204 @@ fn main() {
         eval_ok(vm_y, "4"); // vm_y remains healthy
         tenun_js_destroy(vm_y);
         println!("PASS self-destroy mid-eval + reentrant calls all fail-closed");
+
+        println!("== cross-VM nested evaluation (review 5) ==");
+        // VM A's callback evaluates bundle code on VM B; when the callback
+        // returns, VM A's context must be fully restored so subsequent host
+        // calls inside A still resolve A's state.
+        static NEST_B_EVAL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+        extern "C" fn host_nested_b(vm_a: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
+            NEST_B_CALLS.fetch_add(1, Ordering::SeqCst);
+            let vm_b = NEST_VM_B.load(Ordering::SeqCst) as *mut TenunJsVm;
+            let b = pack_bundle("22");
+            unsafe {
+                NEST_B_EVAL.store(
+                    tenun_js_eval_bundle(vm_b, b.as_ptr(), b.len()),
+                    Ordering::SeqCst,
+                );
+            }
+            let _ = vm_a;
+            null_value()
+        }
+        static NEST_VM_B: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let vm_a2 = tenun_js_create(&cfg);
+        let vm_b2 = tenun_js_create(&cfg);
+        if vm_a2.is_null() || vm_b2.is_null() {
+            fail("nested vms");
+        }
+        NEST_VM_B.store(vm_b2 as usize as u64, Ordering::SeqCst);
+        if tenun_js_register_host_fn(vm_a2, c"evalB".as_ptr() as *const u8, Some(host_nested_b))
+            != TENUN_JS_OK
+        {
+            fail("nested registration a");
+        }
+        // callback runs while A evaluates; inside it B evaluates fully
+        eval_ok(vm_a2, "evalB(); 11");
+        if NEST_B_EVAL.load(Ordering::SeqCst) != TENUN_JS_OK {
+            fail("nested eval of B must succeed");
+        }
+        // B's completion must be visible on B and not on A
+        if last_result(vm_b2) != Some(22.0) {
+            fail("nested B completion value");
+        }
+        if last_result(vm_a2) != Some(11.0) {
+            fail("outer A completion value after nested B");
+        }
+        // A's callback context restored: the SAME host function fires again
+        // inside A and still resolves A's state (the counter increments to 2)
+        eval_ok(vm_a2, "evalB(); 12");
+        if NEST_B_CALLS.load(Ordering::SeqCst) != 2 {
+            fail("trampoline lost context after nested evaluation");
+        }
+        if last_result(vm_a2) != Some(12.0) {
+            fail("A completion after second callback");
+        }
+        tenun_js_destroy(vm_a2);
+        tenun_js_destroy(vm_b2);
+        println!("PASS cross-VM nested evaluation restores outer context");
+
+        println!("== completion value bridge: all six kinds (review 5) ==");
+        struct CompletionCase {
+            src: &'static str,
+            expect_kind: u32,
+            expect_f64: Option<f64>,
+            expect_bool: Option<bool>,
+            expect_bytes: Option<&'static [u8]>,
+        }
+        let cases = [
+            CompletionCase {
+                src: "null",
+                expect_kind: VK_NULL,
+                expect_f64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "true",
+                expect_kind: VK_BOOL,
+                expect_f64: None,
+                expect_bool: Some(true),
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "1.5",
+                expect_kind: VK_F64,
+                expect_f64: Some(1.5),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "1.5e10",
+                expect_kind: VK_F64,
+                expect_f64: Some(1.5e10),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "'h\\u00e9llo'",
+                expect_kind: VK_STRING,
+                expect_f64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "var ab = new ArrayBuffer(3); new Uint8Array(ab).set([7,8,9]); ab",
+                expect_kind: VK_BYTES,
+                expect_f64: None,
+                expect_bool: None,
+                expect_bytes: Some(&[7u8, 8, 9]),
+            },
+        ];
+        for (i, case) in cases.iter().enumerate() {
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("completion vm");
+            }
+            eval_ok(vm, case.src);
+            let mut v: ValueC = std::mem::zeroed();
+            if tenun_js_last_result(vm, &mut v) != TENUN_JS_OK {
+                fail(&format!("case {i}: last_result failed"));
+            }
+            if v.kind != case.expect_kind {
+                fail(&format!(
+                    "case {i}: kind {} != {}",
+                    v.kind, case.expect_kind
+                ));
+            }
+            match case.expect_kind {
+                k if k == VK_F64 => {
+                    if v.as_.f64v != case.expect_f64.unwrap() {
+                        fail(&format!("case {i}: f64 value"));
+                    }
+                }
+                k if k == VK_I64 => {
+                    if v.as_.i64v as f64 != case.expect_f64.unwrap() {
+                        fail(&format!("case {i}: i64 value"));
+                    }
+                }
+                k if k == VK_BOOL => {
+                    if (v.as_.bool_value != 0) != case.expect_bool.unwrap() {
+                        fail(&format!("case {i}: bool value"));
+                    }
+                }
+                k if k == VK_STRING => {
+                    let p = v.as_.string;
+                    let got = std::slice::from_raw_parts(p.data, p.len);
+                    if got != "h\u{e9}llo".as_bytes() {
+                        fail(&format!("case {i}: string value"));
+                    }
+                }
+                k if k == VK_BYTES => {
+                    let p = v.as_.bytes;
+                    let got = std::slice::from_raw_parts(p.data, p.len);
+                    if got != case.expect_bytes.unwrap() {
+                        fail(&format!("case {i}: bytes value"));
+                    }
+                }
+                _ => {}
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS null/bool/f64/i64/string/bytes completion kinds");
+
+        println!("== unrepresentable completions -> VALUE_BOUNDS ==");
+        struct BoundsCase {
+            src: &'static str,
+            note: &'static str,
+        }
+        let bounds_cases = [
+            BoundsCase {
+                src: "({a: 1})",
+                note: "object",
+            },
+            BoundsCase {
+                src: "(function f(){})",
+                note: "function",
+            },
+            BoundsCase {
+                src: "'x'.repeat(70000)",
+                note: "oversized string",
+            },
+            BoundsCase {
+                src: "new ArrayBuffer(1048577)",
+                note: "oversized bytes",
+            },
+        ];
+        for case in &bounds_cases {
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("bounds vm");
+            }
+            eval_ok(vm, case.src); // eval succeeds…
+            let mut v: ValueC = std::mem::zeroed();
+            let st = tenun_js_last_result(vm, &mut v);
+            if st != TENUN_JS_ERR_VALUE_BOUNDS || !last_err(vm).contains("TJERR:VALUE_BOUNDS") {
+                fail(&format!("{} completion must be VALUE_BOUNDS", case.note));
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS object/function/oversized completions fail VALUE_BOUNDS");
 
         tenun_js_destroy(vm_a);
         tenun_js_destroy(vm_b);
