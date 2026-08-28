@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "taffy-spike-v3",
-  "timestamp_utc": "2026-08-28T15:34:47.173Z",
+  "timestamp_utc": "2026-08-28T15:53:28.769Z",
   "build_profile": "release",
-  "inputs_digest": "a61b447449c1b924639532be8cf6e0cce4048465570b24a43aee7ebf31d2cab5",
+  "inputs_digest": "7dcec0ec886a00526c04cf5592ee655f6a57dee35ea1d23459eaa996009848fc",
   "source": {
-    "commit": "0bc4dd5df9fd92b3ca2b3cedcdd9d69f2aca45ad",
+    "commit": "b008d54f8aa93379ef2ec010a23a29f058a226d1",
     "dirty": false,
     "changed_files": 0
   },
@@ -26,8 +26,8 @@
   "artifacts": [
     {
       "path": "spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so",
-      "sha256": "a57fb75cac3434f7d3ddb728322d8433998a2d6caf76d752a225a4d6f1a1b5ad",
-      "bytes": 6176824
+      "sha256": "448e0a95b0131fe7861b5098fb7fcc19a1f2a2df348851250db9b252af18f374",
+      "bytes": 423976
     }
   ],
   "steps": [
@@ -35,16 +35,16 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/taffy-candidate && cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 174,
+      "duration_ms": 104,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized + debuginfo] target(s) in 0.07s\n",
+      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.03s\n",
       "timed_out": false
     },
     {
       "name": "shared-c-driver",
       "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o spikes/layout/taffy-candidate/target/release/run_corpus && bun spikes/layout/export-corpus.ts > spikes/layout/taffy-candidate/target/release/corpus_flat.txt && spikes/layout/taffy-candidate/target/release/run_corpus spikes/layout/taffy-candidate/target/release/corpus_flat.txt spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so",
       "exit_code": 0,
-      "duration_ms": 520,
+      "duration_ms": 389,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nPASS 009\nPASS 010\nALL NEGATIVE CHECKS PASS\nALL 10 CASES PASS via spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so\n",
       "stderr_tail": "",
       "timed_out": false
