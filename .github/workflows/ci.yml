@@ -76,15 +76,14 @@ jobs:
         with:
           bun-version: "1.4.0"
       # exact toolchain pin: evidence packets record compiler version and
-      # artifacts must be bit-identical to local generation (review-5)
+      # artifacts must be bit-identical to local generation (review-5).
+      # bindgen env intentionally left unset: the generator's environment
+      # uses bindgen's bundled headers, and clang's own NAN resolves to
+      # f32::NAN (gcc's math.h NAN resolves double-typed and breaks the
+      # yoga crate's generated const under this toolchain)
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.96.0"
-      - name: Pin libclang to 18 (bindings must match local generation)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libclang-18-dev
-          echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
       - name: Production integration mutation test
