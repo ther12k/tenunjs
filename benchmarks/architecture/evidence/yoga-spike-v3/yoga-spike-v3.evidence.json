@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "label": "yoga-spike-v3",
-  "timestamp_utc": "2026-08-28T16:08:15.982Z",
+  "timestamp_utc": "2026-08-28T16:52:16.767Z",
   "build_profile": "release",
-  "inputs_digest": "7dcec0ec886a00526c04cf5592ee655f6a57dee35ea1d23459eaa996009848fc",
+  "inputs_digest": "d92407e8fcffbf2fbe973640be2aad836994ce068bbf36da58ec8c158840f079",
   "source": {
-    "commit": "56427a360e33ddbdd2ee37f1a520c64b8a5e32d0",
-    "dirty": false,
-    "changed_files": 0
+    "commit": "c8c12fe1e7d98ebbf66b0af73860fde1de6229f9",
+    "dirty": true,
+    "changed_files": 6
   },
   "host": {
     "os": "linux",
@@ -21,13 +21,13 @@
     "node": "v24.11.0",
     "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
     "clang++": "not-found",
-    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)"
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
   },
   "artifacts": [
     {
       "path": "spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so",
-      "sha256": "b5f276bdc1b16ef1bf88e987071670c3d45b2be5273b69060600e86f42767446",
-      "bytes": 515472
+      "sha256": "609e5d007164fc21ff1d5f4ceccc5923b4cfbe03595f0fde89cfa5cb00fa025e",
+      "bytes": 524728
     }
   ],
   "steps": [
@@ -35,7 +35,7 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/yoga-candidate && BINDGEN_EXTRA_CLANG_ARGS=\"-I$(gcc -print-file-name=include)\" cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 96,
+      "duration_ms": 92,
       "stdout_tail": "",
       "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.06s\n",
       "timed_out": false
@@ -44,7 +44,7 @@
       "name": "shared-c-driver",
       "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o spikes/layout/yoga-candidate/target/release/run_corpus && bun spikes/layout/export-corpus.ts > spikes/layout/yoga-candidate/target/release/corpus_flat.txt && spikes/layout/yoga-candidate/target/release/run_corpus spikes/layout/yoga-candidate/target/release/corpus_flat.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so",
       "exit_code": 0,
-      "duration_ms": 515,
+      "duration_ms": 587,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nPASS 009\nPASS 010\nALL NEGATIVE CHECKS PASS\nALL 10 CASES PASS via spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so\n",
       "stderr_tail": "",
       "timed_out": false

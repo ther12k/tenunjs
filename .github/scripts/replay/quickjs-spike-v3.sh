@@ -5,7 +5,7 @@ set -eu
 # Deterministic build environment (review-5 strict artifacts): remap every
 # environment-specific absolute path to a canonical placeholder so rebuilds
 # on different machines produce byte-identical cdylibs.
-export RUSTUP_TOOLCHAIN=1.96.0
+export RUSTUP_TOOLCHAIN=1.98.0
 export RUSTFLAGS="--remap-path-prefix=$PWD=/build --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$(rustc --print sysroot)=/rustc -C link-arg=-Wl,--build-id=none"
 export CFLAGS="-g0 -fno-ident -ffile-prefix-map=$PWD=/build"
 export CXXFLAGS="-g0 -fno-ident -ffile-prefix-map=$PWD=/build"
