@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 # Trusted cold-replay chain for quickjs-spike-v3 (never taken from packets).
 set -eu
+
+# Deterministic build environment (review-5 strict artifacts): remap every
+# environment-specific absolute path to a canonical placeholder so rebuilds
+# on different machines produce byte-identical cdylibs.
+export RUSTFLAGS="--remap-path-prefix=$PWD=/build --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$(rustc --print sysroot)=/rustc -C link-arg=-Wl,--build-id=none"
+export CFLAGS="-g0 -fno-ident -ffile-prefix-map=$PWD=/build"
+export CXXFLAGS="-g0 -fno-ident -ffile-prefix-map=$PWD=/build"
 cd spikes/runtime/quickjs-candidate
 cargo build --release
 ./target/release/spike-runner

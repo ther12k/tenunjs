@@ -15,4 +15,4 @@ name = "spike-runner"
 path = "src/main.rs"
 
 [profile.release]
-debug = true
+strip = "symbols"
