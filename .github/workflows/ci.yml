@@ -54,16 +54,20 @@ jobs:
 
   # replays every evidence packet's reproducibility chain from a clean
   # checkout (H3): rebuilds cdylibs, reruns drivers, requires ALL PASS.
-  # Strict artifact manifest comparison is ALWAYS ON for the production
-  # verification run (review-5); TENUN_EVIDENCE_DIR may override packets
-  # only in explicit mutation-test child processes.
+  # Policy (review-5): packet identity = unchanged inputs_digest (the
+  # evidence directory itself is excluded from the digest) + recorded commit
+  # must be an ancestor of HEAD. Exact-HEAD is unachievable for
+  # self-referential evidence commits (regenerating at HEAD would change the
+  # tree, moving HEAD); inputs_digest is the chosen canonical identity.
+  # Strict artifact manifest comparison is ALWAYS ON for the production run;
+  # TENUN_EVIDENCE_DIR overrides packets only in mutation-test child
+  # processes.
   verify-evidence:
     runs-on: ubuntu-latest
     env:
       BINDGEN_EXTRA_CLANG_ARGS: ${{ format('-I{0}', '/usr/lib/gcc/x86_64-linux-gnu/13/include') }}
       TENUN_EVIDENCE_REPLAY: "1"
       TENUN_EVIDENCE_STRICT_ARTIFACTS: "1"
-      TENUN_EVIDENCE_REQUIRE_HEAD: "1"
     steps:
       - uses: actions/checkout@v4
         with:
