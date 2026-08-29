@@ -111,6 +111,8 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  *     owner-thread VM state, so it neither sets nor clears last_error.
  *   - tenun_js_last_error itself: a query, not an operation — it neither
  *     sets nor clears diagnostics.
+ *   (every other owner-thread call — including tenun_js_clear_interrupt and
+ *   tenun_js_last_result — follows the clear-on-success rule; review 6)
  *   - pump: success clears; failures (stale handle / reentrancy) record
  *     diagnostics; per-job runtime failures inside a pumped job belong to
  *     that job's own evaluation status.
@@ -121,11 +123,17 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * String/byte values returned through tenun_js_value point to adapter-owned
  * storage valid until the next adapter call on the same VM.
  *
- * Completion values (review 5): tenun_js_last_result returns the FULL
+ * Completion values (review 5/6): tenun_js_last_result returns the FULL
  * bounded kind of the last successful evaluation — null, bool, f64, i64,
- * string, or bytes. Completions that cannot cross the ABI (objects,
- * functions, oversized strings/bytes) return TENUN_JS_ERR_VALUE_BOUNDS with
- * a TJERR:VALUE_BOUNDS diagnostic; they are never silently coerced to null.
+ * string, or bytes. i64 is the EXACT signed 64-bit domain:
+ *   - host returns i64 -> JavaScript BigInt (2^53+1 and i64::MAX/MIN
+ *     round-trip exactly; no f64 rounding, no i32 narrowing)
+ *   - JavaScript BigInt arguments marshal exactly while inside int64;
+ *     magnitudes outside are dropped with TENUN_JS_ERR_VALUE_BOUNDS
+ *     (never wrapped modulo 2^64)
+ * Completions that cannot cross the ABI (objects, functions, oversized
+ * strings/bytes, BigInt outside int64) return TENUN_JS_ERR_VALUE_BOUNDS
+ * with a TJERR:VALUE_BOUNDS diagnostic; they are never silently coerced.
  */
 
 tenun_js_status tenun_js_last_result(tenun_js_vm* vm, tenun_js_value* out);

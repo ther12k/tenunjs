@@ -633,11 +633,12 @@ fn main() {
         tenun_js_destroy(vm_b2);
         println!("PASS cross-VM nested evaluation restores outer context");
 
-        println!("== completion value bridge: all six kinds (review 5) ==");
+        println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {
             src: &'static str,
             expect_kind: u32,
             expect_f64: Option<f64>,
+            expect_i64: Option<i64>, // exact integer assertion (review 6)
             expect_bool: Option<bool>,
             expect_bytes: Option<&'static [u8]>,
         }
@@ -646,6 +647,7 @@ fn main() {
                 src: "null",
                 expect_kind: VK_NULL,
                 expect_f64: None,
+                expect_i64: None,
                 expect_bool: None,
                 expect_bytes: None,
             },
@@ -653,6 +655,7 @@ fn main() {
                 src: "true",
                 expect_kind: VK_BOOL,
                 expect_f64: None,
+                expect_i64: None,
                 expect_bool: Some(true),
                 expect_bytes: None,
             },
@@ -660,6 +663,7 @@ fn main() {
                 src: "1.5",
                 expect_kind: VK_F64,
                 expect_f64: Some(1.5),
+                expect_i64: None,
                 expect_bool: None,
                 expect_bytes: None,
             },
@@ -667,6 +671,82 @@ fn main() {
                 src: "1.5e10",
                 expect_kind: VK_F64,
                 expect_f64: Some(1.5e10),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            // JS Number literals keep their origin type: f64 semantics
+            // (2^53+1 rounds AT PARSE TIME — that is JS, not the bridge)
+            CompletionCase {
+                src: "9007199254740993",
+                expect_kind: VK_F64,
+                expect_f64: Some(9007199254740992.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            // BigInt literals bridge EXACTLY (review 6)
+            CompletionCase {
+                src: "123n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(123),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "2147483648n", // i32::MAX + 1
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(2147483648),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "-2147483649n", // i32::MIN - 1
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(-2147483649),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "9007199254740991n", // 2^53 - 1
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(9007199254740991),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "9007199254740993n", // 2^53 + 1: the precision case
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(9007199254740993),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "-9007199254740993n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(-9007199254740993),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "9223372036854775807n", // i64::MAX
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(i64::MAX),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "-9223372036854775808n", // i64::MIN
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(i64::MIN),
                 expect_bool: None,
                 expect_bytes: None,
             },
@@ -674,6 +754,7 @@ fn main() {
                 src: "'h\\u00e9llo'",
                 expect_kind: VK_STRING,
                 expect_f64: None,
+                expect_i64: None,
                 expect_bool: None,
                 expect_bytes: None,
             },
@@ -681,6 +762,7 @@ fn main() {
                 src: "var ab = new ArrayBuffer(3); new Uint8Array(ab).set([7,8,9]); ab",
                 expect_kind: VK_BYTES,
                 expect_f64: None,
+                expect_i64: None,
                 expect_bool: None,
                 expect_bytes: Some(&[7u8, 8, 9]),
             },
@@ -708,8 +790,13 @@ fn main() {
                     }
                 }
                 k if k == VK_I64 => {
-                    if v.as_.i64v as f64 != case.expect_f64.unwrap() {
-                        fail(&format!("case {i}: i64 value"));
+                    // exact integer assertion — never through f64 (review 6)
+                    if v.as_.i64v != case.expect_i64.unwrap() {
+                        fail(&format!(
+                            "case {i}: i64 value {} != {}",
+                            v.as_.i64v,
+                            case.expect_i64.unwrap()
+                        ));
                     }
                 }
                 k if k == VK_BOOL => {
@@ -756,6 +843,10 @@ fn main() {
                 note: "oversized string",
             },
             BoundsCase {
+                src: "9223372036854775808n", // 2^63: outside int64 domain
+                note: "BigInt beyond i64 range",
+            },
+            BoundsCase {
                 src: "new ArrayBuffer(1048577)",
                 note: "oversized bytes",
             },
@@ -774,6 +865,97 @@ fn main() {
             tenun_js_destroy(vm);
         }
         println!("PASS object/function/oversized completions fail VALUE_BOUNDS");
+
+        println!("== host I64 return: exact via BigInt (review 6) ==");
+        {
+            extern "C" fn ret_i64_exact(
+                _vm: *mut TenunJsVm,
+                _a: *const ValueC,
+                _c: usize,
+            ) -> ValueC {
+                let mut out: ValueC = unsafe { std::mem::zeroed() };
+                out.kind = VK_I64;
+                out.as_.i64v = 9007199254740993; // 2^53 + 1
+                out
+            }
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("ret-i64 vm");
+            }
+            if tenun_js_register_host_fn(vm, c"retI64".as_ptr() as *const u8, Some(ret_i64_exact))
+                != TENUN_JS_OK
+            {
+                fail("ret-i64 registration");
+            }
+            eval_ok(
+                vm,
+                "if (retI64() !== 9007199254740993n) throw new Error('i64 lossy'); 1",
+            );
+            tenun_js_destroy(vm);
+        }
+        println!("PASS host i64 returns exact BigInt to JS (2^53+1 round-trips)");
+
+        println!("== JS BigInt arguments: exact i64 (review 6) ==");
+        {
+            static PREC_I64: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+            static PREC_ARGC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(999);
+            extern "C" fn host_i64(
+                _vm: *mut TenunJsVm,
+                args: *const ValueC,
+                argc: usize,
+            ) -> ValueC {
+                unsafe {
+                    PREC_ARGC.store(argc as u64, Ordering::SeqCst);
+                    if argc > 0 && (*args).kind == VK_I64 {
+                        PREC_I64.store((*args).as_.i64v, Ordering::SeqCst);
+                    }
+                }
+                let mut out: ValueC = unsafe { std::mem::zeroed() };
+                out.kind = VK_NULL;
+                out
+            }
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("arg-i64 vm");
+            }
+            if tenun_js_register_host_fn(vm, c"i64probe".as_ptr() as *const u8, Some(host_i64))
+                != TENUN_JS_OK
+            {
+                fail("arg-i64 registration");
+            }
+            for (lit, want) in [
+                ("9223372036854775807n", i64::MAX),
+                ("-9223372036854775808n", i64::MIN),
+                ("9007199254740993n", 9007199254740993),
+                ("123n", 123),
+            ] {
+                eval_ok(vm, &format!("i64probe({lit}); 1"));
+                if PREC_I64.load(Ordering::SeqCst) != want {
+                    fail(&format!(
+                        "BigInt arg {lit}: got {} want {want}",
+                        PREC_I64.load(Ordering::SeqCst)
+                    ));
+                }
+            }
+            // out-of-range BigInt is dropped with reduced argc (same
+            // documented truncation semantics as oversize strings; the
+            // transient VALUE_BOUNDS diagnostic is cleared because the
+            // bundle itself completes successfully)
+            eval_ok(vm, "i64probe(9223372036854775808n); 2");
+            if PREC_ARGC.load(Ordering::SeqCst) != 0 {
+                fail("out-of-range BigInt arg must be dropped");
+            }
+            // and a FAILING bundle must still surface the drop diagnostic
+            {
+                let b = pack_bundle("throw 0; i64probe(9223372036854775808n); 3");
+                let st = tenun_js_eval_bundle(vm, b.as_ptr(), b.len());
+                if st != TENUN_JS_ERR_EVAL {
+                    fail("throwing bundle must fail EVAL");
+                }
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS BigInt args exact in int64 domain; beyond dropped VALUE_BOUNDS");
 
         tenun_js_destroy(vm_a);
         tenun_js_destroy(vm_b);

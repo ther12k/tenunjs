@@ -15,8 +15,48 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::thread::ThreadId;
 
 use rquickjs::function::{Func, Rest};
-use rquickjs::{ArrayBuffer, Context, Ctx, Runtime, Value};
+use rquickjs::{ArrayBuffer, BigInt, Coerced, Context, Ctx, Runtime, Value};
 use sha2::{Digest, Sha256};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eval_stack_recovers_from_panic() {
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {})); // silence injected panic
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            eval_vm_push(EvalVm {
+                raw: std::ptr::dangling_mut::<TenunJsVm>(),
+                handle: std::ptr::null_mut(),
+                slot: 7,
+            });
+            let _g = EvalGuard;
+            panic!("injected during evaluation");
+        }));
+        std::panic::set_hook(prev_hook);
+        assert!(result.is_err());
+        // the guard popped the pushed context during unwind: no stale state
+        assert!(eval_vm_current().is_none(), "stale EvalVm after panic");
+        assert!(!eval_vm_has_slot(7), "stale slot after panic");
+        // normal nesting still works afterwards
+        eval_vm_push(EvalVm {
+            raw: std::ptr::null_mut(),
+            handle: std::ptr::null_mut(),
+            slot: 1,
+        });
+        eval_vm_push(EvalVm {
+            raw: std::ptr::null_mut(),
+            handle: std::ptr::null_mut(),
+            slot: 2,
+        });
+        assert!(eval_vm_has_slot(1) && eval_vm_has_slot(2));
+        eval_vm_pop();
+        eval_vm_pop();
+        assert!(eval_vm_current().is_none());
+    }
+}
 
 pub const TENUN_JS_OK: i32 = 0;
 pub const TENUN_JS_ERR_ABI: i32 = 1;
@@ -417,13 +457,67 @@ fn eval_vm_has_slot(slot: u32) -> bool {
     EVAL_VM.with(|s| s.borrow().iter().any(|ev| ev.slot == slot))
 }
 
+/// RAII pair for `eval_vm_push`: pops the context on every exit path,
+/// including unwinds, so a caught panic can never leave stale evaluation
+/// state in TLS (review 6).
+struct EvalGuard;
+
+impl Drop for EvalGuard {
+    fn drop(&mut self) {
+        eval_vm_pop();
+    }
+}
+
+/// Exact decimal-string -> i64 (review 6). `JS_ToInt64Ext` on BigInt values
+/// wraps modulo 2^64 (BF_GET_INT_MOD), silently corrupting out-of-range
+/// magnitudes — so the adapter range-checks the decimal representation
+/// itself and rejects anything outside the int64 domain.
+fn bigint_i64_from_decimal(s: &str) -> Option<i64> {
+    let (neg, digits) = match s.strip_prefix('-') {
+        Some(d) => (true, d),
+        None => (false, s),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let mut mag: i128 = 0;
+    for b in digits.bytes() {
+        mag = mag * 10 + (b - b'0') as i128;
+        if mag > (i64::MAX as i128) + 1 {
+            return None;
+        }
+    }
+    let signed = if neg { -mag } else { mag };
+    if signed < i64::MIN as i128 || signed > i64::MAX as i128 {
+        None
+    } else {
+        Some(signed as i64)
+    }
+}
+
 /// JS -> bounded value. Oversized strings/byte payloads fail with
 /// VALUE_BOUNDS and the argument is dropped (reflected in reduced argc) —
 /// documented truncation semantics, never silent content truncation.
-fn js_to_bound(vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) -> i32 {
+fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) -> i32 {
     if v.is_undefined() || v.is_null() {
         out.kind = VK_NULL;
         return TENUN_JS_OK;
+    }
+    // review 6: BigInt arguments bridge exactly; anything outside the int64
+    // domain fails VALUE_BOUNDS (dropped-argument semantics) — never wraps
+    if v.as_big_int().is_some() {
+        let s: Coerced<String> = match v.clone().get() {
+            Ok(s) => s,
+            Err(_) => return TENUN_JS_ERR_VALUE_BOUNDS,
+        };
+        return match bigint_i64_from_decimal(&s.0) {
+            Some(i) => {
+                out.kind = VK_I64;
+                out.as_.i64v = i;
+                TENUN_JS_OK
+            }
+            None => TENUN_JS_ERR_VALUE_BOUNDS,
+        };
     }
     if let Some(b) = v.as_bool() {
         out.kind = VK_BOOL;
@@ -491,10 +585,13 @@ fn bound_to_js<'js>(ctx: Ctx<'js>, out: &ValueC) -> Result<Value<'js>, i32> {
             VK_NULL => Ok(Value::new_null(ctx)),
             VK_BOOL => Ok(Value::new_bool(ctx.clone(), out.as_.bool_value != 0)),
             VK_F64 => Ok(Value::new_float(ctx.clone(), out.as_.f64v)),
-            VK_I64 => match i32::try_from(out.as_.i64v) {
-                Ok(i) => Ok(Value::new_int(ctx.clone(), i)),
-                Err(_) => Ok(Value::new_float(ctx.clone(), out.as_.i64v as f64)),
-            },
+            // review 6: exact i64 -> BigInt. The old i32/f64 fallback
+            // silently rounded magnitudes above 2^53 (and above i32).
+            VK_I64 => {
+                let big =
+                    BigInt::from_i64(ctx.clone(), out.as_.i64v).map_err(|_| TENUN_JS_ERR_EVAL)?;
+                Ok(big.into_value())
+            }
             VK_STRING => {
                 let sp = out.as_.string;
                 if sp.data.is_null() && sp.len > 0 {
@@ -551,11 +648,17 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
     let mut converted: [ValueC; MAX_ARGS] = unsafe { std::mem::zeroed() };
     let mut n = 0usize;
     for a in args.iter().take(MAX_ARGS) {
-        if js_to_bound(vm, a, &mut converted[n]) == TENUN_JS_OK {
-            n += 1;
-        } else {
-            vm.set_error("VALUE_BOUNDS", "argument dropped");
-            // documented truncation semantics: arg dropped from the tail
+        match js_to_bound(&ctx, vm, a, &mut converted[n]) {
+            TENUN_JS_OK => n += 1,
+            // documented truncation semantics: failed conversion drops the
+            // argument from the tail; VALUE_BOUNDS recorded per occurrence
+            code => {
+                let msg = format!(
+                    "TJERR:VALUE_BOUNDS: argument dropped ({})",
+                    status_cat(code)
+                );
+                vm.set_error("VALUE_BOUNDS", &msg[14..]);
+            }
         }
     }
     let out = stored(ev.handle, converted.as_ptr(), n);
@@ -640,9 +743,21 @@ pub unsafe extern "C" fn tenun_js_destroy(vm: *mut TenunJsVm) {
 /// functions, oversized strings/bytes) become `Unrepresentable` and surface
 /// as TENUN_JS_ERR_VALUE_BOUNDS from tenun_js_last_result — never silent
 /// coercion to null.
-fn owned_from_value(_vm: &TenunJsVm, v: &Value<'_>) -> OwnedResult {
+fn owned_from_value(_vm: &TenunJsVm, _ctx: &Ctx<'_>, v: &Value<'_>) -> OwnedResult {
     if v.is_undefined() || v.is_null() {
         return OwnedResult::Null;
+    }
+    // review 6: BigInt completions bridge as exact I64; magnitudes outside
+    // int64 are Unrepresentable (surfaces as VALUE_BOUNDS), never wrapped
+    if v.as_big_int().is_some() {
+        let s: Coerced<String> = match v.clone().get() {
+            Ok(s) => s,
+            Err(_) => return OwnedResult::Unrepresentable,
+        };
+        return match bigint_i64_from_decimal(&s.0) {
+            Some(i) => OwnedResult::I64(i),
+            None => OwnedResult::Unrepresentable,
+        };
     }
     if let Some(b) = v.as_bool() {
         return OwnedResult::Bool(b);
@@ -722,13 +837,13 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
         handle,
         slot,
     });
+    let _eval_guard = EvalGuard; // pop on every path, panics included
 
     let result: Result<OwnedResult, rquickjs::Error> = vm.context.with(|ctx| {
         let v: Value<'_> = ctx.eval(code.as_bytes())?;
-        Ok(owned_from_value(vm, &v))
+        Ok(owned_from_value(vm, &ctx, &v))
     });
 
-    eval_vm_pop();
     match result {
         Ok(owned) => {
             *vm.state.result.borrow_mut() = owned;
@@ -926,6 +1041,7 @@ pub unsafe extern "C" fn tenun_js_clear_interrupt(vm: *mut TenunJsVm) -> i32 {
         }
         vm.state.flag.store(0, Ordering::SeqCst);
         vm.state.interrupted.store(false, Ordering::SeqCst);
+        vm.clear_error(); // header contract: successful call clears diagnostics (review 6)
         TENUN_JS_OK
     }))
     .unwrap_or(TENUN_JS_ERR_ARGUMENT)
@@ -975,6 +1091,7 @@ pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut Valu
                 return TENUN_JS_ERR_VALUE_BOUNDS;
             }
         }
+        vm.clear_error(); // header contract: successful call clears diagnostics (review 6)
         TENUN_JS_OK
     }))
     .unwrap_or(TENUN_JS_ERR_ARGUMENT)
