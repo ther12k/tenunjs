@@ -524,11 +524,9 @@ fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) 
         out.as_.bool_value = b as i32;
         return TENUN_JS_OK;
     }
-    if let Some(i) = v.as_int() {
-        out.kind = VK_I64;
-        out.as_.i64v = i as i64;
-        return TENUN_JS_OK;
-    }
+    // review 7: source-type semantics — every JavaScript Number crosses the
+    // ABI as F64 regardless of the engine's internal integer optimization;
+    // VK_I64 is reserved for BigInt (see branch above).
     if let Some(f) = v.as_number() {
         out.kind = VK_F64;
         out.as_.f64v = f;
@@ -645,6 +643,15 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
         Some(f) => *f,
         None => return Ok(Value::new_null(ctx)),
     };
+    if args.len() > MAX_ARGS {
+        // review 7: the published limit is enforced observably — the call
+        // still runs with the first MAX_ARGS arguments, but the overflow is
+        // recorded instead of being silently ignored
+        vm.set_error(
+            "VALUE_BOUNDS",
+            "host call exceeded TENUN_JS_MAX_ARGS; excess arguments dropped",
+        );
+    }
     let mut converted: [ValueC; MAX_ARGS] = unsafe { std::mem::zeroed() };
     let mut n = 0usize;
     for a in args.iter().take(MAX_ARGS) {
@@ -762,9 +769,7 @@ fn owned_from_value(_vm: &TenunJsVm, _ctx: &Ctx<'_>, v: &Value<'_>) -> OwnedResu
     if let Some(b) = v.as_bool() {
         return OwnedResult::Bool(b);
     }
-    if let Some(i) = v.as_int() {
-        return OwnedResult::I64(i as i64);
-    }
+    // review 7: Number => F64 (source-type model); I64 only via BigInt
     if let Some(f) = v.as_number() {
         return OwnedResult::F64(f);
     }
@@ -791,19 +796,32 @@ fn owned_from_value(_vm: &TenunJsVm, _ctx: &Ctx<'_>, v: &Value<'_>) -> OwnedResu
 }
 
 unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> i32 {
-    if bytes.is_null() || len > MAX_BUNDLE_BYTES {
-        return TENUN_JS_ERR_ARGUMENT;
-    }
-    let _g = OpGuard::enter();
-    let (slot, _generation) = match decode_handle(handle) {
-        Some(p) => p,
-        None => return TENUN_JS_ERR_ARGUMENT,
-    };
+    // review 7: resolve the handle BEFORE argument validation so every failed
+    // call with a resolvable VM overwrites last_error
     let vm = match registry_resolve(handle) {
         Ok(p) => p,
         Err(e) => return e,
     };
     let vm = &*vm;
+    if bytes.is_null() || len > MAX_BUNDLE_BYTES {
+        vm.set_error(
+            "ARGUMENT",
+            if bytes.is_null() {
+                "bundle pointer is NULL"
+            } else {
+                "bundle exceeds maximum size"
+            },
+        );
+        return TENUN_JS_ERR_ARGUMENT;
+    }
+    let _g = OpGuard::enter();
+    let (slot, _generation) = match decode_handle(handle) {
+        Some(p) => p,
+        None => {
+            vm.set_error("ARGUMENT", "handle is NULL");
+            return TENUN_JS_ERR_ARGUMENT;
+        }
+    };
     // reentrancy: a host callback calling eval back into the VM that is
     // currently evaluating would corrupt the per-eval stash; fail closed
     if eval_vm_has_slot(slot) {
@@ -888,19 +906,32 @@ pub unsafe extern "C" fn tenun_js_eval_bundle(
 }
 
 unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Option<HostFn>) -> i32 {
-    if name.is_null() || fn_ptr.is_none() {
-        return TENUN_JS_ERR_ARGUMENT;
-    }
-    let _g = OpGuard::enter();
-    let (slot, _) = match decode_handle(handle) {
-        Some(p) => p,
-        None => return TENUN_JS_ERR_ARGUMENT,
-    };
+    // review 7: resolve the handle BEFORE argument validation so every failed
+    // call with a resolvable VM overwrites last_error
     let vm = match registry_resolve(handle) {
         Ok(p) => p,
         Err(e) => return e,
     };
     let vm = &*vm;
+    if name.is_null() || fn_ptr.is_none() {
+        vm.set_error(
+            "ARGUMENT",
+            if name.is_null() {
+                "name pointer is NULL"
+            } else {
+                "function pointer is NULL"
+            },
+        );
+        return TENUN_JS_ERR_ARGUMENT;
+    }
+    let _g = OpGuard::enter();
+    let (slot, _) = match decode_handle(handle) {
+        Some(p) => p,
+        None => {
+            vm.set_error("ARGUMENT", "handle is NULL");
+            return TENUN_JS_ERR_ARGUMENT;
+        }
+    };
     if eval_vm_has_slot(slot) {
         vm.set_error("HANDLE", "reentrant registration on evaluating VM");
         return TENUN_JS_ERR_HANDLE;
@@ -922,8 +953,17 @@ unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Opti
     }
     let fname = match fname_len.map(|l| std::slice::from_raw_parts(name, l)) {
         Some(s) => match std::str::from_utf8(s) {
-            Ok(f) => f.to_string(),
-            Err(_) => return TENUN_JS_ERR_ARGUMENT,
+            Ok(f) => {
+                if f.is_empty() {
+                    vm.set_error("ARGUMENT", "host fn name is empty");
+                    return TENUN_JS_ERR_ARGUMENT;
+                }
+                f.to_string()
+            }
+            Err(_) => {
+                vm.set_error("ARGUMENT", "host fn name is not valid UTF-8");
+                return TENUN_JS_ERR_ARGUMENT;
+            }
         },
         None => {
             vm.set_error("VALUE_BOUNDS", "host fn name exceeds 128 bytes");
@@ -1051,14 +1091,15 @@ pub unsafe extern "C" fn tenun_js_clear_interrupt(vm: *mut TenunJsVm) -> i32 {
 pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut ValueC) -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
         let _g = OpGuard::enter();
-        if out.is_null() {
-            return TENUN_JS_ERR_ARGUMENT;
-        }
         let vm = match registry_resolve(vm) {
             Ok(p) => p,
             Err(e) => return e,
         };
         let vm = &*vm;
+        if out.is_null() {
+            vm.set_error("ARGUMENT", "out pointer is NULL");
+            return TENUN_JS_ERR_ARGUMENT;
+        }
         let result = vm.state.result.borrow();
         match &*result {
             OwnedResult::Null => {

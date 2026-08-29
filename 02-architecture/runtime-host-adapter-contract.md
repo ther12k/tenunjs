@@ -32,14 +32,17 @@ Both directions marshal all six kinds: `null`, `bool`, `f64`, `i64`, UTF-8 `stri
 - **Foreign tags**: `kind` is a raw u32; implementations range-check before reading the union. Invalid tags fail with `TENUN_JS_ERR_VALUE_BOUNDS`.
 - **i64 exactness (review 6)**: `i64` is the full signed 64-bit domain — no i32 narrowing, no f64 rounding.
   - host→JS: `i64` returns a **BigInt**; `9007199254740993` (2^53+1) and `i64::MAX`/`i64::MIN` round-trip exactly.
-  - JS→host: **BigInt** arguments in the int64 domain marshal exactly; BigInt outside ±(2^64−1)→int64 range is dropped (`VALUE_BOUNDS`, reduced argc) — never wrapped modulo 2^64.
+  - JS→host: **BigInt** arguments marshal exactly within the signed range **[-2^63, 2^63 − 1]**; BigInt outside that range is dropped (`VALUE_BOUNDS`, reduced argc) — never wrapped modulo 2^64.
   - JS **Number** arguments/completions keep their origin type (`f64`); rounding of non-exact literals is JavaScript parse semantics, not the bridge.
-  - completion path: BigInt completions become `I64` when inside int64; outside → `VALUE_BOUNDS`.
+  - completion path: BigInt completions become `I64` when inside `[-2^63, 2^63 − 1]`; outside → `VALUE_BOUNDS`.
+- **Source-type kinds (review 7)**: every JavaScript **Number** crosses the ABI as `F64`, regardless of the engine's internal integer representation; **`I64` is reserved for BigInt**. Host callbacks can rely on `42` arriving as `TENUN_JS_VALUE_F64` and `42n` as `TENUN_JS_VALUE_I64`.
+- **Host-call argument limit (review 7)**: at most `TENUN_JS_MAX_ARGS` (= 8) arguments are marshalled per host call. Calls with more arguments still invoke the callback with the first 8; excess arguments are dropped and a `TJERR:VALUE_BOUNDS` diagnostic is recorded.
 - **UTF-8 policy**: string payloads that are not valid UTF-8 are rejected (`VALUE_BOUNDS`), never mangled.
 - **Pointer rules**: null data with nonzero length fails; null data with length 0 is an empty value.
 - **Oversize JS→host arguments** are DROPPED with `TJERR:VALUE_BOUNDS` recorded and a reduced argc (documented truncation of the argument LIST, never of content); oversize host RETURNS throw a `TJERR:VALUE_BOUNDS` exception into JS.
 - **Ownership**: string/byte payloads point to adapter-owned storage valid until the next adapter call on the same VM.
 - **Failure visibility**: callback-return failures surface as JS exceptions carrying the TJERR category, so they survive eval success.
+- **Diagnostics are exact (review 7)**: every failed owner-thread adapter call with a resolvable VM overwrites `last_error` with a fresh category-specific diagnostic — including pure argument-validation failures (NULL bundle/name/out pointers, oversize bundle, invalid UTF-8 or empty registration names). Only the documented exceptions (`request_interrupt`, `last_error`) and unresolvable handles (no VM state to update) skip this.
 
 ## Interruption rules (atomic API — amended review 2 / review 3)
 

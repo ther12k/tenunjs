@@ -24,6 +24,11 @@ describe("runtime host adapter contract", () => {
     }
   });
 
+  test("argument limit and source-type kinds are documented in the header", () => {
+    expect(header).toContain("TENUN_JS_MAX_ARGS 8u");
+    expect(header).toContain("VK_I64 is reserved for BigInt");
+  });
+
   test("handle registry semantics are documented in the header", () => {
     expect(header).toContain("registry tokens (slot + generation)");
     expect(header).toContain("double destroy is a safe no-op");

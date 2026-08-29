@@ -108,8 +108,9 @@ int main(void) {
     tenun_js_value res;
     memset(&res, 0xAB, sizeof res);
     CHECK(tenun_js_last_result(vm, &res) == TENUN_JS_OK, "last_result status");
-    /* review 5: full-kind completion bridge — integer 42 surfaces as I64 */
-    CHECK(res.kind == TENUN_JS_VALUE_I64 && res.as.i64 == 42, "completion value is 42 (I64)");
+    /* review 7: source-type semantics — `42` is a JS Number -> F64
+     * (VK_I64 is reserved for BigInt values) */
+    CHECK(res.kind == TENUN_JS_VALUE_F64 && res.as.f64 == 42.0, "completion value is 42 (F64)");
 
     CHECK(tenun_js_register_host_fn(vm, "onFirstFrame", host_cb) == TENUN_JS_OK, "register cb");
     size_t cblen = 0;

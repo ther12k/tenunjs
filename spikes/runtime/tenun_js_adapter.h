@@ -58,6 +58,11 @@ typedef enum {
 } tenun_js_value_kind;
 
 #define TENUN_JS_MAX_STRING_BYTES 65536u
+/* Maximum host-function arguments marshalled per call (review 7). Calls
+ * with more arguments still invoke the callback, but arguments beyond this
+ * limit are dropped, argc reflects only the marshalled prefix, and a
+ * TJERR:VALUE_BOUNDS diagnostic is recorded. */
+#define TENUN_JS_MAX_ARGS 8u
 #define TENUN_JS_MAX_BYTES 1048576u
 #define TENUN_JS_MAX_BUNDLE_BYTES 16777216u
 
@@ -134,6 +139,10 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * Completions that cannot cross the ABI (objects, functions, oversized
  * strings/bytes, BigInt outside int64) return TENUN_JS_ERR_VALUE_BOUNDS
  * with a TJERR:VALUE_BOUNDS diagnostic; they are never silently coerced.
+ *
+ * Source-type kinds (review 7): every JavaScript Number crosses the ABI as
+ * TENUN_JS_VALUE_F64 regardless of the engine's internal integer
+ * representation; VK_I64 is reserved for BigInt values.
  */
 
 tenun_js_status tenun_js_last_result(tenun_js_vm* vm, tenun_js_value* out);
