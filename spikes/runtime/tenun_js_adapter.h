@@ -125,13 +125,23 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.
  *
- * String/byte value storage (review 8):
- *   - callback argument payloads: valid ONLY for the duration of the native
- *     callback invocation (scratch released when the callback returns)
- *   - tenun_js_last_result string/byte payloads: backed by one replaceable
- *     buffer, released at the next last_result call or adapter operation
- *   - aggregate retention is capped at 8 MiB per VM (MAX_BUFFER_POOL_BYTES);
- *     values that would exceed it are dropped with TENUN_JS_ERR_VALUE_BOUNDS
+ * String/byte value storage (review 8/10) — PER-SCOPE budgets, not one
+ * aggregate pool. Maximum simultaneous adapter-owned payload is ~10 MiB
+ * plus allocator overhead:
+ *   - callback scratch: at most TENUN_JS_MAX_ARGS * TENUN_JS_MAX_BYTES
+ *     (8 MiB), structurally bounded. Argument payload pointers are valid
+ *     ONLY for the duration of the native callback invocation (the scope
+ *     is released when the callback returns)
+ *   - owned completion: at most TENUN_JS_MAX_BYTES (1 MiB), stored when an
+ *     evaluation completes
+ *   - tenun_js_last_result view: at most TENUN_JS_MAX_BYTES (1 MiB),
+ *     backed by ONE replaceable buffer. A previously returned payload
+ *     pointer is invalidated by exactly two events: the next
+ *     tenun_js_last_result call on the same VM (which replaces the buffer)
+ *     and tenun_js_destroy. Other adapter operations (eval, register,
+ *     pump, interrupt control) do NOT invalidate it.
+ *   - a value that would exceed its scope budget is dropped with
+ *     TENUN_JS_ERR_VALUE_BOUNDS
  *
  * Unsupported argument shapes (review 8/9): plain objects, functions, arrays,
  * and other non-ArrayBuffer arguments are DROPPED with
@@ -140,9 +150,14 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * individual unsupported shapes are NOT distinguishable from one another
  * (they share the generic drop diagnostic).
  *
- * MAX_ARGS diagnostic: the TENUN_JS_MAX_ARGS exceedance diagnostic is
- * callback-visible (readable via tenun_js_last_error inside the callback)
- * and is cleared when the overall evaluation completes successfully.
+ * MAX_ARGS diagnostic (review 8/10): the TENUN_JS_MAX_ARGS exceedance
+ * diagnostic is callback-visible (readable via tenun_js_last_error inside
+ * the callback). Callback diagnostics are scoped to the single host
+ * invocation that produced them: a callback observes ONLY its own combined
+ * VALUE_BOUNDS warning (a clean callback never inherits a previous
+ * callback's warning), the evaluation-level diagnostic is restored when
+ * the callback returns, and everything is cleared when the overall
+ * evaluation completes successfully.
  *
  * Completion values (review 5/6): tenun_js_last_result returns the FULL
  * bounded kind of the last successful evaluation — null, bool, f64, i64,
