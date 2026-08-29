@@ -15,6 +15,9 @@ extern "C" fn host_probe(vm: *mut TenunJsVm, args: *const ValueC, argc: usize) -
             let a = &*args.add(i);
             LAST_KINDS.fetch_or((a.kind as u64) << (i * 4), Ordering::SeqCst);
             match a.kind {
+                // review 7: 42 arrives as Number → F64; store its bit pattern
+                // (only arg0 — arg1 is 3.5 and would overwrite it)
+                VK_F64 if i == 0 => LAST_I64.store(a.as_.f64v.to_bits(), Ordering::SeqCst),
                 VK_I64 => LAST_I64.store(a.as_.i64v as u64, Ordering::SeqCst),
                 VK_STRING if !a.as_.string.data.is_null() => {
                     let n = a.as_.string.len as u64;
@@ -302,8 +305,10 @@ fn main() {
             ));
         }
         let kinds = LAST_KINDS.load(Ordering::SeqCst);
+        // review 7: source-type semantics — 42 is a JS Number → F64;
+        // VK_I64 is reserved for BigInt
         let want = [
-            VK_I64 as u64,
+            VK_F64 as u64,
             VK_F64 as u64,
             VK_BOOL as u64,
             VK_NULL as u64,
@@ -316,8 +321,8 @@ fn main() {
                 fail(&format!("arg{i} kind {got} != {w}"));
             }
         }
-        if LAST_I64.load(Ordering::SeqCst) != 42 {
-            fail("i64 arg value wrong");
+        if f64::from_bits(LAST_I64.load(Ordering::SeqCst)) != 42.0 {
+            fail("f64 arg value wrong");
         }
         // "héllo" is 6 UTF-8 bytes
         if LAST_STR.load(Ordering::SeqCst) != 6 {
@@ -329,7 +334,7 @@ fn main() {
         if LAST_B0.load(Ordering::SeqCst) != 9 {
             fail("array-buffer payload not visible");
         }
-        println!("PASS i64/f64/bool/null/string(utf8)/bytes received intact");
+        println!("PASS f64(Number)/f64/bool/null/string(utf8)/bytes received intact");
 
         println!("== oversize JS→host string dropped with reduced argc ==");
         let big = "x".repeat(70_000);
@@ -686,6 +691,87 @@ fn main() {
                 expect_bytes: None,
             },
             // BigInt literals bridge EXACTLY (review 6)
+            // review 7: plain Number 42 → F64 (source-type model)
+            CompletionCase {
+                src: "42",
+                expect_kind: VK_F64,
+                expect_f64: Some(42.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "0",
+                expect_kind: VK_F64,
+                expect_f64: Some(0.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "-1",
+                expect_kind: VK_F64,
+                expect_f64: Some(-1.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "2147483647",
+                expect_kind: VK_F64,
+                expect_f64: Some(2147483647.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "9007199254740991",
+                expect_kind: VK_F64,
+                expect_f64: Some(9007199254740991.0),
+                expect_i64: None,
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "0n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(0),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "42n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(42),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "-1n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(-1),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "2147483647n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(2147483647),
+                expect_bool: None,
+                expect_bytes: None,
+            },
+            CompletionCase {
+                src: "9007199254740991n",
+                expect_kind: VK_I64,
+                expect_f64: None,
+                expect_i64: Some(9007199254740991),
+                expect_bool: None,
+                expect_bytes: None,
+            },
             CompletionCase {
                 src: "123n",
                 expect_kind: VK_I64,
@@ -865,6 +951,133 @@ fn main() {
             tenun_js_destroy(vm);
         }
         println!("PASS object/function/oversized completions fail VALUE_BOUNDS");
+
+        println!("== stale-diagnostic overwrite (review 7) ==");
+        {
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("stale vm");
+            }
+            // seed a sticky diagnostic
+            let bad = pack_bundle("x"); // invalid: no TJRB magic
+            let _ = tenun_js_eval_bundle(vm, bad.as_ptr(), bad.len());
+            if !last_err(vm).starts_with("TJERR:") {
+                fail("seed diagnostic missing");
+            }
+            struct ArgCase {
+                note: &'static str,
+                run: fn(*mut TenunJsVm) -> i32,
+                want_status: i32,
+                want_prefix: &'static str,
+            }
+            fn eval_null(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_eval_bundle(vm, std::ptr::null(), 10) }
+            }
+            fn eval_oversize(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_eval_bundle(vm, [0u8; 8].as_ptr(), (usize::MAX) >> 2) }
+            }
+            fn reg_null_name(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_register_host_fn(vm, std::ptr::null(), Some(host_a)) }
+            }
+            fn reg_null_fn(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_register_host_fn(vm, c"x".as_ptr() as *const u8, None) }
+            }
+            fn reg_bad_utf8(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_register_host_fn(vm, [0xFF, 0xFE, 0x00].as_ptr(), Some(host_a)) }
+            }
+            fn reg_empty(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_register_host_fn(vm, [0u8].as_ptr(), Some(host_a)) }
+            }
+            fn last_res_null(vm: *mut TenunJsVm) -> i32 {
+                unsafe { tenun_js_last_result(vm, std::ptr::null_mut()) }
+            }
+            let arg_cases = [
+                ArgCase {
+                    note: "null bundle",
+                    run: eval_null,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "oversize bundle",
+                    run: eval_oversize,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "null name",
+                    run: reg_null_name,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "null fn",
+                    run: reg_null_fn,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "bad utf8 name",
+                    run: reg_bad_utf8,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "empty name",
+                    run: reg_empty,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+                ArgCase {
+                    note: "null out",
+                    run: last_res_null,
+                    want_status: TENUN_JS_ERR_ARGUMENT,
+                    want_prefix: "TJERR:ARGUMENT",
+                },
+            ];
+            for case in &arg_cases {
+                let st = (case.run)(vm);
+                let e = last_err(vm);
+                if st != case.want_status || !e.starts_with(case.want_prefix) {
+                    fail(&format!(
+                        "case {}: st={} err='{}' (want status {} prefix {})",
+                        case.note, st, e, case.want_status, case.want_prefix
+                    ));
+                }
+            }
+            // seeded diagnostic must be GONE by now: last case replaced it
+            if last_err(vm).contains("BUNDLE_MAGIC") {
+                fail("seeded diagnostic survived argument failures");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS every failed resolvable-VM call overwrites last_error");
+
+        println!("== MAX_ARGS enforcement (review 7) ==");
+        {
+            static NINE_ARGC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(999);
+            extern "C" fn host_nine(_vm: *mut TenunJsVm, _a: *const ValueC, argc: usize) -> ValueC {
+                NINE_ARGC.store(argc as u64, Ordering::SeqCst);
+                let mut out: ValueC = unsafe { std::mem::zeroed() };
+                out.kind = VK_NULL;
+                out
+            }
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("nine vm");
+            }
+            if tenun_js_register_host_fn(vm, c"nine".as_ptr() as *const u8, Some(host_nine))
+                != TENUN_JS_OK
+            {
+                fail("nine registration");
+            }
+            eval_ok(vm, "nine(1,2,3,4,5,6,7,8,9); 1");
+            if NINE_ARGC.load(Ordering::SeqCst) != 8 {
+                fail("nine-arg call must deliver exactly MAX_ARGS arguments");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS 9-arg call delivers MAX_ARGS; exceedance recorded");
 
         println!("== host I64 return: exact via BigInt (review 6) ==");
         {
