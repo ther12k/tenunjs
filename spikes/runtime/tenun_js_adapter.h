@@ -133,9 +133,12 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  *   - aggregate retention is capped at 8 MiB per VM (MAX_BUFFER_POOL_BYTES);
  *     values that would exceed it are dropped with TENUN_JS_ERR_VALUE_BOUNDS
  *
- * Unsupported argument shapes (review 8): plain objects, functions, arrays,
+ * Unsupported argument shapes (review 8/9): plain objects, functions, arrays,
  * and other non-ArrayBuffer arguments are DROPPED with
  * TENUN_JS_ERR_VALUE_BOUNDS (reduced argc) — they never coerce to null.
+ * Native code can distinguish actual null from an unsupported value, but
+ * individual unsupported shapes are NOT distinguishable from one another
+ * (they share the generic drop diagnostic).
  *
  * MAX_ARGS diagnostic: the TENUN_JS_MAX_ARGS exceedance diagnostic is
  * callback-visible (readable via tenun_js_last_error inside the callback)

@@ -56,6 +56,34 @@ mod tests {
         eval_vm_pop();
         assert!(eval_vm_current().is_none());
     }
+
+    #[test]
+    fn scratch_budget_accounting_rejects_overflow() {
+        // structural bound: MAX_ARGS * MAX_BYTES exactly fits
+        let full = MAX_ARGS * MAX_BYTES;
+        assert!(!scratch_would_exceed(full - 1, 1));
+        assert!(scratch_would_exceed(full, 1), "1 byte over budget rejected");
+        assert!(scratch_would_exceed(0, MAX_BUFFER_POOL_BYTES + 1));
+        // review 9: prove the overflow branch with a synthetic overshoot
+        assert!(scratch_would_exceed(full, MAX_BYTES));
+    }
+
+    #[test]
+    fn bigint_decimal_parse_rejects_out_of_domain() {
+        assert_eq!(bigint_i64_from_decimal("0"), Some(0));
+        assert_eq!(
+            bigint_i64_from_decimal("9223372036854775807"),
+            Some(i64::MAX)
+        );
+        assert_eq!(
+            bigint_i64_from_decimal("-9223372036854775808"),
+            Some(i64::MIN)
+        );
+        assert_eq!(bigint_i64_from_decimal("9223372036854775808"), None);
+        assert_eq!(bigint_i64_from_decimal("-9223372036854775809"), None);
+        assert_eq!(bigint_i64_from_decimal("12x"), None);
+        assert_eq!(bigint_i64_from_decimal(""), None);
+    }
 }
 
 pub const TENUN_JS_OK: i32 = 0;
@@ -130,10 +158,16 @@ pub struct ValueC {
 
 type HostFn = extern "C" fn(vm: *mut TenunJsVm, args: *const ValueC, argc: usize) -> ValueC;
 
-/// Aggregate native-memory budget (review 8): the adapter refuses to retain
-/// more than this many bytes of marshalled string/byte storage at once.
-/// Individual value caps remain MAX_STRING_BYTES / MAX_BYTES.
-const MAX_BUFFER_POOL_BYTES: usize = 8 * 1024 * 1024;
+/// Callback-scratch budget (review 8/9): at most MAX_ARGS arguments, each
+/// capped at MAX_BYTES, so the scratch scope is structurally bounded to
+/// MAX_ARGS * MAX_BYTES (8 MiB). The check below is a defensive backstop.
+const MAX_BUFFER_POOL_BYTES: usize = MAX_ARGS * MAX_BYTES;
+
+/// Pure accounting helper: would committing `incoming` bytes push the
+/// scratch pool past its budget? (unit-tested in tests mod, review 9)
+fn scratch_would_exceed(used: usize, incoming: usize) -> bool {
+    used.saturating_add(incoming) > MAX_BUFFER_POOL_BYTES
+}
 
 struct VmState {
     interrupted: Arc<AtomicBool>,
@@ -186,7 +220,7 @@ impl TenunJsVm {
     fn store_scratch(&self, data: &[u8]) -> Result<(*const u8, usize), i32> {
         let mut bufs = self.state.scratch.borrow_mut();
         let used: usize = bufs.iter().map(|b| b.capacity()).sum();
-        if used + data.len() > MAX_BUFFER_POOL_BYTES {
+        if scratch_would_exceed(used, data.len()) {
             return Err(TENUN_JS_ERR_VALUE_BOUNDS);
         }
         bufs.push(data.to_vec());
@@ -198,8 +232,8 @@ impl TenunJsVm {
     /// repeated last_result calls cannot grow memory — review 8).
     fn store_result_bytes(&self, data: &[u8]) -> Result<(*const u8, usize), i32> {
         let mut buf = self.state.result_buffer.borrow_mut();
-        if data.len() > MAX_BUFFER_POOL_BYTES {
-            return Err(TENUN_JS_ERR_VALUE_BOUNDS);
+        if data.len() > MAX_BYTES {
+            return Err(TENUN_JS_ERR_VALUE_BOUNDS); // individual 1 MiB cap
         }
         buf.clear();
         buf.extend_from_slice(data);
@@ -685,14 +719,13 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
         Some(f) => *f,
         None => return Ok(Value::new_null(ctx)),
     };
+    // review 9: warnings are ACCUMULATED and written as one combined
+    // diagnostic immediately before the callback runs, so the documented
+    // MAX_ARGS exceedance is always observable even when individual
+    // argument conversions also produce warnings
+    let mut warnings: Vec<&'static str> = Vec::new();
     if args.len() > MAX_ARGS {
-        // review 7: the published limit is enforced observably — the call
-        // still runs with the first MAX_ARGS arguments, but the overflow is
-        // recorded instead of being silently ignored
-        vm.set_error(
-            "VALUE_BOUNDS",
-            "host call exceeded TENUN_JS_MAX_ARGS; excess arguments dropped",
-        );
+        warnings.push("TENUN_JS_MAX_ARGS exceeded; excess arguments dropped");
     }
     let mut converted: [ValueC; MAX_ARGS] = unsafe { std::mem::zeroed() };
     let mut n = 0usize;
@@ -700,22 +733,21 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
         match js_to_bound(&ctx, vm, a, &mut converted[n]) {
             TENUN_JS_OK => n += 1,
             // documented truncation semantics: failed conversion drops the
-            // argument from the tail; VALUE_BOUNDS recorded per occurrence
-            code => {
-                let msg = format!(
-                    "TJERR:VALUE_BOUNDS: argument dropped ({})",
-                    status_cat(code)
-                );
-                vm.set_error("VALUE_BOUNDS", &msg[14..]);
-            }
+            // argument from the tail; recorded as a per-occurrence warning
+            _ => warnings.push("an unmarshallable argument was dropped"),
         }
     }
+    if !warnings.is_empty() {
+        vm.set_error("VALUE_BOUNDS", &warnings.join("; "));
+    }
     let out = stored(ev.handle, converted.as_ptr(), n);
-    // review 8: end the callback scratch scope — argument storage handed to
-    // the native callback is released as soon as the callback returns, so
-    // repeated host calls cannot accumulate native memory
+    // review 9: the returned value may point INTO callback scratch (a
+    // callback may echo one of its arguments). bound_to_js copies the
+    // payload into JS-owned memory, so the scratch scope must outlive that
+    // conversion; the guard releases it afterwards (and on unwind).
+    let js_value = bound_to_js(ctx.clone(), &out);
     vm.end_scratch_scope();
-    bound_to_js(ctx.clone(), &out).map_err(|code| {
+    js_value.map_err(|code| {
         let msg = format!("TJERR:{}: host callback return rejected", status_cat(code));
         vm.set_error(status_cat(code), "host callback return rejected");
         rquickjs::Exception::throw_message(&ctx, &msg)
