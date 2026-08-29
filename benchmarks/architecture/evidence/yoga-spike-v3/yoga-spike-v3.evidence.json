@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "yoga-spike-v3",
-  "timestamp_utc": "2026-08-28T17:00:19.623Z",
+  "timestamp_utc": "2026-08-29T05:27:37.161Z",
   "build_profile": "release",
-  "inputs_digest": "d92407e8fcffbf2fbe973640be2aad836994ce068bbf36da58ec8c158840f079",
+  "inputs_digest": "3766ac5f951790ff233bdd2f81bbcdbbe82f26a637615e18e9585d1f835232af",
   "source": {
-    "commit": "9ee6a930d3d638c2242c1968209ea563d60420c1",
+    "commit": "5ddb9aec0c6854cfbc0d79caf3b52f2378b2b67f",
     "dirty": false,
     "changed_files": 0
   },
@@ -35,16 +35,16 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/yoga-candidate && BINDGEN_EXTRA_CLANG_ARGS=\"-I$(gcc -print-file-name=include)\" cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 470,
+      "duration_ms": 134,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.05s\n",
+      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.10s\n",
       "timed_out": false
     },
     {
       "name": "shared-c-driver",
       "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o spikes/layout/yoga-candidate/target/release/run_corpus && bun spikes/layout/export-corpus.ts > spikes/layout/yoga-candidate/target/release/corpus_flat.txt && spikes/layout/yoga-candidate/target/release/run_corpus spikes/layout/yoga-candidate/target/release/corpus_flat.txt spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so",
       "exit_code": 0,
-      "duration_ms": 488,
+      "duration_ms": 455,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nPASS 009\nPASS 010\nALL NEGATIVE CHECKS PASS\nALL 10 CASES PASS via spikes/layout/yoga-candidate/target/release/libtenun_layout_yoga.so\n",
       "stderr_tail": "",
       "timed_out": false
