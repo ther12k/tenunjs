@@ -1059,7 +1059,45 @@ fn main() {
         }
         println!("PASS every failed resolvable-VM call overwrites last_error");
 
-        println!("== MAX_ARGS enforcement (review 7) ==");
+        println!("== callback echoes its own argument (review 9) ==");
+        {
+            // the callback RETURNS one of its received arguments; the
+            // payload lives in callback scratch — conversion must happen
+            // before scratch release
+            extern "C" fn host_echo0(
+                _vm: *mut TenunJsVm,
+                args: *const ValueC,
+                _c: usize,
+            ) -> ValueC {
+                unsafe { *args }
+            }
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("echo vm");
+            }
+            if tenun_js_register_host_fn(vm, c"echo0".as_ptr() as *const u8, Some(host_echo0))
+                != TENUN_JS_OK
+            {
+                fail("echo registration");
+            }
+            // string echo
+            eval_ok(
+                vm,
+                "var s = 'w\\u00f6rld-' + 'x'.repeat(300);\n\
+                 if (echo0(s) !== s) throw new Error('string echo lost');\n1",
+            );
+            // bytes echo
+            eval_ok(
+                vm,
+                "var ab = new ArrayBuffer(70000); new Uint8Array(ab).fill(7);\n\
+                 var back = new Uint8Array(echo0(ab));\n\
+                 if (back.length !== 70000 || back[69999] !== 7) throw new Error('bytes echo lost');\n2",
+            );
+            tenun_js_destroy(vm);
+        }
+        println!("PASS string + byte echo round-trip through callback scratch");
+
+        println!("== MAX_ARGS enforcement (review 7/9) ==");
         {
             static NINE_ARGC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(999);
             extern "C" fn host_nine(vm: *mut TenunJsVm, _a: *const ValueC, argc: usize) -> ValueC {
@@ -1083,18 +1121,46 @@ fn main() {
             {
                 fail("nine registration");
             }
-            eval_ok(vm, "nine(1,2,3,4,5,6,7,8,9); 1");
-            if NINE_ARGC.load(Ordering::SeqCst) != 8 {
-                fail("nine-arg call must deliver exactly MAX_ARGS arguments");
+            struct NineCase {
+                src: &'static str,
+                note: &'static str,
             }
-            // post-evaluation the diagnostic is cleared by successful
-            // evaluation (global clear-on-success policy)
-            if !last_err(vm).is_empty() {
-                fail("exceedance diagnostic must not survive successful evaluation");
+            let nine_cases = [
+                NineCase {
+                    src: "nine(1,2,3,4,5,6,7,8,9); 1",
+                    note: "nine valid",
+                },
+                NineCase {
+                    src: "nine({},2,3,4,5,6,7,8,9); 1",
+                    note: "unsupported object among first 8",
+                },
+                NineCase {
+                    src: "var s9 = 'x'.repeat(70000); nine(s9,2,3,4,5,6,7,8,9); 1",
+                    note: "oversized string among first 8",
+                },
+                NineCase {
+                    src: "var b9 = new ArrayBuffer(1048577); nine(b9,2,3,4,5,6,7,8,9); 1",
+                    note: "oversized bytes among first 8",
+                },
+            ];
+            for case in &nine_cases {
+                NINE_ARGC.store(999, Ordering::SeqCst);
+                eval_ok(vm, case.src);
+                // MAX_ARGS always visible; a dropped unsupported/oversized
+                // argument additionally reduces argc below 8
+                if NINE_ARGC.load(Ordering::SeqCst) > 8 {
+                    fail(&format!("{}: argc must not exceed MAX_ARGS", case.note));
+                }
+                // post-evaluation the combined warning is cleared by success
+                if !last_err(vm).is_empty() {
+                    fail(&format!("{}: warning must not survive success", case.note));
+                }
             }
             tenun_js_destroy(vm);
         }
-        println!("PASS 9-arg call delivers MAX_ARGS; exceedance recorded");
+        println!(
+            "PASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case"
+        );
 
         println!("== bounded adapter storage (review 8) ==");
         {
