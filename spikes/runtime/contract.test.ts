@@ -29,10 +29,28 @@ describe("runtime host adapter contract", () => {
     expect(header).toContain("VK_I64 is reserved for BigInt");
   });
 
-  test("bounded storage and argument-drop policies are documented (review 8)", () => {
-    expect(header).toContain("aggregate retention is capped at 8 MiB per VM");
+  test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {
+    expect(header).toContain("PER-SCOPE budgets");
+    expect(header).toContain("~10 MiB");
+    expect(header).toContain("TENUN_JS_MAX_ARGS * TENUN_JS_MAX_BYTES");
+    expect(header).toContain("invalidated by exactly two events");
     expect(header).toContain("they never coerce to null");
     expect(header).toContain("callback-visible");
+    expect(header).toContain("clean callback never inherits");
+  });
+
+  test("architecture contract states the same per-scope model as the header (review 10)", () => {
+    const contract = readFileSync(
+      new URL("../../02-architecture/runtime-host-adapter-contract.md", import.meta.url),
+      "utf8"
+    );
+    expect(contract).toContain("Per-scope budgets (review 10)");
+    expect(contract).toContain("invalidated by exactly two events");
+    expect(contract).toContain("≈10 MiB plus allocator overhead");
+    expect(contract).toContain("clean callback never inherits");
+    // the stale aggregate model must stay gone
+    expect(contract).not.toContain("released at the next `last_result` call or adapter operation");
+    expect(contract).not.toContain("retains at most 8 MiB of marshalled string/byte storage");
   });
 
   test("handle registry semantics are documented in the header", () => {

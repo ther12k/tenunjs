@@ -1162,6 +1162,61 @@ fn main() {
             "PASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case"
         );
 
+        println!("== callback warning isolation across invocations (review 10) ==");
+        {
+            // two callbacks in ONE evaluation (one registered host fn,
+            // invoked with 9 args then with 1 arg): the over-limit call
+            // must see its MAX_ARGS warning, the following clean call must
+            // NOT see it, and successful evaluation must clear everything
+            static ISO_STEP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            extern "C" fn host_iso(vm: *mut TenunJsVm, _a: *const ValueC, argc: usize) -> ValueC {
+                match ISO_STEP.load(Ordering::SeqCst) {
+                    1 => {
+                        if argc != 8 {
+                            fail("iso: nine-arg call must marshal the first MAX_ARGS args");
+                        }
+                        let e = last_err(vm);
+                        if !e.contains("TJERR:VALUE_BOUNDS") || !e.contains("TENUN_JS_MAX_ARGS") {
+                            fail("iso: MAX_ARGS warning missing in over-limit callback");
+                        }
+                    }
+                    2 => {
+                        if argc != 1 {
+                            fail("iso: clean call must see its single argument");
+                        }
+                        let e = last_err(vm);
+                        if !e.is_empty() {
+                            fail(&format!("iso: clean callback inherited stale warning: {e}"));
+                        }
+                    }
+                    _ => fail("iso: unexpected extra callback"),
+                }
+                ISO_STEP.fetch_add(1, Ordering::SeqCst);
+                let mut out: ValueC = unsafe { std::mem::zeroed() };
+                out.kind = VK_NULL;
+                out
+            }
+            ISO_STEP.store(1, Ordering::SeqCst);
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("iso vm");
+            }
+            if tenun_js_register_host_fn(vm, c"iso".as_ptr() as *const u8, Some(host_iso))
+                != TENUN_JS_OK
+            {
+                fail("iso registration");
+            }
+            eval_ok(vm, "iso(1,2,3,4,5,6,7,8,9);\niso(1);\n2");
+            if ISO_STEP.load(Ordering::SeqCst) != 3 {
+                fail("iso: clean callback never ran");
+            }
+            if !last_err(vm).is_empty() {
+                fail("iso: warning must not survive success");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS clean callback does not inherit a previous callback's warning");
+
         println!("== bounded adapter storage (review 8) ==");
         {
             // (1) repeated last_result on a large completion must plateau:
@@ -1233,7 +1288,7 @@ fn main() {
                 "var a = new ArrayBuffer(1048576); count(a,a,a,a,a,a,a,a,a,a); 1",
             );
             tenun_js_destroy(vm);
-            println!("PASS aggregate budget enforced without unbounded growth");
+            println!("PASS callback scratch budget enforced without unbounded growth");
         }
         {
             // (4) sustained loop: 200 host calls x 1 MiB string args, then a

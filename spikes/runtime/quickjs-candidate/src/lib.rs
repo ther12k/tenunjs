@@ -214,8 +214,8 @@ impl TenunJsVm {
     fn clear_error(&self) {
         *self.state.last_error.borrow_mut() = None;
     }
-    /// Copies `data` into the callback scratch pool (budgeted, aggregate
-    /// bounded). The returned pointer is valid only while the scratch scope
+    /// Copies `data` into the callback scratch pool (budgeted per scope).
+    /// The returned pointer is valid only while the scratch scope
     /// is open — i.e. for the duration of the native callback invocation.
     fn store_scratch(&self, data: &[u8]) -> Result<(*const u8, usize), i32> {
         let mut bufs = self.state.scratch.borrow_mut();
@@ -610,7 +610,7 @@ fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) 
             return TENUN_JS_ERR_VALUE_BOUNDS;
         }
         let Ok((ptr, len)) = vm.store_scratch(text.as_bytes()) else {
-            return TENUN_JS_ERR_VALUE_BOUNDS; // aggregate budget exhausted
+            return TENUN_JS_ERR_VALUE_BOUNDS; // callback scratch budget exhausted
         };
         out.kind = VK_STRING;
         out.as_.string = StrC { data: ptr, len };
@@ -636,7 +636,7 @@ fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) 
             return TENUN_JS_ERR_VALUE_BOUNDS;
         }
         let Ok((ptr, len)) = vm.store_scratch(raw) else {
-            return TENUN_JS_ERR_VALUE_BOUNDS; // aggregate budget exhausted
+            return TENUN_JS_ERR_VALUE_BOUNDS; // callback scratch budget exhausted
         };
         out.kind = VK_BYTES;
         out.as_.bytes = StrC { data: ptr, len };
@@ -737,8 +737,16 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
             _ => warnings.push("an unmarshallable argument was dropped"),
         }
     }
+    // review 10: callback diagnostics are scoped to the SINGLE host
+    // invocation. Save the evaluation-level diagnostic, show this
+    // invocation's combined warning (or nothing), and restore the saved
+    // diagnostic after the callback returns — a clean callback must never
+    // inherit a previous callback's stale warning.
+    let prior_error = vm.state.last_error.borrow().clone();
     if !warnings.is_empty() {
         vm.set_error("VALUE_BOUNDS", &warnings.join("; "));
+    } else {
+        vm.clear_error();
     }
     let out = stored(ev.handle, converted.as_ptr(), n);
     // review 9: the returned value may point INTO callback scratch (a
@@ -747,6 +755,10 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
     // conversion; the guard releases it afterwards (and on unwind).
     let js_value = bound_to_js(ctx.clone(), &out);
     vm.end_scratch_scope();
+    match prior_error {
+        Some(msg) => *vm.state.last_error.borrow_mut() = Some(msg),
+        None => vm.clear_error(),
+    }
     js_value.map_err(|code| {
         let msg = format!("TJERR:{}: host callback return rejected", status_cat(code));
         vm.set_error(status_cat(code), "host callback return rejected");
