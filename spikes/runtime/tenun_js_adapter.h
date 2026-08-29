@@ -125,8 +125,21 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.
  *
- * String/byte values returned through tenun_js_value point to adapter-owned
- * storage valid until the next adapter call on the same VM.
+ * String/byte value storage (review 8):
+ *   - callback argument payloads: valid ONLY for the duration of the native
+ *     callback invocation (scratch released when the callback returns)
+ *   - tenun_js_last_result string/byte payloads: backed by one replaceable
+ *     buffer, released at the next last_result call or adapter operation
+ *   - aggregate retention is capped at 8 MiB per VM (MAX_BUFFER_POOL_BYTES);
+ *     values that would exceed it are dropped with TENUN_JS_ERR_VALUE_BOUNDS
+ *
+ * Unsupported argument shapes (review 8): plain objects, functions, arrays,
+ * and other non-ArrayBuffer arguments are DROPPED with
+ * TENUN_JS_ERR_VALUE_BOUNDS (reduced argc) — they never coerce to null.
+ *
+ * MAX_ARGS diagnostic: the TENUN_JS_MAX_ARGS exceedance diagnostic is
+ * callback-visible (readable via tenun_js_last_error inside the callback)
+ * and is cleared when the overall evaluation completes successfully.
  *
  * Completion values (review 5/6): tenun_js_last_result returns the FULL
  * bounded kind of the last successful evaluation — null, bool, f64, i64,
