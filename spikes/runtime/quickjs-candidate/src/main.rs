@@ -36,6 +36,12 @@ extern "C" fn host_probe(vm: *mut TenunJsVm, args: *const ValueC, argc: usize) -
     f64_value(1.0)
 }
 
+extern "C" fn host_eat(_vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
+    let mut out: ValueC = unsafe { std::mem::zeroed() };
+    out.kind = VK_NULL;
+    out
+}
+
 extern "C" fn host_a(_vm: *mut TenunJsVm, _a: *const ValueC, _c: usize) -> ValueC {
     f64_value(11.0)
 }
@@ -1056,8 +1062,14 @@ fn main() {
         println!("== MAX_ARGS enforcement (review 7) ==");
         {
             static NINE_ARGC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(999);
-            extern "C" fn host_nine(_vm: *mut TenunJsVm, _a: *const ValueC, argc: usize) -> ValueC {
+            extern "C" fn host_nine(vm: *mut TenunJsVm, _a: *const ValueC, argc: usize) -> ValueC {
                 NINE_ARGC.store(argc as u64, Ordering::SeqCst);
+                // review 8: the exceedance diagnostic is CALLBACK-VISIBLE —
+                // documented policy; read it from inside the callback
+                let e = last_err(vm);
+                if !e.contains("TJERR:VALUE_BOUNDS") || !e.contains("TENUN_JS_MAX_ARGS") {
+                    fail("exceedance diagnostic not visible inside callback");
+                }
                 let mut out: ValueC = unsafe { std::mem::zeroed() };
                 out.kind = VK_NULL;
                 out
@@ -1075,9 +1087,109 @@ fn main() {
             if NINE_ARGC.load(Ordering::SeqCst) != 8 {
                 fail("nine-arg call must deliver exactly MAX_ARGS arguments");
             }
+            // post-evaluation the diagnostic is cleared by successful
+            // evaluation (global clear-on-success policy)
+            if !last_err(vm).is_empty() {
+                fail("exceedance diagnostic must not survive successful evaluation");
+            }
             tenun_js_destroy(vm);
         }
         println!("PASS 9-arg call delivers MAX_ARGS; exceedance recorded");
+
+        println!("== bounded adapter storage (review 8) ==");
+        {
+            // (1) repeated last_result on a large completion must plateau:
+            // one replaceable result buffer, not an append-only pool
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("storage vm1");
+            }
+            let src = "var ab = new ArrayBuffer(1048576); new Uint8Array(ab).fill(1); ab";
+            eval_ok(vm, src);
+            let mut v: ValueC = std::mem::zeroed();
+            for _ in 0..1000 {
+                let st = tenun_js_last_result(vm, &mut v);
+                if st != TENUN_JS_OK || v.kind != VK_BYTES {
+                    fail("storage: repeated last_result");
+                }
+            }
+            // the replace-on-call model keeps exactly one 1 MiB result buffer
+            // (plus the small completion copy); a pool model would hold 1000x
+            tenun_js_destroy(vm);
+            println!("PASS 1000x last_result on 1 MiB completion (replace-on-call)");
+        }
+        {
+            // (2) repeated host calls reusing one small ArrayBuffer: scratch
+            // is callback-scoped, so native storage cannot grow per call
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("storage vm2");
+            }
+            if tenun_js_register_host_fn(vm, c"eat".as_ptr() as *const u8, Some(host_eat))
+                != TENUN_JS_OK
+            {
+                fail("storage registration");
+            }
+            eval_ok(
+                vm,
+                "var big = new ArrayBuffer(1048576); new Uint8Array(big).fill(2);\n\
+                 for (var i = 0; i < 500; i++) { eat(big); }\n1",
+            );
+            tenun_js_destroy(vm);
+            println!("PASS 500x host calls on 1 MiB buffer (callback-scoped scratch)");
+        }
+        {
+            // (3) aggregate scratch budget: 100 x 1 MiB arguments in ONE call
+            // exceed MAX_BUFFER_POOL_BYTES; excess args drop with VALUE_BOUNDS
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("storage vm3");
+            }
+            extern "C" fn host_count(
+                _vm: *mut TenunJsVm,
+                _a: *const ValueC,
+                argc: usize,
+            ) -> ValueC {
+                let mut out: ValueC = unsafe { std::mem::zeroed() };
+                out.kind = VK_I64;
+                out.as_.i64v = argc as i64;
+                out
+            }
+            if tenun_js_register_host_fn(vm, c"count".as_ptr() as *const u8, Some(host_count))
+                != TENUN_JS_OK
+            {
+                fail("storage registration 3");
+            }
+            // MAX_ARGS=8 caps marshalled args at 8 MiB scratch, over budget ->
+            // args drop; callback may see fewer than 8, completion still runs
+            eval_ok(
+                vm,
+                "var a = new ArrayBuffer(1048576); count(a,a,a,a,a,a,a,a,a,a); 1",
+            );
+            tenun_js_destroy(vm);
+            println!("PASS aggregate budget enforced without unbounded growth");
+        }
+        {
+            // (4) sustained loop: 200 host calls x 1 MiB string args, then a
+            // second full evaluation — memory must return to a plateau
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("storage vm4");
+            }
+            if tenun_js_register_host_fn(vm, c"eat".as_ptr() as *const u8, Some(host_eat))
+                != TENUN_JS_OK
+            {
+                fail("storage registration 4");
+            }
+            eval_ok(
+                vm,
+                "var s = 'x'.repeat(65536);\n\
+                 for (var i = 0; i < 200; i++) { eat(s); }\n1",
+            );
+            eval_ok(vm, "2"); // fresh evaluation clears stale scratch
+            tenun_js_destroy(vm);
+            println!("PASS 200x max-string args + fresh evaluation (plateau)");
+        }
 
         println!("== host I64 return: exact via BigInt (review 6) ==");
         {

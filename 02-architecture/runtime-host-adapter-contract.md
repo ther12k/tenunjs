@@ -40,7 +40,12 @@ Both directions marshal all six kinds: `null`, `bool`, `f64`, `i64`, UTF-8 `stri
 - **UTF-8 policy**: string payloads that are not valid UTF-8 are rejected (`VALUE_BOUNDS`), never mangled.
 - **Pointer rules**: null data with nonzero length fails; null data with length 0 is an empty value.
 - **Oversize JS→host arguments** are DROPPED with `TJERR:VALUE_BOUNDS` recorded and a reduced argc (documented truncation of the argument LIST, never of content); oversize host RETURNS throw a `TJERR:VALUE_BOUNDS` exception into JS.
-- **Ownership**: string/byte payloads point to adapter-owned storage valid until the next adapter call on the same VM.
+- **Ownership & bounded storage (review 8)**:
+  - *Callback arguments*: payload pointers are valid only for the duration of the native callback invocation; scratch storage is released when the callback returns.
+  - *Completion results*: `last_result` is backed by ONE replaceable buffer; a previous buffer is released at the next `last_result` call or adapter operation.
+  - *Aggregate budget*: the adapter retains at most 8 MiB of marshalled string/byte storage per VM at any moment. A value that would exceed the budget is dropped with `TENUN_JS_ERR_VALUE_BOUNDS`. This budget sits outside the configured `max_heap_bytes` JavaScript-heap limit, so untrusted JS cannot grow native memory without bound.
+- **Unsupported argument shapes (review 8)**: plain objects, functions, arrays, and other non-ArrayBuffer arguments are DROPPED with `VALUE_BOUNDS` (same policy as oversized values). They never silently coerce to `null` — `host(null)`, `host({})`, and `host(() => {})` are distinguishable by argc and diagnostics.
+- **MAX_ARGS diagnostic visibility (review 8)**: when a host call exceeds `TENUN_JS_MAX_ARGS`, the `TJERR:VALUE_BOUNDS` exceedance diagnostic is **callback-visible** (readable via `last_error` inside the callback) and is cleared by successful completion of the overall evaluation, per the global clear-on-success rule.
 - **Failure visibility**: callback-return failures surface as JS exceptions carrying the TJERR category, so they survive eval success.
 - **Diagnostics are exact (review 7)**: every failed owner-thread adapter call with a resolvable VM overwrites `last_error` with a fresh category-specific diagnostic — including pure argument-validation failures (NULL bundle/name/out pointers, oversize bundle, invalid UTF-8 or empty registration names). Only the documented exceptions (`request_interrupt`, `last_error`) and unresolvable handles (no VM state to update) skip this.
 

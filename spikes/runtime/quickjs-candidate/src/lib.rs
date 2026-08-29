@@ -130,14 +130,24 @@ pub struct ValueC {
 
 type HostFn = extern "C" fn(vm: *mut TenunJsVm, args: *const ValueC, argc: usize) -> ValueC;
 
+/// Aggregate native-memory budget (review 8): the adapter refuses to retain
+/// more than this many bytes of marshalled string/byte storage at once.
+/// Individual value caps remain MAX_STRING_BYTES / MAX_BYTES.
+const MAX_BUFFER_POOL_BYTES: usize = 8 * 1024 * 1024;
+
 struct VmState {
     interrupted: Arc<AtomicBool>,
     flag: Arc<AtomicI32>,
     owner: ThreadId,
     host_fn: RefCell<Option<HostFn>>,
-    /// adapter-owned storage backing string/byte values handed across the ABI;
-    /// valid until the next adapter call on this VM
-    buffers: RefCell<Vec<Vec<u8>>>,
+    /// Result storage (review 8): ONE replaceable buffer backing the value
+    /// returned by tenun_js_last_result. Replaced (not appended) on every
+    /// last_result call, so repeated reads cannot grow memory.
+    result_buffer: RefCell<Vec<u8>>,
+    /// Callback scratch storage: bytes handed to a native callback during
+    /// marshalling. Cleared when the callback scope ends, so repeated host
+    /// calls cannot accumulate.
+    scratch: RefCell<Vec<Vec<u8>>>,
     last_error: RefCell<Option<String>>,
     /// completion value of the last successful evaluation (review 5: all six
     /// bounded kinds; oversized/unrepresentable completions are flagged)
@@ -170,11 +180,36 @@ impl TenunJsVm {
     fn clear_error(&self) {
         *self.state.last_error.borrow_mut() = None;
     }
-    fn store_bytes(&self, data: &[u8]) -> (*const u8, usize) {
-        let mut bufs = self.state.buffers.borrow_mut();
+    /// Copies `data` into the callback scratch pool (budgeted, aggregate
+    /// bounded). The returned pointer is valid only while the scratch scope
+    /// is open — i.e. for the duration of the native callback invocation.
+    fn store_scratch(&self, data: &[u8]) -> Result<(*const u8, usize), i32> {
+        let mut bufs = self.state.scratch.borrow_mut();
+        let used: usize = bufs.iter().map(|b| b.capacity()).sum();
+        if used + data.len() > MAX_BUFFER_POOL_BYTES {
+            return Err(TENUN_JS_ERR_VALUE_BOUNDS);
+        }
         bufs.push(data.to_vec());
         let b = bufs.last().unwrap();
-        (b.as_ptr(), b.len())
+        Ok((b.as_ptr(), b.len()))
+    }
+
+    /// Replaces the single result-storage buffer (budget: one buffer, so
+    /// repeated last_result calls cannot grow memory — review 8).
+    fn store_result_bytes(&self, data: &[u8]) -> Result<(*const u8, usize), i32> {
+        let mut buf = self.state.result_buffer.borrow_mut();
+        if data.len() > MAX_BUFFER_POOL_BYTES {
+            return Err(TENUN_JS_ERR_VALUE_BOUNDS);
+        }
+        buf.clear();
+        buf.extend_from_slice(data);
+        Ok((buf.as_ptr(), buf.len()))
+    }
+
+    /// Ends the callback scratch scope: releases all marshalled argument
+    /// storage. Called by the trampoline after the native callback returns.
+    fn end_scratch_scope(&self) {
+        self.state.scratch.borrow_mut().clear();
     }
     fn owner_ok(&self) -> bool {
         self.state.owner == std::thread::current().id()
@@ -540,15 +575,20 @@ fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) 
         if text.len() > MAX_STRING_BYTES {
             return TENUN_JS_ERR_VALUE_BOUNDS;
         }
-        let (ptr, len) = vm.store_bytes(text.as_bytes());
+        let Ok((ptr, len)) = vm.store_scratch(text.as_bytes()) else {
+            return TENUN_JS_ERR_VALUE_BOUNDS; // aggregate budget exhausted
+        };
         out.kind = VK_STRING;
         out.as_.string = StrC { data: ptr, len };
         return TENUN_JS_OK;
     }
     if let Some(obj) = v.as_object() {
+        // review 8: unsupported argument shapes (plain objects, functions,
+        // arrays...) are DROPPED with VALUE_BOUNDS — matching oversize
+        // policy; they must not silently coerce to null (which would make
+        // host(null), host({}) and host(()=>{}) indistinguishable)
         if !obj.is_array_buffer() {
-            out.kind = VK_NULL;
-            return TENUN_JS_OK;
+            return TENUN_JS_ERR_VALUE_BOUNDS;
         }
         let ab = match obj.as_array_buffer() {
             Some(ab) => ab,
@@ -561,14 +601,16 @@ fn js_to_bound(_ctx: &Ctx<'_>, vm: &TenunJsVm, v: &Value<'_>, out: &mut ValueC) 
         if raw.len() > MAX_BYTES {
             return TENUN_JS_ERR_VALUE_BOUNDS;
         }
-        let (ptr, len) = vm.store_bytes(raw);
+        let Ok((ptr, len)) = vm.store_scratch(raw) else {
+            return TENUN_JS_ERR_VALUE_BOUNDS; // aggregate budget exhausted
+        };
         out.kind = VK_BYTES;
         out.as_.bytes = StrC { data: ptr, len };
         return TENUN_JS_OK;
     }
-    // unsupported shapes coerce to null deterministically
-    out.kind = VK_NULL;
-    TENUN_JS_OK
+    // review 8: remaining unsupported shapes (symbols, proxies...) are
+    // dropped with VALUE_BOUNDS, never coerced to null
+    TENUN_JS_ERR_VALUE_BOUNDS
 }
 
 /// bounded value -> JS. Foreign tags are range-checked first; strings must be
@@ -669,6 +711,10 @@ fn js_trampoline<'js>(ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result
         }
     }
     let out = stored(ev.handle, converted.as_ptr(), n);
+    // review 8: end the callback scratch scope — argument storage handed to
+    // the native callback is released as soon as the callback returns, so
+    // repeated host calls cannot accumulate native memory
+    vm.end_scratch_scope();
     bound_to_js(ctx.clone(), &out).map_err(|code| {
         let msg = format!("TJERR:{}: host callback return rejected", status_cat(code));
         vm.set_error(status_cat(code), "host callback return rejected");
@@ -730,7 +776,8 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                 flag,
                 owner: std::thread::current().id(),
                 host_fn: RefCell::new(None),
-                buffers: RefCell::new(Vec::new()),
+                result_buffer: RefCell::new(Vec::new()),
+                scratch: RefCell::new(Vec::new()),
                 last_error: RefCell::new(None),
                 result: RefCell::new(OwnedResult::Null),
             },
@@ -847,8 +894,9 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
             return TENUN_JS_ERR_EVAL;
         }
     };
-    // buffers handed to C expire at the next adapter call
-    vm.state.buffers.borrow_mut().clear();
+    // review 8: stale callback scratch expires at the next adapter call;
+    // the result buffer intentionally persists (it backs last_result)
+    vm.state.scratch.borrow_mut().clear();
     vm.state.interrupted.store(false, Ordering::SeqCst);
     eval_vm_push(EvalVm {
         raw: vm as *const TenunJsVm as *mut TenunJsVm,
@@ -1118,12 +1166,19 @@ pub unsafe extern "C" fn tenun_js_last_result(vm: *mut TenunJsVm, out: *mut Valu
                 (*out).as_.bool_value = *v as i32;
             }
             OwnedResult::String(bytes) => {
-                let (ptr, len) = vm.store_bytes(bytes);
+                // replace-on-call: previous buffer released here (review 8)
+                let Ok((ptr, len)) = vm.store_result_bytes(bytes) else {
+                    vm.set_error("VALUE_BOUNDS", "result storage budget exhausted");
+                    return TENUN_JS_ERR_VALUE_BOUNDS;
+                };
                 (*out).kind = VK_STRING;
                 (*out).as_.string = StrC { data: ptr, len };
             }
             OwnedResult::Bytes(bytes) => {
-                let (ptr, len) = vm.store_bytes(bytes);
+                let Ok((ptr, len)) = vm.store_result_bytes(bytes) else {
+                    vm.set_error("VALUE_BOUNDS", "result storage budget exhausted");
+                    return TENUN_JS_ERR_VALUE_BOUNDS;
+                };
                 (*out).kind = VK_BYTES;
                 (*out).as_.bytes = StrC { data: ptr, len };
             }

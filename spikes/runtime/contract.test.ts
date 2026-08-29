@@ -29,6 +29,12 @@ describe("runtime host adapter contract", () => {
     expect(header).toContain("VK_I64 is reserved for BigInt");
   });
 
+  test("bounded storage and argument-drop policies are documented (review 8)", () => {
+    expect(header).toContain("aggregate retention is capped at 8 MiB per VM");
+    expect(header).toContain("they never coerce to null");
+    expect(header).toContain("callback-visible");
+  });
+
   test("handle registry semantics are documented in the header", () => {
     expect(header).toContain("registry tokens (slot + generation)");
     expect(header).toContain("double destroy is a safe no-op");
