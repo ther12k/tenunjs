@@ -33,6 +33,14 @@ typedef enum {
  * closed with TENUN_JS_ERR_HANDLE (tenun_js_last_error returns an empty
  * diagnostic instead); double destroy is a safe no-op; handle values are
  * never reissued, so a stale handle can never alias a fresh VM.
+ *
+ * Reentrancy identity (review 11): adapter calls made from a host callback
+ * are rejected with TENUN_JS_ERR_HANDLE only when they target the EXACT VM
+ * instance currently evaluating — compared by full handle (slot +
+ * generation), never by slot alone. A VM created after another was destroyed
+ * mid-evaluation may reuse the freed slot with a bumped generation; it is a
+ * DIFFERENT VM and registering/evaluating/pumping it from the callback is
+ * legal nested usage.
  */
 typedef struct tenun_js_vm tenun_js_vm;
 

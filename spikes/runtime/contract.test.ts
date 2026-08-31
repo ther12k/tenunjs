@@ -57,6 +57,10 @@ describe("runtime host adapter contract", () => {
     expect(header).toContain("registry tokens (slot + generation)");
     expect(header).toContain("double destroy is a safe no-op");
     expect(header).toContain("never reissued");
+    // reentrancy identity is the full handle, not the slot (review 11)
+    expect(header).toContain("Reentrancy identity (review 11)");
+    expect(header).toContain("compared by full handle (slot +");
+    expect(header).toContain("never by slot alone");
   });
 
   test("fixture checksums match manifest (drift check)", () => {

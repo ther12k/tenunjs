@@ -26,11 +26,11 @@ mod tests {
     fn eval_stack_recovers_from_panic() {
         let prev_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {})); // silence injected panic
+        let h7 = encode_handle(7, 1);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             eval_vm_push(EvalVm {
                 raw: std::ptr::dangling_mut::<TenunJsVm>(),
-                handle: std::ptr::null_mut(),
-                slot: 7,
+                handle: h7,
             });
             let _g = EvalGuard;
             panic!("injected during evaluation");
@@ -39,19 +39,28 @@ mod tests {
         assert!(result.is_err());
         // the guard popped the pushed context during unwind: no stale state
         assert!(eval_vm_current().is_none(), "stale EvalVm after panic");
-        assert!(!eval_vm_has_slot(7), "stale slot after panic");
+        assert!(
+            !eval_vm_is_active(h7),
+            "stale handle still active after panic"
+        );
         // normal nesting still works afterwards
+        let h1 = encode_handle(1, 1);
+        let h2 = encode_handle(2, 1);
         eval_vm_push(EvalVm {
             raw: std::ptr::null_mut(),
-            handle: std::ptr::null_mut(),
-            slot: 1,
+            handle: h1,
         });
         eval_vm_push(EvalVm {
             raw: std::ptr::null_mut(),
-            handle: std::ptr::null_mut(),
-            slot: 2,
+            handle: h2,
         });
-        assert!(eval_vm_has_slot(1) && eval_vm_has_slot(2));
+        assert!(eval_vm_is_active(h1) && eval_vm_is_active(h2));
+        // identity is the full handle: a replacement VM created in slot 1
+        // after destruction (generation bumped) is NOT the evaluating VM
+        assert!(
+            !eval_vm_is_active(encode_handle(1, 2)),
+            "same slot, new generation must not match the active VM"
+        );
         eval_vm_pop();
         eval_vm_pop();
         assert!(eval_vm_current().is_none());
@@ -492,11 +501,12 @@ fn validate_bundle(bytes: &[u8]) -> Result<&[u8], i32> {
 #[derive(Clone, Copy)]
 struct EvalVm {
     raw: *mut TenunJsVm,
-    // the handle the embedder passed in — what host callbacks receive back
+    // the handle the embedder passed in — what host callbacks receive back.
+    // Reentrancy identity is the FULL handle (slot + generation), not the
+    // slot alone: a VM created in a slot freed by mid-eval destruction is a
+    // DIFFERENT VM instance and may legally be evaluated from the callback
+    // (review 11).
     handle: *mut TenunJsVm,
-    // registry slot of the evaluating VM; reentrant adapter calls targeting
-    // it fail closed (review 3)
-    slot: u32,
 }
 
 thread_local! {
@@ -522,8 +532,11 @@ fn eval_vm_current() -> Option<EvalVm> {
     EVAL_VM.with(|s| s.borrow().last().copied())
 }
 
-fn eval_vm_has_slot(slot: u32) -> bool {
-    EVAL_VM.with(|s| s.borrow().iter().any(|ev| ev.slot == slot))
+/// Is the exact VM instance named by `handle` (slot + generation) currently
+/// evaluating? Slot-only comparison would falsely reject a replacement VM
+/// created in a slot freed by mid-eval destruction (review 11).
+fn eval_vm_is_active(handle: *mut TenunJsVm) -> bool {
+    EVAL_VM.with(|s| s.borrow().iter().any(|ev| ev.handle == handle))
 }
 
 /// RAII pair for `eval_vm_push`: pops the context on every exit path,
@@ -906,16 +919,15 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
         return TENUN_JS_ERR_ARGUMENT;
     }
     let _g = OpGuard::enter();
-    let (slot, _generation) = match decode_handle(handle) {
-        Some(p) => p,
-        None => {
-            vm.set_error("ARGUMENT", "handle is NULL");
-            return TENUN_JS_ERR_ARGUMENT;
-        }
-    };
+    if decode_handle(handle).is_none() {
+        vm.set_error("ARGUMENT", "handle is NULL");
+        return TENUN_JS_ERR_ARGUMENT;
+    }
     // reentrancy: a host callback calling eval back into the VM that is
-    // currently evaluating would corrupt the per-eval stash; fail closed
-    if eval_vm_has_slot(slot) {
+    // currently evaluating would corrupt the per-eval stash; fail closed.
+    // Identity is the full handle — a replacement VM in the same slot is a
+    // different VM and nests legally (review 11)
+    if eval_vm_is_active(handle) {
         vm.set_error("HANDLE", "reentrant adapter call on evaluating VM");
         return TENUN_JS_ERR_HANDLE;
     }
@@ -945,7 +957,6 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
     eval_vm_push(EvalVm {
         raw: vm as *const TenunJsVm as *mut TenunJsVm,
         handle,
-        slot,
     });
     let _eval_guard = EvalGuard; // pop on every path, panics included
 
@@ -1017,14 +1028,11 @@ unsafe fn register_checked(handle: *mut TenunJsVm, name: *const u8, fn_ptr: Opti
         return TENUN_JS_ERR_ARGUMENT;
     }
     let _g = OpGuard::enter();
-    let (slot, _) = match decode_handle(handle) {
-        Some(p) => p,
-        None => {
-            vm.set_error("ARGUMENT", "handle is NULL");
-            return TENUN_JS_ERR_ARGUMENT;
-        }
-    };
-    if eval_vm_has_slot(slot) {
+    if decode_handle(handle).is_none() {
+        vm.set_error("ARGUMENT", "handle is NULL");
+        return TENUN_JS_ERR_ARGUMENT;
+    }
+    if eval_vm_is_active(handle) {
         vm.set_error("HANDLE", "reentrant registration on evaluating VM");
         return TENUN_JS_ERR_HANDLE;
     }
@@ -1101,11 +1109,7 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
             return -1i64;
         }
         let _g = OpGuard::enter();
-        let (slot, _) = match decode_handle(vm) {
-            Some(p) => p,
-            None => return -1i64,
-        };
-        if eval_vm_has_slot(slot) {
+        if eval_vm_is_active(vm) {
             if let Ok(p) = registry_resolve(vm) {
                 (*p).set_error("HANDLE", "reentrant pump during evaluation");
             }
