@@ -644,6 +644,84 @@ fn main() {
         tenun_js_destroy(vm_b2);
         println!("PASS cross-VM nested evaluation restores outer context");
 
+        println!("== slot-reuse replacement VM after self-destroy (review 11) ==");
+        {
+            // A evaluates; its callback destroys A (slot freed, generation
+            // bumped), creates B — which the free list hands A's slot back
+            // with a new generation — then registers and evaluates on B.
+            // B is a DIFFERENT VM instance: the nested calls must succeed,
+            // not be rejected as same-VM reentrancy. Reentrancy identity is
+            // the full handle (slot + generation), not the slot alone.
+            static REPL_B_HANDLE: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
+            static REPL_REG: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-99);
+            static REPL_EVAL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-99);
+            extern "C" fn host_replace(
+                vm_a: *mut TenunJsVm,
+                _a: *const ValueC,
+                _c: usize,
+            ) -> ValueC {
+                let cfg_b = ConfigC {
+                    abi_version: 1,
+                    max_heap_bytes: 64 * 1024 * 1024,
+                    interrupt_poll_ms: 0,
+                };
+                unsafe {
+                    tenun_js_destroy(vm_a); // A's slot returns to the free list
+                    let vm_b = tenun_js_create(&cfg_b);
+                    REPL_B_HANDLE.store(vm_b as usize as u64, Ordering::SeqCst);
+                    REPL_REG.store(
+                        tenun_js_register_host_fn(vm_b, c"rb".as_ptr() as *const u8, Some(host_a)),
+                        Ordering::SeqCst,
+                    );
+                    let b = pack_bundle("5");
+                    REPL_EVAL.store(
+                        tenun_js_eval_bundle(vm_b, b.as_ptr(), b.len()),
+                        Ordering::SeqCst,
+                    );
+                }
+                null_value()
+            }
+            let vm_a3 = tenun_js_create(&cfg);
+            if vm_a3.is_null() {
+                fail("replace vm_a");
+            }
+            if tenun_js_register_host_fn(
+                vm_a3,
+                c"replace".as_ptr() as *const u8,
+                Some(host_replace),
+            ) != TENUN_JS_OK
+            {
+                fail("replace registration");
+            }
+            // outer evaluation completes over the parked A even though its
+            // callback destroyed A mid-eval and ran a nested VM to completion
+            eval_ok(vm_a3, "replace(); 9");
+            let vm_b3 = REPL_B_HANDLE.load(Ordering::SeqCst) as *mut TenunJsVm;
+            if vm_b3.is_null() {
+                fail("replacement VM was not created");
+            }
+            // B reuses A's freed slot but with a bumped generation: a
+            // DIFFERENT handle, so it is a different VM instance
+            if vm_b3 == vm_a3 {
+                fail("replacement VM must have a different handle (generation)");
+            }
+            if REPL_REG.load(Ordering::SeqCst) != TENUN_JS_OK {
+                fail("registration on replacement VM must succeed");
+            }
+            if REPL_EVAL.load(Ordering::SeqCst) != TENUN_JS_OK {
+                fail("nested eval on replacement VM must succeed (not reentrancy)");
+            }
+            // B is fully usable after A's outer evaluation finished
+            eval_ok(vm_b3, "2");
+            if last_result(vm_b3) != Some(2.0) {
+                fail("replacement VM completion value");
+            }
+            tenun_js_destroy(vm_b3);
+            tenun_js_destroy(vm_a3); // double destroy over parked A: no-op
+        }
+        println!("PASS replacement VM in freed slot nests legally (full-handle identity)");
+
         println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {
             src: &'static str,
