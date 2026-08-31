@@ -8,6 +8,12 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rquickjs = { version = "0.9", features = ["full"] }
+# same 0.9 line rquickjs resolves to; used ONLY for the raw pending-job
+# loop in tenun_js_pump (review 12): rquickjs's Runtime::execute_pending_job
+# wraps job errors in a Context that frees the shared JSContext on drop
+# (double free), so the pump drives JS_ExecutePendingJob directly with
+# correct ownership semantics.
+rquickjs-sys = "0.9"
 sha2 = "0.10"
 
 [[bin]]

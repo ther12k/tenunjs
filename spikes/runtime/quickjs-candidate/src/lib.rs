@@ -211,6 +211,9 @@ enum OwnedResult {
 }
 
 pub struct TenunJsVm {
+    /// keep-alive ownership of the JSRuntime (freed on drop); never read —
+    /// the pump drives pending jobs through the sys C API (review 12)
+    #[expect(dead_code)]
     runtime: Runtime,
     context: Context,
     state: VmState,
@@ -720,6 +723,32 @@ fn bound_to_js<'js>(ctx: Ctx<'js>, out: &ValueC) -> Result<Value<'js>, i32> {
     }
 }
 
+/// Extracts the pending exception message on a context (shared by the
+/// eval and pump failure paths so diagnostics are identical; review 12).
+fn ctx_exception_message(ctx: &Ctx<'_>) -> String {
+    let exc = ctx.catch();
+    if let Some(obj) = exc.as_object() {
+        match obj.get::<_, String>("message") {
+            Ok(m) => m,
+            Err(_) => "exception".to_string(),
+        }
+    } else if let Some(sv) = exc.as_string() {
+        sv.to_string().unwrap_or_else(|_| "exception".to_string())
+    } else {
+        "exception".to_string()
+    }
+}
+
+/// Extracts the pending JavaScript exception message (or a textual form of
+/// the engine error) from a failed evaluation. Shared by eval and pump
+/// so both surface identical diagnostics (review 12).
+fn exception_text(vm: &TenunJsVm, err: rquickjs::Error) -> String {
+    match err {
+        rquickjs::Error::Exception => vm.context.with(|ctx| ctx_exception_message(&ctx)),
+        other => format!("{other}"),
+    }
+}
+
 /// Registered as the native side of every host function. The VM identity
 /// comes from the per-eval stash, so two VMs interleaved on one thread can
 /// never observe each other's callbacks.
@@ -976,23 +1005,7 @@ unsafe fn eval_checked(handle: *mut TenunJsVm, bytes: *const u8, len: usize) -> 
                 vm.set_error("TIMEOUT", "evaluation was interrupted");
                 TENUN_JS_ERR_TIMEOUT
             } else {
-                let msg = match err {
-                    rquickjs::Error::Exception => vm.context.with(|ctx: Ctx| {
-                        let exc = ctx.catch();
-                        if let Some(obj) = exc.as_object() {
-                            match obj.get::<_, String>("message") {
-                                Ok(m) => m,
-                                Err(_) => "exception".to_string(),
-                            }
-                        } else if let Some(sv) = exc.as_string() {
-                            sv.to_string().unwrap_or_else(|_| "exception".to_string())
-                        } else {
-                            "exception".to_string()
-                        }
-                    }),
-                    other => format!("{other}"),
-                };
-                vm.set_error("EVAL", &msg);
+                vm.set_error("EVAL", &exception_text(vm, err));
                 TENUN_JS_ERR_EVAL
             }
         }
@@ -1115,7 +1128,8 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
             }
             return -1i64; // reentrant pump during evaluation
         }
-        let vm = match registry_resolve(vm) {
+        let handle = vm; // the embedder's handle — what pumped callbacks receive
+        let vm = match registry_resolve(handle) {
             Ok(p) => p,
             // unresolvable here means stale or cross-thread: last_error is
             // either unreachable (zombie) or foreign-thread state — no write
@@ -1125,15 +1139,61 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
         if !vm.owner_ok() {
             return -1i64;
         }
-        let mut drained = 0i64;
-        while drained < max_jobs {
-            match vm.runtime.execute_pending_job() {
-                Ok(true) => drained += 1,
-                _ => break,
+        // review 12: pumped jobs run JavaScript through the shared
+        // trampoline, which resolves the active VM from the top of the
+        // eval-context stack. Pump must install the pumped VM's context
+        // exactly like a direct evaluation — a top-level pump would
+        // otherwise run with an EMPTY stack (host calls silently resolve
+        // to null), and a nested pump of another VM would resolve the
+        // OUTER VM's callback and handle while executing inside this VM.
+        // The exact-handle guard above already rejected same-VM pumping.
+        eval_vm_push(EvalVm {
+            raw: vm as *const TenunJsVm as *mut TenunJsVm,
+            handle,
+        });
+        let _eval_guard = EvalGuard; // pop on every path, panics included
+                                     // Job loop runs inside `with` (runtime lock + stack-top update, the
+                                     // same discipline rquickjs's own wrapper applies). rquickjs's
+                                     // Runtime::execute_pending_job is unusable here: its Err variant
+                                     // wraps the context in a JobException whose Drop frees the SHARED
+                                     // JSContext (double free) — so the pump drives the C API directly.
+                                     // JS_ExecutePendingJob's out-pointer transfers no ownership; the
+                                     // pending exception is consumed through our own context handle.
+        let outcome: Result<i64, ()> = vm.context.with(|_ctx| {
+            let ctx_ptr = vm.context.as_raw().as_ptr();
+            let rt_ptr = unsafe { rquickjs_sys::JS_GetRuntime(ctx_ptr) };
+            let mut drained = 0i64;
+            while drained < max_jobs {
+                if !unsafe { rquickjs_sys::JS_IsJobPending(rt_ptr) } {
+                    break; // queue empty: success
+                }
+                let mut job_ctx: *mut rquickjs_sys::JSContext = std::ptr::null_mut();
+                match unsafe { rquickjs_sys::JS_ExecutePendingJob(rt_ptr, &mut job_ctx) } {
+                    1 => drained += 1,
+                    0 => break,
+                    _ => return Err(()), // job raised; exception left pending
+                }
+            }
+            Ok(drained)
+        });
+        match outcome {
+            Ok(drained) => {
+                vm.clear_error();
+                drained
+            }
+            Err(()) => {
+                // review 12: a FAILED pending job is not an empty queue —
+                // surface it and fail visibly instead of collapsing into
+                // "drained" and clearing diagnostics
+                if vm.state.interrupted.load(Ordering::SeqCst) {
+                    vm.set_error("TIMEOUT", "pending job was interrupted");
+                } else {
+                    let msg = vm.context.with(|ctx| ctx_exception_message(&ctx));
+                    vm.set_error("EVAL", &format!("pending job execution failed: {msg}"));
+                }
+                -1i64
             }
         }
-        vm.clear_error();
-        drained
     }))
     .unwrap_or(-1)
 }
