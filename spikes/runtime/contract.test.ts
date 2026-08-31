@@ -29,6 +29,19 @@ describe("runtime host adapter contract", () => {
     expect(header).toContain("VK_I64 is reserved for BigInt");
   });
 
+  test("pump context and pending-job failure semantics are documented (review 12)", () => {
+    expect(header).toContain("Pump execution context (review 12)");
+    expect(header).toContain("THAT VM's registered callback with THAT VM's handle");
+    expect(header).toContain("is NOT \"queue empty\"");
+    const contract = readFileSync(
+      new URL("../../02-architecture/runtime-host-adapter-contract.md", import.meta.url),
+      "utf8"
+    );
+    expect(contract).toContain("Pumped host-call context (review 12)");
+    expect(contract).toContain("Pending-job failure visibility (review 12)");
+    expect(contract).toContain("never collapsed into \"queue empty\"");
+  });
+
   test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {
     expect(header).toContain("PER-SCOPE budgets");
     expect(header).toContain("~10 MiB");

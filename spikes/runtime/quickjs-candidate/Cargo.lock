@@ -530,6 +530,7 @@ name = "tenun_js_quickjs"
 version = "0.1.0"
 dependencies = [
  "rquickjs",
+ "rquickjs-sys",
  "sha2",
 ]
 

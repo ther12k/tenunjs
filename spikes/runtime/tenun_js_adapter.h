@@ -126,9 +126,21 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  *     sets nor clears diagnostics.
  *   (every other owner-thread call — including tenun_js_clear_interrupt and
  *   tenun_js_last_result — follows the clear-on-success rule; review 6)
- *   - pump: success clears; failures (stale handle / reentrancy) record
- *     diagnostics; per-job runtime failures inside a pumped job belong to
- *     that job's own evaluation status.
+ *   - pump: success clears; failures (stale handle / reentrancy, or a
+ *     FAILED pending job) record diagnostics and return -1. A failing job
+ *     is NOT "queue empty": it produces TJERR:EVAL (with the underlying
+ *     exception text) or TJERR:TIMEOUT when interrupted, and the
+ *     diagnostic persists until the next adapter call clears or overwrites
+ *     it (review 12).
+ *
+ * Pump execution context (review 12): tenun_js_pump installs the pumped
+ * VM's execution context for the duration of the drain — exactly like a
+ * direct evaluation. Host functions invoked from pumped jobs are delivered
+ * to THAT VM's registered callback with THAT VM's handle, whether the pump
+ * is top-level (no evaluation in progress) or nested inside another VM's
+ * evaluation (the outer VM's context is restored when the pump returns).
+ * Pumping the VM that is currently evaluating is rejected (reentrancy);
+ * pumping a DIFFERENT VM from a callback is legal nested usage.
  *
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.

@@ -722,6 +722,148 @@ fn main() {
         }
         println!("PASS replacement VM in freed slot nests legally (full-handle identity)");
 
+        println!("== pumped host-call context + failure visibility (review 12) ==");
+        {
+            static PM_CALLS_B: AtomicU64 = AtomicU64::new(0);
+            static PM_CALLS_A: AtomicU64 = AtomicU64::new(0);
+            static PM_HANDLE: AtomicU64 = AtomicU64::new(0);
+            // records which VM's callback ran during a pumped job
+            extern "C" fn host_pm(vm: *mut TenunJsVm, args: *const ValueC, argc: usize) -> ValueC {
+                PM_HANDLE.store(vm as usize as u64, Ordering::SeqCst);
+                let n = if argc >= 1 {
+                    unsafe { (*args).as_.f64v }
+                } else {
+                    0.0
+                };
+                if n == 33.0 {
+                    PM_CALLS_B.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    PM_CALLS_A.fetch_add(1, Ordering::SeqCst);
+                }
+                f64_value(1.0)
+            }
+            // -- (1) TOP-LEVEL pump: job scheduled at top level must invoke
+            // B's callback with B's handle and its marshalled argument --
+            let vm_b = tenun_js_create(&cfg);
+            if vm_b.is_null() {
+                fail("pump vm_b");
+            }
+            if tenun_js_register_host_fn(vm_b, c"pm".as_ptr() as *const u8, Some(host_pm))
+                != TENUN_JS_OK
+            {
+                fail("pump registration b");
+            }
+            eval_ok(vm_b, "Promise.resolve().then(() => pm(33));");
+            PM_CALLS_B.store(0, Ordering::SeqCst);
+            PM_HANDLE.store(0, Ordering::SeqCst);
+            let drained = tenun_js_pump(vm_b, 16);
+            if drained < 1 {
+                fail("pump drained nothing");
+            }
+            if PM_CALLS_B.load(Ordering::SeqCst) != 1 {
+                fail("top-level pump must invoke B's host callback exactly once");
+            }
+            if PM_HANDLE.load(Ordering::SeqCst) != vm_b as usize as u64 {
+                fail("pumped callback must receive B's handle");
+            }
+            println!("PASS top-level pump invokes the pumped VM's callback with its own handle");
+
+            // -- (2) NESTED pump: A evaluates; A's host fn (its single
+            // registration) pumps B; B's queued job must reach B's callback
+            // (never A's) and A's context must be restored afterwards --
+            static PM_A_DRAIN: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+            extern "C" fn host_pump_a(
+                _vm_a: *mut TenunJsVm,
+                _a: *const ValueC,
+                _c: usize,
+            ) -> ValueC {
+                let vm_b = PM_B.load(Ordering::SeqCst) as *mut TenunJsVm;
+                PM_A_DRAIN.store(unsafe { tenun_js_pump(vm_b, 16) }, Ordering::SeqCst);
+                f64_value(1.0)
+            }
+            static PM_B: AtomicU64 = AtomicU64::new(0);
+            eval_ok(vm_b, "Promise.resolve().then(() => pm(33));"); // queue on B
+            let vm_a = tenun_js_create(&cfg);
+            if vm_a.is_null() {
+                fail("pump vm_a");
+            }
+            PM_B.store(vm_b as usize as u64, Ordering::SeqCst);
+            if tenun_js_register_host_fn(vm_a, c"pumpB".as_ptr() as *const u8, Some(host_pump_a))
+                != TENUN_JS_OK
+            {
+                fail("pump registration a");
+            }
+            PM_CALLS_B.store(0, Ordering::SeqCst);
+            PM_CALLS_A.store(0, Ordering::SeqCst);
+            PM_HANDLE.store(0, Ordering::SeqCst);
+            PM_A_DRAIN.store(0, Ordering::SeqCst);
+            // while A evaluates, its callback pumps B to completion
+            eval_ok(
+                vm_a,
+                "var r = pumpB();\nif (r !== 1) throw new Error('pump drained ' + r);\n7",
+            );
+            if PM_A_DRAIN.load(Ordering::SeqCst) != 1 {
+                fail("nested pump must drain B's single queued job");
+            }
+            if PM_CALLS_B.load(Ordering::SeqCst) != 1 {
+                fail("nested pump must deliver B's queued job to B's callback");
+            }
+            if PM_CALLS_A.load(Ordering::SeqCst) != 0 {
+                fail("nested pump must never invoke A's callback for B's job");
+            }
+            if PM_HANDLE.load(Ordering::SeqCst) != vm_b as usize as u64 {
+                fail("nested pumped callback must receive B's handle");
+            }
+            // A's context fully restored: A's host fn still fires for A and
+            // A's completion value survives the nested pump
+            eval_ok(vm_a, "pumpB(); 8"); // B's queue is empty now: drains 0
+            if PM_A_DRAIN.load(Ordering::SeqCst) != 0 {
+                fail("second pump must drain nothing");
+            }
+            if last_result(vm_a) != Some(8.0) {
+                fail("A completion after nested pump");
+            }
+            println!("PASS nested pump(B) inside A delivers B's job to B and restores A");
+
+            tenun_js_destroy(vm_a);
+            tenun_js_destroy(vm_b);
+        }
+        println!("== pending-job failure visibility (review 12) ==");
+        {
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("pump-fail vm");
+            }
+            // a throw inside a PROMISE reaction is spec-captured (rejects
+            // the derived promise — the job itself succeeds), so the
+            // deterministic execute_pending_job Err trigger is a throwing
+            // queueMicrotask callback: js_microtask_job returns the raw
+            // JS_Call result, so the abrupt completion becomes a job error
+            eval_ok(vm, "queueMicrotask(() => { throw new Error('boom'); });");
+            let st = tenun_js_pump(vm, 16);
+            if st != -1 {
+                fail("pump with failing pending job must return -1");
+            }
+            let e = last_err(vm);
+            if !e.starts_with("TJERR:EVAL") || !e.contains("pending job execution failed") {
+                fail(&format!("pump failure diagnostic wrong: {e}"));
+            }
+            if !e.contains("boom") {
+                fail(&format!("underlying exception text must be preserved: {e}"));
+            }
+            // the diagnostic is NOT silently cleared by a later no-op query
+            if last_err(vm).is_empty() {
+                fail("pump failure diagnostic was erased");
+            }
+            // documented recovery: a successful eval clears the diagnostic
+            eval_ok(vm, "3");
+            if !last_err(vm).is_empty() {
+                fail("successful eval must clear the pump failure diagnostic");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS failing pending job returns -1 with preserved TJERR:EVAL text");
+
         println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {
             src: &'static str,
