@@ -126,12 +126,16 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  *     sets nor clears diagnostics.
  *   (every other owner-thread call — including tenun_js_clear_interrupt and
  *   tenun_js_last_result — follows the clear-on-success rule; review 6)
- *   - pump: success clears; failures (stale handle / reentrancy, or a
- *     FAILED pending job) record diagnostics and return -1. A failing job
- *     is NOT "queue empty": it produces TJERR:EVAL (with the underlying
- *     exception text) or TJERR:TIMEOUT when interrupted, and the
- *     diagnostic persists until the next adapter call clears or overwrites
- *     it (review 12).
+ *   - pump: success clears; failures with a RESOLVABLE VM — reentrancy,
+ *     argument errors, a FAILED pending job, interruption, or outstanding
+ *     unhandled promise rejections (review 13) — record diagnostics and
+ *     return -1. A failing job is NOT "queue empty": it produces
+ *     TJERR:EVAL (with the underlying exception text, any JS value kind)
+ *     or TJERR:TIMEOUT when interrupted, and the diagnostic persists until
+ *     the next adapter call clears or overwrites it (review 12).
+ *     A STALE (unresolvable) handle returns -1 — there is no live VM state
+ *     left to record a diagnostic in, so tenun_js_last_error returns the
+ *     empty fallback per the opaque-handle rule below (review 13).
  *
  * Pump execution context (review 12): tenun_js_pump installs the pumped
  * VM's execution context for the duration of the drain — exactly like a
@@ -141,6 +145,17 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * evaluation (the outer VM's context is restored when the pump returns).
  * Pumping the VM that is currently evaluating is rejected (reentrancy);
  * pumping a DIFFERENT VM from a callback is legal nested usage.
+ *
+ * Unhandled promise rejections (review 13): a per-VM host rejection
+ * tracker records every rejection reported with no handler attached and
+ * removes a report when a handler is attached later (handled transition).
+ * At the END of each pump drain, outstanding unhandled rejections fail
+ * the turn: tenun_js_pump returns -1 with a TJERR:EVAL diagnostic that
+ * aggregates the tracked reasons (bounded count, report order). A
+ * rejection handled within the same drain — a catch attached in the
+ * pumped jobs — never fails the turn. Promise-to-native-future bridging
+ * remains out of scope; this is asynchronous error REPORTING for the
+ * microtask system the pump drains.
  *
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.

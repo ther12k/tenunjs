@@ -864,6 +864,165 @@ fn main() {
         }
         println!("PASS failing pending job returns -1 with preserved TJERR:EVAL text");
 
+        println!("== unhandled promise-rejection visibility (review 13) ==");
+        {
+            // (1) reaction throws, NO catch anywhere -> pump must promote
+            // the unhandled rejection to a TJERR:EVAL failure
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rej vm");
+            }
+            eval_ok(
+                vm,
+                "Promise.resolve().then(() => { throw new Error('boom'); });",
+            );
+            let st = tenun_js_pump(vm, 16);
+            if st != -1 {
+                fail("unhandled rejection must fail the pump turn");
+            }
+            let e = last_err(vm);
+            if !e.starts_with("TJERR:EVAL") || !e.contains("unhandled promise rejection") {
+                fail(&format!("unhandled-rejection diagnostic wrong: {e}"));
+            }
+            if !e.contains("boom") {
+                fail(&format!("rejection reason text must be preserved: {e}"));
+            }
+            tenun_js_destroy(vm);
+
+            // (2) reaction throws, catch attached in the SAME drain -> the
+            // rejection is handled; the pump turn must succeed
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rej2 vm");
+            }
+            eval_ok(
+                vm,
+                "Promise.resolve().then(() => { throw new Error('boom'); })\n .catch(() => {});",
+            );
+            if tenun_js_pump(vm, 16) < 1 {
+                fail("handled rejection must not fail the pump turn");
+            }
+            if !last_err(vm).is_empty() {
+                fail("handled rejection must leave no diagnostic");
+            }
+            tenun_js_destroy(vm);
+
+            // (3) rejection unhandled at first, handler attached LATER ->
+            // the handled transition removes the outstanding report and a
+            // subsequent pump succeeds
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rej3 vm");
+            }
+            eval_ok(vm, "var p = Promise.reject('late');\np.catch(() => {});");
+            if tenun_js_pump(vm, 16) < 1 {
+                fail("late-handled rejection must not fail the pump turn");
+            }
+            if !last_err(vm).is_empty() {
+                fail("late-handled rejection must leave no diagnostic");
+            }
+            tenun_js_destroy(vm);
+
+            // (4) primitive rejection reason -> exact JS textual form
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rej4 vm");
+            }
+            eval_ok(vm, "Promise.reject(42);");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("primitive rejection must fail the pump turn");
+            }
+            let e = last_err(vm);
+            if !e.contains("42") {
+                fail(&format!("numeric rejection reason must be preserved: {e}"));
+            }
+            tenun_js_destroy(vm);
+
+            // (5) multiple simultaneous unhandled rejections -> bounded,
+            // deterministic report-order aggregation in ONE diagnostic
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rej5 vm");
+            }
+            eval_ok(
+                vm,
+                "Promise.reject('a');\nPromise.reject('b');\nPromise.reject('c');",
+            );
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("multiple unhandled rejections must fail the pump turn");
+            }
+            let e = last_err(vm);
+            if !(e.contains("(3)") && e.contains("a") && e.contains("b") && e.contains("c")) {
+                fail(&format!("aggregated rejection diagnostic wrong: {e}"));
+            }
+            // a later successful pump clears the aggregated diagnostic
+            if tenun_js_pump(vm, 16) < 0 {
+                fail("follow-up pump must succeed");
+            }
+            if !last_err(vm).is_empty() {
+                fail("follow-up pump must clear the rejection diagnostic");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS unhandled rejections promoted at turn end; handled transitions clear");
+
+        println!("== primitive thrown-value diagnostics (review 13) ==");
+        {
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("ptext vm");
+            }
+            for (src, expect) in [
+                ("queueMicrotask(() => { throw 42; });", "42"),
+                ("queueMicrotask(() => { throw false; });", "false"),
+                ("queueMicrotask(() => { throw null; });", "null"),
+                ("queueMicrotask(() => { throw undefined; });", "undefined"),
+                ("queueMicrotask(() => { throw 'str'; });", "str"),
+                (
+                    "queueMicrotask(() => { throw 9007199254740993n; });",
+                    "9007199254740993",
+                ),
+                ("queueMicrotask(() => { throw Symbol('sym'); });", "sym"),
+                (
+                    "queueMicrotask(() => { throw {a: 1}; });",
+                    "[object Object]",
+                ),
+                // a plain object's message getter never runs during
+                // stringification — JS_ToString goes straight to
+                // [object Object]. The conversion-throw path needs user
+                // code to run INSIDE the coercion: a throwing toString().
+                (
+                    "queueMicrotask(() => { throw { toString() { throw new Error('x'); } }; });",
+                    "pending job execution failed: exception",
+                ),
+            ] {
+                eval_ok(vm, src);
+                if tenun_js_pump(vm, 16) != -1 {
+                    fail(&format!("throwing job must fail the pump: {src}"));
+                }
+                let e = last_err(vm);
+                if !e.contains(expect) {
+                    fail(&format!(
+                        "diagnostic for {src} must contain '{expect}': got {e}"
+                    ));
+                }
+            }
+            // explicit truncation bound: a huge thrown string stays bounded
+            eval_ok(vm, "queueMicrotask(() => { throw 'x'.repeat(10000); });");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("huge string throw must fail the pump");
+            }
+            let e = last_err(vm);
+            if !(e.contains("xxxx") && e.len() < 255) {
+                fail(&format!(
+                    "huge string throw must be truncated: len={}",
+                    e.len()
+                ));
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS primitive thrown values carry exact bounded text (no generic 'exception')");
+
         println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {
             src: &'static str,

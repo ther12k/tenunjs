@@ -1,24 +1,24 @@
 {
   "schema_version": 3,
   "label": "quickjs-spike-v3",
-  "timestamp_utc": "2026-08-31T13:02:07.117Z",
+  "timestamp_utc": "2026-09-02T19:53:14.970Z",
   "build_profile": "release",
-  "inputs_digest": "626bd693e87217ded3b49c80265eaa583e0ce1cb66e993cf599dfa578ca86732",
+  "inputs_digest": "656bb0c5d0ffb2118221cb5727ec20ecfa3cac4e2bfff4203e5fb8769ed96b3c",
   "source": {
-    "commit": "6aa9ac2264b5e26a2d608cf3ddbad288cc01ec20",
-    "dirty": false,
-    "changed_files": 0
+    "commit": "8b0548f131e8a65803b56409985cc8db9a38a2fd",
+    "dirty": true,
+    "changed_files": 5
   },
   "host": {
     "os": "linux",
     "arch": "x64",
     "kernel": "Linux 7.0.0-30-generic",
     "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
-    "mem_total_bytes": 16454049792
+    "mem_total_bytes": 16454037504
   },
   "tools": {
     "bun": "1.4.0",
-    "node": "v24.11.0",
+    "node": "v22.23.2",
     "cc": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
     "clang++": "not-found",
     "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
@@ -26,8 +26,8 @@
   "artifacts": [
     {
       "path": "spikes/runtime/quickjs-candidate/target/release/libtenun_js_quickjs.so",
-      "sha256": "cc60751b017dcddcef1e28a3528ed1168fc490142ca7aeb8ecebaba6baae0b5d",
-      "bytes": 1477520
+      "sha256": "71180c25eb3debc51dede27cd344a8b015153a717be7637a86f9bb903f488c2e",
+      "bytes": 1483584
     }
   ],
   "steps": [
@@ -35,17 +35,17 @@
       "name": "release-build",
       "command": "cd spikes/runtime/quickjs-candidate && cargo build --release",
       "exit_code": 0,
-      "duration_ms": 114,
+      "duration_ms": 50,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.08s\n",
+      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.03s\n",
       "timed_out": false
     },
     {
       "name": "conformance-runner",
       "command": "cd spikes/runtime/quickjs-candidate && ./target/release/spike-runner",
       "exit_code": 0,
-      "duration_ms": 220,
-      "stdout_tail": "== create / abi + config rejection ==\nPASS unsupported heap/poll configs rejected; supported config accepted\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS f64(Number)/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.169067ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\n== in-flight destruction + reentrancy (review 3) ==\nPASS self-destroy mid-eval + reentrant calls all fail-closed\n== cross-VM nested evaluation (review 5) ==\nPASS cross-VM nested evaluation restores outer context\n== slot-reuse replacement VM after self-destroy (review 11) ==\nPASS replacement VM in freed slot nests legally (full-handle identity)\n== pumped host-call context + failure visibility (review 12) ==\nPASS top-level pump invokes the pumped VM's callback with its own handle\nPASS nested pump(B) inside A delivers B's job to B and restores A\n== pending-job failure visibility (review 12) ==\nPASS failing pending job returns -1 with preserved TJERR:EVAL text\n== completion value bridge: all six kinds (review 5/6) ==\nPASS null/bool/f64/i64/string/bytes completion kinds\n== unrepresentable completions -> VALUE_BOUNDS ==\nPASS object/function/oversized completions fail VALUE_BOUNDS\n== stale-diagnostic overwrite (review 7) ==\nPASS every failed resolvable-VM call overwrites last_error\n== callback echoes its own argument (review 9) ==\nPASS string + byte echo round-trip through callback scratch\n== MAX_ARGS enforcement (review 7/9) ==\nPASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case\n== callback warning isolation across invocations (review 10) ==\nPASS clean callback does not inherit a previous callback's warning\n== bounded adapter storage (review 8) ==\nPASS 1000x last_result on 1 MiB completion (replace-on-call)\nPASS 500x host calls on 1 MiB buffer (callback-scoped scratch)\nPASS callback scratch budget enforced without unbounded growth\nPASS 200x max-string args + fresh evaluation (plateau)\n== host I64 return: exact via BigInt (review 6) ==\nPASS host i64 returns exact BigInt to JS (2^53+1 round-trips)\n== JS BigInt arguments: exact i64 (review 6) ==\nPASS BigInt args exact in int64 domain; beyond dropped VALUE_BOUNDS\nALL PASS\n",
+      "duration_ms": 205,
+      "stdout_tail": "== create / abi + config rejection ==\nPASS unsupported heap/poll configs rejected; supported config accepted\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS f64(Number)/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.151551ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\n== in-flight destruction + reentrancy (review 3) ==\nPASS self-destroy mid-eval + reentrant calls all fail-closed\n== cross-VM nested evaluation (review 5) ==\nPASS cross-VM nested evaluation restores outer context\n== slot-reuse replacement VM after self-destroy (review 11) ==\nPASS replacement VM in freed slot nests legally (full-handle identity)\n== pumped host-call context + failure visibility (review 12) ==\nPASS top-level pump invokes the pumped VM's callback with its own handle\nPASS nested pump(B) inside A delivers B's job to B and restores A\n== pending-job failure visibility (review 12) ==\nPASS failing pending job returns -1 with preserved TJERR:EVAL text\n== unhandled promise-rejection visibility (review 13) ==\nPASS unhandled rejections promoted at turn end; handled transitions clear\n== primitive thrown-value diagnostics (review 13) ==\nPASS primitive thrown values carry exact bounded text (no generic 'exception')\n== completion value bridge: all six kinds (review 5/6) ==\nPASS null/bool/f64/i64/string/bytes completion kinds\n== unrepresentable completions -> VALUE_BOUNDS ==\nPASS object/function/oversized completions fail VALUE_BOUNDS\n== stale-diagnostic overwrite (review 7) ==\nPASS every failed resolvable-VM call overwrites last_error\n== callback echoes its own argument (review 9) ==\nPASS string + byte echo round-trip through callback scratch\n== MAX_ARGS enforcement (review 7/9) ==\nPASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case\n== callback warning isolation across invocations (review 10) ==\nPASS clean callback does not inherit a previous callback's warning\n== bounded adapter storage (review 8) ==\nPASS 1000x last_result on 1 MiB completion (replace-on-call)\nPASS 500x host calls on 1 MiB buffer (callback-scoped scratch)\nPASS callback scratch budget enforced without unbounded growth\nPASS 200x max-string args + fresh evaluation (plateau)\n== host I64 return: exact via BigInt (review 6) ==\nPASS host i64 returns exact BigInt to JS (2^53+1 round-trips)\n== JS BigInt arguments: exact i64 (review 6) ==\nPASS BigInt args exact in int64 domain; beyond dropped VALUE_BOUNDS\nALL PASS\n",
       "stderr_tail": "",
       "timed_out": false
     },
@@ -53,7 +53,7 @@
       "name": "abi-smoke-compile",
       "command": "cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -o spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 64,
+      "duration_ms": 230,
       "stdout_tail": "",
       "stderr_tail": "",
       "timed_out": false
@@ -62,7 +62,7 @@
       "name": "abi-smoke-run",
       "command": "LD_LIBRARY_PATH=spikes/runtime/quickjs-candidate/target/release spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 5,
+      "duration_ms": 9,
       "stdout_tail": "ABI SMOKE PASS\n",
       "stderr_tail": "",
       "timed_out": false
