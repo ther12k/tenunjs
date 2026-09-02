@@ -32,7 +32,7 @@ describe("runtime host adapter contract", () => {
   test("pump context and pending-job failure semantics are documented (review 12)", () => {
     expect(header).toContain("Pump execution context (review 12)");
     expect(header).toContain("THAT VM's registered callback with THAT VM's handle");
-    expect(header).toContain("is NOT \"queue empty\"");
+    expect(header).toContain('is NOT "queue empty"');
     const contract = readFileSync(
       new URL("../../02-architecture/runtime-host-adapter-contract.md", import.meta.url),
       "utf8"
@@ -40,6 +40,20 @@ describe("runtime host adapter contract", () => {
     expect(contract).toContain("Pumped host-call context (review 12)");
     expect(contract).toContain("Pending-job failure visibility (review 12)");
     expect(contract).toContain("never collapsed into \"queue empty\"");
+  });
+
+  test("unhandled-rejection policy and exception-text coverage are documented (review 13)", () => {
+    expect(header).toContain("Unhandled promise rejections (review 13)");
+    expect(header).toContain("the turn: tenun_js_pump returns -1 with a TJERR:EVAL diagnostic");
+    expect(header).toContain("A STALE (unresolvable) handle returns -1");
+    const contract = readFileSync(
+      new URL("../../02-architecture/runtime-host-adapter-contract.md", import.meta.url),
+      "utf8"
+    );
+    expect(contract).toContain("Unhandled promise-rejection visibility (review 13)");
+    expect(contract).toContain("Exception text for every value kind (review 13)");
+    expect(contract).toContain("handled transition");
+    expect(contract).toContain("single aggregated diagnostic in report order");
   });
 
   test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {

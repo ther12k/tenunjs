@@ -10,6 +10,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::thread::ThreadId;
@@ -178,6 +179,15 @@ fn scratch_would_exceed(used: usize, incoming: usize) -> bool {
     used.saturating_add(incoming) > MAX_BUFFER_POOL_BYTES
 }
 
+/// Shared unhandled-rejection outstanding set (VM state + tracker closure).
+#[derive(Clone)]
+struct VmUnhandled(Rc<RefCell<Vec<String>>>);
+
+/// Cap on tracked outstanding rejections per VM (review 13): beyond this,
+/// further reports are dropped (bounded storage; the pump still fails on
+/// whatever was tracked). Deterministic aggregation: report order.
+const MAX_TRACKED_REJECTIONS: usize = 8;
+
 struct VmState {
     interrupted: Arc<AtomicBool>,
     flag: Arc<AtomicI32>,
@@ -195,6 +205,12 @@ struct VmState {
     /// completion value of the last successful evaluation (review 5: all six
     /// bounded kinds; oversized/unrepresentable completions are flagged)
     result: RefCell<OwnedResult>,
+    /// unhandled-rejection outstanding set (review 13): bounded reason text
+    /// captured at rejection-report time, in report order. A later
+    /// is_handled=true report removes the matching entry. Shared with the
+    /// host rejection-tracker closure via Rc (it must not reach into the
+    /// VM Box while arbitrary JS holds the runtime lock).
+    unhandled: VmUnhandled,
 }
 
 /// Full bounded-kind completion value owned by the adapter. Strings/bytes
@@ -723,20 +739,97 @@ fn bound_to_js<'js>(ctx: Ctx<'js>, out: &ValueC) -> Result<Value<'js>, i32> {
     }
 }
 
-/// Extracts the pending exception message on a context (shared by the
-/// eval and pump failure paths so diagnostics are identical; review 12).
-fn ctx_exception_message(ctx: &Ctx<'_>) -> String {
-    let exc = ctx.catch();
-    if let Some(obj) = exc.as_object() {
-        match obj.get::<_, String>("message") {
-            Ok(m) => m,
-            Err(_) => "exception".to_string(),
-        }
-    } else if let Some(sv) = exc.as_string() {
-        sv.to_string().unwrap_or_else(|_| "exception".to_string())
-    } else {
-        "exception".to_string()
+/// Bounded, failure-safe text for a rejected/thrown JS value (review 13).
+/// Consumes `v`. Never leaves a conversion exception pending: if running
+/// user code (toString/valueOf/getter) throws, that new exception is
+/// swallowed and the deterministic fallback "exception" is returned.
+/// Primitives use their JavaScript textual representation.
+unsafe fn value_to_text_consuming(
+    p: *mut rquickjs_sys::JSContext,
+    v: rquickjs_sys::JSValue,
+) -> String {
+    let tag_null = rquickjs_sys::JS_TAG_NULL as i64;
+    let tag_undefined = rquickjs_sys::JS_TAG_UNDEFINED as i64;
+    let tag_exception = rquickjs_sys::JS_TAG_EXCEPTION as i64;
+    if v.tag == tag_null {
+        rquickjs_sys::JS_FreeValue(p, v);
+        return "null".to_string();
     }
+    if v.tag == tag_undefined {
+        rquickjs_sys::JS_FreeValue(p, v);
+        return "undefined".to_string();
+    }
+    if v.tag == tag_exception {
+        // property read threw; clear the pending conversion exception
+        let e = rquickjs_sys::JS_GetException(p);
+        rquickjs_sys::JS_FreeValue(p, e);
+        return "exception".to_string();
+    }
+    if v.tag == rquickjs_sys::JS_TAG_SYMBOL as i64 {
+        // quickjs-ng's JS_ToString throws on symbols; take the description
+        // property instead ("Symbol(desc)" / "Symbol()" for none)
+        let d = rquickjs_sys::JS_GetPropertyStr(p, v, c"description".as_ptr());
+        rquickjs_sys::JS_FreeValue(p, v);
+        if d.tag == (rquickjs_sys::JS_TAG_UNDEFINED as i64) || d.tag == tag_null {
+            rquickjs_sys::JS_FreeValue(p, d);
+            return "Symbol()".to_string();
+        }
+        if d.tag == tag_exception {
+            let e = rquickjs_sys::JS_GetException(p);
+            rquickjs_sys::JS_FreeValue(p, e);
+            return "exception".to_string();
+        }
+        let text = {
+            let dup = rquickjs_sys::JS_DupValue(p, d);
+            value_to_text_consuming(p, dup)
+        };
+        rquickjs_sys::JS_FreeValue(p, d);
+        return format!("Symbol({text})");
+    }
+    let s = rquickjs_sys::JS_ToString(p, v);
+    rquickjs_sys::JS_FreeValue(p, v);
+    if s.tag == tag_exception {
+        let e = rquickjs_sys::JS_GetException(p);
+        rquickjs_sys::JS_FreeValue(p, e);
+        return "exception".to_string();
+    }
+    let mut len = 0usize;
+    let c = rquickjs_sys::JS_ToCStringLen(p, &mut len, s);
+    rquickjs_sys::JS_FreeValue(p, s);
+    if c.is_null() {
+        return "exception".to_string();
+    }
+    let bytes = std::ffi::CStr::from_ptr(c).to_bytes();
+    let t = fit_utf8(&String::from_utf8_lossy(bytes), MAX_REASON_TEXT).to_string();
+    rquickjs_sys::JS_FreeCString(p, c);
+    t
+}
+
+/// UTF-8-safe truncation to at most `max` bytes (never splits a char).
+fn fit_utf8(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut cut = max;
+    while !s.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    &s[..cut]
+}
+
+/// Maximum owned diagnostic text retained for one rejection reason.
+const MAX_REASON_TEXT: usize = 160;
+
+/// Extracts the pending exception on a context as bounded text covering
+/// ALL value kinds — Error objects (message), strings, numbers, booleans,
+/// null/undefined, BigInts, symbols, plain objects — instead of collapsing
+/// primitives into a generic "exception" (review 13). Consumes the pending
+/// exception; the context is left with none pending, as before.
+fn ctx_exception_message(ctx: &Ctx<'_>) -> String {
+    let p = ctx.as_raw().as_ptr();
+    // SAFETY: p is our live context, called under the runtime lock via
+    // Context::with; the exception value is consumed by the helper.
+    unsafe { value_to_text_consuming(p, rquickjs_sys::JS_GetException(p)) }
 }
 
 /// Extracts the pending JavaScript exception message (or a textual form of
@@ -854,6 +947,43 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
             Ok(c) => c,
             Err(_) => return std::ptr::null_mut(),
         };
+        // unhandled-rejection policy (review 13): the tracker snapshots the
+        // reason to bounded owned text immediately (the raw JSValue stays
+        // borrowed for the duration of the conversion) and records report
+        // order. is_handled=true removes the OLDEST outstanding entry
+        // (FIFO): reasons are distinguishable in the diagnostics, and
+        // per-promise raw-pointer identity adds no behavioral gain under the
+        // adapter's single-context-per-runtime invariant. The Vec is shared
+        // with the VM through Rc — the tracker must NOT borrow from the VM
+        // state, because the engine may call the tracker while the runtime
+        // lock is held inside arbitrary JS.
+        let unhandled: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        {
+            let unhandled = unhandled.clone();
+            let tracker: rquickjs::runtime::RejectionTracker = Box::new(
+                move |_ctx: Ctx<'_>, _promise: Value<'_>, reason: Value<'_>, is_handled: bool| {
+                    if is_handled {
+                        unhandled.borrow_mut().remove(0);
+                    } else {
+                        // reason is BORROWED (rquickjs frees it after this
+                        // closure returns), so the conversion must dup the
+                        // value and free only its own duplicate — never the
+                        // caller's copy (review 13 heap-corruption fix).
+                        let p = _ctx.as_raw().as_ptr();
+                        let rv = reason.as_raw();
+                        let text = unsafe {
+                            let dup = rquickjs_sys::JS_DupValue(p, rv);
+                            value_to_text_consuming(p, dup)
+                        };
+                        let mut u = unhandled.borrow_mut();
+                        if u.len() < MAX_TRACKED_REJECTIONS {
+                            u.push(text);
+                        }
+                    }
+                },
+            );
+            rt.set_host_promise_rejection_tracker(Some(tracker));
+        }
         registry_insert(TenunJsVm {
             runtime: rt,
             context: ctx,
@@ -866,6 +996,8 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                 scratch: RefCell::new(Vec::new()),
                 last_error: RefCell::new(None),
                 result: RefCell::new(OwnedResult::Null),
+                // the SAME Vec the tracker mutates, shared via Rc
+                unhandled: VmUnhandled(Rc::clone(&unhandled)),
             },
         })
     }))
@@ -1171,11 +1303,41 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
                 match unsafe { rquickjs_sys::JS_ExecutePendingJob(rt_ptr, &mut job_ctx) } {
                     1 => drained += 1,
                     0 => break,
-                    _ => return Err(()), // job raised; exception left pending
+                    _ => {
+                        // hardening (review 13): a second context on this
+                        // runtime would mean the job ran somewhere else —
+                        // multi-context drift must fail loudly, and the
+                        // exception must be consumed through the context
+                        // it actually belongs to.
+                        debug_assert_eq!(job_ctx, ctx_ptr);
+                        return Err(()); // job raised; exception left pending
+                    }
                 }
             }
             Ok(drained)
         });
+        // unhandled-rejection policy (review 13): at turn end, any promise
+        // that was rejected with no handler attached during this drain is
+        // an asynchronous failure — promote it to TJERR:EVAL instead of
+        // reporting a successful drain. Rejections that a handler attached
+        // to (in the same drain or earlier) were removed from the set and
+        // do not fail the turn.
+        if let Ok(drained) = outcome {
+            let outstanding: Vec<String> = vm.state.unhandled.0.borrow_mut().drain(..).collect();
+            if !outstanding.is_empty() {
+                vm.set_error(
+                    "EVAL",
+                    &format!(
+                        "unhandled promise rejection ({}): {}",
+                        outstanding.len(),
+                        outstanding.join("; ")
+                    ),
+                );
+                return -1i64;
+            }
+            vm.clear_error();
+            return drained;
+        }
         match outcome {
             Ok(drained) => {
                 vm.clear_error();
