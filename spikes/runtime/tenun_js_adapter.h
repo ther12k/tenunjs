@@ -146,10 +146,16 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * Pumping the VM that is currently evaluating is rejected (reentrancy);
  * pumping a DIFFERENT VM from a callback is legal nested usage.
  *
- * Unhandled promise rejections (review 13/14): a per-VM host rejection
- * tracker records every rejection reported with no handler attached,
- * keyed by RETAINED PROMISE IDENTITY (bounded: at most 8 tracked
- * entries, reason text capped). A handled transition removes exactly
+ * Unhandled promise rejections (review 13/14/15): a per-VM host
+ * rejection tracker records every rejection reported with no handler
+ * attached, keyed by RETAINED PROMISE IDENTITY (bounded: at most 8
+ * tracked entries, reason text capped). The identity is published
+ * BEFORE the reason conversion runs, because conversion may execute
+ * user code (toString/valueOf) that attaches a handler to THIS very
+ * promise — that reentrant handled transition then removes the
+ * already-published entry, and the conversion result updates the entry
+ * only if it still exists (a handler attached during conversion
+ * cancels the rejection). A handled transition removes exactly
  * the entry for THAT promise — attaching a handler to promise X can
  * never remove a report for promise Y, and an unmatched transition
  * (already reported, or unknown) is a defined no-op. A rejection
@@ -167,6 +173,13 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * pumped jobs — never fails the turn. Promise-to-native-future
  * bridging remains out of scope; this is asynchronous error REPORTING
  * for the microtask system the pump drains.
+ *
+ * Tracker teardown (review 15): retained promise identities are
+ * host-owned duplicates. tenun_js_destroy releases any still-tracked
+ * identities while the context and runtime are alive — they are
+ * freed BEFORE context/runtime teardown on every destruction path
+ * (including self-destroy mid-evaluation and destroy without any
+ * pump), never left for runtime teardown to absorb.
  *
  * Diagnostic text (review 13/14): TJERR:EVAL exception/rejection text
  * covers ALL JS value kinds (numbers/booleans/bigints in JS textual

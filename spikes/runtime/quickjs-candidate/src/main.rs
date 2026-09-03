@@ -202,7 +202,55 @@ fn last_err(vm: *mut TenunJsVm) -> String {
     String::from_utf8_lossy(&e.message[..n]).to_string()
 }
 
+/// Teardown subtests (review 15): rejection with NO pump, then destroy.
+/// A leaked retained promise trips QuickJS's teardown GC-list assertion
+/// (or, with assertions off, leaks the duplicate) — either way the child's
+/// exit status reports it.
+unsafe fn run_teardown_subtest(name: &str) {
+    let cfg = ConfigC {
+        abi_version: 1,
+        max_heap_bytes: 64 * 1024 * 1024,
+        interrupt_poll_ms: 0,
+    };
+    // looped: any teardown state corruption (assertion or allocator abort)
+    // surfaces within N repetitions, amplified inside one process
+    for _ in 0..25 {
+        let vm = tenun_js_create(&cfg);
+        if vm.is_null() {
+            std::process::exit(2);
+        }
+        match name {
+            "destroy-1" => eval_st(vm, "Promise.reject('x');"),
+            "destroy-8" => eval_st(vm, "for (var i = 0; i < 8; i++) Promise.reject(String(i));"),
+            "destroy-overflow" => {
+                eval_st(vm, "for (var i = 0; i < 9; i++) Promise.reject(String(i));")
+            }
+            _ => std::process::exit(2),
+        };
+        tenun_js_destroy(vm);
+    }
+    // success: clean teardown over outstanding tracked identities
+}
+
+fn run_child(name: &str) {
+    let exe = std::env::current_exe().expect("current_exe");
+    let st = std::process::Command::new(exe)
+        .env("TENUN_SUBTEST", name)
+        .status()
+        .expect("spawn subtest");
+    if !st.success() {
+        fail(&format!("teardown subtest {name} did not exit cleanly"));
+    }
+}
+
 fn main() {
+    // review 15: teardown subtests run in a CHILD PROCESS so a QuickJS
+    // teardown assertion abort (leaked retained promise) is reported as a
+    // deterministic failure instead of killing the whole runner
+    if let Ok(sub) = std::env::var("TENUN_SUBTEST") {
+        unsafe { run_teardown_subtest(&sub) };
+        return;
+    }
     unsafe {
         let cfg = ConfigC {
             abi_version: 1,
@@ -1198,6 +1246,146 @@ fn main() {
             tenun_js_destroy(vm);
         }
         println!("PASS tracker keyed by promise identity; sticky overflow; safe late handlers");
+
+        println!("== rejection teardown + reentrant conversion (review 15) ==");
+        {
+            // (1) BLOCKER regression: reject -> destroy WITHOUT pump. The
+            // retained promise identities must be freed in Drop while the
+            // context is alive; a leak trips QuickJS's teardown assertion
+            // (child processes so an abort is a per-case failure)
+            run_child("destroy-1");
+            run_child("destroy-8");
+            run_child("destroy-overflow");
+            println!("PASS destroy with 1/8/overflow tracked rejections leaks nothing");
+
+            // (2) self-destroy mid-eval with an outstanding rejection: the
+            // parked Box drops at OpGuard exit (lock free) and must free
+            // its tracked identity there
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("tsd vm");
+            }
+            if tenun_js_register_host_fn(
+                vm,
+                c"selfDestruct".as_ptr() as *const u8,
+                Some(host_self_destroy),
+            ) != TENUN_JS_OK
+            {
+                fail("tsd registration");
+            }
+            eval_ok(vm, "Promise.reject('held'); selfDestruct(); 5");
+            tenun_js_destroy(vm); // double destroy over parked zombie: no-op
+            println!("PASS self-destroy with an outstanding rejection frees cleanly");
+
+            // (3) HIGH regression: handler attached DURING reason
+            // conversion (toString) — the placeholder identity is already
+            // tracked, so the reentrant handled transition removes it and
+            // the turn must SUCCEED with no diagnostic
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rc vm");
+            }
+            eval_ok(
+                vm,
+                "var p;\nvar rej;\nvar pp = new Promise(function(_, r) { rej = r; });\nvar reason = { toString: function() { pp.catch(function(){}); return 'handled-during-stringify'; } };\nrej(reason);",
+            );
+            if tenun_js_pump(vm, 16) < 0 {
+                fail(&format!(
+                    "reentrant toString catch: turn must succeed: {}",
+                    last_err(vm)
+                ));
+            }
+            if !last_err(vm).is_empty() {
+                fail(&format!(
+                    "reentrant toString catch must leave no diagnostic: {}",
+                    last_err(vm)
+                ));
+            }
+            tenun_js_destroy(vm);
+            println!("PASS handler attached during toString cancels the rejection");
+
+            // (4) valueOf variant (toString: null -> ToPrimitive falls
+            // through to valueOf)
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rc2 vm");
+            }
+            eval_ok(
+                vm,
+                "var p;\nvar rej;\nvar pp = new Promise(function(_, r) { rej = r; });\nvar reason = { valueOf: function() { pp.catch(function(){}); return 'v'; }, toString: null };\nrej(reason);",
+            );
+            if tenun_js_pump(vm, 16) < 0 {
+                fail("reentrant valueOf catch: turn must succeed");
+            }
+            if !last_err(vm).is_empty() {
+                fail("reentrant valueOf catch must leave no diagnostic");
+            }
+            tenun_js_destroy(vm);
+            println!("PASS handler attached during valueOf cancels the rejection");
+
+            // (5) B's reason conversion handles A: A is removed, B stays
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rc3 vm");
+            }
+            eval_ok(
+                vm,
+                "var a = Promise.reject('A');\nvar reasonB = { toString: function() { a.catch(function(){}); return 'B-reason'; } };\nvar b = Promise.reject(reasonB);",
+            );
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("cross-promise reentrancy: B must still be unhandled");
+            }
+            let e = last_err(vm);
+            if !e.contains("(1): B-reason") || e.contains(": A") {
+                fail(&format!("cross-promise reentrancy must report only B: {e}"));
+            }
+            tenun_js_destroy(vm);
+            println!("PASS B's conversion handling A removes exactly A");
+
+            // (6) conversion attaches the handler and THEN throws: the
+            // removal stands; the conversion exception is swallowed
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rc4 vm");
+            }
+            eval_ok(
+                vm,
+                "var p;\nvar rej;\nvar pp = new Promise(function(_, r) { rej = r; });\nvar reason = { toString: function() { pp.catch(function(){}); throw new Error('boom'); } };\nrej(reason);",
+            );
+            if tenun_js_pump(vm, 16) < 0 {
+                fail("conversion handle-then-throw: turn must succeed");
+            }
+            if !last_err(vm).is_empty() {
+                fail("conversion handle-then-throw must leave no diagnostic");
+            }
+            tenun_js_destroy(vm);
+            println!("PASS handle-then-throw conversion still cancels the rejection");
+
+            // (7) identical reasons with reentrant handling: exactly one
+            // entry remains (the non-reentrant one)
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("rc5 vm");
+            }
+            eval_ok(
+                vm,
+                "var p1 = Promise.reject('dup');\nvar reason = { toString: function() { p1.catch(function(){}); return 'dup'; } };\nvar p2 = Promise.reject(reason);",
+            );
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("identical-reason reentrancy: p2 must remain unhandled");
+            }
+            let e = last_err(vm);
+            if !e.contains("(1): dup") {
+                fail(&format!(
+                    "identical-reason reentrancy must leave one entry: {e}"
+                ));
+            }
+            tenun_js_destroy(vm);
+            println!("PASS identical reasons with reentrant handling leave exactly one entry");
+        }
+        println!(
+            "PASS tracker lifecycle: teardown frees identities; reentrant conversions honored"
+        );
 
         println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {

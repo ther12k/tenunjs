@@ -184,11 +184,39 @@ fn scratch_would_exceed(used: usize, incoming: usize) -> bool {
 /// — never an unrelated one. The promise value is retained (refcount +1),
 /// so GC cannot collect it and the object address is stable for identity
 /// comparison. It is released via JS_FreeValue at removal — the tracker
-/// callback and the pump drain both run under the runtime lock — entries
-/// still tracked at VM death are released wholesale by JS_FreeRuntime.
+/// callback and the pump drain both run under the runtime lock — and
+/// entries still tracked at VM death are released by `Drop for
+/// TenunJsVm` while the context is alive (review 15).
 struct TrackedRejection {
     promise: rquickjs_sys::JSValue,
     reason: String,
+}
+
+impl Drop for TenunJsVm {
+    /// Releases still-tracked rejection identities (review 15): each is a
+    /// host-owned duplicate (JS_DupValue) that the engine will NOT release
+    /// on our behalf — JS_FreeRuntime expects an empty GC list, and a
+    /// leaked duplicate violates that teardown invariant. Runs while the
+    /// context and runtime are still alive; the Box is only ever dropped
+    /// at OpGuard exit (depth 0), which for eval/pump is after `with()`
+    /// returned, so the runtime lock is free here.
+    fn drop(&mut self) {
+        let tracked = {
+            let mut r = self.state.rejections.0.borrow_mut();
+            r.overflowed = false;
+            std::mem::take(&mut r.tracked)
+        };
+        if tracked.is_empty() {
+            return;
+        }
+        self.context.with(|_ctx| {
+            let p = _ctx.as_raw().as_ptr();
+            for t in tracked {
+                // runtime lock held by with(); the engine is quiescent
+                unsafe { rquickjs_sys::JS_FreeValue(p, t.promise) };
+            }
+        });
+    }
 }
 
 #[derive(Default)]
@@ -1013,27 +1041,51 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                         }
                         // unmatched handled transition: defined no-op
                     } else {
-                        // reason is BORROWED (rquickjs frees it after this
-                        // closure returns), so the conversion must dup the
-                        // value and free only its own duplicate — never the
-                        // caller's copy (review 13 heap-corruption fix).
+                        // review 15: publish the PROMISE IDENTITY BEFORE the
+                        // reason conversion. Conversion can run user code
+                        // (toString/valueOf) that attaches a handler to THIS
+                        // promise — that reentrant handled notification must
+                        // find and remove our entry, not arrive before the
+                        // entry exists. Sequence: insert placeholder ->
+                        // convert (no borrow held; rquickjs frees the
+                        // borrowed reason, so the conversion consumes our
+                        // own duplicate — review 13 heap-corruption fix) ->
+                        // re-find and update ONLY if still present.
+                        let dup = unsafe { rquickjs_sys::JS_DupValue(p, _promise.as_raw()) };
+                        // SAFETY: reading the union ptr of an object-tagged
+                        // JSValue; the retained duplicate pins the address.
+                        let key = unsafe { dup.u.ptr };
+                        {
+                            let mut r = rejections.0.borrow_mut();
+                            if r.tracked.len() >= MAX_TRACKED_REJECTIONS {
+                                // sticky fail-closed overflow (review 14):
+                                // the rejection must not vanish silently
+                                r.overflowed = true;
+                                unsafe { rquickjs_sys::JS_FreeValue(p, dup) };
+                            } else {
+                                r.tracked.push(TrackedRejection {
+                                    promise: dup,
+                                    reason: String::new(),
+                                });
+                            }
+                        }
+                        // no borrow held across conversion: it may reenter
+                        // the tracker and mutate the set
                         let rv = reason.as_raw();
                         let text = unsafe {
-                            let dup = rquickjs_sys::JS_DupValue(p, rv);
-                            value_to_text_consuming(p, dup)
+                            let rdup = rquickjs_sys::JS_DupValue(p, rv);
+                            value_to_text_consuming(p, rdup)
                         };
                         let mut r = rejections.0.borrow_mut();
-                        if r.tracked.len() >= MAX_TRACKED_REJECTIONS {
-                            // sticky fail-closed overflow (review 14): the
-                            // rejection must not vanish silently
-                            r.overflowed = true;
-                        } else {
-                            let dup = unsafe { rquickjs_sys::JS_DupValue(p, _promise.as_raw()) };
-                            r.tracked.push(TrackedRejection {
-                                promise: dup,
-                                reason: text,
-                            });
+                        if let Some(entry) = r
+                            .tracked
+                            .iter_mut()
+                            .find(|t| unsafe { t.promise.u.ptr } == key)
+                        {
+                            entry.reason = text;
                         }
+                        // absent => a handler attached during conversion
+                        // removed the entry; do NOT reinsert
                     }
                 },
             );
