@@ -82,6 +82,7 @@ Paths are architectural guidance, not permission to change every listed area. Ke
 ## Acceptance criteria
 
 - [ ] **Primary outcome:** Create/load/invoke/interrupt/drain/dispose lifecycle with deterministic ownership.
+- [ ] Spike conformance counters (e.g. `TEST_TRACKED_DUPS` / `TEST_TRACKED_FREES`) are gated behind a dedicated `conformance-counters` Cargo feature so release runtime builds carry no global atomic accounting overhead.
 - [ ] Public/internal types compile under strict settings with no unexplained escape to `any` or unsafe pointer/value casts.
 - [ ] Positive and fail-closed behavior are both covered by automated tests.
 - [ ] Ownership, lifecycle, cancellation, and disposal behavior are documented where the issue creates durable state.
