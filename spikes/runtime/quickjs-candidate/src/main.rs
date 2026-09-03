@@ -219,7 +219,7 @@ unsafe fn run_teardown_subtest(name: &str) {
         if vm.is_null() {
             std::process::exit(2);
         }
-        match name {
+        let status = match name {
             "destroy-1" => eval_st(vm, "Promise.reject('x');"),
             "destroy-8" => eval_st(vm, "for (var i = 0; i < 8; i++) Promise.reject(String(i));"),
             "destroy-overflow" => {
@@ -227,7 +227,15 @@ unsafe fn run_teardown_subtest(name: &str) {
             }
             _ => std::process::exit(2),
         };
+        // review 16 test hardening: script evaluation must succeed before teardown
+        if status != TENUN_JS_OK {
+            std::process::exit(3);
+        }
         tenun_js_destroy(vm);
+        // review 16 test hardening: direct proof that every tracked duplicate was freed
+        if test_tracked_dups() != test_tracked_frees() {
+            std::process::exit(4);
+        }
     }
     // success: clean teardown over outstanding tracked identities
 }
@@ -238,8 +246,17 @@ fn run_child(name: &str) {
         .env("TENUN_SUBTEST", name)
         .status()
         .expect("spawn subtest");
-    if !st.success() {
-        fail(&format!("teardown subtest {name} did not exit cleanly"));
+    match st.code() {
+        Some(0) => {}
+        Some(3) => fail(&format!(
+            "teardown subtest {name}: script evaluation failed"
+        )),
+        Some(4) => fail(&format!(
+            "teardown subtest {name}: leaked tracked promise duplicates"
+        )),
+        _ => fail(&format!(
+            "teardown subtest {name} did not exit cleanly: {st}"
+        )),
     }
 }
 
@@ -1382,6 +1399,16 @@ fn main() {
             }
             tenun_js_destroy(vm);
             println!("PASS identical reasons with reentrant handling leave exactly one entry");
+
+            // review 16 test hardening: direct proof that every host-side
+            // promise duplicate created across all rejection tests was freed
+            if test_tracked_dups() != test_tracked_frees() {
+                fail(&format!(
+                    "tracked promise duplicate/free mismatch: dups={} frees={}",
+                    test_tracked_dups(),
+                    test_tracked_frees()
+                ));
+            }
         }
         println!(
             "PASS tracker lifecycle: teardown frees identities; reentrant conversions honored"
