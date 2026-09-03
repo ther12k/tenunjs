@@ -43,7 +43,7 @@ describe("runtime host adapter contract", () => {
   });
 
   test("unhandled-rejection policy and exception-text coverage are documented (review 13/14)", () => {
-    expect(header).toContain("Unhandled promise rejections (review 13/14)");
+    expect(header).toContain("Unhandled promise rejections (review 13/14/15)");
     expect(header).toContain("the turn: tenun_js_pump returns -1 with a TJERR:EVAL diagnostic");
     expect(header).toContain("A STALE (unresolvable) handle returns -1");
     // review 14: identity, overflow, terminal reporting, text integrity
@@ -61,6 +61,12 @@ describe("runtime host adapter contract", () => {
     expect(contract).toContain("sticky overflow flag");
     expect(contract).toContain("Reporting is terminal");
     expect(contract).toContain("a multibyte char crossing byte 255 is never split");
+    // review 15: teardown release + reentrant conversion semantics
+    expect(header).toContain("Tracker teardown (review 15)");
+    expect(header).toContain("published\n * BEFORE the reason conversion runs");
+    expect(contract).toContain("Tracker lifecycle (review 15)");
+    expect(contract).toContain("including self-destroy mid-evaluation and destroy-without-pump");
+    expect(contract).toContain("reentrant handled transition removes the published entry");
   });
 
   test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {
