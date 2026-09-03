@@ -28,6 +28,8 @@ depends_on:
 
 > **Status note (2026-08-25, review 2):** Value bridging COMPLETE (full six kinds both directions incl. ArrayBuffer; TN-025 narrows to production ABI shape). Remaining blocker: reproducible physical-device evidence only.
 
+> **Status note (2026-09-03, review 17):** QuickJS-NG candidate implementation fully conforms to the hardened runtime host adapter contract: full six-kind value bridging, exact BigInt i64, per-scope memory budgets, callback diagnostic isolation, pump execution context, pending-job failure visibility, identity-keyed Promise rejection tracking with sticky overflow and terminal reporting, and reference-counted teardown lifecycle with per-iteration counter delta proofs. Formally accepted in Re-review 17 (#142). Remaining blocker: physical-device evidence (H4).
+
 ## Required outcome
 
 QuickJS-NG candidate passes representative startup, event, microtask, host-call, and diagnostics tests.

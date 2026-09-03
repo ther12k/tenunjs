@@ -192,9 +192,11 @@ struct TrackedRejection {
     reason: String,
 }
 
-/// Test-only reference counters (review 16 test hardening): direct deterministic
+/// Test instrumentation (review 16/17 test hardening): direct deterministic
 /// proof that every host-retained Promise duplicate (JS_DupValue) is balanced
 /// by an exact host-side JS_FreeValue, independent of engine teardown assertions.
+/// Spike candidate scope: compiled into release spike artifacts for conformance proof;
+/// production promotion (TN-018/TN-024/TN-025) will feature-gate under `conformance-counters`.
 pub static TEST_TRACKED_DUPS: AtomicU64 = AtomicU64::new(0);
 pub static TEST_TRACKED_FREES: AtomicU64 = AtomicU64::new(0);
 

@@ -215,6 +215,16 @@ unsafe fn run_teardown_subtest(name: &str) {
     // looped: any teardown state corruption (assertion or allocator abort)
     // surfaces within N repetitions, amplified inside one process
     for _ in 0..25 {
+        // review 17 test refinement: assert exact per-iteration counter deltas
+        // so a valid but inert script (e.g. Promise.resolve) cannot falsely pass
+        let (expected_dups, expected_frees) = match name {
+            "destroy-1" => (1u64, 1u64),
+            "destroy-8" => (8u64, 8u64),
+            "destroy-overflow" => (9u64, 9u64),
+            _ => std::process::exit(2),
+        };
+        let dups_before = test_tracked_dups();
+        let frees_before = test_tracked_frees();
         let vm = tenun_js_create(&cfg);
         if vm.is_null() {
             std::process::exit(2);
@@ -231,9 +241,14 @@ unsafe fn run_teardown_subtest(name: &str) {
         if status != TENUN_JS_OK {
             std::process::exit(3);
         }
+        let dups_after = test_tracked_dups();
+        if dups_after.saturating_sub(dups_before) != expected_dups {
+            std::process::exit(5);
+        }
         tenun_js_destroy(vm);
-        // review 16 test hardening: direct proof that every tracked duplicate was freed
-        if test_tracked_dups() != test_tracked_frees() {
+        let frees_after = test_tracked_frees();
+        // review 16/17 test hardening: exact matching free delta + cumulative balance
+        if frees_after.saturating_sub(frees_before) != expected_frees || dups_after != frees_after {
             std::process::exit(4);
         }
     }
@@ -253,6 +268,9 @@ fn run_child(name: &str) {
         )),
         Some(4) => fail(&format!(
             "teardown subtest {name}: leaked tracked promise duplicates"
+        )),
+        Some(5) => fail(&format!(
+            "teardown subtest {name}: expected duplicate count not created"
         )),
         _ => fail(&format!(
             "teardown subtest {name} did not exit cleanly: {st}"
