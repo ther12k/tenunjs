@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "quickjs-spike-v3",
-  "timestamp_utc": "2026-09-03T05:44:33.932Z",
+  "timestamp_utc": "2026-09-03T07:38:41.434Z",
   "build_profile": "release",
-  "inputs_digest": "58a7e662020c21aead149831e1ef269c1b0b5b1f2d3e61e00d771637c6e126fa",
+  "inputs_digest": "daa1f96a596f622338d363b96e561bdd513397cc0a522495a0818a09374d1bd0",
   "source": {
-    "commit": "10bb5c92bcb0fc7a09d8374cd93d1519c74dff41",
+    "commit": "9767b193dcfa43cd3674be8f7d43d66d83fa5aa9",
     "dirty": false,
     "changed_files": 0
   },
@@ -14,7 +14,7 @@
     "arch": "x64",
     "kernel": "Linux 7.0.0-30-generic",
     "cpu_model": "13th Gen Intel(R) Core(TM) i5-13420H",
-    "mem_total_bytes": 16454037504
+    "mem_total_bytes": 16454045696
   },
   "tools": {
     "bun": "1.4.0",
@@ -26,8 +26,8 @@
   "artifacts": [
     {
       "path": "spikes/runtime/quickjs-candidate/target/release/libtenun_js_quickjs.so",
-      "sha256": "05f7494ee8e1d31aab8d621194e9ce1f21a8ac49c13bef98f4d91658eee79dbe",
-      "bytes": 1486496
+      "sha256": "f22df7b7dc18deff86d9d5795ee5ba850147450aabb6a178d17d53975d7f98e3",
+      "bytes": 1486640
     }
   ],
   "steps": [
@@ -35,7 +35,7 @@
       "name": "release-build",
       "command": "cd spikes/runtime/quickjs-candidate && cargo build --release",
       "exit_code": 0,
-      "duration_ms": 76,
+      "duration_ms": 58,
       "stdout_tail": "",
       "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.04s\n",
       "timed_out": false
@@ -44,8 +44,8 @@
       "name": "conformance-runner",
       "command": "cd spikes/runtime/quickjs-candidate && ./target/release/spike-runner",
       "exit_code": 0,
-      "duration_ms": 295,
-      "stdout_tail": "== create / abi + config rejection ==\nPASS unsupported heap/poll configs rejected; supported config accepted\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS f64(Number)/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.234871ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\n== in-flight destruction + reentrancy (review 3) ==\nPASS self-destroy mid-eval + reentrant calls all fail-closed\n== cross-VM nested evaluation (review 5) ==\nPASS cross-VM nested evaluation restores outer context\n== slot-reuse replacement VM after self-destroy (review 11) ==\nPASS replacement VM in freed slot nests legally (full-handle identity)\n== pumped host-call context + failure visibility (review 12) ==\nPASS top-level pump invokes the pumped VM's callback with its own handle\nPASS nested pump(B) inside A delivers B's job to B and restores A\n== pending-job failure visibility (review 12) ==\nPASS failing pending job returns -1 with preserved TJERR:EVAL text\n== unhandled promise-rejection visibility (review 13) ==\nPASS unhandled rejections promoted at turn end; handled transitions clear\n== primitive thrown-value diagnostics (review 13) ==\nPASS primitive thrown values carry exact bounded text (no generic 'exception')\n== rejection tracker state correctness (review 14) ==\nPASS tracker keyed by promise identity; sticky overflow; safe late handlers\n== rejection teardown + reentrant conversion (review 15) ==\nPASS destroy with 1/8/overflow tracked rejections leaks nothing\nPASS self-destroy with an outstanding rejection frees cleanly\nPASS handler attached during toString cancels the rejection\nPASS handler attached during valueOf cancels the rejection\nPASS B's conversion handling A removes exactly A\nPASS handle-then-throw conversion still cancels the rejection\nPASS identical reasons with reentrant handling leave exactly one entry\nPASS tracker lifecycle: teardown frees identities; reentrant conversions honored\n== completion value bridge: all six kinds (review 5/6) ==\nPASS null/bool/f64/i64/string/bytes completion kinds\n== unrepresentable completions -> VALUE_BOUNDS ==\nPASS object/function/oversized completions fail VALUE_BOUNDS\n== stale-diagnostic overwrite (review 7) ==\nPASS every failed resolvable-VM call overwrites last_error\n== callback echoes its own argument (review 9) ==\nPASS string + byte echo round-trip through callback scratch\n== MAX_ARGS enforcement (review 7/9) ==\nPASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case\n== callback warning isolation across invocations (review 10) ==\nPASS clean callback does not inherit a previous callback's warning\n== bounded adapter storage (review 8) ==\nPASS 1000x last_result on 1 MiB completion (replace-on-call)\nPASS 500x host calls on 1 MiB buffer (callback-scoped scratch)\nPASS callback scratch budget enforced without unbounded growth\nPASS 200x max-string args + fresh evaluation (plateau)\n== host I64 return: exact via BigInt (review 6) ==\nPASS host i64 returns exact BigInt to JS (2^53+1 round-trips)\n== JS BigInt arguments: exact i64 (review 6) ==\nPASS BigInt args exact in int64 domain; beyond dropped VALUE_BOUNDS\nALL PASS\n",
+      "duration_ms": 252,
+      "stdout_tail": "== create / abi + config rejection ==\nPASS unsupported heap/poll configs rejected; supported config accepted\n== two-VM callback isolation ==\nPASS A→11 B→22 interleaved\n== exact diagnostics + clear-on-success ==\nPASS TJERR:BUNDLE_DIGEST verbatim\nPASS clear-on-success\n== six-kind argument marshalling JS→host ==\nPASS f64(Number)/f64/bool/null/string(utf8)/bytes received intact\n== oversize JS→host string dropped with reduced argc ==\nPASS oversized argument dropped; argc reflects conversion\n== host return kinds: string + array-buffer ==\nPASS string + array-buffer returns usable from JS\n== invalid tag / oversize / null-data returns throw TJERR ==\nPASS invalid tag / oversize / null-data rejected via TJERR throw\n== cross-thread request allowed, clear owner-only ==\nPASS request_interrupt from watchdog → TIMEOUT in 120.155902ms\nPASS owner clear restores VM\n== affinity: non-owner eval rejected ==\nPASS ERR_AFFINITY\n== duplicate registration + pump + null/oversize args ==\nPASS duplicate/pump/null/oversize all fail-closed\n== handle registry: stale + double destroy ==\nPASS stale/double-destroy/alias all fail-closed\n== in-flight destruction + reentrancy (review 3) ==\nPASS self-destroy mid-eval + reentrant calls all fail-closed\n== cross-VM nested evaluation (review 5) ==\nPASS cross-VM nested evaluation restores outer context\n== slot-reuse replacement VM after self-destroy (review 11) ==\nPASS replacement VM in freed slot nests legally (full-handle identity)\n== pumped host-call context + failure visibility (review 12) ==\nPASS top-level pump invokes the pumped VM's callback with its own handle\nPASS nested pump(B) inside A delivers B's job to B and restores A\n== pending-job failure visibility (review 12) ==\nPASS failing pending job returns -1 with preserved TJERR:EVAL text\n== unhandled promise-rejection visibility (review 13) ==\nPASS unhandled rejections promoted at turn end; handled transitions clear\n== primitive thrown-value diagnostics (review 13) ==\nPASS primitive thrown values carry exact bounded text (no generic 'exception')\n== rejection tracker state correctness (review 14) ==\nPASS tracker keyed by promise identity; sticky overflow; safe late handlers\n== rejection teardown + reentrant conversion (review 15) ==\nPASS destroy with 1/8/overflow tracked rejections leaks nothing\nPASS self-destroy with an outstanding rejection frees cleanly\nPASS handler attached during toString cancels the rejection\nPASS handler attached during valueOf cancels the rejection\nPASS B's conversion handling A removes exactly A\nPASS handle-then-throw conversion still cancels the rejection\nPASS identical reasons with reentrant handling leave exactly one entry\nPASS tracker lifecycle: teardown frees identities; reentrant conversions honored\n== completion value bridge: all six kinds (review 5/6) ==\nPASS null/bool/f64/i64/string/bytes completion kinds\n== unrepresentable completions -> VALUE_BOUNDS ==\nPASS object/function/oversized completions fail VALUE_BOUNDS\n== stale-diagnostic overwrite (review 7) ==\nPASS every failed resolvable-VM call overwrites last_error\n== callback echoes its own argument (review 9) ==\nPASS string + byte echo round-trip through callback scratch\n== MAX_ARGS enforcement (review 7/9) ==\nPASS 9-arg call delivers MAX_ARGS; combined warning visible in every over-limit case\n== callback warning isolation across invocations (review 10) ==\nPASS clean callback does not inherit a previous callback's warning\n== bounded adapter storage (review 8) ==\nPASS 1000x last_result on 1 MiB completion (replace-on-call)\nPASS 500x host calls on 1 MiB buffer (callback-scoped scratch)\nPASS callback scratch budget enforced without unbounded growth\nPASS 200x max-string args + fresh evaluation (plateau)\n== host I64 return: exact via BigInt (review 6) ==\nPASS host i64 returns exact BigInt to JS (2^53+1 round-trips)\n== JS BigInt arguments: exact i64 (review 6) ==\nPASS BigInt args exact in int64 domain; beyond dropped VALUE_BOUNDS\nALL PASS\n",
       "stderr_tail": "",
       "timed_out": false
     },
@@ -53,7 +53,7 @@
       "name": "abi-smoke-compile",
       "command": "cc -std=c11 -Wall -Werror -Wextra -Ispikes/runtime spikes/runtime/quickjs-candidate/abi_smoke.c -Lspikes/runtime/quickjs-candidate/target/release -ltenun_js_quickjs -ldl -lm -lpthread -o spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 73,
+      "duration_ms": 53,
       "stdout_tail": "",
       "stderr_tail": "",
       "timed_out": false
@@ -62,7 +62,7 @@
       "name": "abi-smoke-run",
       "command": "LD_LIBRARY_PATH=spikes/runtime/quickjs-candidate/target/release spikes/runtime/quickjs-candidate/target/release/abi_smoke_c",
       "exit_code": 0,
-      "duration_ms": 8,
+      "duration_ms": 4,
       "stdout_tail": "ABI SMOKE PASS\n",
       "stderr_tail": "",
       "timed_out": false

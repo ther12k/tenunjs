@@ -11,7 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::thread::ThreadId;
 
@@ -192,6 +192,22 @@ struct TrackedRejection {
     reason: String,
 }
 
+/// Test-only reference counters (review 16 test hardening): direct deterministic
+/// proof that every host-retained Promise duplicate (JS_DupValue) is balanced
+/// by an exact host-side JS_FreeValue, independent of engine teardown assertions.
+pub static TEST_TRACKED_DUPS: AtomicU64 = AtomicU64::new(0);
+pub static TEST_TRACKED_FREES: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+pub fn test_tracked_dups() -> u64 {
+    TEST_TRACKED_DUPS.load(Ordering::SeqCst)
+}
+
+#[inline]
+pub fn test_tracked_frees() -> u64 {
+    TEST_TRACKED_FREES.load(Ordering::SeqCst)
+}
+
 impl Drop for TenunJsVm {
     /// Releases still-tracked rejection identities (review 15): each is a
     /// host-owned duplicate (JS_DupValue) that the engine will NOT release
@@ -213,6 +229,7 @@ impl Drop for TenunJsVm {
             let p = _ctx.as_raw().as_ptr();
             for t in tracked {
                 // runtime lock held by with(); the engine is quiescent
+                TEST_TRACKED_FREES.fetch_add(1, Ordering::SeqCst);
                 unsafe { rquickjs_sys::JS_FreeValue(p, t.promise) };
             }
         });
@@ -1037,6 +1054,7 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                         {
                             let t = r.tracked.remove(i);
                             // runtime lock held by the engine callback
+                            TEST_TRACKED_FREES.fetch_add(1, Ordering::SeqCst);
                             unsafe { rquickjs_sys::JS_FreeValue(p, t.promise) };
                         }
                         // unmatched handled transition: defined no-op
@@ -1051,7 +1069,10 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                         // borrowed reason, so the conversion consumes our
                         // own duplicate — review 13 heap-corruption fix) ->
                         // re-find and update ONLY if still present.
-                        let dup = unsafe { rquickjs_sys::JS_DupValue(p, _promise.as_raw()) };
+                        let dup = unsafe {
+                            TEST_TRACKED_DUPS.fetch_add(1, Ordering::SeqCst);
+                            rquickjs_sys::JS_DupValue(p, _promise.as_raw())
+                        };
                         // SAFETY: reading the union ptr of an object-tagged
                         // JSValue; the retained duplicate pins the address.
                         let key = unsafe { dup.u.ptr };
@@ -1061,6 +1082,7 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                                 // sticky fail-closed overflow (review 14):
                                 // the rejection must not vanish silently
                                 r.overflowed = true;
+                                TEST_TRACKED_FREES.fetch_add(1, Ordering::SeqCst);
                                 unsafe { rquickjs_sys::JS_FreeValue(p, dup) };
                             } else {
                                 r.tracked.push(TrackedRejection {
@@ -1454,6 +1476,7 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
             let overflowed = r.overflowed;
             let reasons: Vec<String> = r.tracked.iter().map(|t| t.reason.clone()).collect();
             for t in r.tracked.drain(..) {
+                TEST_TRACKED_FREES.fetch_add(1, Ordering::SeqCst);
                 unsafe { rquickjs_sys::JS_FreeValue(ctx_ptr, t.promise) };
             }
             r.overflowed = false;
