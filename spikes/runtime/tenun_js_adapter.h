@@ -146,16 +146,35 @@ tenun_js_status tenun_js_clear_interrupt(tenun_js_vm* vm);
  * Pumping the VM that is currently evaluating is rejected (reentrancy);
  * pumping a DIFFERENT VM from a callback is legal nested usage.
  *
- * Unhandled promise rejections (review 13): a per-VM host rejection
- * tracker records every rejection reported with no handler attached and
- * removes a report when a handler is attached later (handled transition).
+ * Unhandled promise rejections (review 13/14): a per-VM host rejection
+ * tracker records every rejection reported with no handler attached,
+ * keyed by RETAINED PROMISE IDENTITY (bounded: at most 8 tracked
+ * entries, reason text capped). A handled transition removes exactly
+ * the entry for THAT promise — attaching a handler to promise X can
+ * never remove a report for promise Y, and an unmatched transition
+ * (already reported, or unknown) is a defined no-op. A rejection
+ * arriving when 8 entries are already tracked sets a STICKY OVERFLOW
+ * flag instead of being dropped: the next pump turn end fails with a
+ * deterministic TJERR:EVAL "tracking exceeded 8 outstanding entries"
+ * diagnostic, even if every tracked entry was handled in the meantime.
  * At the END of each pump drain, outstanding unhandled rejections fail
  * the turn: tenun_js_pump returns -1 with a TJERR:EVAL diagnostic that
- * aggregates the tracked reasons (bounded count, report order). A
- * rejection handled within the same drain — a catch attached in the
- * pumped jobs — never fails the turn. Promise-to-native-future bridging
- * remains out of scope; this is asynchronous error REPORTING for the
- * microtask system the pump drains.
+ * aggregates the tracked reasons (bounded count, report order).
+ * REPORTING IS TERMINAL: the turn-end report releases the tracked
+ * identities, so a handler attached in a LATER adapter call is a safe
+ * no-op — handlers cancel a rejection only before its turn-end report.
+ * A rejection handled within the same drain — a catch attached in the
+ * pumped jobs — never fails the turn. Promise-to-native-future
+ * bridging remains out of scope; this is asynchronous error REPORTING
+ * for the microtask system the pump drains.
+ *
+ * Diagnostic text (review 13/14): TJERR:EVAL exception/rejection text
+ * covers ALL JS value kinds (numbers/booleans/bigints in JS textual
+ * form, null/undefined verbatim, symbols via description, objects via
+ * string conversion); interior NUL characters are ESCAPED (\u0000)
+ * because the ABI diagnostic is a NUL-terminated C string; the final
+ * payload is truncated at a UTF-8 character boundary (never splitting
+ * a multibyte char) with byte 255 reserved as the C terminator.
  *
  * Thread affinity: a VM is bound to its creating thread. Cross-thread calls
  * other than tenun_js_request_interrupt fail with TENUN_JS_ERR_AFFINITY.

@@ -1023,6 +1023,182 @@ fn main() {
         }
         println!("PASS primitive thrown values carry exact bounded text (no generic 'exception')");
 
+        println!("== rejection tracker state correctness (review 14) ==");
+        {
+            // (1) B handled BEFORE A: identity matching must remove B's
+            // entry and keep A — FIFO remove(0) would delete A instead
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk vm");
+            }
+            eval_ok(
+                vm,
+                "const a = Promise.reject('A');\nconst b = Promise.reject('B');",
+            );
+            eval_ok(vm, "b.catch(function(){});");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("out-of-order: turn must fail for still-unhandled A");
+            }
+            let e = last_err(vm);
+            if !e.contains("(1): A") || e.contains(": B") {
+                fail(&format!("B-handled-first must report only A: {e}"));
+            }
+            tenun_js_destroy(vm);
+
+            // (2) A handled before B -> B reported
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk2 vm");
+            }
+            eval_ok(
+                vm,
+                "const a = Promise.reject('A');\nconst b = Promise.reject('B');",
+            );
+            eval_ok(vm, "a.catch(function(){});");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("out-of-order 2: turn must fail for still-unhandled B");
+            }
+            let e = last_err(vm);
+            if !e.contains("(1): B") || e.contains(": A") {
+                fail(&format!("A-handled-first must report only B: {e}"));
+            }
+            tenun_js_destroy(vm);
+
+            // (3) identical reasons: removal is driven by PROMISE identity,
+            // not reason text — handling b leaves exactly one 'same' entry
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk3 vm");
+            }
+            eval_ok(
+                vm,
+                "const a = Promise.reject('same');\nconst b = Promise.reject('same');",
+            );
+            eval_ok(vm, "b.catch(function(){});");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("duplicate reasons: turn must fail for unhandled a");
+            }
+            let e = last_err(vm);
+            if !e.contains("(1)") || !e.contains("same") {
+                fail(&format!(
+                    "duplicate reasons must leave exactly one entry: {e}"
+                ));
+            }
+            tenun_js_destroy(vm);
+
+            // (4) sticky overflow: 9 rejections -> 8 tracked + overflowed;
+            // handling the UNTRACKED ninth must not delete tracked entries;
+            // after all 8 tracked are handled, the turn STILL fails on the
+            // sticky overflow flag
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk4 vm");
+            }
+            eval_ok(
+                vm,
+                "var p = Array.from({length: 9}, function(_, i) { return Promise.reject(String(i)); });",
+            );
+            // untracked promise handled first: defined no-op
+            eval_ok(vm, "p[8].catch(function(){});");
+            // now handle the 8 tracked ones
+            eval_ok(vm, "for (var i = 0; i < 8; i++) p[i].catch(function(){});");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("overflow: turn must fail on the sticky overflow flag");
+            }
+            let e = last_err(vm);
+            if !e.contains("exceeded 8 outstanding entries") {
+                fail(&format!("overflow diagnostic wrong: {e}"));
+            }
+            // the overflow was reported; a follow-up turn succeeds
+            eval_ok(vm, "1");
+            if tenun_js_pump(vm, 16) < 0 {
+                fail("post-overflow turn must succeed");
+            }
+            if !last_err(vm).is_empty() {
+                fail("post-overflow diagnostic must be cleared");
+            }
+            tenun_js_destroy(vm);
+
+            // (5) genuinely CROSS-TURN late handler: the rejection was
+            // reported at turn end (records drained); the handled
+            // transition arriving afterwards must be a safe no-op — never
+            // a panic (remove(0) on an empty set)
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk5 vm");
+            }
+            eval_ok(vm, "globalThis.p = Promise.reject('late');");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("cross-turn: first turn must fail with the rejection");
+            }
+            // attach the handler AFTER the report, in a later adapter call
+            eval_ok(vm, "p.catch(function(){});");
+            eval_ok(vm, "2"); // VM healthy, no poisoning
+            if tenun_js_pump(vm, 16) < 0 {
+                fail("cross-turn: follow-up pump must succeed");
+            }
+            if !last_err(vm).is_empty() {
+                fail("cross-turn: stale diagnostic must be cleared");
+            }
+            tenun_js_destroy(vm);
+
+            // (6) interior NUL in thrown/rejected strings: the diagnostic
+            // must carry BOTH sides (escaped for the C-string ABI)
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk6 vm");
+            }
+            eval_ok(
+                vm,
+                "queueMicrotask(function() { throw 'left\\u0000right'; });",
+            );
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("NUL throw: turn must fail");
+            }
+            let e = last_err(vm);
+            if !(e.contains("left") && e.contains("right")) {
+                fail(&format!("interior NUL must not truncate the text: {e}"));
+            }
+            eval_ok(vm, "Promise.reject('x\\u0000y');");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("NUL rejection: turn must fail");
+            }
+            let e = last_err(vm);
+            if !(e.contains("x") && e.contains("y")) {
+                fail(&format!("interior NUL rejection must keep both sides: {e}"));
+            }
+            tenun_js_destroy(vm);
+
+            // (7) multibyte char crossing byte 255: last_error must
+            // truncate at a UTF-8 boundary and leave byte 255 as the C
+            // terminator
+            let vm = tenun_js_create(&cfg);
+            if vm.is_null() {
+                fail("trk7 vm");
+            }
+            // 2 rejections x 60 'あ' (3 bytes, capped at 160 bytes per
+            // reason) -> aggregate far exceeds 255 bytes, with a multibyte
+            // char straddling byte 255 deterministically
+            eval_ok(vm, "var a = Promise.reject('あ'.repeat(60));\nvar b = Promise.reject('あ'.repeat(60));");
+            if tenun_js_pump(vm, 16) != -1 {
+                fail("multibyte: turn must fail");
+            }
+            let e = tenun_js_last_error(vm);
+            let nul = e.message.iter().position(|&c| c == 0).unwrap();
+            // the aggregate must actually reach the payload cap (byte 254
+            // or 255) so the straddling char is exercised
+            if nul < 254 {
+                fail(&format!(
+                    "multibyte: aggregate did not reach the cap: {nul}"
+                ));
+            }
+            if std::str::from_utf8(&e.message[..nul]).is_err() {
+                fail("multibyte: diagnostic must not split a UTF-8 char at byte 255");
+            }
+            tenun_js_destroy(vm);
+        }
+        println!("PASS tracker keyed by promise identity; sticky overflow; safe late handlers");
+
         println!("== completion value bridge: all six kinds (review 5/6) ==");
         struct CompletionCase {
             src: &'static str,

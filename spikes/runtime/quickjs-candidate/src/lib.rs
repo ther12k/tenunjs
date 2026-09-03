@@ -179,13 +179,36 @@ fn scratch_would_exceed(used: usize, incoming: usize) -> bool {
     used.saturating_add(incoming) > MAX_BUFFER_POOL_BYTES
 }
 
-/// Shared unhandled-rejection outstanding set (VM state + tracker closure).
-#[derive(Clone)]
-struct VmUnhandled(Rc<RefCell<Vec<String>>>);
+/// One outstanding unhandled rejection (review 14): keyed by RETAINED
+/// Promise identity, so a handled transition removes exactly its own entry
+/// — never an unrelated one. The promise value is retained (refcount +1),
+/// so GC cannot collect it and the object address is stable for identity
+/// comparison. It is released via JS_FreeValue at removal — the tracker
+/// callback and the pump drain both run under the runtime lock — entries
+/// still tracked at VM death are released wholesale by JS_FreeRuntime.
+struct TrackedRejection {
+    promise: rquickjs_sys::JSValue,
+    reason: String,
+}
 
-/// Cap on tracked outstanding rejections per VM (review 13): beyond this,
-/// further reports are dropped (bounded storage; the pump still fails on
-/// whatever was tracked). Deterministic aggregation: report order.
+#[derive(Default)]
+struct Rejections {
+    tracked: Vec<TrackedRejection>,
+    /// sticky fail-closed overflow flag (review 14): a rejection arriving
+    /// at capacity must not vanish silently. Set at overflow, reported
+    /// (and reset) at the next pump turn end.
+    overflowed: bool,
+}
+
+/// Shared rejection state (VM state + tracker closure) via Rc: the engine
+/// may call the tracker while the runtime lock is held inside arbitrary
+/// JS, so the closure must not reach into the VM Box.
+#[derive(Clone)]
+struct RejectionState(Rc<RefCell<Rejections>>);
+
+/// Cap on tracked outstanding rejections per VM (review 13/14): a report
+/// arriving beyond this sets the sticky overflow flag instead of being
+/// dropped. Deterministic aggregation: report order.
 const MAX_TRACKED_REJECTIONS: usize = 8;
 
 struct VmState {
@@ -205,12 +228,11 @@ struct VmState {
     /// completion value of the last successful evaluation (review 5: all six
     /// bounded kinds; oversized/unrepresentable completions are flagged)
     result: RefCell<OwnedResult>,
-    /// unhandled-rejection outstanding set (review 13): bounded reason text
-    /// captured at rejection-report time, in report order. A later
-    /// is_handled=true report removes the matching entry. Shared with the
-    /// host rejection-tracker closure via Rc (it must not reach into the
-    /// VM Box while arbitrary JS holds the runtime lock).
-    unhandled: VmUnhandled,
+    /// unhandled-rejection outstanding set (review 13/14): entries keyed by
+    /// retained Promise identity, plus a sticky overflow flag. Shared with
+    /// the host rejection-tracker closure via Rc (it must not reach into
+    /// the VM Box while arbitrary JS holds the runtime lock).
+    rejections: RejectionState,
 }
 
 /// Full bounded-kind completion value owned by the adapter. Strings/bytes
@@ -797,12 +819,24 @@ unsafe fn value_to_text_consuming(
     let c = rquickjs_sys::JS_ToCStringLen(p, &mut len, s);
     rquickjs_sys::JS_FreeValue(p, s);
     if c.is_null() {
+        // the conversion itself raised — clear it so no exception stays
+        // pending (review 14: the null branch previously skipped this)
+        let e = rquickjs_sys::JS_GetException(p);
+        rquickjs_sys::JS_FreeValue(p, e);
         return "exception".to_string();
     }
-    let bytes = std::ffi::CStr::from_ptr(c).to_bytes();
-    let t = fit_utf8(&String::from_utf8_lossy(bytes), MAX_REASON_TEXT).to_string();
+    // use the EXPLICIT byte length: JS strings may contain interior NUL,
+    // and CStr would stop at the first one (review 14)
+    let bytes = unsafe { std::slice::from_raw_parts(c.cast::<u8>(), len) };
+    let t = String::from_utf8_lossy(bytes).to_string();
     rquickjs_sys::JS_FreeCString(p, c);
-    t
+    // escape interior NUL for the NUL-terminated C diagnostic ABI
+    let t = if t.contains('\0') {
+        t.replace('\0', "\\u0000")
+    } else {
+        t
+    };
+    fit_utf8(&t, MAX_REASON_TEXT).to_string()
 }
 
 /// UTF-8-safe truncation to at most `max` bytes (never splits a char).
@@ -947,37 +981,58 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
             Ok(c) => c,
             Err(_) => return std::ptr::null_mut(),
         };
-        // unhandled-rejection policy (review 13): the tracker snapshots the
-        // reason to bounded owned text immediately (the raw JSValue stays
-        // borrowed for the duration of the conversion) and records report
-        // order. is_handled=true removes the OLDEST outstanding entry
-        // (FIFO): reasons are distinguishable in the diagnostics, and
-        // per-promise raw-pointer identity adds no behavioral gain under the
-        // adapter's single-context-per-runtime invariant. The Vec is shared
-        // with the VM through Rc — the tracker must NOT borrow from the VM
-        // state, because the engine may call the tracker while the runtime
-        // lock is held inside arbitrary JS.
-        let unhandled: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        // unhandled-rejection policy (review 13/14): the tracker snapshots
+        // the reason to bounded owned text immediately and retains the
+        // PROMISE ITSELF as the identity key. A handled transition (review
+        // 14) removes exactly the entry for that Promise — an unmatched
+        // transition (already reported, or unknown promise) is a defined
+        // no-op, never an unconditional remove. The engine may invoke the
+        // tracker while the runtime lock is held inside arbitrary JS, so
+        // the closure must not borrow from the VM Box — state is shared
+        // via Rc instead.
+        let rejections = RejectionState(Rc::new(RefCell::new(Rejections::default())));
         {
-            let unhandled = unhandled.clone();
+            let rejections = rejections.clone();
             let tracker: rquickjs::runtime::RejectionTracker = Box::new(
                 move |_ctx: Ctx<'_>, _promise: Value<'_>, reason: Value<'_>, is_handled: bool| {
+                    let p = _ctx.as_raw().as_ptr();
                     if is_handled {
-                        unhandled.borrow_mut().remove(0);
+                        let pv = _promise.as_raw();
+                        // SAFETY: reading the union ptr of an object-tagged
+                        // JSValue; retained entries keep their addresses.
+                        let key = unsafe { pv.u.ptr };
+                        let mut r = rejections.0.borrow_mut();
+                        if let Some(i) = r
+                            .tracked
+                            .iter()
+                            .position(|t| unsafe { t.promise.u.ptr } == key)
+                        {
+                            let t = r.tracked.remove(i);
+                            // runtime lock held by the engine callback
+                            unsafe { rquickjs_sys::JS_FreeValue(p, t.promise) };
+                        }
+                        // unmatched handled transition: defined no-op
                     } else {
                         // reason is BORROWED (rquickjs frees it after this
                         // closure returns), so the conversion must dup the
                         // value and free only its own duplicate — never the
                         // caller's copy (review 13 heap-corruption fix).
-                        let p = _ctx.as_raw().as_ptr();
                         let rv = reason.as_raw();
                         let text = unsafe {
                             let dup = rquickjs_sys::JS_DupValue(p, rv);
                             value_to_text_consuming(p, dup)
                         };
-                        let mut u = unhandled.borrow_mut();
-                        if u.len() < MAX_TRACKED_REJECTIONS {
-                            u.push(text);
+                        let mut r = rejections.0.borrow_mut();
+                        if r.tracked.len() >= MAX_TRACKED_REJECTIONS {
+                            // sticky fail-closed overflow (review 14): the
+                            // rejection must not vanish silently
+                            r.overflowed = true;
+                        } else {
+                            let dup = unsafe { rquickjs_sys::JS_DupValue(p, _promise.as_raw()) };
+                            r.tracked.push(TrackedRejection {
+                                promise: dup,
+                                reason: text,
+                            });
                         }
                     }
                 },
@@ -996,8 +1051,8 @@ pub unsafe extern "C" fn tenun_js_create(cfg: *const ConfigC) -> *mut TenunJsVm 
                 scratch: RefCell::new(Vec::new()),
                 last_error: RefCell::new(None),
                 result: RefCell::new(OwnedResult::Null),
-                // the SAME Vec the tracker mutates, shared via Rc
-                unhandled: VmUnhandled(Rc::clone(&unhandled)),
+                // the SAME state the tracker mutates, shared via Rc
+                rejections,
             },
         })
     }))
@@ -1291,7 +1346,19 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
                                      // JSContext (double free) — so the pump drives the C API directly.
                                      // JS_ExecutePendingJob's out-pointer transfers no ownership; the
                                      // pending exception is consumed through our own context handle.
-        let outcome: Result<i64, ()> = vm.context.with(|_ctx| {
+                                     // Outcome computed entirely inside the runtime lock (review 14):
+                                     // turn-end rejection reporting releases retained promise values,
+                                     // which is only safe while the context is locked.
+        enum Pump {
+            Drained(i64),
+            Interrupted,
+            JobFailed(String),
+            Rejections {
+                overflowed: bool,
+                reasons: Vec<String>,
+            },
+        }
+        let outcome = vm.context.with(|_ctx| -> Pump {
             let ctx_ptr = vm.context.as_raw().as_ptr();
             let rt_ptr = unsafe { rquickjs_sys::JS_GetRuntime(ctx_ptr) };
             let mut drained = 0i64;
@@ -1304,54 +1371,95 @@ pub unsafe extern "C" fn tenun_js_pump(vm: *mut TenunJsVm, max_jobs: i64) -> i64
                     1 => drained += 1,
                     0 => break,
                     _ => {
-                        // hardening (review 13): a second context on this
-                        // runtime would mean the job ran somewhere else —
-                        // multi-context drift must fail loudly, and the
-                        // exception must be consumed through the context
-                        // it actually belongs to.
-                        debug_assert_eq!(job_ctx, ctx_ptr);
-                        return Err(()); // job raised; exception left pending
+                        // hardening (review 13/14): a second context on
+                        // this runtime would mean the job ran somewhere
+                        // else — fail closed in RELEASE too (the pending
+                        // exception lives on the foreign context, so no
+                        // text extraction is attempted through ours).
+                        if job_ctx != ctx_ptr {
+                            return Pump::JobFailed(
+                                "pending job executed in an unexpected context".to_string(),
+                            );
+                        }
+                        // review 12: a FAILED pending job is not an empty
+                        // queue — surface it and fail visibly
+                        if vm.state.interrupted.load(Ordering::SeqCst) {
+                            return Pump::Interrupted;
+                        }
+                        let msg = ctx_exception_message(&_ctx);
+                        return Pump::JobFailed(format!("pending job execution failed: {msg}"));
                     }
                 }
             }
-            Ok(drained)
-        });
-        // unhandled-rejection policy (review 13): at turn end, any promise
-        // that was rejected with no handler attached during this drain is
-        // an asynchronous failure — promote it to TJERR:EVAL instead of
-        // reporting a successful drain. Rejections that a handler attached
-        // to (in the same drain or earlier) were removed from the set and
-        // do not fail the turn.
-        if let Ok(drained) = outcome {
-            let outstanding: Vec<String> = vm.state.unhandled.0.borrow_mut().drain(..).collect();
-            if !outstanding.is_empty() {
-                vm.set_error(
-                    "EVAL",
-                    &format!(
-                        "unhandled promise rejection ({}): {}",
-                        outstanding.len(),
-                        outstanding.join("; ")
-                    ),
-                );
-                return -1i64;
+            // unhandled-rejection policy (review 13/14): at turn end, any
+            // promise rejected with no handler attached during this drain
+            // is an asynchronous failure. Overflow (rejection N+1 at the
+            // tracked cap) is sticky and fails the turn even after every
+            // tracked entry was handled. Retained promises are released
+            // here, under the lock; reporting is terminal — later handled
+            // transitions become unmatched no-ops.
+            let mut r = vm.state.rejections.0.borrow_mut();
+            let overflowed = r.overflowed;
+            let reasons: Vec<String> = r.tracked.iter().map(|t| t.reason.clone()).collect();
+            for t in r.tracked.drain(..) {
+                unsafe { rquickjs_sys::JS_FreeValue(ctx_ptr, t.promise) };
             }
-            vm.clear_error();
-            return drained;
-        }
+            r.overflowed = false;
+            if overflowed || !reasons.is_empty() {
+                return Pump::Rejections {
+                    overflowed,
+                    reasons,
+                };
+            }
+            Pump::Drained(drained)
+        });
         match outcome {
-            Ok(drained) => {
+            Pump::Drained(drained) => {
                 vm.clear_error();
                 drained
             }
-            Err(()) => {
-                // review 12: a FAILED pending job is not an empty queue —
-                // surface it and fail visibly instead of collapsing into
-                // "drained" and clearing diagnostics
-                if vm.state.interrupted.load(Ordering::SeqCst) {
-                    vm.set_error("TIMEOUT", "pending job was interrupted");
+            Pump::Interrupted => {
+                vm.set_error("TIMEOUT", "pending job was interrupted");
+                -1i64
+            }
+            Pump::JobFailed(msg) => {
+                vm.set_error("EVAL", &msg);
+                -1i64
+            }
+            Pump::Rejections {
+                overflowed,
+                reasons,
+            } => {
+                if overflowed {
+                    // deterministic overflow diagnostic (review 14)
+                    if reasons.is_empty() {
+                        vm.set_error(
+                            "EVAL",
+                            &format!(
+                                "unhandled promise rejection tracking exceeded \
+                                 {MAX_TRACKED_REJECTIONS} outstanding entries"
+                            ),
+                        );
+                    } else {
+                        vm.set_error(
+                            "EVAL",
+                            &format!(
+                                "unhandled promise rejection tracking exceeded \
+                                 {MAX_TRACKED_REJECTIONS} outstanding entries; unhandled ({}): {}",
+                                reasons.len(),
+                                reasons.join("; ")
+                            ),
+                        );
+                    }
                 } else {
-                    let msg = vm.context.with(|ctx| ctx_exception_message(&ctx));
-                    vm.set_error("EVAL", &format!("pending job execution failed: {msg}"));
+                    vm.set_error(
+                        "EVAL",
+                        &format!(
+                            "unhandled promise rejection ({}): {}",
+                            reasons.len(),
+                            reasons.join("; ")
+                        ),
+                    );
                 }
                 -1i64
             }
@@ -1480,7 +1588,10 @@ pub unsafe extern "C" fn tenun_js_last_error(vm: *mut TenunJsVm) -> ErrorC {
     let mut err = fallback;
     if let Some(msg) = &*vm.state.last_error.borrow() {
         let bytes = msg.as_bytes();
-        let n = bytes.len().min(255);
+        // truncate at a UTF-8 char boundary and leave byte 255 for the C
+        // NUL terminator (review 14: a multibyte char crossing byte 255
+        // must not be split)
+        let n = fit_utf8(msg, 255).len();
         err.message[..n].copy_from_slice(&bytes[..n]);
     }
     err
