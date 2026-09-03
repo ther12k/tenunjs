@@ -42,18 +42,25 @@ describe("runtime host adapter contract", () => {
     expect(contract).toContain("never collapsed into \"queue empty\"");
   });
 
-  test("unhandled-rejection policy and exception-text coverage are documented (review 13)", () => {
-    expect(header).toContain("Unhandled promise rejections (review 13)");
+  test("unhandled-rejection policy and exception-text coverage are documented (review 13/14)", () => {
+    expect(header).toContain("Unhandled promise rejections (review 13/14)");
     expect(header).toContain("the turn: tenun_js_pump returns -1 with a TJERR:EVAL diagnostic");
     expect(header).toContain("A STALE (unresolvable) handle returns -1");
+    // review 14: identity, overflow, terminal reporting, text integrity
+    expect(header).toContain("keyed by RETAINED PROMISE IDENTITY");
+    expect(header).toContain("STICKY OVERFLOW");
+    expect(header).toContain("REPORTING IS TERMINAL");
+    expect(header).toContain("truncated at a UTF-8 character boundary");
     const contract = readFileSync(
       new URL("../../02-architecture/runtime-host-adapter-contract.md", import.meta.url),
       "utf8"
     );
-    expect(contract).toContain("Unhandled promise-rejection visibility (review 13)");
-    expect(contract).toContain("Exception text for every value kind (review 13)");
-    expect(contract).toContain("handled transition");
-    expect(contract).toContain("single aggregated diagnostic in report order");
+    expect(contract).toContain("Unhandled promise-rejection visibility (review 13/14)");
+    expect(contract).toContain("Diagnostic text integrity (review 14)");
+    expect(contract).toContain("keyed by retained Promise identity");
+    expect(contract).toContain("sticky overflow flag");
+    expect(contract).toContain("Reporting is terminal");
+    expect(contract).toContain("never split a multibyte char");
   });
 
   test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {
