@@ -60,7 +60,7 @@ describe("runtime host adapter contract", () => {
     expect(contract).toContain("keyed by retained Promise identity");
     expect(contract).toContain("sticky overflow flag");
     expect(contract).toContain("Reporting is terminal");
-    expect(contract).toContain("never split a multibyte char");
+    expect(contract).toContain("a multibyte char crossing byte 255 is never split");
   });
 
   test("per-scope storage budgets and payload lifetime are documented (review 8/10)", () => {
