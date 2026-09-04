@@ -12,6 +12,17 @@ status: accepted
 
 TenunJS is a new mobile-native UI framework. Application teams write TypeScript and TSX using a compact, Flutter-inspired widget vocabulary. A native engine owns layout, text, input, accessibility, animation, scrolling, scene management, and Skia rendering on iOS and Android.
 
+> **Project status — framework research, not a product dependency.** TenunJS
+> cannot build and ship a real application today. The API examples in this
+> pack (including the [complete example app](04-api/counter-app-example.md))
+> are **intended API previews**, not quickstarts: the executable application
+> model lands in M3, the usable widget layer in M4, and M0 is still selecting
+> the engine language, JavaScript runtime, and layout backend. There is no
+> package ecosystem yet, and performance/smoothness claims are architectural
+> goals awaiting physical-device evidence — see
+> [Positioning vs React Native, Flutter, NativeScript, and Capacitor](02-architecture/framework-positioning.md).
+
+
 This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**. TenunJS is not Bundar, is not a Bundar plugin, and does not use HTML or the DOM as its mobile rendering contract.
 
 ## Fixed product choices
