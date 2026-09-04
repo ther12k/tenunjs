@@ -11,6 +11,7 @@ status: accepted
 These examples are design targets, not a promise that names will never change before beta.
 
 - [Application entry](application-entry.md)
+- [Complete example app](counter-app-example.md)
 - [Single-file screen](single-file-screen.md)
 - [Split controller and view](split-controller-view.md)
 - [Widgets and styling](widgets-and-styling.md)

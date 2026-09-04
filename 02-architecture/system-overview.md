@@ -55,3 +55,7 @@ TenunJS does not promise React semantics, React package compatibility, or React 
 ## Why this is not Flutter
 
 TenunJS borrows composable widget vocabulary and native-engine ownership, but uses TypeScript/TSX, a different state model, adapter-backed engine choices, and intentionally smaller initial widget scope.
+
+## Positioning vs the wider ecosystem
+
+A full comparison with React Native, Flutter, NativeScript, and Capacitor — including intended advantages, honest disadvantages, and positioning language — lives in [Framework positioning](framework-positioning.md). The short form: TenunJS's rendering model is closest to Flutter's engine ownership, but written in TypeScript/TSX with a deliberately restricted controller/action state model; it is in the design-and-spike phase and cannot ship applications today, unlike all four established alternatives.
