@@ -68,6 +68,17 @@ jobs:
       - name: Run headless native-integration probe
         run: ./benchmarks/architecture/run-native-probe.sh
 
+  verify-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Run Android embedder execution loop test
+        run: ./embedders/android/run_android_test.sh
+
   verify-evidence:
     runs-on: ubuntu-latest
     env:

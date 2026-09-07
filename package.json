@@ -15,8 +15,9 @@
     "verify:rust": "./.github/scripts/verify-rust.sh",
     "verify:abi": "./.github/scripts/verify-abi.sh",
     "verify:probe": "benchmarks/architecture/run-native-probe.sh",
+    "verify:android": "./embedders/android/run_android_test.sh",
     "verify:evidence": "python3 ./.github/scripts/verify-evidence.py",
-    "verify": "bun run verify:ts && bun run verify:rust && bun run verify:abi && bun run verify:probe && bun run verify:evidence"
+    "verify": "bun run verify:ts && bun run verify:rust && bun run verify:abi && bun run verify:probe && bun run verify:android && bun run verify:evidence"
   },
   "devDependencies": {
     "@types/bun": "1.4.1",
