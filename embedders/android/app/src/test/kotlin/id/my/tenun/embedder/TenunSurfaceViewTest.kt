@@ -100,4 +100,38 @@ class TenunSurfaceViewTest {
         assertEquals(1, entries.size)
         assertEquals("First Item - Notes", entries[0])
     }
+
+    @Test
+    fun testEmojiTextRoundTrip() {
+        val field = EditableFieldState()
+        field.commit("Note 😀")
+        assertEquals("Note 😀", field.displayText)
+
+        field.setComposing(" with チーム 🎉")
+        assertEquals("Note 😀 with チーム 🎉", field.displayText)
+
+        field.commit("")
+        assertEquals("Note 😀 with チーム 🎉", field.displayText)
+    }
+
+    @Test
+    fun testFocusTransferCommitsPreviousFieldWithoutBleed() {
+        val titleField = EditableFieldState()
+        val detailsField = EditableFieldState()
+
+        // 1. User types in title
+        titleField.commit("Project")
+        titleField.setComposing(" Alpha")
+        titleField.commit("")
+        assertEquals("Project Alpha", titleField.displayText)
+
+        // 2. Focus transfers to details
+        detailsField.commit("Review ")
+        detailsField.setComposing("Documentation")
+        detailsField.commit("")
+
+        // 3. Verify no bleed across fields
+        assertEquals("Project Alpha", titleField.displayText)
+        assertEquals("Review Documentation", detailsField.displayText)
+    }
 }

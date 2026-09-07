@@ -123,7 +123,24 @@ int main(int argc, char** argv) {
   free(custom_scene1);
   tenun_android_engine_destroy(custom_engine);
 
-  // 10. Verify destruction lifecycle
+  // 10. Unicode and Emoji round-trip test (4-byte UTF-8 emoji 😀 and Japanese text)
+  char* scene_emoji1 = tenun_android_engine_dispatch(
+      engine, "SET_FIELD", "{\"field\":\"title\",\"value\":\"Note 😀\"}");
+  CHECK(strstr(scene_emoji1, "\"value\":\"Note 😀\"") != NULL, "Unicode and 4-byte emoji (😀) round-trip in Title");
+  free(scene_emoji1);
+
+  char* scene_emoji2 = tenun_android_engine_dispatch(
+      engine, "SET_FIELD", "{\"field\":\"details\",\"value\":\"Sprint with チーム 🎉\"}");
+  CHECK(strstr(scene_emoji2, "\"value\":\"Sprint with チーム 🎉\"") != NULL, "Japanese and party emoji (🎉) round-trip in Details");
+  free(scene_emoji2);
+
+  char* scene_emoji_commit = tenun_android_engine_dispatch(engine, "ADD_ENTRY", "{}");
+  CHECK(strstr(scene_emoji_commit, "\"title\":\"Note 😀\"") != NULL, "Committed emoji title in entry list");
+  CHECK(strstr(scene_emoji_commit, "\"details\":\"Sprint with チーム 🎉\"") != NULL, "Committed Japanese details in entry list");
+  CHECK(strstr(scene_emoji_commit, "\"entryCount\":3") != NULL, "Entry count is 3 with emoji item");
+  free(scene_emoji_commit);
+
+  // 11. Verify destruction lifecycle
   tenun_android_engine_destroy(engine);
   CHECK(1, "Engine destroyed cleanly without memory leaks");
 

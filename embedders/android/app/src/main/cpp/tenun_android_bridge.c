@@ -145,6 +145,110 @@ void tenun_android_engine_destroy(tenun_android_engine* engine) {
   free(engine);
 }
 
+/*
+ * Robust JNI string conversions supporting arbitrary standard UTF-8 and 4-byte emojis (e.g. 😀).
+ * Uses native Java UTF-16 on Android to completely bypass NewStringUTF Modified UTF-8 restrictions.
+ */
+#if defined(__ANDROID__) || defined(ANDROID)
+static jstring tenun_jni_new_string(JNIEnv *env, const char *utf8_str) {
+  if (!utf8_str) return (*env)->NewStringUTF(env, "");
+
+  size_t in_len = strlen(utf8_str);
+  jchar *u16 = (jchar*)malloc((in_len + 1) * sizeof(jchar) * 2);
+  if (!u16) return (*env)->NewStringUTF(env, utf8_str);
+
+  size_t out_len = 0;
+  size_t i = 0;
+  while (i < in_len) {
+    uint8_t c = (uint8_t)utf8_str[i];
+    if (c < 0x80) {
+      u16[out_len++] = c;
+      i += 1;
+    } else if ((c & 0xE0) == 0xC0 && i + 1 < in_len) {
+      uint32_t cp = ((c & 0x1F) << 6) | ((uint8_t)utf8_str[i+1] & 0x3F);
+      u16[out_len++] = (jchar)cp;
+      i += 2;
+    } else if ((c & 0xF0) == 0xE0 && i + 2 < in_len) {
+      uint32_t cp = ((c & 0x0F) << 12) | (((uint8_t)utf8_str[i+1] & 0x3F) << 6) | ((uint8_t)utf8_str[i+2] & 0x3F);
+      u16[out_len++] = (jchar)cp;
+      i += 3;
+    } else if ((c & 0xF8) == 0xF0 && i + 3 < in_len) {
+      // 4-byte code points (e.g. emojis): emitted as surrogate pairs in UTF-16
+      uint32_t cp = ((c & 0x07) << 18) |
+                    (((uint8_t)utf8_str[i+1] & 0x3F) << 12) |
+                    (((uint8_t)utf8_str[i+2] & 0x3F) << 6) |
+                    ((uint8_t)utf8_str[i+3] & 0x3F);
+      cp -= 0x10000;
+      u16[out_len++] = (jchar)(0xD800 + (cp >> 10));
+      u16[out_len++] = (jchar)(0xDC00 + (cp & 0x3FF));
+      i += 4;
+    } else {
+      u16[out_len++] = c;
+      i += 1;
+    }
+  }
+
+  jstring result = (*env)->NewString(env, u16, (jsize)out_len);
+  free(u16);
+  return result;
+}
+
+static char* tenun_jni_get_string(JNIEnv *env, jstring jstr) {
+  if (!jstr) return NULL;
+  jsize u16_len = (*env)->GetStringLength(env, jstr);
+  const jchar *u16 = (*env)->GetStringChars(env, jstr, NULL);
+  if (!u16) return NULL;
+
+  char *utf8 = (char*)malloc(u16_len * 4 + 1);
+  if (!utf8) {
+    (*env)->ReleaseStringChars(env, jstr, u16);
+    return NULL;
+  }
+
+  size_t out_len = 0;
+  for (jsize i = 0; i < u16_len; i++) {
+    uint32_t cp = u16[i];
+    if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < u16_len) {
+      uint32_t low = u16[i+1];
+      if (low >= 0xDC00 && low <= 0xDFFF) {
+        cp = 0x10000 + (((cp - 0xD800) << 10) | (low - 0xDC00));
+        i++;
+      }
+    }
+    if (cp < 0x80) {
+      utf8[out_len++] = (char)cp;
+    } else if (cp < 0x800) {
+      utf8[out_len++] = (char)(0xC0 | (cp >> 6));
+      utf8[out_len++] = (char)(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+      utf8[out_len++] = (char)(0xE0 | (cp >> 12));
+      utf8[out_len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+      utf8[out_len++] = (char)(0x80 | (cp & 0x3F));
+    } else {
+      utf8[out_len++] = (char)(0xF0 | (cp >> 18));
+      utf8[out_len++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+      utf8[out_len++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+      utf8[out_len++] = (char)(0x80 | (cp & 0x3F));
+    }
+  }
+  utf8[out_len] = '\0';
+  (*env)->ReleaseStringChars(env, jstr, u16);
+  return utf8;
+}
+#else
+static jstring tenun_jni_new_string(JNIEnv *env, const char *utf8_str) {
+  return (*env)->NewStringUTF(env, utf8_str ? utf8_str : "");
+}
+
+static char* tenun_jni_get_string(JNIEnv *env, jstring jstr) {
+  if (!jstr) return NULL;
+  const char *chars = (*env)->GetStringUTFChars(env, jstr, NULL);
+  char *copy = chars ? strdup(chars) : NULL;
+  if (chars) (*env)->ReleaseStringUTFChars(env, jstr, chars);
+  return copy;
+}
+#endif
+
 /* JNI Bindings */
 
 JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
@@ -168,17 +272,17 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchAc
     JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson) {
   (void)thiz;
   tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
-  if (!engine) return (*env)->NewStringUTF(env, "{}");
+  if (!engine) return tenun_jni_new_string(env, "{}");
 
-  const char* act_str = action ? (*env)->GetStringUTFChars(env, action, NULL) : NULL;
-  const char* pay_str = payloadJson ? (*env)->GetStringUTFChars(env, payloadJson, NULL) : NULL;
+  char* act_str = tenun_jni_get_string(env, action);
+  char* pay_str = tenun_jni_get_string(env, payloadJson);
 
   char* updated_scene = tenun_android_engine_dispatch(engine, act_str, pay_str);
 
-  if (act_str) (*env)->ReleaseStringUTFChars(env, action, act_str);
-  if (pay_str) (*env)->ReleaseStringUTFChars(env, payloadJson, pay_str);
+  if (act_str) free(act_str);
+  if (pay_str) free(pay_str);
 
-  jstring result = (*env)->NewStringUTF(env, updated_scene ? updated_scene : "{}");
+  jstring result = tenun_jni_new_string(env, updated_scene ? updated_scene : "{}");
   if (updated_scene) free(updated_scene);
 
   return result;
@@ -188,11 +292,11 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestS
     JNIEnv *env, jobject thiz, jlong handle) {
   (void)thiz;
   tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
-  if (!engine) return (*env)->NewStringUTF(env, "{}");
+  if (!engine) return tenun_jni_new_string(env, "{}");
 
   pthread_mutex_lock(&engine->lock);
   const char* scene = tenun_android_engine_get_scene(engine);
-  jstring result = (*env)->NewStringUTF(env, scene);
+  jstring result = tenun_jni_new_string(env, scene);
   pthread_mutex_unlock(&engine->lock);
 
   return result;
