@@ -61,6 +61,13 @@ jobs:
   # Strict artifact manifest comparison is ALWAYS ON for the production run;
   # TENUN_EVIDENCE_DIR overrides packets only in mutation-test child
   # processes.
+  verify-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run headless native-integration probe
+        run: ./benchmarks/architecture/run-native-probe.sh
+
   verify-evidence:
     runs-on: ubuntu-latest
     env:

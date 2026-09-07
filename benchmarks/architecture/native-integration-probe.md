@@ -8,14 +8,14 @@ Linked follow-up: TN-131. Original TN-006 remains unchanged and excludes text in
 benchmarks/architecture/run-native-probe.sh /tmp/tenun-native-probe
 ```
 
-The command compiles and runs identical probe scenarios through C11, C++17, and Rust candidates with `-Wall -Wextra -Werror` (Rust `-D warnings`).
+The command compiles and runs the same scenario contract through three candidate fixtures with `-Wall -Wextra -Werror` (Rust `-D warnings`). The C11 fixture is a reference/compatibility control; C++20 and Rust are the ADR-0005 candidate configurations. The state-transition assertions are duplicated per runner, not shared implementation code. The JSON fixture is shared input; each runner independently applies the transitions and rejection rules.
 
 ## Scenarios
 
 - Composition: marked text update, commit, stale-generation rejection.
 - Focus/disposal: focus transfer, disposed-target rejection, stale-generation rejection.
-- Accessibility: editable and actionable nodes, missing-node activation rejection.
-- JavaScript stall: native-owned ticks continue, queue stays at or below eight entries, queued work drains after release. The 500 ms value is the contract stimulus, not a performance threshold.
+- Accessibility: editable and actionable nodes, valid button activation reaches the actionable node, missing-node activation rejection. This is model-level activation, not screen-reader interoperability.
+- Modeled JavaScript-stall semantics: the runner marks JavaScript unavailable, advances a native-owned tick counter, bounds queued work, and drains it after release. This does not execute a blocked JavaScript runtime or establish scheduler/thread independence. The 500 ms value is the contract stimulus, not a performance threshold.
 
 ## Result
 

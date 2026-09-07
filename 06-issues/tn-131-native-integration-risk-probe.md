@@ -49,5 +49,6 @@ Out of scope: changing TN-006, selecting the engine language, full IME adapters,
 - [ ] Malformed composition, disposed-target event, missing accessibility node, and stale-generation work fail closed.
 - [ ] Headless result labels platform evidence honestly; iOS/Android device coverage is `NOT EXERCISED`.
 - [ ] Existing `bun run verify` remains green.
+- [ ] `bun run verify:probe` executes all candidate runners and propagates assertion/compiler failures.
 - [ ] Replay command and exact source/evidence provenance are recorded.
 - [ ] ADR-0005 remains open; results feed TN-009 rather than silently selecting an engine.
