@@ -9,11 +9,16 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test",
-    "verify:ts": "bun install --frozen-lockfile && bun test",
+    "verify:ts": "test -f bun.lock && bun install --frozen-lockfile && bun run typecheck && bun test",
     "verify:rust": "./.github/scripts/verify-rust.sh",
     "verify:abi": "./.github/scripts/verify-abi.sh",
     "verify:evidence": "python3 ./.github/scripts/verify-evidence.py",
     "verify": "bun run verify:ts && bun run verify:rust && bun run verify:abi && bun run verify:evidence"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.1",
+    "typescript": "7.0.2"
   }
 }

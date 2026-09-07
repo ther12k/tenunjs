@@ -122,7 +122,7 @@ describe("runtime host adapter contract", () => {
       const actual = createHash("sha256")
         .update(readFileSync(new URL(`./fixtures/${f}`, import.meta.url)))
         .digest("hex");
-      expect(actual).toBe(recorded.get(f));
+      expect(actual).toBe(recorded.get(f)!);
     }
   });
 

@@ -20,9 +20,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.0"
-      # --frozen-lockfile activates automatically once bun.lock exists (first dep added)
-      - run: bun install --frozen-lockfile
-      - run: bun test
+      # canonical TS verification: lockfile guard + frozen install + tsc + bun test
+      - run: bun run verify:ts
 
   verify-rust:
     runs-on: ubuntu-latest
