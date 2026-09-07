@@ -10,12 +10,46 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import org.json.JSONObject
+
+/**
+ * State of an editable field tracking committed text and active composition region.
+ */
+class EditableFieldState {
+    var committedText: String = ""
+    var composingText: String = ""
+
+    val displayText: String
+        get() = committedText + composingText
+
+    fun setComposing(text: String) {
+        // Replaces current composing region
+        composingText = text
+    }
+
+    fun commit(text: String) {
+        // Replaces composing region with committed text
+        committedText += if (text.isNotEmpty()) text else composingText
+        composingText = ""
+    }
+
+    fun deleteSurrounding(beforeLength: Int) {
+        if (composingText.isNotEmpty()) {
+            composingText = composingText.dropLast(beforeLength.coerceAtMost(composingText.length))
+        } else if (committedText.isNotEmpty()) {
+            committedText = committedText.dropLast(beforeLength.coerceAtMost(committedText.length))
+        }
+    }
+
+    fun reset() {
+        committedText = ""
+        composingText = ""
+    }
+}
 
 /**
  * TenunSurfaceView renders the TenunJS UI scene onto an Android SurfaceView,
@@ -33,15 +67,17 @@ class TenunSurfaceView @JvmOverloads constructor(
             redraw()
         }
 
-    private var activeField: String? = "title"
-    private var titleText: String = ""
-    private var detailsText: String = ""
-    private val entries = mutableListOf<String>()
+    private var activeField: String = "title"
+    val titleField = EditableFieldState()
+    val detailsField = EditableFieldState()
+    val entries = mutableListOf<String>()
+
+    private var isSurfaceValid = false
 
     // Layout bounds
-    private val titleRect = RectF(40f, 100f, 680f, 180f)
-    private val detailsRect = RectF(40f, 220f, 680f, 300f)
-    private val buttonRect = RectF(40f, 340f, 360f, 420f)
+    val titleRect = RectF(40f, 100f, 680f, 180f)
+    val detailsRect = RectF(40f, 220f, 680f, 300f)
+    val buttonRect = RectF(40f, 340f, 360f, 420f)
 
     private val bgPaint = Paint().apply { color = Color.parseColor("#121212") }
     private val inputPaint = Paint().apply {
@@ -80,15 +116,17 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
+        isSurfaceValid = true
         redraw()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        isSurfaceValid = true
         redraw()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        // Surface released
+        isSurfaceValid = false
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -97,12 +135,12 @@ class TenunSurfaceView @JvmOverloads constructor(
             val y = event.y
 
             if (titleRect.contains(x, y)) {
-                activeField = "title"
+                transferFocus("title")
                 showKeyboard()
                 redraw()
                 return true
             } else if (detailsRect.contains(x, y)) {
-                activeField = "details"
+                transferFocus("details")
                 showKeyboard()
                 redraw()
                 return true
@@ -119,6 +157,19 @@ class TenunSurfaceView @JvmOverloads constructor(
         return true
     }
 
+    fun transferFocus(newField: String) {
+        if (activeField != newField) {
+            // Commit ongoing composition on previous field before transferring focus
+            getActiveFieldState().commit("")
+            dispatchActiveFieldChange()
+            activeField = newField
+        }
+    }
+
+    fun getActiveFieldState(): EditableFieldState {
+        return if (activeField == "title") titleField else detailsField
+    }
+
     private fun showKeyboard() {
         requestFocus()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -131,46 +182,34 @@ class TenunSurfaceView @JvmOverloads constructor(
 
         return object : BaseInputConnection(this, true) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                text?.let { appendInput(it.toString()) }
+                val str = text?.toString() ?: ""
+                getActiveFieldState().commit(str)
+                dispatchActiveFieldChange()
+                redraw()
                 return true
             }
 
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                text?.let { appendInput(it.toString()) }
+                val str = text?.toString() ?: ""
+                // Replaces current composing span (not simple append)
+                getActiveFieldState().setComposing(str)
+                dispatchActiveFieldChange()
+                redraw()
                 return true
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                activeField?.let { field ->
-                    if (field == "title" && titleText.isNotEmpty()) {
-                        titleText = titleText.dropLast(beforeLength.coerceAtMost(titleText.length))
-                        dispatchFieldChange("title", titleText)
-                    } else if (field == "details" && detailsText.isNotEmpty()) {
-                        detailsText = detailsText.dropLast(beforeLength.coerceAtMost(detailsText.length))
-                        dispatchFieldChange("details", detailsText)
-                    }
-                    redraw()
-                }
+                getActiveFieldState().deleteSurrounding(beforeLength)
+                dispatchActiveFieldChange()
+                redraw()
                 return true
             }
         }
     }
 
-    private fun appendInput(str: String) {
-        activeField?.let { field ->
-            if (field == "title") {
-                titleText += str
-                dispatchFieldChange("title", titleText)
-            } else if (field == "details") {
-                detailsText += str
-                dispatchFieldChange("details", detailsText)
-            }
-            redraw()
-        }
-    }
-
-    private fun dispatchFieldChange(field: String, value: String) {
-        val payload = "{\"field\":\"$field\",\"value\":\"$value\"}"
+    private fun dispatchActiveFieldChange() {
+        val state = getActiveFieldState()
+        val payload = "{\"field\":\"$activeField\",\"value\":\"${state.displayText}\"}"
         engine?.let { eng ->
             val sceneJson = eng.dispatchAction("SET_FIELD", payload)
             syncFromScene(sceneJson)
@@ -189,12 +228,18 @@ class TenunSurfaceView @JvmOverloads constructor(
                         "input" -> {
                             val f = node.optString("field")
                             val v = node.optString("value")
-                            if (f == "title") titleText = v
-                            if (f == "details") detailsText = v
+                            if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                                titleField.reset()
+                            }
+                            if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                                detailsField.reset()
+                            }
                         }
                         "listItem" -> {
                             val t = node.optString("title")
-                            entries.add(t)
+                            val d = node.optString("details")
+                            val itemText = if (d.isNotEmpty()) "$t - $d" else t
+                            entries.add(itemText)
                         }
                     }
                 }
@@ -205,6 +250,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     fun redraw() {
+        if (!isSurfaceValid) return
         val canvas = holder.lockCanvas() ?: return
         try {
             renderScene(canvas)
@@ -216,20 +262,20 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun renderScene(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
-        // Labels
+        // Title Header
         canvas.drawText("TenunJS Mobile Prototype", 40f, 60f, textPaint)
 
         // Title Input Field
         canvas.drawRoundRect(titleRect, 12f, 12f, inputPaint)
         canvas.drawRoundRect(titleRect, 12f, 12f, if (activeField == "title") activeBorderPaint else inputBorderPaint)
-        val displayTitle = if (titleText.isEmpty()) "Enter Title..." else titleText
-        canvas.drawText(displayTitle, titleRect.left + 20f, titleRect.centerY() + 12f, if (titleText.isEmpty()) labelPaint else textPaint)
+        val displayTitle = if (titleField.displayText.isEmpty()) "Enter Title..." else titleField.displayText
+        canvas.drawText(displayTitle, titleRect.left + 20f, titleRect.centerY() + 12f, if (titleField.displayText.isEmpty()) labelPaint else textPaint)
 
         // Details Input Field
         canvas.drawRoundRect(detailsRect, 12f, 12f, inputPaint)
         canvas.drawRoundRect(detailsRect, 12f, 12f, if (activeField == "details") activeBorderPaint else inputBorderPaint)
-        val displayDetails = if (detailsText.isEmpty()) "Enter Details..." else detailsText
-        canvas.drawText(displayDetails, detailsRect.left + 20f, detailsRect.centerY() + 12f, if (detailsText.isEmpty()) labelPaint else textPaint)
+        val displayDetails = if (detailsField.displayText.isEmpty()) "Enter Details..." else detailsField.displayText
+        canvas.drawText(displayDetails, detailsRect.left + 20f, detailsRect.centerY() + 12f, if (detailsField.displayText.isEmpty()) labelPaint else textPaint)
 
         // Add Button
         canvas.drawRoundRect(buttonRect, 12f, 12f, buttonPaint)

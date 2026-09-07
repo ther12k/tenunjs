@@ -1,127 +1,119 @@
 #define _POSIX_C_SOURCE 200809L
 #include "tenun_android_bridge.h"
+#include "quickjs/quickjs.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
 
-#define MAX_SCENE_LEN 65536
-
 struct tenun_android_engine {
-  uint32_t generation;
+  JSRuntime* rt;
+  JSContext* ctx;
   char* current_scene;
   pthread_mutex_t lock;
-  /* State model for reference prototype app: Title, Details, Entries */
-  char title[256];
-  char details[256];
-  char entries[32][512];
-  size_t entry_count;
 };
 
-static void update_scene_locked(tenun_android_engine* engine) {
-  if (!engine->current_scene) {
-    engine->current_scene = (char*)malloc(MAX_SCENE_LEN);
-  }
-
-  char items_buf[MAX_SCENE_LEN / 2];
-  items_buf[0] = '\0';
-  size_t offset = 0;
-
-  for (size_t i = 0; i < engine->entry_count; i++) {
-    char entry_json[1024];
-    snprintf(entry_json, sizeof(entry_json),
-             "%s{\"id\":%zu,\"type\":\"listItem\",\"title\":\"%s\"}",
-             (i > 0 ? "," : ""), 100 + i, engine->entries[i]);
-    size_t len = strlen(entry_json);
-    if (offset + len < sizeof(items_buf) - 1) {
-      strcat(items_buf, entry_json);
-      offset += len;
+static JSValue js_tenun_commit(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+  (void)this_val;
+  tenun_android_engine* engine = (tenun_android_engine*)JS_GetContextOpaque(ctx);
+  if (engine && argc > 0) {
+    const char *scene = JS_ToCString(ctx, argv[0]);
+    if (scene) {
+      if (engine->current_scene) {
+        free(engine->current_scene);
+      }
+      engine->current_scene = strdup(scene);
+      JS_FreeCString(ctx, scene);
     }
   }
-
-  snprintf(engine->current_scene, MAX_SCENE_LEN,
-           "{\"root\":{\"id\":0,\"type\":\"column\",\"children\":["
-           "{\"id\":1,\"type\":\"input\",\"field\":\"title\",\"value\":\"%s\"},"
-           "{\"id\":2,\"type\":\"input\",\"field\":\"details\",\"value\":\"%s\"},"
-           "{\"id\":3,\"type\":\"button\",\"text\":\"Add Entry\",\"action\":\"ADD_ENTRY\"}"
-           "%s%s"
-           "]},\"entryCount\":%zu,\"generation\":%u}",
-           engine->title, engine->details,
-           (engine->entry_count > 0 ? "," : ""), items_buf,
-           engine->entry_count, engine->generation);
+  return JS_UNDEFINED;
 }
 
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len) {
-  (void)bundle;
-  (void)bundle_len;
+  if (!bundle || bundle_len == 0) return NULL;
 
   tenun_android_engine* engine = (tenun_android_engine*)calloc(1, sizeof(tenun_android_engine));
   if (!engine) return NULL;
 
   pthread_mutex_init(&engine->lock, NULL);
-  engine->generation = 1;
-  engine->entry_count = 0;
-  engine->title[0] = '\0';
-  engine->details[0] = '\0';
 
-  pthread_mutex_lock(&engine->lock);
-  update_scene_locked(engine);
-  pthread_mutex_unlock(&engine->lock);
+  engine->rt = JS_NewRuntime();
+  if (!engine->rt) {
+    free(engine);
+    return NULL;
+  }
+
+  engine->ctx = JS_NewContext(engine->rt);
+  if (!engine->ctx) {
+    JS_FreeRuntime(engine->rt);
+    free(engine);
+    return NULL;
+  }
+
+  JS_SetContextOpaque(engine->ctx, engine);
+
+  // Register host function: tenun_commit(sceneJson)
+  JSValue global = JS_GetGlobalObject(engine->ctx);
+  JSValue commit_fn = JS_NewCFunction(engine->ctx, js_tenun_commit, "tenun_commit", 1);
+  JS_SetPropertyStr(engine->ctx, global, "tenun_commit", commit_fn);
+  JS_FreeValue(engine->ctx, global);
+
+  // Evaluate the real JavaScript application bundle
+  JSValue eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
+  if (JS_IsException(eval_res)) {
+    // Fail-closed on invalid JavaScript
+    JSValue exc = JS_GetException(engine->ctx);
+    const char *err = JS_ToCString(engine->ctx, exc);
+    fprintf(stderr, "tenun-android-engine: JavaScript evaluation failed: %s\n", err ? err : "unknown error");
+    if (err) JS_FreeCString(engine->ctx, err);
+    JS_FreeValue(engine->ctx, exc);
+    JS_FreeValue(engine->ctx, eval_res);
+
+    JS_FreeContext(engine->ctx);
+    JS_FreeRuntime(engine->rt);
+    pthread_mutex_destroy(&engine->lock);
+    free(engine);
+    return NULL;
+  }
+  JS_FreeValue(engine->ctx, eval_res);
 
   return engine;
 }
 
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json) {
-  if (!engine || !action) return NULL;
+  if (!engine || !engine->ctx || !action) return NULL;
 
   pthread_mutex_lock(&engine->lock);
 
-  if (strcmp(action, "SET_FIELD") == 0 && payload_json) {
-    /* Extract field and value */
-    const char* field_key = "\"field\":\"";
-    const char* val_key = "\"value\":\"";
-    const char* f_ptr = strstr(payload_json, field_key);
-    const char* v_ptr = strstr(payload_json, val_key);
+  JSValue global = JS_GetGlobalObject(engine->ctx);
+  JSValue dispatch_fn = JS_GetPropertyStr(engine->ctx, global, "__tenun_dispatch_action");
 
-    if (f_ptr && v_ptr) {
-      f_ptr += strlen(field_key);
-      v_ptr += strlen(val_key);
+  if (JS_IsFunction(engine->ctx, dispatch_fn)) {
+    JSValue args[2];
+    args[0] = JS_NewString(engine->ctx, action);
+    args[1] = JS_NewString(engine->ctx, payload_json ? payload_json : "{}");
 
-      char field_name[32] = {0};
-      char val_buf[256] = {0};
+    JSValue res = JS_Call(engine->ctx, dispatch_fn, global, 2, args);
+    JS_FreeValue(engine->ctx, args[0]);
+    JS_FreeValue(engine->ctx, args[1]);
 
-      sscanf(f_ptr, "%31[^\"]", field_name);
-      sscanf(v_ptr, "%255[^\"]", val_buf);
-
-      if (strcmp(field_name, "title") == 0) {
-        strncpy(engine->title, val_buf, sizeof(engine->title) - 1);
-        engine->generation++;
-      } else if (strcmp(field_name, "details") == 0) {
-        strncpy(engine->details, val_buf, sizeof(engine->details) - 1);
-        engine->generation++;
-      }
+    if (JS_IsException(res)) {
+      JSValue exc = JS_GetException(engine->ctx);
+      const char *err = JS_ToCString(engine->ctx, exc);
+      fprintf(stderr, "tenun-android-engine: Action dispatch failed: %s\n", err ? err : "unknown error");
+      if (err) JS_FreeCString(engine->ctx, err);
+      JS_FreeValue(engine->ctx, exc);
     }
-  } else if (strcmp(action, "ADD_ENTRY") == 0) {
-    if (strlen(engine->title) > 0 && engine->entry_count < 32) {
-      char entry_content[1024];
-      if (strlen(engine->details) > 0) {
-        snprintf(entry_content, sizeof(entry_content), "%s - %s", engine->title, engine->details);
-      } else {
-        snprintf(entry_content, sizeof(entry_content), "%s", engine->title);
-      }
-      strncpy(engine->entries[engine->entry_count], entry_content, sizeof(engine->entries[0]) - 1);
-      engine->entry_count++;
-      engine->title[0] = '\0';
-      engine->details[0] = '\0';
-      engine->generation++;
-    }
+    JS_FreeValue(engine->ctx, res);
   }
 
-  update_scene_locked(engine);
-  char* result_copy = strdup(engine->current_scene);
+  JS_FreeValue(engine->ctx, dispatch_fn);
+  JS_FreeValue(engine->ctx, global);
+
+  char* scene_copy = engine->current_scene ? strdup(engine->current_scene) : strdup("{}");
   pthread_mutex_unlock(&engine->lock);
 
-  return result_copy;
+  return scene_copy;
 }
 
 const char* tenun_android_engine_get_scene(const tenun_android_engine* engine) {
@@ -131,11 +123,23 @@ const char* tenun_android_engine_get_scene(const tenun_android_engine* engine) {
 
 void tenun_android_engine_destroy(tenun_android_engine* engine) {
   if (!engine) return;
+
   pthread_mutex_lock(&engine->lock);
   if (engine->current_scene) {
     free(engine->current_scene);
     engine->current_scene = NULL;
   }
+
+  if (engine->ctx) {
+    JS_FreeContext(engine->ctx);
+    engine->ctx = NULL;
+  }
+
+  if (engine->rt) {
+    JS_FreeRuntime(engine->rt);
+    engine->rt = NULL;
+  }
+
   pthread_mutex_unlock(&engine->lock);
   pthread_mutex_destroy(&engine->lock);
   free(engine);
@@ -146,19 +150,16 @@ void tenun_android_engine_destroy(tenun_android_engine* engine) {
 JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     JNIEnv *env, jobject thiz, jbyteArray bundleBytes) {
   (void)thiz;
-  jsize len = 0;
-  jbyte* bytes = NULL;
+  if (bundleBytes == NULL) return 0;
 
-  if (bundleBytes != NULL) {
-    len = (*env)->GetArrayLength(env, bundleBytes);
-    bytes = (*env)->GetByteArrayElements(env, bundleBytes, NULL);
-  }
+  jsize len = (*env)->GetArrayLength(env, bundleBytes);
+  if (len <= 0) return 0;
+
+  jbyte* bytes = (*env)->GetByteArrayElements(env, bundleBytes, NULL);
+  if (!bytes) return 0;
 
   tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)bytes, (size_t)len);
-
-  if (bytes != NULL) {
-    (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
-  }
+  (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
 
   return (jlong)(intptr_t)engine;
 }
