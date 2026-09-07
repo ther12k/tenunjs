@@ -72,6 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
       - name: Run Android embedder execution loop test
         run: ./embedders/android/run_android_test.sh
 
