@@ -195,3 +195,9 @@ Validate the framework in a real application and freeze a credible beta surface.
 | [TN-128](tn-128-produce-store-installable-ios-and-android-release-candidates.md) | P0 | TN-102, TN-103, TN-114, TN-123, TN-127 | Produce store-installable iOS and Android release candidates |
 | [TN-129](tn-129-run-beta-stabilization-compatibility-upgrade-and-rollback-campaign.md) | P0 | TN-123, TN-126, TN-127, TN-128 | Run beta stabilization, compatibility, upgrade, and rollback campaign |
 | [TN-130](tn-130-close-beta-gate-and-publish-evidence-index.md) | P0 | TN-124, TN-125, TN-126, TN-127, TN-128, TN-129 | Close beta gate and publish evidence index |
+
+## Follow-up probes
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-131](tn-131-native-integration-risk-probe.md) | P0 | TN-006, TN-007, TN-008 | Execute native-integration risk probes before engine selection |

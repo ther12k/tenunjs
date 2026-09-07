@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "taffy-spike-v3",
-  "timestamp_utc": "2026-09-07T05:57:36.088Z",
+  "timestamp_utc": "2026-09-07T09:09:55.492Z",
   "build_profile": "release",
-  "inputs_digest": "da1701329388f99f6b76a428d98523db80b09bea1b624bf342e13788f7bdddae",
+  "inputs_digest": "147d83c6d628d1bc9cc17c3abd1172dd3d31e11a972c76a802b850454ef89f6a",
   "source": {
-    "commit": "12d65067d15d810960a34c25cb5d86ee16cc00cc",
+    "commit": "2f9ae1a7303cba038ec94e8278c17158f1139e5f",
     "dirty": false,
     "changed_files": 0
   },
@@ -35,16 +35,16 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/taffy-candidate && cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 38,
+      "duration_ms": 33,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.02s\n",
+      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.01s\n",
       "timed_out": false
     },
     {
       "name": "shared-c-driver",
       "command": "cc -std=c11 -Wall -Werror -Wextra -O2 -Ispikes/layout spikes/layout/run_corpus.c -ldl -lm -o spikes/layout/taffy-candidate/target/release/run_corpus && bun spikes/layout/export-corpus.ts > spikes/layout/taffy-candidate/target/release/corpus_flat.txt && spikes/layout/taffy-candidate/target/release/run_corpus spikes/layout/taffy-candidate/target/release/corpus_flat.txt spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so",
       "exit_code": 0,
-      "duration_ms": 225,
+      "duration_ms": 395,
       "stdout_tail": "PASS 001\nPASS 002\nPASS 003\nPASS 004\nPASS 005\nPASS 006\nPASS 007\nPASS 008\nPASS 009\nPASS 010\nALL NEGATIVE CHECKS PASS\nALL 10 CASES PASS via spikes/layout/taffy-candidate/target/release/libtenun_layout_taffy.so\n",
       "stderr_tail": "",
       "timed_out": false
