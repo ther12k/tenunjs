@@ -1,0 +1,19 @@
+{
+  "abi_version": 1,
+  "fields": [
+    { "id": 1, "generation": 7 },
+    { "id": 2, "generation": 7 }
+  ],
+  "composition": {
+    "generation": 7,
+    "marked": "ka",
+    "committed": "か",
+    "selection": 1
+  },
+  "accessibility": [
+    { "id": 1, "role": "editable", "label": "Title" },
+    { "id": 2, "role": "button", "label": "Save" }
+  ],
+  "stall_ms": 500,
+  "max_queue": 8
+}
