@@ -2,12 +2,37 @@
 // run_corpus.c so both candidates are driven by one identical C driver.
 import { readdirSync, readFileSync } from "node:fs";
 
+// Shape of the fields the flattener reads from corpus JSON; the walk is
+// type-checked, while the JSON.parse root stays unchecked input.
+type CorpusNode = {
+  style: {
+    width?: number;
+    height?: number;
+    flex_grow?: number;
+    direction?: string;
+    gap?: number;
+    padding?: number;
+    justify_content?: string;
+    align_items?: string;
+  };
+  measure?: {
+    strategy: string;
+    width: number;
+    height: number;
+    pad_w: number;
+    pad_h: number;
+    fb_w: number;
+    fb_h: number;
+  };
+  children: CorpusNode[];
+};
+
 const dir = new URL("./corpus/", import.meta.url).pathname;
 for (const f of readdirSync(dir).filter((x) => x.endsWith(".json")).sort()) {
   const c = JSON.parse(readFileSync(dir + f, "utf8"));
   console.log(`CASE ${c.case_id}`);
   console.log(`VIEWPORT ${c.viewport.width} ${c.viewport.height}`);
-  const walk = (n) => {
+  const walk = (n: CorpusNode) => {
     const s = n.style;
     const w = Number.isFinite(s.width) ? s.width : "nan";
     const h = Number.isFinite(s.height) ? s.height : "nan";

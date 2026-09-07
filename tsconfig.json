@@ -1,0 +1,17 @@
+{
+  // Type checking only; bun executes these files directly and never emits.
+  // Maintained surface: benchmarks/ and spikes/. spikes/vendor is vendored
+  // third-party source (yoga) with its own configs and must not enter this
+  // compilation; no first-party file imports it (verified via tsc --listFiles).
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["benchmarks/**/*", "spikes/**/*"],
+  "exclude": ["spikes/vendor"]
+}
