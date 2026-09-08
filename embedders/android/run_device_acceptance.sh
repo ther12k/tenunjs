@@ -113,6 +113,7 @@ fi
 
 "$EMU_BIN" -avd "$AVD_NAME" -accel on -no-window -no-audio -no-boot-anim \
   -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none \
+  -prop dalvik.vm.checkjni=1 \
   >"$OUT_DIR/emulator.log" 2>&1 &
 EMU_PID=$!
 echo "emulator pid: $EMU_PID"
@@ -133,6 +134,10 @@ done
 echo "emulator boot complete after ${SECONDS}s"
 
 echo "== 4. Environment record (CheckJNI must be ON; it is never disabled) =="
+# This AOSP 'default' image does not enable CheckJNI by default, so it is
+# enabled explicitly (-prop at launch, documented setprop + framework
+# restart as fallback) and activation must be positively evidenced.
+# TN-132: disabling CheckJNI to obtain a pass is a review failure.
 {
   echo "source_head: $REPO_HEAD"
   echo "system_image: $TENUN_EMULATOR_IMAGE"
@@ -140,14 +145,46 @@ echo "== 4. Environment record (CheckJNI must be ON; it is never disabled) =="
   echo "ro.build.version.sdk: $("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')"
   echo "ro.build.version.release: $("$ADB" shell getprop ro.build.version.release | tr -d '\r')"
   echo "ro.product.cpu.abi: $("$ADB" shell getprop ro.product.cpu.abi | tr -d '\r')"
-  echo "ro.kernel.android.checkjni: $("$ADB" shell getprop ro.kernel.android.checkjni | tr -d '\r')"
-  echo "dalvik.vm.checkjni: $("$ADB" shell getprop dalvik.vm.checkjni | tr -d '\r')"
   echo "default_input_method: $("$ADB" shell settings get secure default_input_method | tr -d '\r')"
-} | tee "$OUT_DIR/environment.txt"
-CHECKJNI="$("$ADB" shell getprop ro.kernel.android.checkjni | tr -d '\r')"
-if [ "$CHECKJNI" != "1" ]; then
-  env_fail "CheckJNI is not enabled on this emulator image (ro.kernel.android.checkjni='$CHECKJNI'); acceptance must not run with it disabled or weakened"
+} >>"$OUT_DIR/environment.txt"
+
+CHECKJNI_RO="$("$ADB" shell getprop ro.kernel.android.checkjni | tr -d '\r')"
+CHECKJNI_DALVIK="$("$ADB" shell getprop dalvik.vm.checkjni | tr -d '\r')"
+echo "checkjni at boot: ro.kernel.android.checkjni='$CHECKJNI_RO' dalvik.vm.checkjni='$CHECKJNI_DALVIK'"
+if [ "$CHECKJNI_RO" != "1" ] && [ "$CHECKJNI_DALVIK" != "1" ]; then
+  echo "image did not default CheckJNI; enabling it explicitly (setprop + framework restart)"
+  ZYGOTE_BEFORE="$("$ADB" shell pidof zygote | tr -d '\r' | awk '{print $1}')"
+  "$ADB" root >/dev/null 2>&1
+  "$ADB" wait-for-device
+  "$ADB" shell setprop dalvik.vm.checkjni 1
+  "$ADB" shell stop
+  "$ADB" shell start
+  RESTART_DEADLINE=$((SECONDS + 420))
+  until [ "$("$ADB" shell getprop sys.boot_completed | tr -d '\r')" = "1" ] &&
+    [ "$("$ADB" shell pidof zygote | tr -d '\r' | awk '{print $1}')" != "$ZYGOTE_BEFORE" ]; do
+    if ! kill -0 "$EMU_PID" 2>/dev/null; then
+      tail -60 "$OUT_DIR/emulator.log"
+      env_fail "emulator process exited during CheckJNI framework restart"
+    fi
+    [ "$SECONDS" -lt "$RESTART_DEADLINE" ] || { tail -40 "$OUT_DIR/emulator.log"; env_fail "framework did not restart after enabling CheckJNI"; }
+    sleep 3
+  done
+  sleep 5
+  CHECKJNI_DALVIK="$("$ADB" shell getprop dalvik.vm.checkjni | tr -d '\r')"
+  echo "checkjni after restart: dalvik.vm.checkjni='$CHECKJNI_DALVIK'"
 fi
+if [ "$CHECKJNI_RO" != "1" ] && [ "$CHECKJNI_DALVIK" != "1" ]; then
+  env_fail "could not enable CheckJNI on this image; acceptance must not run with it disabled or weakened"
+fi
+# Positive activation evidence from ART itself, not just the property.
+if ! "$ADB" logcat -d 2>/dev/null | grep -q "CheckJNI is ON"; then
+  env_fail "device log lacks the 'CheckJNI is ON' activation line; CheckJNI state is unproven"
+fi
+"$ADB" logcat -d 2>/dev/null | grep "CheckJNI is ON" | head -2 | tee "$OUT_DIR/checkjni-evidence.txt"
+{
+  echo "checkjni: ro.kernel.android.checkjni='$CHECKJNI_RO' dalvik.vm.checkjni='$CHECKJNI_DALVIK' (enabled deliberately; never disabled)"
+  echo "checkjni_activation_evidence: $(cat "$OUT_DIR/checkjni-evidence.txt" | head -1)"
+} >>"$OUT_DIR/environment.txt"
 
 # Stabilize UI timing (does not affect CheckJNI or any assertion).
 "$ADB" shell settings put global window_animation_scale 0
@@ -300,7 +337,7 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "api_level": "$("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')",
   "abi": "$("$ADB" shell getprop ro.product.cpu.abi | tr -d '\r')",
   "emulator_version": "$(head -1 "$OUT_DIR/emulator-version.txt")",
-  "checkjni": {"ro.kernel.android.checkjni": "$CHECKJNI", "dalvik.vm.checkjni": "$("$ADB" shell getprop dalvik.vm.checkjni | tr -d '\r')"},
+  "checkjni": {"ro.kernel.android.checkjni": "$CHECKJNI_RO", "dalvik.vm.checkjni": "$CHECKJNI_DALVIK", "note": "image default is OFF; enabled deliberately per TN-132, never disabled; activation evidenced by the AndroidRuntime 'CheckJNI is ON' log line"},
   "input_methods": {
     "ime_session_two_entry_loop": "real soft-IME session (LatinIME) driven by synthetic hardware-key events (input text) through the active InputMethodSession",
     "unicode_round_trip": "direct InputConnection adapter calls (NOT an IME session) — production JNI/QuickJS round-trip under CheckJNI",
