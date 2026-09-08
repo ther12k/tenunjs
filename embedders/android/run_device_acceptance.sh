@@ -344,13 +344,20 @@ BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail 
 "$BUILD_TOOLS/zipalign" -f 4 "$VAR_APK" "$VAR_APK.aligned" || accept_fail "zipalign failed"
 mv "$VAR_APK.aligned" "$VAR_APK"
 
-DEBUG_KS="$HOME/.android/debug.keystore"
+# Sign with the SAME keystore AGP used for the standard and test APKs:
+# instrumentation requires the test package's signature to match its target.
+# Ask Gradle where its debug keystore is instead of guessing a path.
+DEBUG_KS="$(./gradlew -q :app:signingReport --console=plain 2>/dev/null | awk '/Variant: debug/{f=1; next} f && $1 == "Store:" {print $2; exit}' || true)"
+if [ -z "$DEBUG_KS" ] || [ ! -f "$DEBUG_KS" ]; then
+  DEBUG_KS="$HOME/.android/debug.keystore"
+fi
 if [ ! -f "$DEBUG_KS" ]; then
-  mkdir -p "$HOME/.android"
+  mkdir -p "$(dirname "$DEBUG_KS")"
   keytool -genkeypair -keystore "$DEBUG_KS" -storepass android -keypass android \
     -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
     -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
 fi
+echo "signing variant with debug keystore: $DEBUG_KS"
 "$BUILD_TOOLS/apksigner" sign --ks "$DEBUG_KS" --ks-pass pass:android --key-pass pass:android "$VAR_APK" || accept_fail "apksigner could not sign the variant APK"
 "$BUILD_TOOLS/apksigner" verify "$VAR_APK" || accept_fail "variant APK signature verification failed"
 
