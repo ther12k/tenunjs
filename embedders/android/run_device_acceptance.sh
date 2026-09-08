@@ -153,15 +153,25 @@ CHECKJNI_DALVIK="$("$ADB" shell getprop dalvik.vm.checkjni | tr -d '\r')"
 echo "checkjni at boot: ro.kernel.android.checkjni='$CHECKJNI_RO' dalvik.vm.checkjni='$CHECKJNI_DALVIK'"
 if [ "$CHECKJNI_RO" != "1" ] && [ "$CHECKJNI_DALVIK" != "1" ]; then
   echo "image did not default CheckJNI; enabling it explicitly (setprop + framework restart)"
+  # adb root restarts adbd, so every step here tolerates a dropped transport
+  # and the effects are verified by reading state back, not by exit codes.
   ZYGOTE_BEFORE="$("$ADB" shell pidof zygote | tr -d '\r' | awk '{print $1}')"
-  "$ADB" root >/dev/null 2>&1
-  "$ADB" wait-for-device
-  "$ADB" shell setprop dalvik.vm.checkjni 1
-  "$ADB" shell stop
-  "$ADB" shell start
+  "$ADB" root >/dev/null 2>&1 || true
+  sleep 3
+  "$ADB" wait-for-device >/dev/null 2>&1 || true
+  ROOT_UID="$("$ADB" shell id -u 2>/dev/null | tr -d '\r')"
+  [ "$ROOT_UID" = "0" ] || env_fail "adb root unavailable (id -u='$ROOT_UID'); cannot enable CheckJNI explicitly on this image"
+  SET_DEADLINE=$((SECONDS + 60))
+  until [ "$("$ADB" shell getprop dalvik.vm.checkjni 2>/dev/null | tr -d '\r')" = "1" ]; do
+    "$ADB" shell setprop dalvik.vm.checkjni 1 >/dev/null 2>&1 || true
+    [ "$SECONDS" -lt "$SET_DEADLINE" ] || env_fail "dalvik.vm.checkjni could not be set to 1"
+    sleep 2
+  done
+  "$ADB" shell stop >/dev/null 2>&1 || true
+  "$ADB" shell start >/dev/null 2>&1 || true
   RESTART_DEADLINE=$((SECONDS + 420))
-  until [ "$("$ADB" shell getprop sys.boot_completed | tr -d '\r')" = "1" ] &&
-    [ "$("$ADB" shell pidof zygote | tr -d '\r' | awk '{print $1}')" != "$ZYGOTE_BEFORE" ]; do
+  until [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] &&
+    [ "$("$ADB" shell pidof zygote 2>/dev/null | tr -d '\r' | awk '{print $1}')" != "$ZYGOTE_BEFORE" ]; do
     if ! kill -0 "$EMU_PID" 2>/dev/null; then
       tail -60 "$OUT_DIR/emulator.log"
       env_fail "emulator process exited during CheckJNI framework restart"
