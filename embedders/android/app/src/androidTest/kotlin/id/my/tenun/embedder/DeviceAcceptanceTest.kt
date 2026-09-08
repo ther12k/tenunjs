@@ -51,6 +51,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
 
         // -- Entry 1: real IME session typed via hardware-key events --------
         tapRect(scenario) { it.titleRect }
+        awaitViewFocus(scenario)
         awaitImeActive()
         shell("input text Note")
         awaitSurfaceState(scenario, 20_000, "title 'Note' committed through the IME session") {
@@ -58,6 +59,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         }
 
         tapRect(scenario) { it.detailsRect }
+        awaitViewFocus(scenario)
         awaitImeActive()
         shell("input text Plan%sthe%ssprint")
         awaitSurfaceState(scenario, 20_000, "details 'Plan the sprint' committed through the IME session") {
@@ -81,6 +83,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
 
         // -- Entry 2: same loop again ---------------------------------------
         tapRect(scenario) { it.titleRect }
+        awaitViewFocus(scenario)
         awaitImeActive()
         shell("input text Second%ssample")
         awaitSurfaceState(scenario, 20_000, "title 'Second sample' committed through the IME session") {
@@ -88,6 +91,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         }
 
         tapRect(scenario) { it.detailsRect }
+        awaitViewFocus(scenario)
         awaitImeActive()
         shell("input text Second%stoo")
         awaitSurfaceState(scenario, 20_000, "details 'Second too' committed through the IME session") {

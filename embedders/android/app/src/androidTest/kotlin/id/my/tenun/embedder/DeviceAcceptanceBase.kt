@@ -68,7 +68,8 @@ abstract class DeviceAcceptanceBase {
 
     protected fun describeSurface(scenario: ActivityScenario<MainActivity>): String =
         onViewSurface(scenario) { v ->
-            "title='${v.titleField.displayText}' details='${v.detailsField.displayText}' " +
+            "focus=${v.hasFocus()} active=${if (v.getActiveFieldState() === v.titleField) "title" else "details"} " +
+                "title='${v.titleField.displayText}' details='${v.detailsField.displayText}' " +
                 "entries=${v.entries} buttonLabel='${v.buttonLabel}'"
         }
 
@@ -84,11 +85,20 @@ abstract class DeviceAcceptanceBase {
             if (onViewSurface(scenario) { predicate(it) }) return
             val last = describeSurface(scenario)
             if (SystemClock.uptimeMillis() > deadline) {
-                fail("Timed out after ${timeoutMs}ms waiting for: $description; last state: $last")
+                fail(
+                    "Timed out after ${timeoutMs}ms waiting for: $description; last state: $last; " +
+                        inputEnvironmentDiagnosis()
+                )
             }
             SystemClock.sleep(200)
         }
     }
+
+    private fun inputEnvironmentDiagnosis(): String = runCatching {
+        val immDump = shell("dumpsys input_method 2>/dev/null | grep -E 'mInputShown|mCurMethodId|mCurClient|mHaveConnection' | head -4")
+        val focus = shell("dumpsys window windows 2>/dev/null | grep mCurrentFocus | head -1")
+        "input env: [$immDump] focus: [$focus]"
+    }.getOrDefault("input environment diagnosis unavailable")
 
     /**
      * Taps the center of a scene rect through the system touch pipeline
@@ -128,6 +138,17 @@ abstract class DeviceAcceptanceBase {
         return viaImm || viaDumpsys
     }
 
+    /** Verifies the system touch actually landed on the surface view before
+     *  any IME expectations are made. */
+    protected fun awaitViewFocus(scenario: ActivityScenario<MainActivity>, timeoutMs: Long = 10_000) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (onViewSurface(scenario) { it.hasFocus() }) return
+            SystemClock.sleep(200)
+        }
+        fail("surface view never gained window focus after tap; " + inputEnvironmentDiagnosis())
+    }
+
     protected fun awaitImeActive() {
         val deadline = SystemClock.uptimeMillis() + 15_000
         while (SystemClock.uptimeMillis() < deadline) {
@@ -136,8 +157,8 @@ abstract class DeviceAcceptanceBase {
         }
         fail(
             "DEVICE INPUT ENVIRONMENT: soft IME never became active after field tap. " +
-                "dumpsys input_method tail:\n" +
-                shell("dumpsys input_method").lines().takeLast(20).joinToString("\n")
+                "input_method state:\n" +
+                shell("dumpsys input_method 2>/dev/null | grep -E 'mInputShown|mCurMethodId|mCurClient|mHaveConnection|mSystemServiceManaged' | head -6")
         )
     }
 

@@ -25,13 +25,17 @@ TENUN_DEVICE_PROFILE="${TENUN_DEVICE_PROFILE:-pixel}"
 TENUN_BOOT_TIMEOUT="${TENUN_BOOT_TIMEOUT:-900}"
 
 ENV_FAIL=90
-# Dumps the device log on any failure so the discriminating evidence
-# (native stderr, ART messages, crash context) survives into artifacts.
+# Dumps the device log and any screenshots taken so far on failure, so the
+# discriminating evidence (native stderr, ART messages, crash context, and
+# what the screen actually showed) survives into artifacts.
 collect_logs() {
   if [ -x "$ADB" ] && "$ADB" get-state >/dev/null 2>&1; then
     "$ADB" logcat -d >"$OUT_DIR/logcat_full.txt" 2>&1 || true
     echo "--- last 120 logcat lines ---"
     tail -120 "$OUT_DIR/logcat_full.txt" || true
+    for f in $("$ADB" shell ls /data/local/tmp/ 2>/dev/null | tr -d '\r' | grep '^tenun_.*\.png$'); do
+      "$ADB" pull "/data/local/tmp/$f" "$OUT_DIR/" >/dev/null 2>&1 || true
+    done
   fi
 }
 env_fail() {
@@ -212,6 +216,11 @@ fi
 {
   echo "checkjni: ro.kernel.android.checkjni='$CHECKJNI_RO' dalvik.vm.checkjni='$CHECKJNI_DALVIK' (enabled deliberately; never disabled)"
 } >>"$OUT_DIR/environment.txt"
+{
+  echo "focused_window: $("$ADB" shell dumpsys window windows 2>/dev/null | grep mCurrentFocus | head -1 | tr -d '\r')"
+  echo "keyguard: $("$ADB" shell dumpsys window policy 2>/dev/null | grep -iE 'mShowingLockscreen|KeyguardShowing|isKeyguardSecure' | head -2 | tr -d '\r')"
+  echo "screen: $("$ADB" shell dumpsys power 2>/dev/null | grep -E 'mWakefulness=' | head -1 | tr -d '\r')"
+} >>"$OUT_DIR/environment.txt"
 
 # Stabilize UI timing (does not affect CheckJNI or any assertion).
 "$ADB" shell settings put global window_animation_scale 0
@@ -238,7 +247,12 @@ STD_SHA_PUSH="$(sha256sum "$STD_APK" | awk '{print $1}')"
 echo "standard APK (pushed) sha256: $STD_SHA_PUSH"
 
 echo "== 6. Standard suite: :app:connectedDebugAndroidTest on the booted emulator =="
-if ! ./gradlew :app:connectedDebugAndroidTest >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
+# VariantCustomizationTest is excluded here: it can only run against the
+# JS-only variant APK in stage 9 (am instrument), never against the standard
+# build — a failure there would be by construction, not by defect.
+if ! ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest" \
+  >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   accept_fail ":app:connectedDebugAndroidTest failed"
 fi
