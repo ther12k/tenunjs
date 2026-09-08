@@ -261,13 +261,16 @@ if ! ./gradlew :app:connectedDebugAndroidTest \
 fi
 tail -12 "$OUT_DIR/connected_debug_android_test.txt"
 
-XMLS="$(find app/build/outputs/androidTest-results -name 'TEST-*.xml' 2>/dev/null)"
+# Search the whole app build tree: AGP's exact results layout varies between
+# versions. Every command is failure-tolerant — under set -e a bare failed
+# command substitution would kill the script before any classifier message.
+XMLS="$(find "$SCRIPT_DIR/app/build" -name 'TEST-*.xml' 2>/dev/null || true)"
 [ -n "$XMLS" ] || accept_fail "no instrumented test result XML was produced"
 cp $XMLS "$OUT_DIR"/ || true
-SUM_TESTS="$(cat $XMLS | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')"
-SUM_FAILURES="$(cat $XMLS | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')"
-SUM_ERRORS="$(cat $XMLS | grep -o 'errors="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')"
-SUM_SKIPPED="$(cat $XMLS | grep -o 'skipped="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')"
+SUM_TESTS="$(cat $XMLS | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+SUM_FAILURES="$(cat $XMLS | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+SUM_ERRORS="$(cat $XMLS | grep -o 'errors="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+SUM_SKIPPED="$(cat $XMLS | grep -o 'skipped="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
 echo "standard suite executed tests=$SUM_TESTS failures=$SUM_FAILURES errors=$SUM_ERRORS skipped=$SUM_SKIPPED"
 [ "$SUM_TESTS" -gt 0 ] || accept_fail "zero executed instrumented tests — this cannot be an acceptance pass"
 [ "$SUM_FAILURES" -eq 0 ] || accept_fail "$SUM_FAILURES instrumented test failure(s)"
