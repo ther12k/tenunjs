@@ -433,9 +433,9 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "api_level": "$("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')",
   "abi": "$("$ADB" shell getprop ro.product.cpu.abi | tr -d '\r')",
   "emulator_version": "$(head -1 "$OUT_DIR/emulator-version.txt")",
-  "checkjni": {"ro.kernel.android.checkjni": "$CHECKJNI_RO", "dalvik.vm.checkjni": "$CHECKJNI_DALVIK", "note": "image default is OFF; enabled deliberately per TN-132, never disabled; activation evidenced by the AndroidRuntime 'CheckJNI is ON' log line"},
+  "checkjni": {"ro.kernel.android.checkjni": "$CHECKJNI_RO", "dalvik.vm.checkjni": "$CHECKJNI_DALVIK", "note": "image default is OFF; enabled deliberately per TN-132, never disabled; activation via the documented setprop dalvik.vm.checkjni=1 + framework restart (property reads back 1, zygote pid changed)"},
   "input_methods": {
-    "ime_session_two_entry_loop": "real soft-IME session (LatinIME) driven by synthetic hardware-key events (input text) through the active InputMethodSession",
+    "ime_session_two_entry_loop": "real LatinIME soft-key taps (SOFT_KEY_TAPS), per-character verified against field state; the executed mode per field is recorded in the connected-test stdout (INPUT-METHOD lines); KEY_EVENT_INJECTION would label fallback runs",
     "unicode_round_trip": "direct InputConnection adapter calls (NOT an IME session) — production JNI/QuickJS round-trip under CheckJNI",
     "lifecycle_recreation": "ActivityScenario.recreate() + direct InputConnection adapter calls after recreation",
     "variant_customization": "direct InputConnection adapter calls; on-screen proof via region pixel diff against the standard-APK baseline"
