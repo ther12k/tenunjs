@@ -72,12 +72,20 @@ for tool in "$ADB" "$EMU_BIN" "$AVDM"; do
 done
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
-# Report ALL unresolved qemu shared libraries at once instead of discovering
-# them one launch failure per CI round.
+# Report ALL unresolved HOST shared libraries at once instead of discovering
+# them one launch failure per CI round. Bundled emulator libraries (Qt6*,
+# libandroid-emu-*, ...) resolved by the launcher's own LD_LIBRARY_PATH at
+# runtime are ignored: only libraries absent from the whole installation
+# count as genuinely missing host packages.
 QEMU_BIN="$(dirname "$EMU_BIN")/qemu/linux-x86_64/qemu-system-x86_64"
-MISSING_LIBS="$(ldd "$QEMU_BIN" 2>/dev/null | awk '/not found/ {print $1}' | sort -u || true)"
-if [ -n "$MISSING_LIBS" ]; then
-  env_fail "emulator qemu binary has unresolved shared libraries: $(echo "$MISSING_LIBS" | tr '\n' ' ') — install the corresponding runtime packages on the runner"
+TRULY_MISSING=""
+for lib in $(ldd "$QEMU_BIN" 2>/dev/null | awk '/not found/ {print $1}' | sort -u); do
+  if ! find "$(dirname "$EMU_BIN")" -name "$lib" 2>/dev/null | grep -q .; then
+    TRULY_MISSING="$TRULY_MISSING $lib"
+  fi
+done
+if [ -n "$TRULY_MISSING" ]; then
+  env_fail "emulator qemu binary has unresolved host libraries:$TRULY_MISSING — install the corresponding runtime packages on the runner"
 fi
 
 echo "== 3. Acceleration check (-accel-check), then boot with -accel on =="
