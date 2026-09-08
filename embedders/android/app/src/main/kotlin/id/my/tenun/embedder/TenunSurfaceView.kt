@@ -64,6 +64,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     var engine: TenunEngine? = null
         set(value) {
             field = value
+            // Reflect the engine's already-committed scene (including the
+            // JS-provided button label) before the first draw, so the view
+            // renders the JavaScript application's initial state.
+            value?.getLatestScene()?.let { syncFromScene(it) }
             redraw()
         }
 
@@ -71,6 +75,11 @@ class TenunSurfaceView @JvmOverloads constructor(
     val titleField = EditableFieldState()
     val detailsField = EditableFieldState()
     val entries = mutableListOf<String>()
+
+    // Button label taken from the committed scene's button node, so a
+    // JavaScript-only label change is what renderScene draws.
+    var buttonLabel: String = "Add Entry"
+        private set
 
     private var isSurfaceValid = false
 
@@ -241,6 +250,9 @@ class TenunSurfaceView @JvmOverloads constructor(
                             val itemText = if (d.isNotEmpty()) "$t - $d" else t
                             entries.add(itemText)
                         }
+                        "button" -> {
+                            buttonLabel = node.optString("text")
+                        }
                     }
                 }
             }
@@ -277,9 +289,9 @@ class TenunSurfaceView @JvmOverloads constructor(
         val displayDetails = if (detailsField.displayText.isEmpty()) "Enter Details..." else detailsField.displayText
         canvas.drawText(displayDetails, detailsRect.left + 20f, detailsRect.centerY() + 12f, if (detailsField.displayText.isEmpty()) labelPaint else textPaint)
 
-        // Add Button
+        // Add Button (label comes from the committed scene)
         canvas.drawRoundRect(buttonRect, 12f, 12f, buttonPaint)
-        canvas.drawText("Add Entry", buttonRect.left + 50f, buttonRect.centerY() + 12f, textPaint)
+        canvas.drawText(buttonLabel, buttonRect.left + 50f, buttonRect.centerY() + 12f, textPaint)
 
         // Entries List Header
         var currentY = 480f
