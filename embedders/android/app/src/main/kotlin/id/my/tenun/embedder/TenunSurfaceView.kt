@@ -237,10 +237,14 @@ class TenunSurfaceView @JvmOverloads constructor(
                         "input" -> {
                             val f = node.optString("field")
                             val v = node.optString("value")
-                            if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                            // The JS application clears its state only in
+                            // ADD_ENTRY, so an empty scene value against
+                            // non-empty local text means the entry was just
+                            // committed: clear the editing field.
+                            if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty()) {
                                 titleField.reset()
                             }
-                            if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                            if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty()) {
                                 detailsField.reset()
                             }
                         }
