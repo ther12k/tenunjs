@@ -406,7 +406,7 @@ fi
 
 echo "== 10. Evidence collection: screenshots, logcat, environment summary =="
 PULL_FAIL=0
-for f in tenun_amstart tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry \
+for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry \
   tenun_after_recreation tenun_baseline tenun_variant_initial tenun_variant_after; do
   if ! "$ADB" pull "/data/local/tmp/$f.png" "$OUT_DIR/" >/dev/null 2>&1; then
     echo "MISSING SCREENSHOT: $f.png"
