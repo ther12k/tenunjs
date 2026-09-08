@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_HEAD="$(git -C "$SCRIPT_DIR" rev-parse HEAD)"
 WORK_DIR="$(mktemp -d /tmp/tenun-device-acceptance.XXXXXX)"
 OUT_DIR="$SCRIPT_DIR/device-acceptance-output"
+ADB="${ANDROID_HOME:-}/platform-tools/adb"
 APP_ID="id.my.tenun.embedder"
 TEST_APP_ID="id.my.tenun.embedder.test"
 AVD_NAME="tenun-acceptance"
@@ -24,11 +25,22 @@ TENUN_DEVICE_PROFILE="${TENUN_DEVICE_PROFILE:-pixel}"
 TENUN_BOOT_TIMEOUT="${TENUN_BOOT_TIMEOUT:-900}"
 
 ENV_FAIL=90
+# Dumps the device log on any failure so the discriminating evidence
+# (native stderr, ART messages, crash context) survives into artifacts.
+collect_logs() {
+  if [ -x "$ADB" ] && "$ADB" get-state >/dev/null 2>&1; then
+    "$ADB" logcat -d >"$OUT_DIR/logcat_full.txt" 2>&1 || true
+    echo "--- last 120 logcat lines ---"
+    tail -120 "$OUT_DIR/logcat_full.txt" || true
+  fi
+}
 env_fail() {
+  collect_logs
   echo "DEVICE-ENVIRONMENT-FAILURE: $*"
   exit "$ENV_FAIL"
 }
 accept_fail() {
+  collect_logs
   echo "DEVICE-ACCEPTANCE-FAILURE: $*"
   exit 1
 }
@@ -217,6 +229,11 @@ tail -3 "$OUT_DIR/gradle_assemble.txt"
 STD_APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 TEST_APK="$SCRIPT_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 [ -f "$STD_APK" ] && [ -f "$TEST_APK" ] || accept_fail "expected APK artifacts were not produced"
+unzip -l "$STD_APK" >"$OUT_DIR/apk_contents.txt" 2>&1 || true
+grep -E "tenun_app.js|libtenun_android" "$OUT_DIR/apk_contents.txt" || true
+if ! grep -q "assets/tenun_app.js" "$OUT_DIR/apk_contents.txt"; then
+  accept_fail "packaged APK does not contain assets/tenun_app.js — the JS application cannot load"
+fi
 STD_SHA_PUSH="$(sha256sum "$STD_APK" | awk '{print $1}')"
 echo "standard APK (pushed) sha256: $STD_SHA_PUSH"
 
