@@ -374,6 +374,12 @@ echo "variant APK (pulled from device) sha256: $VAR_SHA_PULLED"
 [ "$VAR_SHA_PUSH" = "$VAR_SHA_PULLED" ] || accept_fail "installed variant artifact identity mismatch: pushed=$VAR_SHA_PUSH pulled=$VAR_SHA_PULLED"
 
 echo "== 9. Variant suite: JS-only customization observed on screen (am instrument) =="
+# AGP uninstalls both packages after connectedDebugAndroidTest, so the
+# instrumentation APK must be installed again against the variant app.
+if ! "$ADB" install -r "$TEST_APK" >"$OUT_DIR/adb_install_variant_test.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_variant_test.txt"
+  accept_fail "instrumented-test APK install failed for the variant phase"
+fi
 set +e
 V_OUT="$("$ADB" shell am instrument -w -e class "$APP_ID.VariantCustomizationTest" "$TEST_APP_ID/androidx.test.runner.AndroidJUnitRunner" 2>&1)"
 V_RC=$?
