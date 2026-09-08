@@ -265,7 +265,16 @@ tail -12 "$OUT_DIR/connected_debug_android_test.txt"
 # versions. Every command is failure-tolerant — under set -e a bare failed
 # command substitution would kill the script before any classifier message.
 XMLS="$(find "$SCRIPT_DIR/app/build" -name 'TEST-*.xml' 2>/dev/null || true)"
-[ -n "$XMLS" ] || accept_fail "no instrumented test result XML was produced"
+{
+  echo "matched XMLs:"
+  echo "$XMLS"
+  echo "--- androidTest-results tree ---"
+  find "$SCRIPT_DIR/app/build/outputs/androidTest-results" -maxdepth 4 2>/dev/null || true
+  echo "--- result-like directories under app/build ---"
+  find "$SCRIPT_DIR/app/build" -maxdepth 3 -type d -name '*result*' 2>/dev/null || true
+} >"$OUT_DIR/xml_discovery.txt"
+cat "$OUT_DIR/xml_discovery.txt"
+[ -n "$XMLS" ] || accept_fail "no instrumented test result XML was produced (see device-acceptance-output/xml_discovery.txt)"
 cp $XMLS "$OUT_DIR"/ || true
 SUM_TESTS="$(cat $XMLS | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
 SUM_FAILURES="$(cat $XMLS | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
