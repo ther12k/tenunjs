@@ -72,6 +72,14 @@ for tool in "$ADB" "$EMU_BIN" "$AVDM"; do
 done
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
+# Report ALL unresolved qemu shared libraries at once instead of discovering
+# them one launch failure per CI round.
+QEMU_BIN="$(dirname "$EMU_BIN")/qemu/linux-x86_64/qemu-system-x86_64"
+MISSING_LIBS="$(ldd "$QEMU_BIN" 2>/dev/null | awk '/not found/ {print $1}' | sort -u || true)"
+if [ -n "$MISSING_LIBS" ]; then
+  env_fail "emulator qemu binary has unresolved shared libraries: $(echo "$MISSING_LIBS" | tr '\n' ' ') — install the corresponding runtime packages on the runner"
+fi
+
 echo "== 3. Acceleration check (-accel-check), then boot with -accel on =="
 if ! "$EMU_BIN" -accel-check >"$OUT_DIR/accel-check.txt" 2>&1; then
   cat "$OUT_DIR/accel-check.txt"

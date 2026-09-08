@@ -99,6 +99,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
+      - name: Install emulator runtime libraries (runner image omits libpulse)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpulse0
       - name: Run installed-device acceptance on a KVM-backed emulator
         run: ./embedders/android/run_device_acceptance.sh
       - name: Upload device acceptance artifacts
