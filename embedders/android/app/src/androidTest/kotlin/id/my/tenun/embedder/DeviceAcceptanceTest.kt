@@ -57,30 +57,30 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         tapRect(scenario) { it.titleRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        val mode1 = enterTextViaIme(scenario, "title", "Note")
-        awaitSurfaceState(scenario, 20_000, "title 'Note' committed through the IME session") {
-            it.titleField.displayText == "Note"
+        val mode1 = enterTextViaIme(scenario, "title", "note")
+        awaitSurfaceState(scenario, 20_000, "title 'note' committed through the IME session") {
+            it.titleField.displayText == "note"
         }
 
         tapRect(scenario) { it.detailsRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        val mode2 = enterTextViaIme(scenario, "details", "Plan the sprint")
-        awaitSurfaceState(scenario, 20_000, "details 'Plan the sprint' committed through the IME session") {
-            it.detailsField.displayText == "Plan the sprint"
+        val mode2 = enterTextViaIme(scenario, "details", "plan the sprint")
+        awaitSurfaceState(scenario, 20_000, "details 'plan the sprint' committed through the IME session") {
+            it.detailsField.displayText == "plan the sprint"
         }
 
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "entry 1 visible and both inputs cleared") {
             it.entries.size == 1 &&
-                it.entries[0] == "Note - Plan the sprint" &&
+                it.entries[0] == "note - plan the sprint" &&
                 it.titleField.displayText.isEmpty() &&
                 it.detailsField.displayText.isEmpty()
         }
         onViewSurface(scenario) { v ->
             val scene = v.engine!!.getLatestScene()
-            assertTrue("committed scene must contain entry 1 title", scene.contains("\"Note\""))
-            assertTrue("committed scene must contain entry 1 details", scene.contains("Plan the sprint"))
+            assertTrue("committed scene must contain entry 1 title", scene.contains("\"note\""))
+            assertTrue("committed scene must contain entry 1 details", scene.contains("plan the sprint"))
         }
         dismissImeIfShown()
         screencap("tenun_after_entry1.png")
@@ -89,23 +89,23 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         tapRect(scenario) { it.titleRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        val mode3 = enterTextViaIme(scenario, "title", "Second sample")
-        awaitSurfaceState(scenario, 20_000, "title 'Second sample' committed through the IME session") {
-            it.titleField.displayText == "Second sample"
+        val mode3 = enterTextViaIme(scenario, "title", "second sample")
+        awaitSurfaceState(scenario, 20_000, "title 'second sample' committed through the IME session") {
+            it.titleField.displayText == "second sample"
         }
 
         tapRect(scenario) { it.detailsRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        val mode4 = enterTextViaIme(scenario, "details", "Second too")
-        awaitSurfaceState(scenario, 20_000, "details 'Second too' committed through the IME session") {
-            it.detailsField.displayText == "Second too"
+        val mode4 = enterTextViaIme(scenario, "details", "second too")
+        awaitSurfaceState(scenario, 20_000, "details 'second too' committed through the IME session") {
+            it.detailsField.displayText == "second too"
         }
 
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "entry 2 visible and both inputs cleared") {
             it.entries.size == 2 &&
-                it.entries[1] == "Second sample - Second too" &&
+                it.entries[1] == "second sample - second too" &&
                 it.titleField.displayText.isEmpty() &&
                 it.detailsField.displayText.isEmpty()
         }
