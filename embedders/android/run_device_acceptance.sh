@@ -47,27 +47,30 @@ mkdir -p "$OUT_DIR"
 
 echo "== 1. Toolchain and KVM preflight =="
 [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ] || env_fail "\$ANDROID_HOME is not set to an Android SDK directory"
-ADB="$ANDROID_HOME/platform-tools/adb"
-EMU_BIN="$ANDROID_HOME/emulator/emulator"
 SDKM="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1)"
-AVDM="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V | tail -1)"
-for tool in "$ADB" "$EMU_BIN" "$SDKM" "$AVDM"; do
-  [ -x "$tool" ] || env_fail "required SDK tool missing or not executable: $tool"
-done
-export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+[ -x "$SDKM" ] || env_fail "sdkmanager not found under \$ANDROID_HOME"
 
 if ! [ -e /dev/kvm ]; then
   env_fail "/dev/kvm does not exist; this job requires a KVM-capable runner (ubuntu-24.04 VM, not a container/slim image)"
 fi
 ls -l /dev/kvm | tee "$OUT_DIR/dev-kvm.txt"
 
-echo "== 2. Emulator system image ($TENUN_EMULATOR_IMAGE) =="
+echo "== 2. Emulator system image ($TENUN_EMULATOR_IMAGE) and emulator package =="
+# The runner image ships cmdline-tools but not the emulator package itself.
 yes | "$SDKM" --licenses >/dev/null 2>&1 || true
 if ! "$SDKM" --install "$TENUN_EMULATOR_IMAGE" emulator platform-tools >"$OUT_DIR/sdkmanager.txt" 2>&1; then
   tail -20 "$OUT_DIR/sdkmanager.txt"
   env_fail "sdkmanager failed to install system image / emulator / platform-tools"
 fi
 tail -3 "$OUT_DIR/sdkmanager.txt"
+
+ADB="$ANDROID_HOME/platform-tools/adb"
+EMU_BIN="$ANDROID_HOME/emulator/emulator"
+AVDM="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/avdmanager 2>/dev/null | sort -V | tail -1)"
+for tool in "$ADB" "$EMU_BIN" "$AVDM"; do
+  [ -x "$tool" ] || env_fail "required SDK tool missing or not executable after install: $tool"
+done
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
 echo "== 3. Acceleration check (-accel-check), then boot with -accel on =="
 if ! "$EMU_BIN" -accel-check >"$OUT_DIR/accel-check.txt" 2>&1; then
