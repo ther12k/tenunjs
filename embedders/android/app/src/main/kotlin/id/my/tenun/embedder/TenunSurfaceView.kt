@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.text.InputType
 import android.util.AttributeSet
+import android.util.Log
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -124,6 +126,10 @@ class TenunSurfaceView @JvmOverloads constructor(
         isFocusableInTouchMode = true
     }
 
+    companion object {
+        private const val TAG = "TenunSurfaceView"
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
         isSurfaceValid = true
         redraw()
@@ -192,6 +198,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         return object : BaseInputConnection(this, true) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 val str = text?.toString() ?: ""
+                Log.d(TAG, "IME commitText len=${str.length}")
                 getActiveFieldState().commit(str)
                 dispatchActiveFieldChange()
                 redraw()
@@ -200,6 +207,7 @@ class TenunSurfaceView @JvmOverloads constructor(
 
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 val str = text?.toString() ?: ""
+                Log.d(TAG, "IME setComposingText len=${str.length}")
                 // Replaces current composing span (not simple append)
                 getActiveFieldState().setComposing(str)
                 dispatchActiveFieldChange()
@@ -208,12 +216,26 @@ class TenunSurfaceView @JvmOverloads constructor(
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                Log.d(TAG, "IME deleteSurroundingText before=$beforeLength")
                 getActiveFieldState().deleteSurrounding(beforeLength)
                 dispatchActiveFieldChange()
                 redraw()
                 return true
             }
         }
+    }
+
+    // Input-path diagnostics: whether hardware key events reach this view
+    // directly (instead of being routed through the IME session) is the
+    // discriminating signal for IME delivery issues.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        Log.d(TAG, "view onKeyDown keyCode=$keyCode")
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        Log.d(TAG, "view onKeyUp keyCode=$keyCode")
+        return super.onKeyUp(keyCode, event)
     }
 
     private fun dispatchActiveFieldChange() {

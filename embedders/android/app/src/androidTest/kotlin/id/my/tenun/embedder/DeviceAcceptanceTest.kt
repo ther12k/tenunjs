@@ -13,9 +13,12 @@ import org.junit.runner.RunWith
  * Unicode round-trip under CheckJNI, and a real Activity recreation.
  *
  * Input methods are deliberately distinct and recorded per scenario:
- *  - imeSessionTwoEntryLoop: a real soft-IME session (LatinIME) fed by
- *    synthetic hardware-key events, i.e. key events delivered through the
- *    active InputMethodSession to the view's InputConnection.
+ *  - imeSessionTwoEntryLoop: a real soft-IME session (LatinIME). Preferred
+ *    path is tapping the keyboard's own soft keys (genuine user keystrokes);
+ *    if key nodes are unreachable it falls back to synthetic hardware-key
+ *    events delivered through the active InputMethodSession, and the mode
+ *    actually used is printed and asserted (at least one field must come
+ *    from real soft-key taps).
  *  - unicodeRoundTrip / baseline / lifecycle text entry: direct
  *    InputConnection adapter calls (see [DeviceAcceptanceBase.commitViaInputConnection])
  *    — adapter-level evidence, not an IME session; no IME can type the
@@ -49,11 +52,12 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         val scenario = launchApp()
         awaitSurfaceState(scenario, 10_000, "initial scene ready") { it.engine != null }
 
-        // -- Entry 1: real IME session typed via hardware-key events --------
+        // -- Entry 1: real IME session (soft-key taps preferred; key-event
+        //    injection recorded as fallback) ------------------------------
         tapRect(scenario) { it.titleRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        shell("input text Note")
+        val mode1 = enterTextViaIme(scenario, "title", "Note")
         awaitSurfaceState(scenario, 20_000, "title 'Note' committed through the IME session") {
             it.titleField.displayText == "Note"
         }
@@ -61,7 +65,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         tapRect(scenario) { it.detailsRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        shell("input text Plan%sthe%ssprint")
+        val mode2 = enterTextViaIme(scenario, "details", "Plan the sprint")
         awaitSurfaceState(scenario, 20_000, "details 'Plan the sprint' committed through the IME session") {
             it.detailsField.displayText == "Plan the sprint"
         }
@@ -85,7 +89,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         tapRect(scenario) { it.titleRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        shell("input text Second%ssample")
+        val mode3 = enterTextViaIme(scenario, "title", "Second sample")
         awaitSurfaceState(scenario, 20_000, "title 'Second sample' committed through the IME session") {
             it.titleField.displayText == "Second sample"
         }
@@ -93,7 +97,7 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         tapRect(scenario) { it.detailsRect }
         awaitViewFocus(scenario)
         awaitImeActive()
-        shell("input text Second%stoo")
+        val mode4 = enterTextViaIme(scenario, "details", "Second too")
         awaitSurfaceState(scenario, 20_000, "details 'Second too' committed through the IME session") {
             it.detailsField.displayText == "Second too"
         }
@@ -105,6 +109,12 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
                 it.titleField.displayText.isEmpty() &&
                 it.detailsField.displayText.isEmpty()
         }
+        val summary = "INPUT-METHOD[imeSessionTwoEntryLoop]: title1=$mode1 details1=$mode2 title2=$mode3 details2=$mode4"
+        println(summary)
+        assertTrue(
+            "at least one field must be typed through real LatinIME soft-key taps (modes: $summary)",
+            listOf(mode1, mode2, mode3, mode4).any { it == ImeMode.SOFT_KEY_TAPS }
+        )
         dismissImeIfShown()
         screencap("tenun_two_entries.png")
     }

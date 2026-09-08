@@ -10,6 +10,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -160,6 +161,99 @@ abstract class DeviceAcceptanceBase {
                 "input_method state:\n" +
                 shell("dumpsys input_method 2>/dev/null | grep -E 'mInputShown|mCurMethodId|mCurClient|mHaveConnection|mSystemServiceManaged' | head -6")
         )
+    }
+
+    /** True when LatinIME's keyboard window is present in the UI hierarchy
+     *  (i.e. the soft keyboard is actually on screen). */
+    protected fun imeKeyboardVisible(): Boolean =
+        runCatching { device.hasObject(By.pkg("com.android.inputmethod.latin")) }.getOrDefault(false)
+
+    /**
+     * Real user route for showing the keyboard: the focused view asks the
+     * system to show the IME (the same call showKeyboard() makes inside the
+     * app), from inside the app process, on the main thread.
+     */
+    protected fun showImeViaSystemRoute(scenario: ActivityScenario<MainActivity>) {
+        onViewSurface(scenario) { v ->
+            v.requestFocus()
+            val m = v.context.getSystemService(InputMethodManager::class.java)
+            m.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    /** Taps a LatinIME soft key by its accessibility text/description
+     *  (trying case variants). Returns true when a key node was found and
+     *  clicked — a genuine user soft-keystroke through the IME. */
+    protected fun tapImeKey(label: String): Boolean {
+        val candidates = listOf(
+            label,
+            label.lowercase(),
+            label.uppercase(),
+            label.replaceFirstChar { it.uppercase() },
+        ).distinct()
+        for (candidate in candidates) {
+            val key = runCatching {
+                listOf(device.findObject(By.text(candidate)), device.findObject(By.desc(candidate)))
+                    .firstOrNull { it != null }
+            }.getOrNull() ?: continue
+            if (runCatching { key.click(); true }.getOrDefault(false)) return true
+        }
+        return false
+    }
+
+    /** How text entry was performed for a scenario (recorded per TN-132). */
+    protected enum class ImeMode { SOFT_KEY_TAPS, KEY_EVENT_INJECTION }
+
+    /**
+     * Enters [text] into the currently active field through a real IME
+     * session. Preferred path: tapping LatinIME's own soft keys (genuine
+     * user keystrokes). If the keyboard's key nodes are not reachable, falls
+     * back to synthetic hardware-key events ('input text') delivered through
+     * the active InputMethodSession — still an IME session, but not soft-key
+     * taps. The executed mode is returned and must be recorded.
+     */
+    protected fun enterTextViaIme(
+        scenario: ActivityScenario<MainActivity>,
+        expectedField: String,
+        text: String,
+    ): ImeMode {
+        if (!imeKeyboardVisible()) {
+            showImeViaSystemRoute(scenario)
+            val deadline = SystemClock.uptimeMillis() + 8_000
+            while (SystemClock.uptimeMillis() < deadline && !imeKeyboardVisible()) SystemClock.sleep(300)
+        }
+
+        if (imeKeyboardVisible()) {
+            var viaSoftKeys = 0
+            for (i in text.indices) {
+                val ch = text[i]
+                val label = if (ch == ' ') "space" else ch.toString()
+                if (!tapImeKey(label)) break
+                val expectedPrefix = text.substring(0, i + 1)
+                val prefixDeadline = SystemClock.uptimeMillis() + 3_000
+                while (SystemClock.uptimeMillis() < prefixDeadline) {
+                    val current = onViewSurface(scenario) {
+                        (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField).displayText
+                    }
+                    if (current == expectedPrefix) { viaSoftKeys++; break }
+                    SystemClock.sleep(150)
+                }
+                if (viaSoftKeys != i + 1) break
+            }
+            if (viaSoftKeys == text.length) {
+                println("INPUT-METHOD[$expectedField]: SOFT_KEY_TAPS ($text)")
+                return ImeMode.SOFT_KEY_TAPS
+            }
+            // Soft keys partially typed; clear what landed before fallback.
+            onViewSurface(scenario) {
+                (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField).reset()
+            }
+        }
+
+        val encoded = java.net.URLEncoder.encode(text, "UTF-8").replace("+", "%20")
+        shell("input text $encoded")
+        println("INPUT-METHOD[$expectedField]: KEY_EVENT_INJECTION (fallback; soft-key taps unavailable), text=$text")
+        return ImeMode.KEY_EVENT_INJECTION
     }
 
     /** Closes the keyboard with BACK only when it is actually shown, so a
