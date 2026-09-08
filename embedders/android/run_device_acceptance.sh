@@ -118,11 +118,14 @@ echo no | "$AVDM" create avd --name "$AVD_NAME" --package "$TENUN_EMULATOR_IMAGE
   tail -10 "$OUT_DIR/avdmanager.txt"
   env_fail "avdmanager could not create the AVD"
 }
-# Locate the created AVD dynamically rather than assuming its on-disk layout;
-# physical-style key events must reach the IME through the input pipeline.
+# Locate the created AVD dynamically rather than assuming its on-disk layout.
 AVD_DIR="$("$AVDM" list avd 2>/dev/null | sed -n 's/^[[:space:]]*Path: //p' | head -1)"
 if [ -n "$AVD_DIR" ] && [ -f "$AVD_DIR/config.ini" ]; then
-  echo "hw.keyboard=yes" >>"$AVD_DIR/config.ini"
+  # The soft IME must be the input surface: with hw.keyboard=yes the emulator
+  # behaves as a hardware-keyboard device, the soft keyboard never shows, and
+  # injected key events go straight to the focused view, bypassing the IME
+  # (observed and diagnosed in the PR #174 device runs).
+  echo "hw.keyboard=no" >>"$AVD_DIR/config.ini"
 else
   echo "NOTE: AVD config.ini not located; relying on emulator defaults for hw.keyboard"
 fi
