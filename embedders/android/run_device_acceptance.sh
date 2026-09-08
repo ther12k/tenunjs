@@ -96,12 +96,20 @@ fi
 cat "$OUT_DIR/accel-check.txt"
 "$EMU_BIN" -version | head -3 | tee "$OUT_DIR/emulator-version.txt"
 
+export ANDROID_AVD_HOME="$HOME/.android/avd"
+mkdir -p "$ANDROID_AVD_HOME"
 echo no | "$AVDM" create avd --name "$AVD_NAME" --package "$TENUN_EMULATOR_IMAGE" --device "$TENUN_DEVICE_PROFILE" --force >"$OUT_DIR/avdmanager.txt" 2>&1 || {
   tail -10 "$OUT_DIR/avdmanager.txt"
   env_fail "avdmanager could not create the AVD"
 }
-# Physical-style key events must reach the IME through the input pipeline.
-echo "hw.keyboard=yes" >>"$HOME/.android/avd/$AVD_NAME.avd/config.ini"
+# Locate the created AVD dynamically rather than assuming its on-disk layout;
+# physical-style key events must reach the IME through the input pipeline.
+AVD_DIR="$("$AVDM" list avd 2>/dev/null | sed -n 's/^[[:space:]]*Path: //p' | head -1)"
+if [ -n "$AVD_DIR" ] && [ -f "$AVD_DIR/config.ini" ]; then
+  echo "hw.keyboard=yes" >>"$AVD_DIR/config.ini"
+else
+  echo "NOTE: AVD config.ini not located; relying on emulator defaults for hw.keyboard"
+fi
 
 "$EMU_BIN" -avd "$AVD_NAME" -accel on -no-window -no-audio -no-boot-anim \
   -gpu swiftshader_indirect -no-snapshot -camera-back none -camera-front none \
