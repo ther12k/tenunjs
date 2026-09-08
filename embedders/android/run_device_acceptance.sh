@@ -356,6 +356,13 @@ fi
 
 VAR_SHA_PUSH="$(sha256sum "$VAR_APK" | awk '{print $1}')"
 echo "variant APK (pushed) sha256: $VAR_SHA_PUSH"
+# Record signing-cert identities for both APKs (evidence disclosure).
+"$BUILD_TOOLS/apksigner" verify --print-certs "$STD_APK" >"$OUT_DIR/certs_standard.txt" 2>&1 || true
+"$BUILD_TOOLS/apksigner" verify --print-certs "$VAR_APK" >"$OUT_DIR/certs_variant.txt" 2>&1 || true
+# The variant may be signed by a different debug key than the standard APK;
+# a signature-mismatched UPDATE install must not fail the run — uninstall
+# and install fresh (the variant scenario needs only the variant app).
+"$ADB" uninstall "$APP_ID" >/dev/null 2>&1 || true
 if ! "$ADB" install -r "$VAR_APK" >"$OUT_DIR/adb_install_variant.txt" 2>&1; then
   tail -10 "$OUT_DIR/adb_install_variant.txt"
   accept_fail "variant APK install failed"
