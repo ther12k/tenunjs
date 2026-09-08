@@ -275,11 +275,26 @@ XMLS="$(find "$SCRIPT_DIR/app/build" -name 'TEST-*.xml' 2>/dev/null || true)"
 } >"$OUT_DIR/xml_discovery.txt"
 cat "$OUT_DIR/xml_discovery.txt"
 [ -n "$XMLS" ] || accept_fail "no instrumented test result XML was produced (see device-acceptance-output/xml_discovery.txt)"
-cp $XMLS "$OUT_DIR"/ || true
-SUM_TESTS="$(cat $XMLS | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
-SUM_FAILURES="$(cat $XMLS | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
-SUM_ERRORS="$(cat $XMLS | grep -o 'errors="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
-SUM_SKIPPED="$(cat $XMLS | grep -o 'skipped="[0-9]*"' | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+# Filenames contain spaces (e.g. 'TEST-emulator-5554 - 11-_app-.xml'), so
+# word-splitting is not allowed: each XML is read line-wise.
+SUM_TESTS=0
+SUM_FAILURES=0
+SUM_ERRORS=0
+SUM_SKIPPED=0
+while IFS= read -r xml; do
+  [ -n "$xml" ] || continue
+  cp "$xml" "$OUT_DIR"/ || true
+  T="$(grep -o 'tests="[0-9]*"' "$xml" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+  F="$(grep -o 'failures="[0-9]*"' "$xml" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+  E="$(grep -o 'errors="[0-9]*"' "$xml" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+  S="$(grep -o 'skipped="[0-9]*"' "$xml" | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}' || true)"
+  SUM_TESTS=$((SUM_TESTS + T))
+  SUM_FAILURES=$((SUM_FAILURES + F))
+  SUM_ERRORS=$((SUM_ERRORS + E))
+  SUM_SKIPPED=$((SUM_SKIPPED + S))
+done <<EOF
+$XMLS
+EOF
 echo "standard suite executed tests=$SUM_TESTS failures=$SUM_FAILURES errors=$SUM_ERRORS skipped=$SUM_SKIPPED"
 [ "$SUM_TESTS" -gt 0 ] || accept_fail "zero executed instrumented tests — this cannot be an acceptance pass"
 [ "$SUM_FAILURES" -eq 0 ] || accept_fail "$SUM_FAILURES instrumented test failure(s)"
