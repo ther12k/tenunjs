@@ -250,6 +250,10 @@ abstract class DeviceAcceptanceBase {
             }
         }
 
+        // Known limitation of this fallback: Android's 'input text' decodes
+        // %s but not other %XX sequences on all versions, so non-ASCII or
+        // quoted text may arrive escaped. The soft-key path above is the
+        // preferred route; this fallback is for plain ASCII words only.
         val encoded = java.net.URLEncoder.encode(text, "UTF-8").replace("+", "%20")
         shell("input text $encoded")
         println("INPUT-METHOD[$expectedField]: KEY_EVENT_INJECTION (fallback; soft-key taps unavailable), text=$text")
