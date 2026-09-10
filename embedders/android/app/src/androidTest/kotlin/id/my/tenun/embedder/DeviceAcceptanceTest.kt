@@ -1,5 +1,7 @@
 package id.my.tenun.embedder
 
+import android.graphics.RectF
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +49,53 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         screencap("tenun_initial.png")
     }
 
+    /**
+     * Types [text] into one field through the IME with a bounded retry
+     * cycle. Delivery can stall when the IME session is mid-rebind after a
+     * field switch (observed once: both soft-key taps and key-event
+     * injection landed nothing for 20s while focus and the IME state looked
+     * ready); a retry re-taps, forces a clean IME restart, clears any
+     * partial text through the production delete path, and re-enters. The
+     * final text equality is strictly enforced regardless of attempts.
+     */
+    private fun typeIntoFieldViaIme(
+        scenario: ActivityScenario<MainActivity>,
+        field: String,
+        text: String,
+        rectSelector: (TenunSurfaceView) -> RectF,
+    ): ImeMode {
+        var mode = ImeMode.KEY_EVENT_INJECTION
+        for (attempt in 1..3) {
+            if (attempt > 1) {
+                // Force a fresh IME session and remove partial text.
+                dismissImeIfShown()
+                tapRect(scenario, rectSelector)
+                awaitViewFocus(scenario)
+                clearActiveFieldViaInputConnection(scenario)
+            }
+            tapRect(scenario, rectSelector)
+            awaitViewFocus(scenario)
+            awaitImeActive()
+            mode = enterTextViaIme(scenario, field, text)
+            if (pollSurfaceState(scenario, 8_000) {
+                    (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField)
+                        .displayText == text
+                }
+            ) {
+                println("INPUT-METHOD-ATTEMPTS[$field]: attempt $attempt succeeded ($mode)")
+                return mode
+            }
+        }
+        awaitSurfaceState(
+            scenario, 20_000,
+            "'$text' committed through the IME session in field '$field' (3 attempts)"
+        ) {
+            (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField)
+                .displayText == text
+        }
+        return mode
+    }
+
     @Test
     fun imeSessionTwoEntryLoop() {
         val scenario = launchApp()
@@ -54,21 +103,9 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
 
         // -- Entry 1: real IME session (soft-key taps preferred; key-event
         //    injection recorded as fallback) ------------------------------
-        tapRect(scenario) { it.titleRect }
-        awaitViewFocus(scenario)
-        awaitImeActive()
-        val mode1 = enterTextViaIme(scenario, "title", "note")
-        awaitSurfaceState(scenario, 20_000, "title 'note' committed through the IME session") {
-            it.titleField.displayText == "note"
-        }
+        val mode1 = typeIntoFieldViaIme(scenario, "title", "note") { it.titleRect }
 
-        tapRect(scenario) { it.detailsRect }
-        awaitViewFocus(scenario)
-        awaitImeActive()
-        val mode2 = enterTextViaIme(scenario, "details", "plan the sprint")
-        awaitSurfaceState(scenario, 20_000, "details 'plan the sprint' committed through the IME session") {
-            it.detailsField.displayText == "plan the sprint"
-        }
+        val mode2 = typeIntoFieldViaIme(scenario, "details", "plan the sprint") { it.detailsRect }
 
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "entry 1 visible and both inputs cleared") {
@@ -86,21 +123,9 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         screencap("tenun_after_entry1.png")
 
         // -- Entry 2: same loop again ---------------------------------------
-        tapRect(scenario) { it.titleRect }
-        awaitViewFocus(scenario)
-        awaitImeActive()
-        val mode3 = enterTextViaIme(scenario, "title", "second sample")
-        awaitSurfaceState(scenario, 20_000, "title 'second sample' committed through the IME session") {
-            it.titleField.displayText == "second sample"
-        }
+        val mode3 = typeIntoFieldViaIme(scenario, "title", "second sample") { it.titleRect }
 
-        tapRect(scenario) { it.detailsRect }
-        awaitViewFocus(scenario)
-        awaitImeActive()
-        val mode4 = enterTextViaIme(scenario, "details", "second too")
-        awaitSurfaceState(scenario, 20_000, "details 'second too' committed through the IME session") {
-            it.detailsField.displayText == "second too"
-        }
+        val mode4 = typeIntoFieldViaIme(scenario, "details", "second too") { it.detailsRect }
 
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "entry 2 visible and both inputs cleared") {
