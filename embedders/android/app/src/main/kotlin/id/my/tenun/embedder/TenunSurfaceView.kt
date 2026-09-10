@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.text.InputType
 import android.util.AttributeSet
+import android.util.Log
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -64,6 +66,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     var engine: TenunEngine? = null
         set(value) {
             field = value
+            // Reflect the engine's already-committed scene (including the
+            // JS-provided button label) before the first draw, so the view
+            // renders the JavaScript application's initial state.
+            value?.getLatestScene()?.let { syncFromScene(it) }
             redraw()
         }
 
@@ -71,6 +77,11 @@ class TenunSurfaceView @JvmOverloads constructor(
     val titleField = EditableFieldState()
     val detailsField = EditableFieldState()
     val entries = mutableListOf<String>()
+
+    // Button label taken from the committed scene's button node, so a
+    // JavaScript-only label change is what renderScene draws.
+    var buttonLabel: String = "Add Entry"
+        private set
 
     private var isSurfaceValid = false
 
@@ -113,6 +124,10 @@ class TenunSurfaceView @JvmOverloads constructor(
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
+    }
+
+    companion object {
+        private const val TAG = "TenunSurfaceView"
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -183,6 +198,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         return object : BaseInputConnection(this, true) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 val str = text?.toString() ?: ""
+                Log.d(TAG, "IME commitText len=${str.length}")
                 getActiveFieldState().commit(str)
                 dispatchActiveFieldChange()
                 redraw()
@@ -191,6 +207,7 @@ class TenunSurfaceView @JvmOverloads constructor(
 
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 val str = text?.toString() ?: ""
+                Log.d(TAG, "IME setComposingText len=${str.length}")
                 // Replaces current composing span (not simple append)
                 getActiveFieldState().setComposing(str)
                 dispatchActiveFieldChange()
@@ -199,6 +216,7 @@ class TenunSurfaceView @JvmOverloads constructor(
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                Log.d(TAG, "IME deleteSurroundingText before=$beforeLength")
                 getActiveFieldState().deleteSurrounding(beforeLength)
                 dispatchActiveFieldChange()
                 redraw()
@@ -207,9 +225,28 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
     }
 
+    // Input-path diagnostics: whether hardware key events reach this view
+    // directly (instead of being routed through the IME session) is the
+    // discriminating signal for IME delivery issues.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        Log.d(TAG, "view onKeyDown keyCode=$keyCode")
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        Log.d(TAG, "view onKeyUp keyCode=$keyCode")
+        return super.onKeyUp(keyCode, event)
+    }
+
     private fun dispatchActiveFieldChange() {
         val state = getActiveFieldState()
-        val payload = "{\"field\":\"$activeField\",\"value\":\"${state.displayText}\"}"
+        // JSONObject escapes the value: raw interpolation would emit invalid
+        // JSON when the text contains quotes/backslashes, and the app's
+        // JSON.parse failure silently drops the SET_FIELD update.
+        val payload = JSONObject()
+            .put("field", activeField)
+            .put("value", state.displayText)
+            .toString()
         engine?.let { eng ->
             val sceneJson = eng.dispatchAction("SET_FIELD", payload)
             syncFromScene(sceneJson)
@@ -228,10 +265,14 @@ class TenunSurfaceView @JvmOverloads constructor(
                         "input" -> {
                             val f = node.optString("field")
                             val v = node.optString("value")
-                            if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                            // The JS application clears its state only in
+                            // ADD_ENTRY, so an empty scene value against
+                            // non-empty local text means the entry was just
+                            // committed: clear the editing field.
+                            if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty()) {
                                 titleField.reset()
                             }
-                            if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty() && entries.isNotEmpty()) {
+                            if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty()) {
                                 detailsField.reset()
                             }
                         }
@@ -240,6 +281,9 @@ class TenunSurfaceView @JvmOverloads constructor(
                             val d = node.optString("details")
                             val itemText = if (d.isNotEmpty()) "$t - $d" else t
                             entries.add(itemText)
+                        }
+                        "button" -> {
+                            buttonLabel = node.optString("text")
                         }
                     }
                 }
@@ -277,9 +321,9 @@ class TenunSurfaceView @JvmOverloads constructor(
         val displayDetails = if (detailsField.displayText.isEmpty()) "Enter Details..." else detailsField.displayText
         canvas.drawText(displayDetails, detailsRect.left + 20f, detailsRect.centerY() + 12f, if (detailsField.displayText.isEmpty()) labelPaint else textPaint)
 
-        // Add Button
+        // Add Button (label comes from the committed scene)
         canvas.drawRoundRect(buttonRect, 12f, 12f, buttonPaint)
-        canvas.drawText("Add Entry", buttonRect.left + 50f, buttonRect.centerY() + 12f, textPaint)
+        canvas.drawText(buttonLabel, buttonRect.left + 50f, buttonRect.centerY() + 12f, textPaint)
 
         // Entries List Header
         var currentY = 480f

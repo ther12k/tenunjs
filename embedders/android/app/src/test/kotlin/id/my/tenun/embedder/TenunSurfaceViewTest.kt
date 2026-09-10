@@ -58,11 +58,46 @@ class TenunSurfaceViewTest {
 
     @Test
     fun testSyncFromScene() {
+        // Mirrors TenunSurfaceView.syncFromScene semantics (kept in sync by
+        // hand; the view itself cannot be instantiated on the JVM):
+        //  - non-empty scene values do NOT overwrite local field text (the JS
+        //    application is the state authority; the view renders its own
+        //    editing state),
+        //  - an EMPTY scene value against non-empty local text resets the
+        //    field (the app clears state only in ADD_ENTRY),
+        //  - listItems rebuild the entries list.
         val titleField = EditableFieldState()
         val detailsField = EditableFieldState()
         val entries = mutableListOf<String>()
 
-        val sceneJson = """
+        fun syncFromScene(sceneJson: String) {
+            val root = org.json.JSONObject(sceneJson)
+            val children = root.getJSONObject("root").getJSONArray("children")
+            entries.clear()
+            for (i in 0 until children.length()) {
+                val node = children.getJSONObject(i)
+                when (node.getString("type")) {
+                    "input" -> {
+                        val f = node.getString("field")
+                        val v = node.getString("value")
+                        if (f == "title" && v.isEmpty() && titleField.displayText.isNotEmpty()) titleField.reset()
+                        if (f == "details" && v.isEmpty() && detailsField.displayText.isNotEmpty()) detailsField.reset()
+                    }
+                    "listItem" -> {
+                        val t = node.getString("title")
+                        val d = node.getString("details")
+                        entries.add(if (d.isNotEmpty()) "$t - $d" else t)
+                    }
+                }
+            }
+        }
+
+        // Scene echoing non-empty values while the user is typing: local
+        // editing state must be preserved, not replaced.
+        titleField.commit("Buy Milk")
+        detailsField.commit("2 Gallons")
+        syncFromScene(
+            """
             {
               "root": {
                 "id": 0,
@@ -76,29 +111,38 @@ class TenunSurfaceViewTest {
               },
               "entryCount": 1
             }
-        """.trimIndent()
-
-        val root = org.json.JSONObject(sceneJson)
-        val children = root.getJSONObject("root").getJSONArray("children")
-        for (i in 0 until children.length()) {
-            val node = children.getJSONObject(i)
-            when (node.getString("type")) {
-                "input" -> {
-                    if (node.getString("field") == "title") titleField.commit(node.getString("value"))
-                    if (node.getString("field") == "details") detailsField.commit(node.getString("value"))
-                }
-                "listItem" -> {
-                    val t = node.getString("title")
-                    val d = node.getString("details")
-                    entries.add("$t - $d")
-                }
-            }
-        }
-
+            """.trimIndent()
+        )
         assertEquals("Buy Milk", titleField.displayText)
         assertEquals("2 Gallons", detailsField.displayText)
         assertEquals(1, entries.size)
         assertEquals("First Item - Notes", entries[0])
+
+        // Post-ADD_ENTRY scene on the FIRST add: both values empty, first
+        // listItem present, local entries list still empty before this sync.
+        // Regression for the first-add clearing defect: the reset must not
+        // depend on the entries list already being non-empty.
+        syncFromScene(
+            """
+            {
+              "root": {
+                "id": 0,
+                "type": "column",
+                "children": [
+                  { "id": 1, "type": "input", "field": "title", "value": "" },
+                  { "id": 2, "type": "input", "field": "details", "value": "" },
+                  { "id": 3, "type": "button", "text": "Add Entry", "action": "ADD_ENTRY" },
+                  { "id": 100, "type": "listItem", "title": "Buy Milk", "details": "2 Gallons" }
+                ]
+              },
+              "entryCount": 1
+            }
+            """.trimIndent()
+        )
+        assertEquals("", titleField.displayText)
+        assertEquals("", detailsField.displayText)
+        assertEquals(1, entries.size)
+        assertEquals("Buy Milk - 2 Gallons", entries[0])
     }
 
     @Test
