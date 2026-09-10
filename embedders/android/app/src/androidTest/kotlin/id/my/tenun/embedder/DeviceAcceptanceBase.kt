@@ -101,10 +101,37 @@ abstract class DeviceAcceptanceBase {
         "input env: [$immDump] focus: [$focus]"
     }.getOrDefault("input environment diagnosis unavailable")
 
+    /** Non-failing variant of [awaitSurfaceState]: polls until [predicate]
+     *  holds or the timeout elapses, returning whether it was satisfied. */
+    protected fun pollSurfaceState(
+        scenario: ActivityScenario<MainActivity>,
+        timeoutMs: Long,
+        predicate: (TenunSurfaceView) -> Boolean,
+    ): Boolean {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (onViewSurface(scenario) { predicate(it) }) return true
+            SystemClock.sleep(200)
+        }
+        return onViewSurface(scenario) { predicate(it) }
+    }
+
     /**
-     * Taps the center of a scene rect through the system touch pipeline
-     * (UiDevice). The fullscreen theme means view coordinates equal display
-     * coordinates.
+     * Clears the active field through the production delete path
+     * (InputConnection.deleteSurroundingText → EditableFieldState), used to
+     * remove partial text between IME retry attempts. Adapter-level, like
+     * [commitViaInputConnection].
+     */
+    protected fun clearActiveFieldViaInputConnection(scenario: ActivityScenario<MainActivity>) {
+        onViewSurface(scenario) { v ->
+            val ic = v.onCreateInputConnection(EditorInfo())
+            ic?.deleteSurroundingText(1000, 0)
+        }
+    }
+
+    /** Taps a scene rect through the system touch pipeline
+     *  (UiDevice). The fullscreen theme means view coordinates equal display
+     *  coordinates.
      */
     protected fun tapRect(scenario: ActivityScenario<MainActivity>, rectSelector: (TenunSurfaceView) -> RectF) {
         val (x, y) = onViewSurface(scenario) { v ->
