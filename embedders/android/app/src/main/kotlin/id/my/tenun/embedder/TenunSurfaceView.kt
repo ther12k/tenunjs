@@ -240,7 +240,13 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     private fun dispatchActiveFieldChange() {
         val state = getActiveFieldState()
-        val payload = "{\"field\":\"$activeField\",\"value\":\"${state.displayText}\"}"
+        // JSONObject escapes the value: raw interpolation would emit invalid
+        // JSON when the text contains quotes/backslashes, and the app's
+        // JSON.parse failure silently drops the SET_FIELD update.
+        val payload = JSONObject()
+            .put("field", activeField)
+            .put("value", state.displayText)
+            .toString()
         engine?.let { eng ->
             val sceneJson = eng.dispatchAction("SET_FIELD", payload)
             syncFromScene(sceneJson)

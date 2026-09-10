@@ -127,27 +127,46 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         // INPUT METHOD: direct InputConnection adapter calls (not an IME
         // session). Exercises Kotlin String -> production JNI -> QuickJS ->
         // committed scene -> production JNI -> Kotlin String under CheckJNI.
-        val title = commitViaInputConnection(scenario, "title", "Note \uD83D\uDE00")
-        assertEquals("Note \uD83D\uDE00", title)
-        val details = commitViaInputConnection(scenario, "details", "チーム \uD83C\uDF89")
-        assertEquals("チーム \uD83C\uDF89", details)
+        // The samples include quote characters: they must survive JSON
+        // transport (an unescaped payload would silently drop the update).
+        val expectedTitle = "Note \uD83D\uDE00"
+        val expectedDetails = "チーム \"本番\" \uD83C\uDF89"
+        val title = commitViaInputConnection(scenario, "title", expectedTitle)
+        assertEquals(expectedTitle, title)
+        val details = commitViaInputConnection(scenario, "details", expectedDetails)
+        assertEquals(expectedDetails, details)
 
         onViewSurface(scenario) { v ->
-            val scene = v.engine!!.getLatestScene()
-            assertTrue(
-                "committed scene must round-trip the emoji title through the production JNI path",
-                scene.contains("Note \uD83D\uDE00")
+            // Parse the committed scene and compare exact input values rather
+            // than substrings: JSON-escaped text would defeat contains().
+            val children = org.json.JSONObject(v.engine!!.getLatestScene())
+                .getJSONObject("root")
+                .getJSONArray("children")
+            var titleValue: String? = null
+            var detailsValue: String? = null
+            for (i in 0 until children.length()) {
+                val node = children.getJSONObject(i)
+                if (node.optString("type") == "input") {
+                    when (node.optString("field")) {
+                        "title" -> titleValue = node.getString("value")
+                        "details" -> detailsValue = node.getString("value")
+                    }
+                }
+            }
+            assertEquals(
+                "emoji title must round-trip exactly through the production JNI path",
+                expectedTitle, titleValue
             )
-            assertTrue(
-                "committed scene must round-trip the Japanese/emoji details through the production JNI path",
-                scene.contains("チーム \uD83C\uDF89")
+            assertEquals(
+                "Japanese + quotes + emoji details must round-trip exactly through the production JNI path",
+                expectedDetails, detailsValue
             )
         }
 
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "Unicode entry rendered with inputs cleared") {
             it.entries.size == 1 &&
-                it.entries[0] == "Note \uD83D\uDE00 - チーム \uD83C\uDF89" &&
+                it.entries[0] == "$expectedTitle - $expectedDetails" &&
                 it.titleField.displayText.isEmpty() &&
                 it.detailsField.displayText.isEmpty()
         }
