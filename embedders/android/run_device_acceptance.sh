@@ -423,6 +423,9 @@ for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry 
 done
 [ "$PULL_FAIL" -eq 0 ] || accept_fail "required screenshot evidence is missing — visual evidence cannot be omitted from an acceptance pass"
 
+# Covers the application-execution window only: the log was cleared after
+# the deliberate CheckJNI activation (restart-window artifacts are disclosed
+# in environment.txt, not judged here).
 "$ADB" logcat -d >"$OUT_DIR/logcat_full.txt" 2>&1 || true
 if grep -qE "JNI DETECTED ERROR IN APPLICATION|art::JniAbort" "$OUT_DIR/logcat_full.txt"; then
   grep -nE "JNI DETECTED ERROR IN APPLICATION|art::JniAbort" "$OUT_DIR/logcat_full.txt" | head -5
