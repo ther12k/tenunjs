@@ -21,6 +21,18 @@ TenunJS is a new mobile-native UI framework. Application teams write TypeScript 
 > package ecosystem yet, and performance/smoothness claims are architectural
 > goals awaiting physical-device evidence — see
 > [Positioning vs React Native, Flutter, NativeScript, and Capacitor](02-architecture/framework-positioning.md).
+>
+> What is *executed* today is narrow and experimental: an Android embedder
+> foundation (`embedders/android/`) runs a limited JavaScript-driven
+> reference application — two text fields, an add button, an entry list —
+> installed and operated on a KVM-backed Android 11 emulator as a CI gate
+> (`verify-android-device`), with QuickJS executing the application bundle,
+> Unicode/quote text round-tripping through the production JNI path under
+> CheckJNI, real soft-keyboard input, and a JavaScript-only customization
+> observed on screen. Physical devices, screen readers, animation/scrolling,
+> the TSX widget layer, and iOS remain unimplemented or unexercised; see
+> [TN-132](06-issues/tn-132-installed-android-run-acceptance.md) for the
+> exact evidence boundary.
 
 
 This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**. TenunJS is not Bundar, is not a Bundar plugin, and does not use HTML or the DOM as its mobile rendering contract.
