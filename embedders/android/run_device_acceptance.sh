@@ -224,6 +224,14 @@ fi
   echo "keyguard: $("$ADB" shell dumpsys window policy 2>/dev/null | grep -iE 'mShowingLockscreen|KeyguardShowing|isKeyguardSecure' | head -2 | tr -d '\r')"
   echo "screen: $("$ADB" shell dumpsys power 2>/dev/null | grep -E 'mWakefulness=' | head -1 | tr -d '\r')"
 } >>"$OUT_DIR/environment.txt"
+# Disclose, then close, the restart window: killing the framework to enable
+# CheckJNI can crash system processes (observed: com.android.phone with
+# DeadSystemException) — an artifact of the deliberate activation, not an
+# application failure. The final fatal-exception/JNI-abort scan must judge
+# the application-execution window only, so the log is cleared here.
+RESTART_CRASHES="$(grep -c "FATAL EXCEPTION" "$OUT_DIR/logcat_checkjni_probe.txt" 2>/dev/null || true)"
+echo "framework_restart_fatal_exceptions: ${RESTART_CRASHES:-0} (restart-window artifacts of the deliberate CheckJNI activation; window disclosed and cleared before application execution)" >>"$OUT_DIR/environment.txt"
+"$ADB" logcat -c || true
 
 # Stabilize UI timing (does not affect CheckJNI or any assertion).
 "$ADB" shell settings put global window_animation_scale 0
@@ -415,6 +423,9 @@ for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry 
 done
 [ "$PULL_FAIL" -eq 0 ] || accept_fail "required screenshot evidence is missing — visual evidence cannot be omitted from an acceptance pass"
 
+# Covers the application-execution window only: the log was cleared after
+# the deliberate CheckJNI activation (restart-window artifacts are disclosed
+# in environment.txt, not judged here).
 "$ADB" logcat -d >"$OUT_DIR/logcat_full.txt" 2>&1 || true
 if grep -qE "JNI DETECTED ERROR IN APPLICATION|art::JniAbort" "$OUT_DIR/logcat_full.txt"; then
   grep -nE "JNI DETECTED ERROR IN APPLICATION|art::JniAbort" "$OUT_DIR/logcat_full.txt" | head -5
