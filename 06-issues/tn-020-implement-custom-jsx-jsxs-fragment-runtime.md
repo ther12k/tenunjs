@@ -31,6 +31,8 @@ depends_on:
 >
 > **Layering refinement (owner direction):** later items previously listed under this issue are recorded as LINKED downstream acceptance, not TN-020 scope, so this issue does not become a compiler-transform + virtual-tree + runtime-lifecycle + IME + device mega-issue. Progression: TSX transform (done) → virtual-tree contract (done, this note) → reconciliation semantics (**TN-052**) → runtime/controller lifecycle (**TN-024/TN-058**) → native widgets/IME (**TN-077/TN-078**) → device journeys (**TN-112/TN-115**). The boundary enforced by this slice: TSX → normalized virtual tree → STOP. No diffing, no mutation ops, no transactions.
 
+> **Closure record (2026-09-12):** CLOSED as satisfied by PRs #186 and #188 (merged; main at 2956b79). Every criterion TN-020 itself owns is met: the primary outcome (React-independent TSX transforms producing validated widget descriptions) is proven by real tsc-compiled fixtures executed end-to-end; strict compilation holds; positive and fail-closed behavior are automated (95 tests, 14 files, including red compile-time and runtime fixtures); the issue creates no durable state requiring lifecycle/cancellation semantics; generated fixture output is gitignored, so no committed artifact needs drift-checking; scope stayed within the declared boundary with scaffolding ownership notes on downstream issues; and `bun run verify:ts` reproduces from a clean checkout. Two criteria are deliberately left UNCHECKED as linked downstream acceptance per the owner's layering direction (2026-09-12): the text/IME fixture matrix (composition, emoji, bidi, secure entry, keyboard action, stale revision → TN-077/TN-078) and device/OS metadata for platform claims (no platform claim is made by this issue → TN-112/TN-115). The regression-test criterion is satisfied by the Fragment key-leak defect fixed in #188 (test fails against slice-1 code, passes after). Reconciliation identity and diffing remain owned by TN-052, which stays blocked by TN-051 — no ADR-0022 clause-3 exception applies to runtime semantics.
+
 ## Required outcome
 
 React-independent TSX transforms produce validated widget descriptions.
@@ -91,28 +93,28 @@ Paths are architectural guidance, not permission to change every listed area. Ke
 
 ## Acceptance criteria
 
-- [ ] **Primary outcome:** React-independent TSX transforms produce validated widget descriptions.
-- [ ] Public/internal types compile under strict settings with no unexplained escape to `any` or unsafe pointer/value casts.
-- [ ] Positive and fail-closed behavior are both covered by automated tests.
-- [ ] Ownership, lifecycle, cancellation, and disposal behavior are documented where the issue creates durable state.
-- [ ] No unresolved placeholder, silent fallback, or platform-only success is represented as complete.
-- [ ] Relevant generated artifacts are reproducible and drift-checked.
-- [ ] The issue stays within its declared scope; adjacent changes have separate issue references.
-- [ ] Reviewer can reproduce the result from a clean checkout using recorded commands.
+- [x] **Primary outcome:** React-independent TSX transforms produce validated widget descriptions.
+- [x] Public/internal types compile under strict settings with no unexplained escape to `any` or unsafe pointer/value casts.
+- [x] Positive and fail-closed behavior are both covered by automated tests.
+- [x] Ownership, lifecycle, cancellation, and disposal behavior are documented where the issue creates durable state.
+- [x] No unresolved placeholder, silent fallback, or platform-only success is represented as complete.
+- [x] Relevant generated artifacts are reproducible and drift-checked.
+- [x] The issue stays within its declared scope; adjacent changes have separate issue references.
+- [x] Reviewer can reproduce the result from a clean checkout using recorded commands.
 
 ## Required test matrix
 
-- [ ] Unit tests for the owned contract and failure codes.
-- [ ] A regression test that fails before the change and passes after it.
-- [ ] Clean-build or clean-test reproduction from the documented command.
+- [x] Unit tests for the owned contract and failure codes.
+- [x] A regression test that fails before the change and passes after it.
+- [x] Clean-build or clean-test reproduction from the documented command.
 - [ ] Composition, selection, emoji, bidi, secure entry, keyboard action, and stale-revision cases.
 
 ## Required closure evidence
 
-- [ ] Commit/PR reference and exact changed-file inventory.
-- [ ] Commands used and complete pass/fail summary.
-- [ ] Relevant generated contract or API diff.
-- [ ] Negative-case evidence showing the boundary fails as designed.
+- [x] Commit/PR reference and exact changed-file inventory.
+- [x] Commands used and complete pass/fail summary.
+- [x] Relevant generated contract or API diff.
+- [x] Negative-case evidence showing the boundary fails as designed.
 - [ ] Device/OS/build-mode metadata for every platform claim.
 
 ## Out of scope
