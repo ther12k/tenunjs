@@ -54,6 +54,25 @@ export class JsxValidationError extends Error {
   }
 }
 
+/**
+ * Key domain, decided deliberately rather than inherited from React:
+ * keys are `string | number` with NO implicit coercion — `1` and `"1"`
+ * are distinct identities — and `null`/`undefined` mean "unkeyed".
+ * Every other type (booleans, objects, symbols) is rejected with a
+ * stable TenunJS error instead of being silently stringified.
+ */
+function extractKey(explicit: Key | undefined, props: Record<string, unknown>): Key | null {
+  const raw: unknown = explicit !== undefined ? explicit : props.key;
+  delete props.key;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string" && typeof raw !== "number") {
+    throw new JsxValidationError(
+      `Invalid key: must be string or number (no coercion), got ${typeof raw}`
+    );
+  }
+  return raw;
+}
+
 export { JsxPropValidationError } from "./prop-codecs";
 
 /**
@@ -69,14 +88,16 @@ export function buildNode<P extends object = Record<string, unknown>>(
   key?: Key
 ): WidgetNode<P> {
   if (type === Fragment) {
-    // Fragments are virtual: no host kind, and children are extracted
+    // Fragments are virtual: no host kind, and children/key are extracted
     // from props exactly like the host path so normalization is identical.
     const fragmentProps = props ? { ...props } : ({} as P);
-    const children = (fragmentProps as { children?: WidgetChild }).children;
-    delete (fragmentProps as { children?: WidgetChild }).children;
+    const rawProps = fragmentProps as Record<string, unknown>;
+    const children = rawProps.children as WidgetChild | undefined;
+    delete rawProps.children;
+    const fragmentKey = extractKey(key, rawProps);
     return {
       kind: Fragment,
-      key: key ?? null,
+      key: fragmentKey,
       props: fragmentProps,
       children: normalizeChildren(children),
     };
@@ -95,11 +116,11 @@ export function buildNode<P extends object = Record<string, unknown>>(
   }
 
   const rawProps = props ? { ...props } : ({} as P);
-  const explicitKey = key !== undefined ? key : (rawProps as { key?: Key }).key ?? null;
-  delete (rawProps as { key?: Key }).key;
+  const record = rawProps as Record<string, unknown>;
 
-  const childrenProp = (rawProps as { children?: WidgetChild }).children;
-  delete (rawProps as { children?: WidgetChild }).children;
+  const childrenProp = record.children as WidgetChild | undefined;
+  delete record.children;
+  const explicitKey = extractKey(key, record);
 
   const children = normalizeChildren(childrenProp);
 

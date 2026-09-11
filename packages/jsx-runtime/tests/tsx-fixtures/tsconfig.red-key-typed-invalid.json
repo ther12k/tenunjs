@@ -1,0 +1,14 @@
+{
+  "//": "Red fixture: keys are string | number by contract; a boolean key must FAIL compilation at the type layer, and (per the runtime contract) would also be rejected at node construction.",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["red/key-typed-invalid.tsx"]
+}

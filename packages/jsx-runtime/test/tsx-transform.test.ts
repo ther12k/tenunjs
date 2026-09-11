@@ -73,6 +73,12 @@ describe("TN-020 automatic JSX transform fixtures", () => {
       "keys",
       "function-component",
       "runtime-invalid-prop",
+      "keyed-reorder",
+      "identity-unkeyed",
+      "nested-fragments",
+      "children-matrix",
+      "component-fragment",
+      "determinism",
     ];
     for (const name of productionFiles) {
       const text = readFileSync(EMIT("production", name), "utf-8");
@@ -177,9 +183,13 @@ describe("TN-020 automatic JSX transform fixtures", () => {
     expect(node.children).toEqual(["dev"]);
   });
 
-  test("runtime-invalid prop compiles but the prop codec rejects at runtime", async () => {
+  test("runtime-invalid prop compiles; the codec rejects at NODE CONSTRUCTION (the fixture's top-level JSX executes when its module is imported)", async () => {
     expect.assertions(2);
     try {
+      // The rejection is construction-time, not import-side-effect: the
+      // fixture's top-level JSX expression runs on module import, which
+      // builds the node and invokes the codec. Importing the runtime
+      // package itself is inert (proved in virtual-tree-contract.test.ts).
       await import(EMIT("production", "runtime-invalid-prop"));
       throw new Error("module should have been rejected by the prop codec");
     } catch (error) {
