@@ -1,8 +1,14 @@
 {
   // Type checking only; bun executes these files directly and never emits.
-  // Maintained surface: benchmarks/ and spikes/. spikes/vendor is vendored
-  // third-party source (yoga) with its own configs and must not enter this
-  // compilation; no first-party file imports it (verified via tsc --listFiles).
+  // Maintained surface: benchmarks/, spikes/, and packages/. spikes/vendor is
+  // vendored third-party source (yoga) with its own configs and must not
+  // enter this compilation; no first-party file imports it (verified via
+  // tsc --listFiles). The JSX fixtures under
+  // packages/jsx-runtime/tests/tsx-fixtures are likewise excluded: they are
+  // compiled by their OWN tsconfigs (react-jsx / react-jsxdev with the
+  // TenunJS jsxImportSource, TN-020) — dragging them into this root config
+  // would force repository-wide JSX compilation semantics they are
+  // specifically designed not to have.
   "compilerOptions": {
     "target": "esnext",
     "lib": ["esnext"],
@@ -13,5 +19,5 @@
     "noEmit": true
   },
   "include": ["benchmarks/**/*", "spikes/**/*", "packages/**/*"],
-  "exclude": ["spikes/vendor"]
+  "exclude": ["spikes/vendor", "packages/jsx-runtime/tests/tsx-fixtures"]
 }
