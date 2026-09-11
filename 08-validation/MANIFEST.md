@@ -120,7 +120,7 @@ status: accepted
 | 06-issues/tn-018-create-selected-native-engine-build-workspace.md | 6a931eafedea990d5f702756a04911da7e927272fba2cd0d1e5b6321dd1c402f |
 | 06-issues/tn-019-create-typescript-package-workspace-and-strict-configuration.md | bead32ad06ecb3ddb81e4437ba663c6aa993e21a82bf655f869652c3555e7145 |
 | 06-issues/tn-020-implement-custom-jsx-jsxs-fragment-runtime.md | 5f06c8975e07f45607900df9edbd47a9e2846a7d31bbbda50d038df9fee6fa48 |
-| 06-issues/tn-021-implement-project-configuration-schema-and-loader.md | d5d8f7e16b80e50c09a03cb9d23d1a0c97c2b60ca42c5be3468eec60e1a829d2 |
+| 06-issues/tn-021-implement-project-configuration-schema-and-loader.md | fc401fe06d0400da3caa6ccfc3e6c1c07c772ac4c844c966b4f6dc8d9e734548 |
 | 06-issues/tn-022-implement-module-graph-and-asset-manifest-builder.md | d4688e028a243e107e2f8507dd957e016049f13cb3b99e04c61717c1e60319c1 |
 | 06-issues/tn-023-implement-runtime-compatible-bundle-or-bytecode-compiler.md | 201613c6f7539f7e9117d4b4b2d6bd1d1a114e48bbe3500e57801ecd46651b1f |
 | 06-issues/tn-024-implement-native-runtime-host-lifecycle.md | f72a2bbf05ce28b93ab4b80157d3b8d540db2a14a8a25986de9ff90aa8b364a3 |
