@@ -49,12 +49,16 @@ describe("@tenunjs/jsx-runtime", () => {
     expect((node.children[3] as WidgetNode).kind).toBe(HostWidgetKind.SPACER);
   });
 
-  test("handles Fragment normalization", () => {
+  test("handles Fragment as a virtual (non-host) node with identical normalization", () => {
     const frag = jsx(Fragment, {
       children: ["One", "Two"],
     });
-    expect(frag.kind).toBe(HostWidgetKind.ROOT);
+    // Fragment is its own virtual kind — never a host widget kind.
+    expect(frag.kind).toBe(Fragment);
+    expect(frag.kind).not.toBe(HostWidgetKind.ROOT);
     expect(frag.children).toEqual(["One", "Two"]);
+    // Children are extracted from props exactly like the host path.
+    expect((frag.props as { children?: unknown }).children).toBeUndefined();
   });
 
   test("executes function widget returning a widget node", () => {

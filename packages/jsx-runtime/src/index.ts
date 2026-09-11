@@ -16,8 +16,17 @@ export interface SourceLocation {
 
 export type FunctionWidget<P = any> = (props: P) => WidgetNode<any> | null;
 
+/**
+ * Virtual node marker for JSX fragments. Distinct from every
+ * HostWidgetKind: a fragment carries no host semantics of its own and
+ * must never consume an ABI widget-kind value (TN-034 owns those).
+ */
+export const Fragment = Symbol.for("tenun.fragment");
+
+export type WidgetKind = HostWidgetKind | FunctionWidget<any> | typeof Fragment;
+
 export interface WidgetNode<P = any> {
-  readonly kind: HostWidgetKind | FunctionWidget<any>;
+  readonly kind: WidgetKind;
   readonly key: Key | null;
   readonly props: Readonly<P>;
   readonly children: readonly WidgetChild[];
@@ -32,8 +41,6 @@ export type WidgetChild =
   | null
   | undefined
   | readonly WidgetChild[];
-
-export const Fragment = Symbol.for("tenun.fragment");
 
 export class JsxValidationError extends Error {
   constructor(message: string) {
@@ -52,15 +59,16 @@ export function jsx<P extends object = Record<string, unknown>>(
   key?: Key
 ): WidgetNode<P> {
   if (type === Fragment) {
-    // Fragments normalize into an array or pass through children
-    const fragmentProps = (props || {}) as P;
+    // Fragments are virtual: no host kind, and children are extracted
+    // from props exactly like the host path so normalization is identical.
+    const fragmentProps = props ? { ...props } : ({} as P);
     const children = (fragmentProps as { children?: WidgetChild }).children;
-    const normalizedChildren = normalizeChildren(children);
+    delete (fragmentProps as { children?: WidgetChild }).children;
     return {
-      kind: HostWidgetKind.ROOT,
+      kind: Fragment,
       key: key ?? null,
       props: fragmentProps,
-      children: normalizedChildren,
+      children: normalizeChildren(children),
     };
   }
 
