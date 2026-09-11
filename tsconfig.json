@@ -12,6 +12,6 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["benchmarks/**/*", "spikes/**/*"],
+  "include": ["benchmarks/**/*", "spikes/**/*", "packages/**/*"],
   "exclude": ["spikes/vendor"]
 }

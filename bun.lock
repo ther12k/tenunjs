@@ -9,8 +9,66 @@
         "typescript": "7.0.2",
       },
     },
+    "packages/cli": {
+      "name": "@tenunjs/cli",
+      "version": "0.1.0",
+      "bin": {
+        "tenun": "./bin/tenun.js",
+      },
+      "dependencies": {
+        "@tenunjs/protocol": "workspace:*",
+      },
+    },
+    "packages/core": {
+      "name": "@tenunjs/core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/protocol": "workspace:*",
+      },
+    },
+    "packages/jsx-runtime": {
+      "name": "@tenunjs/jsx-runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/protocol": "workspace:*",
+      },
+    },
+    "packages/navigation": {
+      "name": "@tenunjs/navigation",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/protocol": "workspace:*",
+      },
+    },
+    "packages/protocol": {
+      "name": "@tenunjs/protocol",
+      "version": "0.1.0",
+    },
+    "packages/widgets": {
+      "name": "@tenunjs/widgets",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/protocol": "workspace:*",
+      },
+    },
   },
   "packages": {
+    "@tenunjs/cli": ["@tenunjs/cli@workspace:packages/cli"],
+
+    "@tenunjs/core": ["@tenunjs/core@workspace:packages/core"],
+
+    "@tenunjs/jsx-runtime": ["@tenunjs/jsx-runtime@workspace:packages/jsx-runtime"],
+
+    "@tenunjs/navigation": ["@tenunjs/navigation@workspace:packages/navigation"],
+
+    "@tenunjs/protocol": ["@tenunjs/protocol@workspace:packages/protocol"],
+
+    "@tenunjs/widgets": ["@tenunjs/widgets@workspace:packages/widgets"],
+
     "@types/bun": ["@types/bun@1.4.1", "", { "dependencies": { "bun-types": "1.4.1" } }, "sha512-0AVGiTXGajf1rgKom3N+c5L7CBxuoyyv1i44M0nX4UDK0G/fnRAMiri93nHuVPIb429KKtAgj7HatVmmOjeQLA=="],
 
     "@types/node": ["@types/node@26.4.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-k97ENvZWtvA6yqz5/FS6a7duDgOPEeOQOc2iKS/nY6mX6qJUKtLnWzQS+Xj6tXweyj6ZcTAK2Qecetnvi9nCLA=="],
