@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced a provisional `HostWidgetKind` declaration in `packages/protocol`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of the authoritative host-widget-kind map (including any numeric ABI binding), the property schema registry, and their validation contracts. Existing scaffolding may be replaced — including renumbering or re-representing the kind values — without ceremony.
+
 ## Required outcome
 
 Numeric widget kinds and generated typed property codecs share one canonical manifest.

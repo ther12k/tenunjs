@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Required supporting work |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced preliminary `defineTheme`/`ThemeProvider` in `packages/widgets`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of typed theme tokens, inherited widget context, and token resolution semantics. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Typed colors, spacing, radius, typography, locale, scale, and platform values flow predictably.

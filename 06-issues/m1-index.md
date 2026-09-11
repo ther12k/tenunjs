@@ -27,3 +27,8 @@ Compile TSX and execute a verified application bundle inside iOS and Android hos
 | [TN-030](tn-030-implement-cross-layer-structured-error-codes-and-crash-boundaries.md) | P0 | TN-024, TN-028, TN-029 | Application, runtime, engine, renderer, and embedder failures are attributable and symbolized. |
 | [TN-031](tn-031-implement-unified-development-log-transport.md) | P1 | TN-028, TN-029, TN-030 | CLI receives ordered JS, engine, renderer, and platform logs with source ownership. |
 | [TN-032](tn-032-close-the-executable-runtime-and-embedder-gate.md) | P0 | TN-020, TN-028, TN-029, TN-030, TN-031 | One TSX bundle runs deterministically on physical iOS and Android with reproducible evidence. |
+
+## Notes
+
+- TN-019 was executed while TN-017 remained open, under the accepted dependency exception in [ADR-0022](../03-decisions/adr-0022-m0-gates-blocked-on-device-availability.md) clause 3 (TypeScript package tooling depends on no M0 selection). The dependency edge is unchanged; see the status note in the issue.
+- TN-019's PRs (#181, #182) also landed preliminary scaffolding touching TN-020, TN-034, TN-055–TN-057, TN-062, TN-063, and TN-068. Those issues retain ownership of their deliverables; the scaffolding notes in each issue record the boundary.

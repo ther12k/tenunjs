@@ -25,6 +25,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced a placeholder `NavigationHost` that renders a static node; no stack exists. This issue retains ownership of stack navigation, per-route screen lifecycle, focus restoration, and cancellation around transitions. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Push, replace, pop, modal, load, pause, resume, and dispose behavior is deterministic.

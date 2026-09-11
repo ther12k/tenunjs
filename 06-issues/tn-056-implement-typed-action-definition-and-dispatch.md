@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced a preliminary `defineAction` in `packages/core`. That declaration does not satisfy this issue's acceptance criteria. This issue retains ownership of the typed dispatch pipeline, stable action handles, typed input validation, and dispatch tracing. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Events dispatch statically registered typed actions with validated payloads.
