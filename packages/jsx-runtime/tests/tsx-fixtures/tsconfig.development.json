@@ -1,0 +1,16 @@
+{
+  "//": "TN-020 development fixture config: react-jsxdev transform. jsxDEV receives file/line/column source info from the compiler; the runtime must preserve it on the virtual node.",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsxdev",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": false,
+    "outDir": ".out/development",
+    "rootDir": "../../../..",
+    "types": []
+  },
+  "include": ["development/**/*.tsx"]
+}

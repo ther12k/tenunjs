@@ -1,0 +1,14 @@
+{
+  "//": "Red fixture: a broken runtime subpath/export must FAIL resolution, proving TN-020 verification catches a severed automatic-transform import.",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["red/broken-runtime-subpath.tsx"]
+}

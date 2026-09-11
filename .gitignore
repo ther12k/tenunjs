@@ -7,3 +7,5 @@ target/
 .DS_Store
 *.tsbuildinfo
 .bun-cache/
+# TN-020 TSX fixture emit output (packages/jsx-runtime/tests/tsx-fixtures)
+.out/

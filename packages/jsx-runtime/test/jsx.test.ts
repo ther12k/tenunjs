@@ -11,21 +11,21 @@ import {
 describe("@tenunjs/jsx-runtime", () => {
   test("creates a host widget node with props and children", () => {
     const node = jsx(HostWidgetKind.BUTTON, {
-      title: "Click me",
+      variant: "secondary",
       children: ["Button Text"],
     });
 
     expect(node.kind).toBe(HostWidgetKind.BUTTON);
-    expect(node.props.title).toBe("Click me");
+    expect(node.props.variant).toBe("secondary");
     expect(node.children).toEqual(["Button Text"]);
     expect(node.key).toBeNull();
   });
 
   test("handles explicit key parameter and key in props", () => {
-    const node1 = jsx(HostWidgetKind.TEXT, { text: "Item" }, "item-1");
+    const node1 = jsx(HostWidgetKind.TEXT, { variant: "body" }, "item-1");
     expect(node1.key).toBe("item-1");
 
-    const node2 = jsx(HostWidgetKind.TEXT, { text: "Item", key: "item-2" });
+    const node2 = jsx(HostWidgetKind.TEXT, { variant: "body", key: "item-2" });
     expect(node2.key).toBe("item-2");
     expect((node2.props as any).key).toBeUndefined();
   });

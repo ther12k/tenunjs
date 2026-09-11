@@ -1,0 +1,16 @@
+{
+  "//": "TN-020 production fixture config: TypeScript react-jsx automatic transform through the TenunJS runtime subpath. Owns JSX compilation semantics for the fixtures so the root config never has to.",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": false,
+    "outDir": ".out/production",
+    "rootDir": "../../../..",
+    "types": []
+  },
+  "include": ["production/**/*.tsx"]
+}

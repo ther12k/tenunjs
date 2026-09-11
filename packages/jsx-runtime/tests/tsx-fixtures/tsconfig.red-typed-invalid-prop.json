@@ -1,0 +1,14 @@
+{
+  "//": "Red fixture: a typed-invalid prop must FAIL compilation. The compile-time guarantee lives in the JSX type namespace, not the runtime codec.",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["red/typed-invalid-prop.tsx"]
+}

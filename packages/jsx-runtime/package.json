@@ -8,5 +8,10 @@
   "license": "MIT",
   "dependencies": {
     "@tenunjs/protocol": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-dev-runtime.ts"
   }
 }

@@ -25,6 +25,8 @@ depends_on:
 
 > **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced preliminary `jsx`/`jsxs`/`Fragment` functions in `packages/jsx-runtime`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of the TSX transform wiring (`jsxImportSource`), prop codecs, source-location capture, development diagnostics, and the reconciler-facing contract tests. Existing scaffolding may be replaced without ceremony.
 
+> **Status note (2026-09-11, narrowed slice executed):** Per the owner's TN-020 brief, the automatic TSX transform slice is executed: `@tenunjs/jsx-runtime` exposes `./jsx-runtime` (production `jsx`/`jsxs` + JSX namespace) and `./jsx-dev-runtime` (`jsxDEV` preserving file/line/column; production nodes carry no source), proven by real `.tsx` compile-and-execute fixtures through TypeScript's `react-jsx` and `react-jsxdev` transforms, with red fixtures proving typed-invalid props fail compilation and a broken runtime subpath fails resolution. A provisional symbolic prop-codec boundary enforces per-kind prop correctness at runtime; the authoritative property schema registry remains TN-034's, and the Fragment-is-virtual invariant is pinned in tests. Still owned here and open: reconciler contract tests beyond the normalized-node shape, transform-independent runtime lifecycle tests, text/IME fixtures, and physical-device journeys. Reconciliation, transactions, routing, and numeric ABI stay out of scope.
+
 ## Required outcome
 
 React-independent TSX transforms produce validated widget descriptions.
