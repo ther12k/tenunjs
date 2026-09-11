@@ -31,4 +31,4 @@ status: accepted
 | [ADR-0019](adr-0019-physical-device-release-gates.md) | Physical-device release gates | accepted |
 | [ADR-0020](adr-0020-mobile-first-platform-sequencing.md) | Mobile-first platform sequencing | accepted |
 | [ADR-0021](adr-0021-product-charter-freeze.md) | Product charter freeze | accepted |
-| [ADR-0022](adr-0022-m0-gates-blocked-on-device-availability.md) | M0 selection gates blocked on device availability; provisional embedder runtime | proposed |
+| [ADR-0022](adr-0022-m0-gates-blocked-on-device-availability.md) | M0 selection gates blocked on device availability; provisional embedder runtime | accepted |

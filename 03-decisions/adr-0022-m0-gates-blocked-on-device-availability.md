@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "ADR-0022: M0 selection gates blocked on device availability; provisional runtime in the experimental embedder"
 summary: "Record the M0 selection gates as BLOCKED_BY_ENVIRONMENT on physical-device evidence; the Android embedder's vendored QuickJS is provisional behind the runtime adapter and concludes no bake-off."
 type: decision
-status: proposed
+status: accepted
 ---
 
 # ADR-0022: M0 selection gates blocked on device availability; provisional runtime in the experimental embedder
@@ -30,7 +30,7 @@ This ADR is filed under the exception clause every affected gate carries:
 "Any exception requires a new ADR that names the violated invariant and
 rollback plan."
 
-## Decision (proposed)
+## Decision
 
 1. The three M0 selection gates are recorded as
    **BLOCKED_BY_ENVIRONMENT** on physical-device availability. They are not
