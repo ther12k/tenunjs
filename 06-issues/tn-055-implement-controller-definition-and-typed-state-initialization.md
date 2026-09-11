@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced a preliminary `defineController` in `packages/core`. That declaration does not satisfy this issue's acceptance criteria. This issue retains ownership of generation-safe controller identity, dependency registration, deterministic initialization semantics, and their fail-closed tests. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Controllers own typed state, generation, dependencies, and deterministic initialization.

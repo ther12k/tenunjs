@@ -23,6 +23,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced preliminary `jsx`/`jsxs`/`Fragment` functions in `packages/jsx-runtime`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of the TSX transform wiring (`jsxImportSource`), prop codecs, source-location capture, development diagnostics, and the reconciler-facing contract tests. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 React-independent TSX transforms produce validated widget descriptions.

@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced preliminary `defineRoutes`/route builders in `packages/navigation`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of the typed route and navigation state model, parameter schemas with untrusted-input validation, and the deep-link policy. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Route schemas, stack entries, modal entries, and restoration metadata are versioned.

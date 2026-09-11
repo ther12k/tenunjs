@@ -24,6 +24,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Status note (2026-09-11, execution record):** Executed and merged as PR #181 (defect fixes in PR #182). Dependency exception: TN-017 was open at execution time; work proceeded under the accepted exception in [ADR-0022](../03-decisions/adr-0022-m0-gates-blocked-on-device-availability.md) clause 3 — TypeScript package tooling depends on no M0 selection. The dependency edge is retained, not waived. The same PRs landed preliminary scaffolding for TN-020, TN-034, TN-055, TN-056, TN-057, TN-062, TN-063, and TN-068; those issues retain ownership of their actual deliverables (see the scaffolding notes in each issue).
+
 ## Required outcome
 
 Publishable package skeleton with strict type checking and dependency boundaries.

@@ -17,7 +17,7 @@ status: accepted
 - All resources are Markdown.
 - Every resource has OKF v0.2 frontmatter with title, summary, type, and status.
 - Internal Markdown links resolve.
-- Issue IDs are unique and continuous from TN-001 through TN-130.
+- Issue IDs are unique and continuous from TN-001 through TN-130, plus follow-up probes TN-131 and TN-132.
 - Every declared issue dependency exists and points backward.
 - The issue dependency graph is acyclic.
 - All eight milestones have implementation issues and exit outcomes.
@@ -29,6 +29,10 @@ status: accepted
 - Issues: 130
 - Dependency edges: 402
 - Topological waves: 60
-- ADRs: 20
+- ADRs: 22
+
+(Graph counts describe the `05-delivery/dependency-graph.md` table, which the
+follow-up probes TN-131/TN-132 sit outside; the ADR count reflects the index
+through ADR-0022.)
 
 This validates document structure and graph consistency. It does not claim that the framework implementation already exists.

@@ -25,6 +25,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) scaffolding mutates controller state by direct object assignment; no transaction machinery exists. This issue retains ownership of atomic, validated, bounded state transactions with defined commit/failure semantics. Existing scaffolding may be replaced without ceremony.
+
 ## Required outcome
 
 Synchronous mutations publish one coherent render and rollback on thrown action errors.
