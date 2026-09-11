@@ -113,6 +113,20 @@ jobs:
           path: embedders/android/device-acceptance-output/
           if-no-files-found: warn
 
+  # Content-manifest integrity gate: 08-validation/MANIFEST.md must stay a
+  # bijective, correctly-hashed, ASCII-sorted index of every governed
+  # Markdown resource. Drift previously accumulated while CI stayed green;
+  # this job makes the property enforced (selftest proves the checker
+  # detects every mutation class before the production check runs).
+  verify-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Manifest checker mutation selftest
+        run: python3 ./.github/scripts/verify-manifest.py --selftest
+      - name: Verify content manifest
+        run: python3 ./.github/scripts/verify-manifest.py
+
   verify-evidence:
     runs-on: ubuntu-latest
     env:
