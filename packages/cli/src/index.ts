@@ -4,6 +4,21 @@
  * Developer CLI commands and workspace orchestration (TN-105, TN-106).
  */
 
+export {
+  CONFIG_VERSION,
+  TenunConfigError,
+  defineConfig,
+  loadConfig,
+} from "./config";
+export type {
+  ConfigDiagnostic,
+  ConfigLoadResult,
+  Platform,
+  TenunConfig,
+  TenunConfigErrorCode,
+  TenunConfigInput,
+} from "./config";
+
 export const CLI_VERSION = "0.1.0-alpha";
 
 export interface CliCommand {

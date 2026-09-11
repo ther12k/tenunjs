@@ -23,6 +23,8 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Required supporting work |
 
+> **Status note (2026-09-12, executed):** Implemented in `packages/cli/src/config.ts` (developer-tooling home; TN-105/TN-106 consume it here). Contract: `loadConfig(source: unknown)` validates untrusted input fail-closed — no coercion anywhere, unknown top-level keys rejected, structured path-addressable `TenunConfigError` codes — and applies documented defaults (projectName pattern-enforced; displayName/platforms/entry/outDir/diagnostics), each reported as an explicit diagnostic so default-reliance is inspectable, never silent. Loaded configs are deeply frozen and deterministic. `defineConfig` gives trusted TS authoring the same eager rules. Schema covers projectName/displayName/platforms/entry/outDir/diagnostics; filesystem and module-resolution validation deliberately wait for TN-022 (its consumer). Placement note recorded: non-CLI consumers must declare the dependency per workspace policy — a TN-022 boundary question then, not pre-solved now.
+
 ## Required outcome
 
 Typed fail-closed application configuration with diagnostics and defaults.
