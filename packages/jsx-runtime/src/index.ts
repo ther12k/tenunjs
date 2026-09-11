@@ -72,15 +72,15 @@ export function jsx<P extends object = Record<string, unknown>>(
     };
   }
 
-  if (typeof type !== "function" && typeof type !== "number") {
+  if (typeof type !== "function" && typeof type !== "string") {
     throw new JsxValidationError(
-      `Invalid widget kind: expected function component or HostWidgetKind number, got ${typeof type}`
+      `Invalid widget kind: expected function component or HostWidgetKind, got ${typeof type}`
     );
   }
 
-  if (typeof type === "number" && !isValidWidgetKind(type)) {
+  if (typeof type === "string" && !isValidWidgetKind(type)) {
     throw new JsxValidationError(
-      `Invalid host widget kind: ${type} is outside known HostWidgetKind range`
+      `Invalid host widget kind: "${type}" is not a known HostWidgetKind`
     );
   }
 
