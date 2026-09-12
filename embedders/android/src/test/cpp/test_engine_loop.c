@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#ifdef TENUN_TEST_INJECTION
+extern tenun_init_stage tenun_test_inject_init_failure;
+#endif
 
 static int failures = 0;
 #define CHECK(cond, msg) do { \
@@ -143,6 +149,124 @@ int main(int argc, char** argv) {
   // 11. Verify destruction lifecycle
   tenun_android_engine_destroy(engine);
   CHECK(1, "Engine destroyed cleanly without memory leaks");
+
+  printf("== 10. Init-failure stage diagnostics (incident #191, test-only injection) ==\n");
+#ifdef TENUN_TEST_INJECTION
+  {
+    const char* capture_path = "/tmp/tenun_init_capture.txt";
+    struct StageCase {
+      tenun_init_stage stage;
+      const char* stage_name;
+    } cases[] = {
+      {TENUN_INIT_ENGINE_ALLOC, "engine_alloc"},
+      {TENUN_INIT_RUNTIME_CREATE, "runtime_create"},
+      {TENUN_INIT_CONTEXT_CREATE, "context_create"},
+    };
+    const char* good_bundle = "var state = {}; tenun_commit('{}');";
+    long prev_attempt = 0;
+
+    /* Real (non-injected) invalid-bundle failure first. */
+    {
+      fflush(stderr);
+      int saved_err = dup(fileno(stderr));
+      int cap_fd = open(capture_path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+      dup2(cap_fd, fileno(stderr));
+      close(cap_fd);
+
+      tenun_android_engine* failed = tenun_android_engine_create((const uint8_t*)good_bundle, 0);
+
+      fflush(stderr);
+      dup2(saved_err, fileno(stderr));
+      close(saved_err);
+      CHECK(failed == NULL, "empty bundle fails closed");
+      FILE* cap = fopen(capture_path, "r");
+      char log[512];
+      int saw = 0;
+      if (cap) {
+        while (fgets(log, sizeof(log), cap)) {
+          if (strstr(log, "TENUN_ENGINE_INIT_FAILED stage=invalid_bundle attempt=") == log) { saw = 1; break; }
+        }
+        fclose(cap);
+      }
+      CHECK(saw, "invalid_bundle stage reported with correlation id");
+    }
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+      fflush(stderr);
+      int saved_err = dup(fileno(stderr));
+      int cap_fd = open(capture_path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+      dup2(cap_fd, fileno(stderr));
+      close(cap_fd);
+
+      tenun_test_inject_init_failure = cases[i].stage;
+      tenun_android_engine* failed = tenun_android_engine_create((const uint8_t*)good_bundle, strlen(good_bundle));
+
+      fflush(stderr);
+      dup2(saved_err, fileno(stderr));
+      close(saved_err);
+      tenun_test_inject_init_failure = TENUN_INIT_OK;
+
+      CHECK(failed == NULL, "injected init failure fails closed (no behavior change to the contract)");
+
+      FILE* cap = fopen(capture_path, "r");
+      char log[512];
+      char expected[128];
+      int saw_line = 0;
+      long attempt = -1;
+      if (cap) {
+        while (fgets(log, sizeof(log), cap)) {
+          snprintf(expected, sizeof(expected), "TENUN_ENGINE_INIT_FAILED stage=%s attempt=", cases[i].stage_name);
+          if (strstr(log, expected) == log) {
+            saw_line = 1;
+            char* at = strstr(log, "attempt=");
+            if (at) attempt = strtol(at + 8, NULL, 10);
+            break;
+          }
+        }
+        fclose(cap);
+      }
+      snprintf(expected, sizeof(expected), "stage=%s reported with correlation id", cases[i].stage_name);
+      CHECK(saw_line, expected);
+      CHECK(attempt > prev_attempt, "attempt correlation id strictly increases");
+      prev_attempt = attempt;
+
+      /* Cleanup-path sanity: after each injected failure, a normal init in
+       * the SAME process must still succeed (already-created resources were
+       * released on the failure path; no corrupted global state). */
+      tenun_android_engine* ok = tenun_android_engine_create((const uint8_t*)good_bundle, strlen(good_bundle));
+      CHECK(ok != NULL, "normal init still succeeds after injected failure (cleanup path intact)");
+      if (ok) tenun_android_engine_destroy(ok);
+    }
+
+    /* script_eval stage: a REAL failure (invalid JS) — no injection. A
+     * context exists at this stage, so the JS exception is reported. */
+    {
+      fflush(stderr);
+      int saved_err = dup(fileno(stderr));
+      int cap_fd = open(capture_path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+      dup2(cap_fd, fileno(stderr));
+      close(cap_fd);
+      const char* bad_js = "function broken( {";
+      tenun_android_engine* failed = tenun_android_engine_create((const uint8_t*)bad_js, strlen(bad_js));
+      fflush(stderr);
+      dup2(saved_err, fileno(stderr));
+      close(saved_err);
+      CHECK(failed == NULL, "invalid JS fails closed");
+      FILE* cap = fopen(capture_path, "r");
+      char log[512];
+      int saw_eval = 0;
+      if (cap) {
+        while (fgets(log, sizeof(log), cap)) {
+          if (strstr(log, "TENUN_ENGINE_INIT_FAILED stage=script_eval attempt=") == log) { saw_eval = 1; break; }
+        }
+        fclose(cap);
+      }
+      CHECK(saw_eval, "script_eval stage reported (JS exception available; context exists)");
+    }
+  }
+#else
+  printf("SKIPPED: TENUN_TEST_INJECTION not defined (Android/NDK builds exclude injection)\n");
+#endif
 
   if (failures > 0) {
     printf("FAILED: %d checks failed\n", failures);
