@@ -8,7 +8,7 @@ WORK_DIR="/tmp/tenun-android-test"
 mkdir -p "$WORK_DIR"
 
 echo "== 1. Compiling Android native bridge with embedded QuickJS =="
-cc -std=c11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
+cc -std=c11 -O2 -D_GNU_SOURCE -DTENUN_TEST_INJECTION -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
   -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter -Wno-implicit-fallthrough \
   -I"$SCRIPT_DIR/app/src/main/cpp" \
   -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \

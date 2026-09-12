@@ -16,6 +16,34 @@ extern "C" {
 
 typedef struct tenun_android_engine tenun_android_engine;
 
+/*
+ * Initialization failure stages (incident #191 diagnostics). Every early
+ * return on the init failure path is attributable to exactly one stage;
+ * success/failure behavior is unchanged by the instrumentation.
+ */
+typedef enum tenun_init_stage {
+  TENUN_INIT_OK = 0,
+  TENUN_INIT_INVALID_BUNDLE,   /* NULL/empty bundle bytes */
+  TENUN_INIT_ENGINE_ALLOC,     /* calloc of the engine struct failed */
+  TENUN_INIT_RUNTIME_CREATE,   /* JS_NewRuntime failed */
+  TENUN_INIT_CONTEXT_CREATE,   /* JS_NewContext failed */
+  TENUN_INIT_JNI_BUNDLE_READ,  /* JNI array access failed (Android only) */
+  TENUN_INIT_SCRIPT_EVAL       /* JS_Eval raised (JS exception already logged) */
+} tenun_init_stage;
+
+/* Monotonic init attempt counter (diagnostic correlation id). */
+long tenun_android_next_init_attempt(void);
+
+#ifdef TENUN_TEST_INJECTION
+/*
+ * TEST-ONLY failure injection (incident #191 acceptance): compiled only
+ * when the host test build defines TENUN_TEST_INJECTION. Never defined
+ * for the Android (CMake) or NDK cross builds. No runtime toggle exists
+ * in shipped artifacts.
+ */
+extern tenun_init_stage tenun_test_inject_init_failure;
+#endif
+
 /* Public Native Engine C API */
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len);
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json);
