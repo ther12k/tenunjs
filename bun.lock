@@ -12,11 +12,9 @@
     "packages/cli": {
       "name": "@tenunjs/cli",
       "version": "0.1.0",
-      "bin": {
-        "tenun": "./bin/tenun.js",
-      },
       "dependencies": {
         "@tenunjs/protocol": "workspace:*",
+        "typescript": "7.0.2",
       },
     },
     "packages/core": {
