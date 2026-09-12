@@ -24,7 +24,7 @@ All packages are strictly acyclic and compile under TypeScript `strict: true` wi
 | `@tenunjs/core` | Controller and typed action state model, screen definition, and application lifecycle (ADR-0009, TN-055–TN-057) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime` |
 | `@tenunjs/widgets` | Core layout and UI widgets (`Column`, `Row`, `Text`, `Button`, `Card`, `Scaffold`, `AppBar`) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime` |
 | `@tenunjs/navigation` | Typed route definitions, route builders, and `NavigationHost` (ADR-0010, TN-062, TN-063) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime`, `@tenunjs/core` |
-| `@tenunjs/cli` | Unified developer command-line interface | `@tenunjs/protocol` |
+| `@tenunjs/cli` | Developer CLI entrypoint, command registry, project configuration schema/loader (TN-021), and the module-graph/asset-manifest builder (TN-022: discovery without execution, runtime/type/implicit edge tracking, content-hashed deterministic manifests) | `@tenunjs/protocol` |
 
 ## Verification
 

@@ -19,6 +19,21 @@ export type {
   TenunConfigInput,
 } from "./config";
 
+export {
+  GRAPH_VERSION,
+  ModuleGraphError,
+  buildApplicationGraph,
+} from "./module-graph";
+export type {
+  ApplicationGraph,
+  AssetRecord,
+  EdgeKind,
+  GraphBuildOptions,
+  GraphDiagnostic,
+  ModuleRecord,
+  ResolvedImport,
+} from "./module-graph";
+
 export const CLI_VERSION = "0.1.0-alpha";
 
 export interface CliCommand {

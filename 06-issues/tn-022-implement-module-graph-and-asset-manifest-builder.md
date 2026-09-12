@@ -24,6 +24,10 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+> **Status note (2026-09-12, slice executed - issue stays open):** Per the owner's narrowed brief, the module-graph/asset-manifest slice is executed in `packages/cli/src/module-graph.ts`: `buildApplicationGraph(validatedConfig, projectRoot, {assets, jsxDevelopment})` consumes the TN-021 config contract (no second defaults/validation layer) plus the project filesystem and produces a deterministic graph + content-hashed asset manifest. Contract: discovery WITHOUT execution (parse-only; a top-level-throwing fixture proves modules are never run); runtime vs type-only edges tracked distinctly (type edges never become runtime dependencies); implicit automatic-JSX dependencies (`.tsx`/`.jsx` -> `@tenunjs/jsx-runtime/jsx-runtime` / `./jsx-dev-runtime`) represented as explicit `implicit: true` edges - the tested handoff to the transform stage; package/builtin edges are recorded leaves (dependency closure is TN-023's); cycles terminate traversal and are RECORDED, never silently dropped; project sources are realpath-confined (symlink escapes rejected with importer/specifier context; `node_modules` workspace links are the declared dependency-symlink policy); aliases (tsconfig `paths`) are NOT resolved - reported, never guessed; computed dynamic imports mark the graph `complete: false`; canonical output is byte-identical across different checkout roots; asset-byte-only changes alter asset identity while module identities stay stable. All negative branches have fixtures (escape, missing, alias, computed-dynamic, directory-as-asset, missing asset).
+>
+> **Still owned here (open):** screens and capabilities in the graph (blocked behind TN-059/TN-060/TN-101 contract stages), source-map records (arrive with the TN-023 bundle compiler), and asset DECLARATION in the TN-021 config schema (this slice takes caller-declared asset paths; the config extension is a deliberate follow-up so no second config layer is created now).
+
 ## Required outcome
 
 Deterministic application graph with assets, screens, capabilities, hashes, and source maps.
