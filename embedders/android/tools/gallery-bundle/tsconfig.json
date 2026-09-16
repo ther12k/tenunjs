@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "strict": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "paths": {
+      "@tenunjs/jsx-runtime": ["../../../../packages/jsx-runtime/src/index.ts"],
+      "@tenunjs/jsx-runtime/*": ["../../../../packages/jsx-runtime/src/*"],
+      "@tenunjs/protocol": ["../../../../packages/protocol/src/index.ts"],
+      "@tenunjs/widgets": ["../../../../packages/widgets/src/index.ts"],
+      "@tenunjs/core": ["../../../../packages/core/src/index.ts"],
+      "@tenunjs/navigation": ["../../../../packages/navigation/src/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}

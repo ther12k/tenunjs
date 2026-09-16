@@ -121,3 +121,57 @@ Failures are classified: exit 90 `DEVICE-ENVIRONMENT-FAILURE` (KVM, boot,
 image) vs exit 1 `DEVICE-ACCEPTANCE-FAILURE` (install, launch, tests).
 Screenshots, logs, test XMLs, and a `summary.json` are uploaded as the
 `android-device-acceptance` artifact on every run.
+
+## 5. The gallery device bundle (prototype)
+
+`tools/gallery-bundle` builds a second, generated application bundle that
+puts the real `@tenunjs-examples/gallery` showcase on the phone: the
+screens' `initialState()`, typed actions, and JSX views run unchanged on
+QuickJS through `@tenunjs/jsx-runtime`, and a prototype display-list
+renderer draws them.
+
+```bash
+bun embedders/android/tools/gallery-bundle/build.mjs   # -> app/src/main/assets/gallery_app.js
+cd embedders/android && ./gradlew :app:assembleDebug
+```
+
+- `MainActivity` prefers `gallery_app.js` and falls back to the notes
+  reference bundle (`tenun_app.js`). The generated file is gitignored;
+  without it, the APK is exactly the TN-132 acceptance application, so the
+  device acceptance suite is unaffected.
+- The JS side emits a display-list scene (`{"tenun":"display-list", ...}`:
+  `rect`/`outline`/`text` ops plus tap regions whose payloads index into a
+  JS callback table). `TenunSurfaceView` parses it (`DisplayListScene.kt`),
+  paints it at a 720-unit design width, supports drag scrolling, and
+  dispatches taps back as actions. Scenes without the marker keep using the
+  legacy notes rendering path.
+- Status: prototype-grade embedder glue (approximate text metrics, single
+  clip, no reconciliation). It is not the widget-host contract — TN-034,
+  TN-035, and the M4 widget layer own that. The notes application remains
+  the only TN-132 acceptance surface.
+
+## 6. Dev hot reload (prototype)
+
+The gallery bundle supports Fast-Refresh-style reloads against a laptop
+dev server — new code, old state:
+
+```bash
+# laptop: serve the bundle and keep rebuilding on source changes
+bun embedders/android/tools/gallery-bundle/dev-server.ts          # :8898
+
+# laptop: bake the dev server URL into the APK (once, before assembleDebug)
+TENUN_DEV_SERVER=http://<laptop-ip>:8898 bun embedders/android/tools/gallery-bundle/build.mjs
+cd embedders/android && ./gradlew :app:assembleDebug
+
+# edit any screen / widget / runtime source — the phone picks it up
+# within ~2.5s (polls /hash, fetches the bundle, restores screen state)
+```
+
+Mechanics: the JS side exports live screen state (`__TENUN_EXPORT`) before
+the engine is destroyed; the fresh bundle is evaluated and the state is
+restored (`TENUN_RESTORE`), so you keep your route, cart, and toggles.
+QuickJS cannot patch code in place (no JIT class patching like Dart's VM),
+so every reload is a real engine swap with state carried across — the same
+semantic level Flutter hot reload provides, with different mechanics.
+Without `dev_server.txt` the app never touches the network. Reloads are
+skipped (last good bundle kept) if a rebuild fails on a half-saved file.
