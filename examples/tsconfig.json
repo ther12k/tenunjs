@@ -1,0 +1,25 @@
+{
+  "//": "Type checking for examples/ only (bun executes these files directly and never emits). TSX compiles through the automatic TenunJS transform (TN-020): react-jsx with @tenunjs/jsx-runtime as the import source. The root tsconfig keeps its documented no-JSX surface; run via `tsc --noEmit -p examples/tsconfig.json`. Example projects resolve @tenunjs/* through their own workspace-member node_modules links.",
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
+    "types": ["bun"],
+    "paths": {
+      "@tenunjs/jsx-runtime": ["../packages/jsx-runtime/src/index.ts"],
+      "@tenunjs/jsx-runtime/*": ["../packages/jsx-runtime/src/*"],
+      "@tenunjs/protocol": ["../packages/protocol/src/index.ts"],
+      "@tenunjs/widgets": ["../packages/widgets/src/index.ts"],
+      "@tenunjs/core": ["../packages/core/src/index.ts"],
+      "@tenunjs/navigation": ["../packages/navigation/src/index.ts"],
+      "@tenunjs/cli": ["../packages/cli/src/index.ts"]
+    },
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["gallery-preview"]
+}

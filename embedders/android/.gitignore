@@ -5,3 +5,6 @@ local.properties
 *.apk
 *.aab
 device-acceptance-output/
+app/src/main/assets/gallery_app.js
+app/src/main/assets/dev_server.txt
+tools/gallery-bundle/.last-build.json

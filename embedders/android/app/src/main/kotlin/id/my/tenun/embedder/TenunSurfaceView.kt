@@ -12,6 +12,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.ViewConfiguration
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -83,6 +84,17 @@ class TenunSurfaceView @JvmOverloads constructor(
     var buttonLabel: String = "Add Entry"
         private set
 
+    // Display-list scene (gallery device bundle). Null while the legacy
+    // notes scene drives the view.
+    private var displayList: DisplayListScene? = null
+    private var dlScale = 1f
+    private var scrollY = 0f
+    private var maxScroll = 0f
+    private var touchDownY = 0f
+    private var touchLastY = 0f
+    private var isScrolling = false
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
     private var isSurfaceValid = false
 
     // Layout bounds
@@ -145,6 +157,8 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (displayList != null) return onDisplayListTouch(event)
+
         if (event.action == MotionEvent.ACTION_UP) {
             val x = event.x
             val y = event.y
@@ -254,6 +268,14 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     fun syncFromScene(sceneJson: String) {
+        // Display-list scenes (gallery device bundle) take priority; the
+        // legacy notes path stays authoritative for "root"-tree scenes.
+        val parsed = DisplayListScene.parse(sceneJson)
+        if (parsed != null) {
+            displayList = parsed
+            return
+        }
+        displayList = null
         try {
             val root = JSONObject(sceneJson)
             val children = root.optJSONObject("root")?.optJSONArray("children")
@@ -303,7 +325,163 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Display-list touch handling: drag to scroll (in design units), tap
+     * to dispatch the hit region's action back into the engine. The
+     * committed scene after the dispatch is what gets drawn.
+     */
+    private fun onDisplayListTouch(event: MotionEvent): Boolean {
+        val dl = displayList ?: return false
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownY = event.y
+                touchLastY = event.y
+                isScrolling = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dy = touchLastY - event.y
+                touchLastY = event.y
+                if (!isScrolling && Math.abs(event.y - touchDownY) > touchSlop) {
+                    isScrolling = true
+                }
+                if (isScrolling) {
+                    scrollY = (scrollY + dy / dlScale).coerceIn(0f, maxScroll)
+                    redraw()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!isScrolling) {
+                    val designX = event.x / dlScale
+                    val designY = event.y / dlScale + scrollY
+                    val hit = dl.taps.firstOrNull { it.contains(designX, designY) }
+                    if (hit != null) {
+                        engine?.let { eng ->
+                            eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")
+                            // The committed scene arrives via tenun_commit;
+                            // the dispatch return value is engine state.
+                            syncFromScene(eng.getLatestScene())
+                            redraw()
+                        }
+                    }
+                }
+            }
+        }
+        return true
+    }
+
     private fun renderScene(canvas: Canvas) {
+        val dl = displayList
+        if (dl != null) {
+            renderDisplayList(canvas, dl)
+            return
+        }
+        renderNotesScene(canvas)
+    }
+
+    private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {
+        dlScale = if (dl.designWidth > 0) width / dl.designWidth else 1f
+        val visibleHeight = height / dlScale
+        maxScroll = (dl.contentHeight - visibleHeight).coerceAtLeast(0f)
+        scrollY = scrollY.coerceIn(0f, maxScroll)
+
+        canvas.drawColor(Color.parseColor(dl.background))
+        canvas.save()
+        canvas.scale(dlScale, dlScale)
+        canvas.clipRect(0f, scrollY, dl.designWidth, scrollY + visibleHeight)
+        canvas.translate(0f, -scrollY)
+
+        for (op in dl.ops) {
+            when (op) {
+                is DisplayListScene.Op.RectOp -> {
+                    val r = op.rect
+                    // Elevation is emulated with a translucent underlay:
+                    // Paint.setShadowLayer is ignored for shapes on
+                    // hardware canvases, and this renders identically to
+                    // the browser fallback.
+                    if (!r.stroked && r.shadow > 0f) {
+                        val shadowPaint = fillPaint("#000000")
+                        shadowPaint.alpha = 64
+                        canvas.drawRoundRect(
+                            r.x, r.y + r.shadow / 2, r.x + r.w, r.y + r.h + r.shadow / 2,
+                            r.radius, r.radius, shadowPaint
+                        )
+                    }
+                    val paint = if (r.stroked) {
+                        outlinePaint(r.color, r.strokeWidth)
+                    } else if (r.colorTo != null) {
+                        val gradient = android.graphics.LinearGradient(
+                            r.x, r.y, r.x, r.y + r.h,
+                            Color.parseColor(r.color),
+                            Color.parseColor(r.colorTo),
+                            android.graphics.Shader.TileMode.CLAMP
+                        )
+                        fillPaint(r.color).apply { shader = gradient }
+                    } else {
+                        fillPaint(r.color)
+                    }
+                    canvas.drawRoundRect(
+                        r.x, r.y, r.x + r.w, r.y + r.h,
+                        r.radius, r.radius, paint
+                    )
+                }
+                is DisplayListScene.Op.CircleOp -> {
+                    val paint = fillPaint(op.color)
+                    canvas.drawCircle(op.cx, op.cy, op.r, paint)
+                }
+                is DisplayListScene.Op.RingOp -> {
+                    val bounds = RectF(
+                        op.cx - op.r, op.cy - op.r, op.cx + op.r, op.cy + op.r
+                    )
+                    if (op.track != null) {
+                        val trackPaint = outlinePaint(op.track, op.strokeWidth).apply {
+                            strokeCap = android.graphics.Paint.Cap.ROUND
+                        }
+                        canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
+                    }
+                    if (op.progress > 0f) {
+                        val sweep = 360f * op.progress.coerceAtMost(1f)
+                        val arcPaint = outlinePaint(op.color, op.strokeWidth).apply {
+                            strokeCap = android.graphics.Paint.Cap.ROUND
+                        }
+                        // -90f starts at 12 o'clock; sweep is clockwise.
+                        canvas.drawArc(bounds, -90f, sweep, false, arcPaint)
+                    }
+                }
+                is DisplayListScene.Op.LineOp -> {
+                    canvas.drawLine(op.x1, op.y1, op.x2, op.y2, outlinePaint(op.color, op.strokeWidth))
+                }
+                is DisplayListScene.Op.TextOp -> {
+                    val t = op.text
+                    textPaint.color = Color.parseColor(t.color)
+                    textPaint.textSize = t.size
+                    textPaint.typeface = if (t.weight >= 600) {
+                        android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+                    } else {
+                        android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.NORMAL)
+                    }
+                    canvas.drawText(t.text, t.x, t.y, textPaint)
+                }
+            }
+        }
+        canvas.restore()
+    }
+
+    private fun fillPaint(color: String): Paint =
+        Paint().apply {
+            this.color = Color.parseColor(color)
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
+    private fun outlinePaint(color: String, width: Float): Paint =
+        Paint().apply {
+            this.color = Color.parseColor(color)
+            style = Paint.Style.STROKE
+            strokeWidth = width
+            isAntiAlias = true
+        }
+
+    private fun renderNotesScene(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
         // Title Header

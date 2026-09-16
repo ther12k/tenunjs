@@ -97,6 +97,7 @@ export function Row(props: RowProps): WidgetNode {
 
 export interface TextProps {
   variant?: "body" | "title" | "display" | string;
+  color?: string;
   children?: WidgetChild;
 }
 

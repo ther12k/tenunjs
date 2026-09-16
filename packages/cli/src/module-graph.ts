@@ -109,12 +109,27 @@ export class ModuleGraphError extends Error {
 // Scanning (parse-only, never evaluates application code)
 // ---------------------------------------------------------------------------
 
+// Scanning speaks the repository's JSX contract (TN-020): the automatic
+// transform with @tenunjs/jsx-runtime as the import source. Without this
+// configuration, Bun's default scan reports react/jsx-dev-runtime edges
+// for TSX files that contain actual JSX, contradicting the implicit-edge
+// contract recorded below. Known Bun 1.4 artifact: every JSX-containing
+// TSX scan also emits a constant `react` require edge, regardless of the
+// configured import source; `react` is never a legal TenunJS import
+// (ADR-0003), so it surfaces as an unresolved-package diagnostic.
+const SCAN_TSCONFIG = JSON.stringify({
+  compilerOptions: {
+    jsx: "react-jsx",
+    jsxImportSource: "@tenunjs/jsx-runtime",
+  },
+});
+
 const transpilers = new Map<string, Bun.Transpiler>();
 function transpilerFor(file: string): Bun.Transpiler {
   const loader = file.endsWith(".tsx") || file.endsWith(".jsx") ? "tsx" : "ts";
   let t = transpilers.get(loader);
   if (!t) {
-    t = new Bun.Transpiler({ loader });
+    t = new Bun.Transpiler({ loader, tsconfig: SCAN_TSCONFIG });
     transpilers.set(loader, t);
   }
   return t;

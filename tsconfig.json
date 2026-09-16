@@ -9,11 +9,17 @@
   // TenunJS jsxImportSource, TN-020) — dragging them into this root config
   // would force repository-wide JSX compilation semantics they are
   // specifically designed not to have.
+  // The jsx options declare the repository transform policy (TN-020) so
+  // tooling that compiles TSX from this checkout (bun test over examples/,
+  // the TN-022 scanner) uses the TenunJS runtime, not Bun's react default.
+  // No file in this config's include set contains JSX syntax.
   "compilerOptions": {
     "target": "esnext",
     "lib": ["esnext"],
     "module": "preserve",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@tenunjs/jsx-runtime",
     "types": ["bun"],
     "strict": true,
     "noEmit": true

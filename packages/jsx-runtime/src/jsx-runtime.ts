@@ -189,6 +189,7 @@ export namespace JSX {
 
   export interface TextProps extends BaseProps {
     variant?: string;
+    color?: string;
   }
 
   export interface ButtonProps extends BaseProps {

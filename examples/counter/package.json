@@ -1,0 +1,18 @@
+{
+  "name": "@tenunjs-examples/counter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tenun Counter — the canonical single-screen TenunJS sample app",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/navigation": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs-examples/test-support": "workspace:*",
+    "@tenunjs/cli": "workspace:*"
+  }
+}

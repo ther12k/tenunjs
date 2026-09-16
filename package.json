@@ -2,14 +2,15 @@
   "name": "tenunjs-monorepo",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "packageManager": "bun@1.4.0",
   "engines": {
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p examples/tsconfig.json",
     "test": "bun test",
     "verify:ts": "test -f bun.lock && bun install --frozen-lockfile && bun run typecheck && bun test",
     "verify:rust": "./.github/scripts/verify-rust.sh",
@@ -18,6 +19,7 @@
     "verify:android": "./embedders/android/run_android_test.sh",
     "verify:manifest": "python3 ./.github/scripts/verify-manifest.py",
     "verify:evidence": "python3 ./.github/scripts/verify-evidence.py",
+    "gallery:preview": "bun embedders/android/tools/gallery-bundle/dev-server.ts",
     "verify": "bun run verify:ts && bun run verify:rust && bun run verify:abi && bun run verify:probe && bun run verify:android && bun run verify:manifest && bun run verify:evidence"
   },
   "devDependencies": {

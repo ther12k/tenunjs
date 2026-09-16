@@ -176,7 +176,10 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
     if (JS_IsException(res)) {
       JSValue exc = JS_GetException(engine->ctx);
       const char *err = JS_ToCString(engine->ctx, exc);
-      fprintf(stderr, "tenun-android-engine: Action dispatch failed: %s\n", err ? err : "unknown error");
+      /* WARN to logcat on Android: a failed dispatch silently freezes the
+       * UI (scene never re-commits), so the failure must be visible. */
+      TENUN_LOG_WARN("tenun dispatch action=%s failed: %s",
+                     action ? action : "(null)", err ? err : "unknown error");
       if (err) JS_FreeCString(engine->ctx, err);
       JS_FreeValue(engine->ctx, exc);
     }
