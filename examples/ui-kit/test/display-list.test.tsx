@@ -127,17 +127,18 @@ describe("display-list layout engine", () => {
 });
 
 describe("gallery device loop", () => {
-  test("initial scene is the home hub with ten module buttons", () => {
+  test("initial scene is the home hub with eleven module buttons", () => {
     const scene = JSON.parse(__device.lastScene());
     expect(scene.tenun).toBe("display-list");
     const labels = scene.ops
       .filter((op: any) => op.op === "text")
       .map((op: any) => op.text);
     expect(labels).toContain("Tenun Gallery");
+    expect(labels).toContain("Widget showcase");
     expect(labels).toContain("Rally-style banking");
     expect(labels).toContain("Grouped settings");
     // No back-tap on home: taps == module Open buttons only.
-    expect(scene.taps.length).toBe(10);
+    expect(scene.taps.length).toBe(11);
   });
 
   test("tapping a home card navigates to the banking screen", () => {

@@ -1,5 +1,21 @@
 import type { DisplayListScene, DisplayOp } from "../ui-kit/src/display-list";
 
+/**
+ * Normalizes the display-list color convention for CSS: scenes use
+ * Android-style "#AARRGGBB" for translucent colors (the Android host parses
+ * it natively); CSS wants alpha last, so rewrite those to rgba().
+ */
+function toCss(color: string): string {
+  if (color.startsWith("#") && color.length === 9) {
+    const a = parseInt(color.slice(1, 3), 16) / 255;
+    const r = parseInt(color.slice(3, 5), 16);
+    const g = parseInt(color.slice(5, 7), 16);
+    const b = parseInt(color.slice(7, 9), 16);
+    return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+  }
+  return color;
+}
+
 export interface PreviewRenderer {
   render(scene: DisplayListScene, scrollY: number): void;
   resize(): void;
@@ -48,7 +64,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = scene.background;
+    ctx.fillStyle = toCss(scene.background);
     ctx.fillRect(0, 0, width, height);
     ctx.save();
     ctx.scale(scale, scale);
@@ -83,7 +99,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
   private paint(ctx: CanvasRenderingContext2D, op: DisplayOp): void {
     switch (op.op) {
       case "text": {
-        ctx.fillStyle = op.color;
+        ctx.fillStyle = toCss(op.color);
         ctx.font = `${op.weight >= 600 ? "700" : "400"} ${op.size}px sans-serif`;
         ctx.fillText(op.text, op.x, op.y);
         return;
@@ -91,7 +107,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
       case "circle": {
         ctx.beginPath();
         ctx.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);
-        ctx.fillStyle = op.color;
+        ctx.fillStyle = toCss(op.color);
         ctx.fill();
         return;
       }
@@ -100,7 +116,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         if (op.track) {
           ctx.beginPath();
           ctx.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);
-          ctx.strokeStyle = op.track;
+          ctx.strokeStyle = toCss(op.track);
           ctx.lineWidth = op.width;
           ctx.lineCap = "round";
           ctx.stroke();
@@ -110,7 +126,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
           const end = start + Math.PI * 2 * Math.min(op.progress, 1);
           ctx.beginPath();
           ctx.arc(op.cx, op.cy, op.r, start, end);
-          ctx.strokeStyle = op.color;
+          ctx.strokeStyle = toCss(op.color);
           ctx.lineWidth = op.width;
           ctx.lineCap = "round";
           ctx.stroke();
@@ -121,7 +137,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         ctx.beginPath();
         ctx.moveTo(op.x1, op.y1);
         ctx.lineTo(op.x2, op.y2);
-        ctx.strokeStyle = op.color;
+        ctx.strokeStyle = toCss(op.color);
         ctx.lineWidth = op.width;
         ctx.stroke();
         return;
@@ -142,7 +158,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
       case "outline": {
         ctx.beginPath();
         ctx.roundRect(op.x, op.y, op.w, op.h, op.r);
-        ctx.strokeStyle = op.color;
+        ctx.strokeStyle = toCss(op.color);
         ctx.lineWidth = op.width;
         ctx.stroke();
         return;
@@ -152,7 +168,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         if (op.shadow) this.applyShadow(ctx, op.shadow);
         ctx.beginPath();
         ctx.roundRect(op.x, op.y, op.w, op.h, op.r);
-        ctx.fillStyle = op.color;
+        ctx.fillStyle = toCss(op.color);
         ctx.fill();
         ctx.restore();
       }

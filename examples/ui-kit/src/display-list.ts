@@ -177,8 +177,11 @@ interface Typography {
 }
 
 const TYPOGRAPHY: Record<string, Typography> = {
+  label: { size: 14, lineHeight: 20, weight: 600 },
+  caption: { size: 13, lineHeight: 18, weight: 400 },
   body: { size: 17, lineHeight: 24, weight: 400 },
   title: { size: 22, lineHeight: 30, weight: 600 },
+  headline: { size: 30, lineHeight: 38, weight: 700 },
   display: { size: 44, lineHeight: 52, weight: 700 },
 };
 
@@ -325,8 +328,7 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
     case "button": {
       const ty = TYPOGRAPHY.body!;
       const label = textContent(node) || "Button";
-      const w = Math.min(maxWidth, Math.max(96, textWidth(label, ty.size) + 48));
-      return { w, h: 56 };
+      return { w: Math.min(maxWidth, Math.max(96, textWidth(label, ty.size) + 48)), h: 64 };
     }
     case "card": {
       const pad = paddingOf(props, 16);
@@ -436,15 +438,41 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       const ty = TYPOGRAPHY.body!;
       const label = textContent(node) || "Button";
       const variant = typeof props.variant === "string" ? props.variant : "primary";
-      const accent = ctx.theme.colors?.accent ?? "#4C8DFF";
-      const danger = ctx.theme.colors?.danger ?? "#FF5A5F";
-      const h = 52;
+      const palette = ctx.theme.colors ?? {};
+      const accent = palette.accent ?? "#4C8DFF";
+      const danger = palette.danger ?? "#FF5A5F";
+      const h = 64;
+      const r = 32;
+      const onPrimary = "#FFFFFF";
+      const container = palette.primaryContainer ?? "#223354";
+      const onContainer = palette.onPrimaryContainer ?? "#D6E4FF";
+      // M3 button anatomy: a full-pill shape, one typography style, and
+      // variant color roles — filled carries elevation, tonal/outlined/text
+      // decline it, exactly like Flutter's Filled/Tonal/Outlined/Text.
+      let fill: string | null = accent;
+      let labelColor = onPrimary;
+      let stroked = false;
+      let shadow: number | undefined;
       if (variant === "secondary") {
-        ctx.ops.push({ op: "outline", x, y, w, h, r: 16, color: accent, width: 3 });
+        fill = null;
+        stroked = true;
+        labelColor = accent;
+      } else if (variant === "tonal") {
+        fill = container;
+        labelColor = onContainer;
+      } else if (variant === "text") {
+        fill = null;
+        labelColor = accent;
+      } else if (variant === "danger") {
+        fill = danger;
       } else {
-        ctx.ops.push({ op: "rect", x, y, w, h, r: 16, color: variant === "danger" ? danger : accent });
+        shadow = 10;
       }
-      const textColor = variant === "secondary" ? accent : "#FFFFFF";
+      if (fill !== null) {
+        ctx.ops.push({ op: "rect", x, y, w, h, r, color: fill, ...(shadow ? { shadow } : {}) });
+      } else if (stroked) {
+        ctx.ops.push({ op: "outline", x, y, w, h, r, color: accent, width: 3 });
+      }
       ctx.ops.push({
         op: "text",
         x: x + (w - textWidth(label, ty.size)) / 2,
@@ -452,7 +480,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
         text: label,
         size: ty.size,
         weight: 600,
-        color: textColor,
+        color: labelColor,
       });
       if (typeof props.onPress === "function") {
         addTap(ctx, x, y, w, h, props.onPress as () => void);
@@ -488,20 +516,22 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       ctx.ops.push({
         op: "text",
         x: x + 40,
-        y: y + 60,
+        y: y + 62,
         text: title,
-        size: 30,
+        size: 32,
         weight: 700,
         color: ctx.theme.colors?.text ?? "#F2F2F7",
       });
+      // M3 separation: a quiet outlineVariant hairline instead of a loud
+      // accent strip — the bar reads as part of the surface, not a banner.
       ctx.ops.push({
-        op: "rect",
-        x,
-        y: y + 92,
-        w,
-        h: 3,
-        r: 0,
-        color: ctx.theme.colors?.accent ?? "#4C8DFF",
+        op: "line",
+        x1: x,
+        y1: y + 94,
+        x2: x + w,
+        y2: y + 94,
+        color: ctx.theme.colors?.outlineVariant ?? "#26262F",
+        width: 2,
       });
       return 96;
     }

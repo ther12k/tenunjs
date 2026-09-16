@@ -39,3 +39,15 @@ fetch a prerequisite for UI iteration.
 This is a development preview, not proof that the future M4 native widget host
 is complete. It deliberately uses approximate text metrics and the prototype
 display-list layout; Android TN-132 acceptance remains a separate gate.
+
+## Automation hooks
+
+The shell exposes three `window` hooks so tests and agents can drive the
+canvas without synthesizing pointer events:
+
+- `__previewScroll(y)` — set the canvas scroll offset (design units).
+- `__previewTaps()` — current tap regions as `[{ y, h, id }]`; `id` is the
+  payload id hosts echo back (not the region index: on non-home routes the
+  shell prepends a back-to-home region).
+- `__previewTap(id)` / `__previewState()` — dispatch a tap by id and read
+  the exported screen state.

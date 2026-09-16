@@ -35,6 +35,12 @@ export const HomeScreen = defineScreen({
   view({ state, actions }) {
     const modules: Array<{ route: string; title: string; blurb: string; glyph: string }> = [
       {
+        route: "views",
+        title: "Widget showcase",
+        blurb: "The M3 kit live: buttons, chips, sliders, tabs, nav bar.",
+        glyph: "🎨",
+      },
+      {
         route: "banking",
         title: "Rally-style banking",
         blurb: "Dark financial dashboard: balance card, accounts, bills.",
@@ -102,7 +108,7 @@ export const HomeScreen = defineScreen({
           <HeroCard
             title="TENUNJS UI LAB"
             headline="Tenun Gallery"
-            caption="Ten Flutter-inspired reference layouts, one app."
+            caption="Eleven Flutter-inspired reference layouts, one app."
           />
 
           <Card padding="lg" radius="lg" background="surfaceRaised">

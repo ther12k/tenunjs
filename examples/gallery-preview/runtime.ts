@@ -12,6 +12,7 @@ import { MusicScreen } from "../gallery/src/screens/music.screen";
 import { ChatScreen } from "../gallery/src/screens/chat.screen";
 import { RecipesScreen } from "../gallery/src/screens/recipes.screen";
 import { CryptoScreen } from "../gallery/src/screens/crypto.screen";
+import { ViewsScreen } from "../gallery/src/screens/views.screen";
 import { layoutScreen, type DisplayListScene } from "../ui-kit/src/display-list";
 
 type AnyScreen = ScreenDefinition<any, any>;
@@ -19,6 +20,7 @@ type Action = (input?: unknown) => void;
 
 const screens: Record<string, AnyScreen> = {
   home: HomeScreen as AnyScreen,
+  views: ViewsScreen as AnyScreen,
   banking: BankingScreen as AnyScreen,
   smartHome: SmartHomeScreen as AnyScreen,
   fitness: FitnessScreen as AnyScreen,
