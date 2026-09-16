@@ -1,0 +1,18 @@
+{
+  "name": "@tenunjs-examples/navigation-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Weavers Guild directory — typed routes, NavigationHost, and the split controller/view pattern",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/navigation": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs-examples/test-support": "workspace:*",
+    "@tenunjs/cli": "workspace:*"
+  }
+}
