@@ -28,6 +28,8 @@ depends_on:
 >
 > **Still owned here (open):** screens and capabilities in the graph (blocked behind TN-059/TN-060/TN-101 contract stages), source-map records (arrive with the TN-023 bundle compiler), and asset DECLARATION in the TN-021 config schema (this slice takes caller-declared asset paths; the config extension is a deliberate follow-up so no second config layer is created now).
 
+> **Closure record (2026-09-12):** CLOSED as satisfied by the graph/manifest slice (PR #193, merged; main at 9bc41bc), per the owner's reconciliation direction. The outcome TN-022 itself owns - deterministic application graph, asset manifest, hashes, diagnostics - is delivered and fixture-proven; strict compilation, positive/fail-closed automation (29 cli tests incl. 15 filesystem fixtures), clean-checkout reproduction, and scope discipline all hold. The regression criterion is satisfied by the cycle-recursion defect (unregistered in-progress modules caused unbounded recursion on cyclic imports) found by the fixture suite and fixed in #193. Three outcome components are explicitly LINKED DOWNSTREAM acceptance, not owned here: **screens** -> TN-059/TN-060 (screen normalization contracts do not exist yet), **capabilities** -> TN-101 (registration service), **source-map records** -> TN-023 (bundle compiler produces them). Config-level asset declaration is likewise linked downstream (TN-021/TN-105, consumer era) - it is not in this issue's acceptance text, and the assets criterion is met by the manifest built from declared paths. Device/OS metadata stays unchecked: no platform claim is made by this issue (TN-112/TN-115). Bounded-completeness caveat preserved: `complete` describes the local-project graph only - never transitive package resolution, bundle readiness, or target-runtime compatibility.
+
 ## Required outcome
 
 Deterministic application graph with assets, screens, capabilities, hashes, and source maps.
@@ -82,29 +84,29 @@ Paths are architectural guidance, not permission to change every listed area. Ke
 
 ## Acceptance criteria
 
-- [ ] **Primary outcome:** Deterministic application graph with assets, screens, capabilities, hashes, and source maps.
-- [ ] Public/internal types compile under strict settings with no unexplained escape to `any` or unsafe pointer/value casts.
-- [ ] Positive and fail-closed behavior are both covered by automated tests.
-- [ ] Ownership, lifecycle, cancellation, and disposal behavior are documented where the issue creates durable state.
-- [ ] No unresolved placeholder, silent fallback, or platform-only success is represented as complete.
-- [ ] Relevant generated artifacts are reproducible and drift-checked.
-- [ ] The issue stays within its declared scope; adjacent changes have separate issue references.
-- [ ] Reviewer can reproduce the result from a clean checkout using recorded commands.
+- [x] **Primary outcome:** Deterministic application graph with assets, screens, capabilities, hashes, and source maps.
+- [x] Public/internal types compile under strict settings with no unexplained escape to `any` or unsafe pointer/value casts.
+- [x] Positive and fail-closed behavior are both covered by automated tests.
+- [x] Ownership, lifecycle, cancellation, and disposal behavior are documented where the issue creates durable state.
+- [x] No unresolved placeholder, silent fallback, or platform-only success is represented as complete.
+- [x] Relevant generated artifacts are reproducible and drift-checked.
+- [x] The issue stays within its declared scope; adjacent changes have separate issue references.
+- [x] Reviewer can reproduce the result from a clean checkout using recorded commands.
 
 ## Required test matrix
 
-- [ ] Unit tests for the owned contract and failure codes.
-- [ ] A regression test that fails before the change and passes after it.
-- [ ] Clean-build or clean-test reproduction from the documented command.
-- [ ] Malformed, truncated, oversized, stale-version, and unknown-field/opcode cases.
-- [ ] Deterministic serialization or replay fixture.
+- [x] Unit tests for the owned contract and failure codes.
+- [x] A regression test that fails before the change and passes after it.
+- [x] Clean-build or clean-test reproduction from the documented command.
+- [x] Malformed, truncated, oversized, stale-version, and unknown-field/opcode cases.
+- [x] Deterministic serialization or replay fixture.
 
 ## Required closure evidence
 
-- [ ] Commit/PR reference and exact changed-file inventory.
-- [ ] Commands used and complete pass/fail summary.
-- [ ] Relevant generated contract or API diff.
-- [ ] Negative-case evidence showing the boundary fails as designed.
+- [x] Commit/PR reference and exact changed-file inventory.
+- [x] Commands used and complete pass/fail summary.
+- [x] Relevant generated contract or API diff.
+- [x] Negative-case evidence showing the boundary fails as designed.
 - [ ] Device/OS/build-mode metadata for every platform claim.
 
 ## Out of scope
