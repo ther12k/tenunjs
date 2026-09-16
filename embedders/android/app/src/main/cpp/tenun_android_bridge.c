@@ -134,6 +134,24 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   // Evaluate the real JavaScript application bundle
   JSValue eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
   if (JS_IsException(eval_res)) {
+    /* #191 evidence: first bytes actually evaluated, on the failure path
+     * only. If a future failure shows valid bytes here (as observed on a
+     * software-TCG emulator), the parse input was NOT the problem — see
+     * the incident notes before blaming the bundle. */
+    {
+      size_t dump_n = bundle_len < 64 ? bundle_len : 64;
+      char dump[3 * 64 + 1];
+      size_t di = 0;
+      for (size_t i = 0; i < dump_n; i++) {
+        unsigned char b = (unsigned char)bundle[i];
+        static const char hexd[] = "0123456789abcdef";
+        dump[di++] = hexd[b >> 4];
+        dump[di++] = hexd[b & 0xF];
+        dump[di++] = ' ';
+      }
+      dump[di] = '\0';
+      TENUN_LOG_WARN("TENUN_EVAL_BYTES len=%zu first64: %s", bundle_len, dump);
+    }
     // Fail-closed on invalid JavaScript. A context exists here, so the
     // actual JS exception is available via JS_GetException (unlike the
     // pre-context stages, which log only code/stage/attempt).
