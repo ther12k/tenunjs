@@ -9,3 +9,5 @@ target/
 .bun-cache/
 # TN-020 TSX fixture emit output (packages/jsx-runtime/tests/tsx-fixtures)
 .out/
+.zcode/
+.playwright-cli/
