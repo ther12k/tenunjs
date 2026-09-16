@@ -9,6 +9,106 @@
         "typescript": "7.0.2",
       },
     },
+    "examples/calculator": {
+      "name": "@tenunjs-examples/calculator",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/counter": {
+      "name": "@tenunjs-examples/counter",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/gallery": {
+      "name": "@tenunjs-examples/gallery",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/gallery-preview": {
+      "name": "@tenunjs-examples/gallery-preview",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/navigation": "workspace:*",
+      },
+    },
+    "examples/navigation-demo": {
+      "name": "@tenunjs-examples/navigation-demo",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/test-support": {
+      "name": "@tenunjs-examples/test-support",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/cli": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+      },
+    },
+    "examples/todo-list": {
+      "name": "@tenunjs-examples/todo-list",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/ui-kit": {
+      "name": "@tenunjs-examples/ui-kit",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@tenunjs/cli",
       "version": "0.1.0",
@@ -55,6 +155,22 @@
     },
   },
   "packages": {
+    "@tenunjs-examples/calculator": ["@tenunjs-examples/calculator@workspace:examples/calculator"],
+
+    "@tenunjs-examples/counter": ["@tenunjs-examples/counter@workspace:examples/counter"],
+
+    "@tenunjs-examples/gallery": ["@tenunjs-examples/gallery@workspace:examples/gallery"],
+
+    "@tenunjs-examples/gallery-preview": ["@tenunjs-examples/gallery-preview@workspace:examples/gallery-preview"],
+
+    "@tenunjs-examples/navigation-demo": ["@tenunjs-examples/navigation-demo@workspace:examples/navigation-demo"],
+
+    "@tenunjs-examples/test-support": ["@tenunjs-examples/test-support@workspace:examples/test-support"],
+
+    "@tenunjs-examples/todo-list": ["@tenunjs-examples/todo-list@workspace:examples/todo-list"],
+
+    "@tenunjs-examples/ui-kit": ["@tenunjs-examples/ui-kit@workspace:examples/ui-kit"],
+
     "@tenunjs/cli": ["@tenunjs/cli@workspace:packages/cli"],
 
     "@tenunjs/core": ["@tenunjs/core@workspace:packages/core"],
