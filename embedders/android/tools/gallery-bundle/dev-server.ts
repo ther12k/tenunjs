@@ -87,6 +87,22 @@ Bun.serve({
         headers: { "Content-Type": "text/javascript; charset=utf-8", ...noCache },
       });
     }
+    // OTA channel artifacts (published by publish-update.mjs). 404 when
+    // none are published — the app treats that as "no update available".
+    const otaDir = path.join(repoRoot, "examples/gallery-preview/.out/ota");
+    const otaFile = (name) => path.join(otaDir, name);
+    if (pathname === "/update-manifest.json") {
+      if (!fs.existsSync(otaFile("update-manifest.json"))) return new Response("no update published\n", { status: 404 });
+      return new Response(fs.readFileSync(otaFile("update-manifest.json")), {
+        headers: { "Content-Type": "application/json", ...noCache },
+      });
+    }
+    if (pathname === "/update-bundle.js") {
+      if (!fs.existsSync(otaFile("update-bundle.js"))) return new Response("no update published\n", { status: 404 });
+      return new Response(fs.readFileSync(otaFile("update-bundle.js")), {
+        headers: { "Content-Type": "text/javascript; charset=utf-8", ...noCache },
+      });
+    }
     return new Response("not found\n", { status: 404 });
   },
 });

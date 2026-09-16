@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Dev hot reload only: fetch the JS bundle from the laptop's dev
-         server over plain HTTP on the LAN (see tools/gallery-bundle). -->
+    <!-- Dev hot reload + prototype OTA channel checks. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="TenunJS Prototype"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

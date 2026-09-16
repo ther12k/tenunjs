@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: cleartext allowed so the prototype dev loop can
+     reach a laptop HTTP dev server / OTA publisher on the LAN. Release
+     builds merge the main config (cleartext forbidden). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

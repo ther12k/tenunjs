@@ -134,6 +134,24 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   // Evaluate the real JavaScript application bundle
   JSValue eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
   if (JS_IsException(eval_res)) {
+    /* #191 evidence: first bytes actually evaluated, on the failure path
+     * only. If a future failure shows valid bytes here (as observed on a
+     * software-TCG emulator), the parse input was NOT the problem — see
+     * the incident notes before blaming the bundle. */
+    {
+      size_t dump_n = bundle_len < 64 ? bundle_len : 64;
+      char dump[3 * 64 + 1];
+      size_t di = 0;
+      for (size_t i = 0; i < dump_n; i++) {
+        unsigned char b = (unsigned char)bundle[i];
+        static const char hexd[] = "0123456789abcdef";
+        dump[di++] = hexd[b >> 4];
+        dump[di++] = hexd[b & 0xF];
+        dump[di++] = ' ';
+      }
+      dump[di] = '\0';
+      TENUN_LOG_WARN("TENUN_EVAL_BYTES len=%zu first64: %s", bundle_len, dump);
+    }
     // Fail-closed on invalid JavaScript. A context exists here, so the
     // actual JS exception is available via JS_GetException (unlike the
     // pre-context stages, which log only code/stage/attempt).
@@ -353,8 +371,23 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     return 0;
   }
 
-  tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)bytes, (size_t)len);
-  (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+  /* Copy the script out of the Java array and release the array BEFORE
+   * evaluating: JS_Eval runs the whole bundle (with QuickJS allocations)
+   * while holding this pointer, and the array's storage is managed by the
+   * VM. A native copy keeps the evaluated bytes in stable memory for the
+   * entire eval (incident #191 hardening). */
+  uint8_t* bundle_copy = (uint8_t*)malloc((size_t)len);
+  tenun_android_engine* engine = NULL;
+  if (bundle_copy) {
+    memcpy(bundle_copy, bytes, (size_t)len);
+    (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+    engine = tenun_android_engine_create(bundle_copy, (size_t)len);
+    free(bundle_copy);
+  } else {
+    (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+    TENUN_LOG_WARN("TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null",
+                   tenun_stage_name(TENUN_INIT_ENGINE_ALLOC), tenun_android_next_init_attempt());
+  }
 
   return (jlong)(intptr_t)engine;
 }

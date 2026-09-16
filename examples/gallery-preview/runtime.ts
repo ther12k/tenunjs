@@ -37,9 +37,16 @@ interface Session {
   readonly actions: Record<string, Action>;
 }
 
+/**
+ * Bump only with a deliberate migration design: the host carries exported
+ * state across a bundle swap only when old and new declare the same value.
+ */
+export const STATE_SCHEMA = 1;
+
 export interface GallerySnapshot {
   route: string;
   states: Record<string, unknown>;
+  stateSchema: number;
 }
 
 export interface GalleryRender {
@@ -108,7 +115,11 @@ export class GalleryRuntime {
   exportState(): GallerySnapshot {
     const states: Record<string, unknown> = {};
     for (const [name, session] of this.sessions) states[name] = session.state;
-    return { route: this.current, states };
+    return { route: this.current, states, stateSchema: STATE_SCHEMA };
+  }
+
+  stateSchema(): number {
+    return STATE_SCHEMA;
   }
 
   restore(snapshot: Partial<GallerySnapshot>): void {
