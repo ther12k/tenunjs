@@ -140,12 +140,16 @@ class OtaEngineJourneyTest {
         val channel = UpdateChannel("", "prototype", publicB64)
 
         // A: packaged boots, commits its scene through the real engine.
+        android.util.Log.i("OtaJourney", "booting A (packaged)")
         val engineA = TenunEngine(packaged)
         assertTrue(engineA.getLatestScene().isNotEmpty())
 
         val live = AtomicReference(engineA)
         val liveMarker = AtomicReference("A")
-        val markerByBytes = ConcurrentHashMap<ByteArray, String>()
+        // Markers are keyed by SHA-256, not by ByteArray identity: the
+        // manager hands applyBundle its own downloaded copy of the bytes.
+        val markerBySha = ConcurrentHashMap<String, String>()
+        fun shaOf(bytes: ByteArray): String = BundleUpdateVerifier.sha256Hex(bytes)
         val io = Executors.newSingleThreadExecutor()
 
         val responses = ConcurrentHashMap<String, ByteArray>()
@@ -155,10 +159,11 @@ class OtaEngineJourneyTest {
         // applyBundle mirrors MainActivity.applyOtaUpdate: PARALLEL boot,
         // old engine destroyed only after the candidate initializes.
         val applyBundle: (ByteArray, UpdateProtocol.ReleaseMetadata) -> Boolean = { bytes, _ ->
+            android.util.Log.i("OtaJourney", "applying candidate ${shaOf(bytes).take(8)}")
             val candidate = TenunEngine(bytes)
             val previous = live.getAndSet(candidate)
             try { previous.destroy() } catch (ignored: Exception) {}
-            liveMarker.set(markerByBytes[bytes] ?: "unknown")
+            liveMarker.set(markerBySha[shaOf(bytes)] ?: "unknown")
             true
         }
 
@@ -166,19 +171,21 @@ class OtaEngineJourneyTest {
 
         // ---- v2: valid update applies ----
         val bundleB = packaged + "\n// ota v2".toByteArray()
-        markerByBytes[bundleB] = "B"
+        markerBySha[shaOf(bundleB)] = "B"
         responses["/update-manifest.json"] = manifestFor(pair, 2, bundleB, server.port).toByteArray()
         responses["/update-bundle.js"] = bundleB
 
-        manager.checkNow()
+        manager.checkNow(force = true)
         spinUntil { liveMarker.get() == "B" }
-        assertEquals(2L, store.installedVersion())
+        assertEquals(2L, store.trialSequence()) // applied: in TRIAL, not yet accepted
 
         // Host confirms the trial after its health criterion (engine-level
         // stand-in for scene + dispatch + uptime in MainActivity).
         assertTrue(store.confirmTrial(2))
+        assertEquals(2L, store.installedVersion()) // CONFIRMED: active pointer moved
 
         // Restart: the confirmed bundle is what boots.
+        android.util.Log.i("OtaJourney", "restarting from confirmed store")
         val restarted = TenunEngine(store.activeBundleBytes()!!)
         assertTrue(restarted.getLatestScene().isNotEmpty())
         restarted.destroy()
@@ -188,7 +195,7 @@ class OtaEngineJourneyTest {
         responses["/update-manifest.json"] = manifestFor(pair, 3, bundleC, server.port).toByteArray()
         responses["/update-bundle.js"] = packaged + "\n// TAMPERED".toByteArray()
 
-        manager.checkNow()
+        manager.checkNow(force = true)
         Thread.sleep(SETTLE_MS) // rejected checks change nothing observable
         assertEquals("B", liveMarker.get())
         assertEquals(2L, store.installedVersion())
@@ -196,17 +203,17 @@ class OtaEngineJourneyTest {
 
         // ---- v4: validly signed but boot-failing bundle quarantines ----
         val bundleD = "globalThis.__tenun((((".toByteArray()
-        markerByBytes[bundleD] = "D"
+        markerBySha[shaOf(bundleD)] = "D"
         responses["/update-manifest.json"] = manifestFor(pair, 4, bundleD, server.port).toByteArray()
         responses["/update-bundle.js"] = bundleD
 
-        manager.checkNow()
+        manager.checkNow(force = true)
         spinUntil { store.isQuarantined(4) }
         assertEquals("B", liveMarker.get()) // old engine kept running
         assertNull(store.trialSequence())
 
         // The failed release is never retried.
-        manager.checkNow()
+        manager.checkNow(force = true)
         Thread.sleep(SETTLE_MS)
         assertEquals("B", liveMarker.get())
         assertTrue(store.isQuarantined(4))

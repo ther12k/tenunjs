@@ -74,11 +74,12 @@ class OtaManager(
     /**
      * One update check. [onDone] runs after the check settles (used by the
      * dev loop to schedule the next tick). Throttled to [MIN_CHECK_GAP_MS]
-     * so launch + resume checks cannot hammer the channel.
+     * so launch + resume checks cannot hammer the channel; [force] bypasses
+     * the throttle for tests and explicit operator checks.
      */
-    fun checkNow(onDone: (() -> Unit)? = null) {
+    fun checkNow(force: Boolean = false, onDone: (() -> Unit)? = null) {
         val now = System.currentTimeMillis()
-        if (now - lastCheckAtMs < MIN_CHECK_GAP_MS) {
+        if (!force && now - lastCheckAtMs < MIN_CHECK_GAP_MS) {
             onDone?.invoke()
             return
         }

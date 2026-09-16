@@ -353,8 +353,23 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     return 0;
   }
 
-  tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)bytes, (size_t)len);
-  (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+  /* Copy the script out of the Java array and release the array BEFORE
+   * evaluating: JS_Eval runs the whole bundle (with QuickJS allocations)
+   * while holding this pointer, and the array's storage is managed by the
+   * VM. A native copy keeps the evaluated bytes in stable memory for the
+   * entire eval (incident #191 hardening). */
+  uint8_t* bundle_copy = (uint8_t*)malloc((size_t)len);
+  tenun_android_engine* engine = NULL;
+  if (bundle_copy) {
+    memcpy(bundle_copy, bytes, (size_t)len);
+    (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+    engine = tenun_android_engine_create(bundle_copy, (size_t)len);
+    free(bundle_copy);
+  } else {
+    (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+    TENUN_LOG_WARN("TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null",
+                   tenun_stage_name(TENUN_INIT_ENGINE_ALLOC), tenun_android_next_init_attempt());
+  }
 
   return (jlong)(intptr_t)engine;
 }
