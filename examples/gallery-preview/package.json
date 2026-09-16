@@ -1,0 +1,16 @@
+{
+  "name": "@tenunjs-examples/gallery-preview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop browser preview for the TenunJS gallery UI",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs/navigation": "workspace:*"
+  }
+}
