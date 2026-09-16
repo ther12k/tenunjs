@@ -28,6 +28,9 @@ function commit(): void {
   // scene even when the action ran.
   const normalized = action.toUpperCase();
   if (normalized === "__TENUN_EXPORT") return JSON.stringify(runtime.exportState());
+  if (normalized === "__TENUN_STATE_SCHEMA") {
+    return JSON.stringify({ stateSchema: runtime.stateSchema() });
+  }
   runtime.dispatch(normalized, payload);
   if (normalized === "TENUN_RESTORE" || normalized === "TAP") commit();
   return JSON.stringify({ route: runtime.route() });

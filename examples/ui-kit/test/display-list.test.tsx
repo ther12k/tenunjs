@@ -286,6 +286,16 @@ describe("gallery device loop", () => {
     expect(labels).toContain("123.45");
   });
 
+  test("hot reload: export declares stateSchema 1 and the host can query it", () => {
+    // The host gates state carry on this value: bundles that disagree
+    // restart with clean state instead of importing foreign state.
+    const exported = JSON.parse(__device.dispatch("__TENUN_EXPORT", "{}"));
+    expect(exported.stateSchema).toBe(1);
+
+    const response = JSON.parse(__device.dispatch("__TENUN_STATE_SCHEMA", "{}"));
+    expect(response.stateSchema).toBe(1);
+  });
+
   test("hot reload: restore tolerates unknown routes and screens", () => {
     const before = __device.route();
     const result = JSON.parse(

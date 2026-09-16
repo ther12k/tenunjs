@@ -175,3 +175,94 @@ so every reload is a real engine swap with state carried across — the same
 semantic level Flutter hot reload provides, with different mechanics.
 Without `dev_server.txt` the app never touches the network. Reloads are
 skipped (last good bundle kept) if a rebuild fails on a half-saved file.
+
+## 7. OTA bundle updates (prototype)
+
+Because the whole application is a JavaScript bundle, "update the app
+without a store" reduces to: download a new bundle, verify it, swap the
+engine — live, with state carried over. That is the React Native /
+CodePush delivery shape, and the distribution unit here is even simpler
+(the whole app is one bundle). What does NOT fall out naturally is
+everything CodePush-like infrastructure is actually made of: trust,
+anti-replay, host compatibility, state-schema compatibility, activation,
+rollback, crash recovery, key rotation, rollout, observability. This
+prototype implements the first six in small, explicit form and leaves the
+rest for later design.
+
+```bash
+# once: generate the channel keypair (keep the private key OUT of git —
+# and never `git add -A` in a tree that holds it; stage explicit paths)
+node embedders/android/tools/gallery-bundle/publish-update.mjs --init
+
+# publish release v2 (signs the built gallery bundle)
+bun embedders/android/tools/gallery-bundle/rebuild.ts
+node embedders/android/tools/gallery-bundle/publish-update.mjs \
+  --version 2 --base-url http://<laptop-ip>:8898
+# -> examples/gallery-preview/.out/ota/{update-manifest.json,update-bundle.js,update_channel.json}
+
+# bake the channel into the APK (once): copy update_channel.json to
+# app/src/main/assets/ and assembleDebug — then run the dev server
+bun embedders/android/tools/gallery-bundle/dev-server.ts   # serves /update-*
+```
+
+### Signed release envelope
+
+The served manifest is `{ payload, signature }`: an ECDSA P-256 signature
+over the EXACT bytes of the release metadata — no re-serialization, no
+canonicalization. The app verifies the signature first, then parses those
+same verified bytes. The signed metadata carries the security-relevant
+contract, so replays and misattributed releases fail closed:
+
+    schema, appId, channel,
+    sequence          (monotonic; the anti-replay floor),
+    hostApiMin/hostApiMax (an old APK refuses a bundle needing a newer host),
+    stateSchema       (state carry across swaps only when equal),
+    bundleFormat ("tenun-js-bundle-v1"), bundleSize, bundleSha256, bundleUrl
+
+Gate order: signature → parse → app/channel/host match → sequence newer
+than accepted and not quarantined → download → size/digest match → stage.
+
+### Lifecycle and rollback
+
+    staged → trial → confirmed (active pointer moves)
+
+A trial is confirmed only after: first scene committed, first successful
+dispatch, and minimum uptime. A process that dies before confirming leaves
+the TRIAL on disk; the next start quarantines that sequence and boots the
+last confirmed (or packaged) bundle. A failed apply quarantines the
+sequence immediately — a bad release is never retried. Storage is
+versioned directories (`bundles/<sequence>/`) with atomic temp-file
+renames and one lock; pointers never point at partial state.
+
+### Network posture
+
+- HTTPS for production channels; release builds ship with a Network
+  Security Config that forbids cleartext (`src/main/res/xml`); debug
+  builds override it (`src/debug/res/xml`) so the LAN dev loop works.
+- No certificate pinning: TLS provides transport confidentiality and
+  server authentication; update AUTHENTICITY comes from the pinned
+  signing key in the signed envelope, which survives even TLS-layer
+  problems. (Android advises against pinning as a default because server
+  cert changes can strand installed clients.)
+- Polling: 30s loop ONLY on dev builds (dev_server.txt present);
+  otherwise launch + foreground-resume checks, throttled. Perpetual
+  short polling must not become an accidental production contract — the
+  production shape is launch/resume + WorkManager or push.
+
+### Scope and honesty
+
+- **JS application bundles only; no DEX/JAR/native-library OTA.** The
+  host only ever evaluates the declared JS bundle format; anything else
+  is a normal APK install. (This matches the interpreted-code carve-out
+  in Google Play policy — but "Play compliant OTA" is NOT claimed until a
+  real release passes review.)
+- Without the channel asset, OTA is completely dormant (no network use).
+- Implementation status: verified at the prototype level. The JVM suite
+  (protocol gates, store lifecycle/quarantine, channel/verifier) passes
+  via `./gradlew test`; the on-device OtaEngineJourneyTest (signed
+  update applies → restart keeps it → tampered rejected → boot-failing
+  quarantined) runs in the CI device acceptance gate. Production
+  operational maturity (WorkManager/push cadence, real channel ops) is
+  still future work.
+
+Logs: `adb logcat -s TenunOta TenunMainActivity TenunEngine`.

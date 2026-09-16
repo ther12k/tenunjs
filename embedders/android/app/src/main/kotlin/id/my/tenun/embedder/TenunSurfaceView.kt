@@ -95,6 +95,14 @@ class TenunSurfaceView @JvmOverloads constructor(
     private var isScrolling = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 
+    /**
+     * OTA confirm-criterion hook: invoked once after the first successful
+     * TAP dispatch on an OTA trial bundle — evidence the host→JS event
+     * contract works under the new code, not just that it initialized.
+     */
+    var onFirstSuccessfulDispatch: (() -> Unit)? = null
+    private var dispatchedOnce = false
+
     private var isSurfaceValid = false
 
     // Layout bounds
@@ -361,6 +369,10 @@ class TenunSurfaceView @JvmOverloads constructor(
                             // the dispatch return value is engine state.
                             syncFromScene(eng.getLatestScene())
                             redraw()
+                            if (!dispatchedOnce) {
+                                dispatchedOnce = true
+                                onFirstSuccessfulDispatch?.invoke()
+                            }
                         }
                     }
                 }

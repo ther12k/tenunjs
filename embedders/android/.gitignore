@@ -7,4 +7,7 @@ local.properties
 device-acceptance-output/
 app/src/main/assets/gallery_app.js
 app/src/main/assets/dev_server.txt
+app/src/main/assets/update_channel.json
 tools/gallery-bundle/.last-build.json
+tools/gallery-bundle/ota-private.pem
+tools/gallery-bundle/ota-private.pem.pub.b64
