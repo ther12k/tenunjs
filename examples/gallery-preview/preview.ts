@@ -120,3 +120,21 @@ async function checkForReload(): Promise<void> {
 makeRouteButtons();
 paint();
 window.setInterval(() => void checkForReload(), 2500);
+
+// Dev/test hook: lets tooling (and tests) scroll the canvas viewport
+// programmatically — the pointer-drag path is awkward for automation.
+(window as unknown as Record<string, unknown>)["__previewScroll"] = (y: number) => {
+  scrollY = Math.max(0, Math.min(renderer.maxScroll(runtime.render().scene), y));
+  paint();
+};
+// Companion hook: dispatch a tap by payload id (what hosts echo back —
+// NOT the region index; the shell prepends a back-to-home region on
+// non-home routes), plus a region readout so automation can aim.
+(window as unknown as Record<string, unknown>)["__previewTaps"] = () =>
+  runtime.render().scene.taps.map((t) => ({ y: t.y, h: t.h, id: t.payload.id }));
+(window as unknown as Record<string, unknown>)["__previewTap"] = (id: number) => {
+  runtime.dispatch("TAP", id);
+  paint();
+};
+(window as unknown as Record<string, unknown>)["__previewState"] = () =>
+  JSON.stringify(runtime.exportState());

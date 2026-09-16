@@ -5,16 +5,25 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { Column } from "@tenunjs/widgets";
+import { Button, Column } from "@tenunjs/widgets";
 import { galleryTheme } from "../../gallery/src/theme";
 import {
   Avatar,
+  Badge,
+  Checkbox,
   Chip,
   Divider,
+  FAB,
   HeroCard,
+  NavigationBar,
   ProgressBar,
   ProgressRing,
+  SegmentedButton,
+  Slider,
+  SnackBar,
   Switch,
+  Tabs,
+  TextField,
   layoutScreen,
 } from "../src";
 
@@ -52,9 +61,12 @@ describe("ui-kit canvas components", () => {
       Extract<(typeof scene.ops)[number], { op: "circle" }>
     >;
     expect(circles.length).toBe(1);
-    // Off: knob sits at the left of the 56-wide pill. The knob's cx is
-    // scene-absolute: 16 (relative) + 24 (Column padding lg origin).
-    expect(circles[0]!.cx).toBe(40);
+    // Off: small knob at the left of the 64x36 outlined pill (M3 off
+    // thumb). The knob's cx is scene-absolute: 18 (relative) + 24 (Column
+    // padding lg origin).
+    expect(circles[0]!.cx).toBe(42);
+    expect(circles[0]!.r).toBe(8);
+    expect(scene.ops.some((op) => op.op === "outline")).toBe(true);
 
     expect(scene.taps.length).toBe(1);
     tapRuns[0]!();
@@ -68,8 +80,13 @@ describe("ui-kit canvas components", () => {
     const onKnob = onScene.scene.ops.filter(
       (op) => op.op === "circle"
     )[0] as unknown as Extract<(typeof onScene.scene.ops)[number], { op: "circle" }>;
-    // On: 56 - 16 (relative) + 24 (origin).
-    expect(onKnob.cx).toBe(64);
+    // On: 64 - 18 (relative) + 24 (origin); checked thumb with a check.
+    expect(onKnob.cx).toBe(70);
+    expect(onKnob.r).toBe(14);
+    const onTexts = onScene.scene.ops.filter((op) => op.op === "text") as Array<
+      Extract<(typeof onScene.scene.ops)[number], { op: "text" }>
+    >;
+    expect(onTexts.map((t) => t.text)).toContain("✓");
   });
 
   test("Chip fills when selected, outlines otherwise, taps dispatch", () => {
@@ -80,8 +97,14 @@ describe("ui-kit canvas components", () => {
         <Chip label="Home" selected={false} />
       </Column>
     );
-    expect(scene.ops.some((op) => op.op === "rect" && op.r === 20)).toBe(true);
-    expect(scene.ops.some((op) => op.op === "outline" && op.r === 20)).toBe(true);
+    // M3 chip: full-pill shape (r = h/2 = 22); the selected chip leads
+    // with a check glyph.
+    expect(scene.ops.some((op) => op.op === "rect" && op.r === 22)).toBe(true);
+    expect(scene.ops.some((op) => op.op === "outline" && op.r === 22)).toBe(true);
+    const texts = scene.ops.filter((op) => op.op === "text") as Array<
+      Extract<(typeof scene.ops)[number], { op: "text" }>
+    >;
+    expect(texts.map((t) => t.text)).toContain("✓ Tech");
     expect(scene.taps.length).toBe(1);
     tapRuns[0]!();
     expect(picks).toBe(1);
@@ -109,5 +132,93 @@ describe("ui-kit canvas components", () => {
     >;
     expect(texts.map((t) => t.text)).toContain("TOTAL");
     expect(texts.map((t) => t.text)).toContain("1234.00");
+  });
+
+  test("M3 widget set: FAB, Checkbox, Slider, Tabs, NavigationBar, Badge, SnackBar, TextField, SegmentedButton", () => {
+    let sliderValue = -1;
+    let navIndex = -1;
+    let tab = -1;
+    let segment = -1;
+    let toggles = 0;
+    let action = 0;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg" gap="sm">
+        <FAB glyph="✦" label="Compose" onPress={() => action++} />
+        <Checkbox checked={true} onToggle={() => toggles++} label="News" />
+        <Slider value={0.5} onChange={(v) => (sliderValue = v)} />
+        <Tabs tabs={["A", "B", "C"]} active={1} onSelect={(i) => (tab = i)} />
+        <NavigationBar
+          items={[
+            { glyph: "⌂", label: "Home" },
+            { glyph: "♡", label: "Saved" },
+          ]}
+          active={0}
+          onSelect={(i) => (navIndex = i)}
+        />
+        <Badge count={7} />
+        <SnackBar message="Saved." actionLabel="UNDO" onAction={() => action++} />
+        <TextField label="Name" value="Ada" focused={true} />
+        <SegmentedButton options={["Day", "Week"]} selected={0} onSelect={(i) => (segment = i)} />
+      </Column>
+    );
+
+    // FAB: primary-container pill with layered elevation under it.
+    expect(scene.ops.some((op) => op.op === "rect" && op.color === "#44000000")).toBe(true);
+    const texts = scene.ops.filter((op) => op.op === "text") as Array<
+      Extract<(typeof scene.ops)[number], { op: "text" }>
+    >;
+    const labels = texts.map((t) => t.text);
+    expect(labels).toContain("Compose");
+    expect(labels).toContain("✓"); // checkbox check glyph
+    expect(labels).toContain("News"); // checkbox label
+    expect(labels).toContain("Ada"); // text field value
+    expect(labels).toContain("Name"); // floating label
+    expect(labels).toContain("UNDO");
+    expect(labels).toContain("7"); // badge count
+
+    // Interaction surfaces register taps: FAB, checkbox, slider buckets,
+    // tabs, nav items, snackbar action, segments. The text field is
+    // render-only here (no onFocusChange), so it contributes none.
+    expect(scene.taps.length).toBe(1 + 1 + 24 + 3 + 2 + 1 + 2);
+    const run = (index: number) => tapRuns[index]!();
+    run(0); // FAB
+    expect(action).toBe(1);
+    run(1); // checkbox
+    expect(toggles).toBe(1);
+    run(2 + 12); // slider bucket 12 of 24 -> center fraction
+    expect(sliderValue).toBeCloseTo(0.5208, 3);
+    run(2 + 24 + 2); // third tab
+    expect(tab).toBe(2);
+    run(2 + 24 + 3 + 1); // second nav item
+    expect(navIndex).toBe(1);
+    run(2 + 24 + 3 + 2 + 0); // snackbar action
+    expect(action).toBe(2);
+    run(2 + 24 + 3 + 2 + 2); // second segment
+    expect(segment).toBe(1);
+  });
+
+  test("M3 buttons: filled elevates, tonal fills the container, outlined strokes, text is bare", () => {
+    const { scene } = layout(
+      <Column padding="lg" gap="sm">
+        <Button variant="primary">Filled</Button>
+        <Button variant="tonal">Tonal</Button>
+        <Button variant="secondary">Outlined</Button>
+        <Button variant="text">Bare</Button>
+      </Column>
+    );
+    const rects = scene.ops.filter((op) => op.op === "rect") as Array<
+      Extract<(typeof scene.ops)[number], { op: "rect" }>
+    >;
+    const outlines = scene.ops.filter((op) => op.op === "outline");
+    // Filled button carries elevation; tonal fills its container role.
+    const withShadow = rects.filter((r) => r.shadow !== undefined);
+    expect(withShadow.length).toBe(1);
+    expect(withShadow[0]!.color).toBe("#4C8DFF");
+    expect(rects.some((r) => r.color === "#223354")).toBe(true); // container fill
+    expect(outlines.length).toBe(1); // outlined button only
+    // Full-pill shape on every filled/stroked button.
+    for (const op of [...rects, ...outlines]) {
+      if ("r" in op && op.h === 64) expect(op.r).toBe(32);
+    }
   });
 });

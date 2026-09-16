@@ -52,6 +52,7 @@ export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
     padding: { type: ["string", "number"] },
     radius: { type: ["string", "number"] },
     background: { type: "string" },
+    elevation: { type: "boolean" },
     semantics: { type: "object" },
   },
   "app-bar": { title: { type: "string", required: true } },

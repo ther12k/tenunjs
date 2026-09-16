@@ -106,7 +106,11 @@ export function Text(props: TextProps): WidgetNode {
 }
 
 export interface ButtonProps {
-  variant?: "primary" | "secondary" | "danger";
+  /**
+   * M3 families: primary renders filled (elevated), secondary renders
+   * outlined, plus tonal, text, and danger.
+   */
+  variant?: "primary" | "secondary" | "tonal" | "text" | "danger";
   onPress?: () => void;
   children?: WidgetChild;
 }
@@ -119,6 +123,8 @@ export interface CardProps {
   padding?: string | number;
   radius?: string | number;
   background?: string;
+  /** Elevated cards paint layered elevation under the surface. */
+  elevation?: boolean;
   semantics?: Record<string, unknown>;
   children?: WidgetChild;
 }

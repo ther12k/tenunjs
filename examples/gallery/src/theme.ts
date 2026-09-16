@@ -10,6 +10,14 @@ export const galleryTheme = defineTheme({
     text: "#F2F2F7",
     accent: "#4C8DFF",
     danger: "#FF5A5F",
+    // M3 tonal roles used by the upgraded buttons, fields, and nav.
+    primaryContainer: "#223354",
+    onPrimaryContainer: "#D6E4FF",
+    secondaryContainer: "#30354A",
+    outline: "#474B5A",
+    outlineVariant: "#26262F",
+    success: "#3DD68C",
+    warning: "#F5A623",
   },
 
   spacing: {

@@ -10,12 +10,14 @@ import { MusicScreen } from "./screens/music.screen";
 import { ChatScreen } from "./screens/chat.screen";
 import { RecipesScreen } from "./screens/recipes.screen";
 import { CryptoScreen } from "./screens/crypto.screen";
+import { ViewsScreen } from "./screens/views.screen";
 
 // Typed route table: one route per Flutter-inspired module. Route params
 // are validated through the same schemas as incoming deep links once the
 // executable application model lands (M3).
 export const routes = defineRoutes({
   home: { path: "/", screen: HomeScreen },
+  views: { path: "/views", screen: ViewsScreen },
   banking: { path: "/banking", screen: BankingScreen },
   smartHome: { path: "/smart-home", screen: SmartHomeScreen },
   fitness: { path: "/fitness", screen: FitnessScreen },

@@ -20,6 +20,7 @@ describe("GalleryRuntime", () => {
     expect(runtime.route()).toBe("home");
     expect(runtime.routes()).toEqual([
       "home",
+      "views",
       "banking",
       "smartHome",
       "fitness",
@@ -32,9 +33,18 @@ describe("GalleryRuntime", () => {
       "crypto",
     ]);
     const home = runtime.render().scene;
-    expect(home.taps.length).toBe(10);
+    expect(home.taps.length).toBe(11);
 
-    const bankingTap = home.taps[0]!;
+    // First tile is the widget showcase; the second opens banking.
+    const viewsTap = home.taps[0]!;
+    runtime.dispatch("TAP", viewsTap.payload.id);
+    expect(runtime.route()).toBe("views");
+    const views = runtime.render().scene;
+    expect(views.ops.some((op) => op.op === "text" && op.text === "Buttons")).toBe(true);
+
+    runtime.navigate("home");
+    const homeAgain = runtime.render().scene;
+    const bankingTap = homeAgain.taps[1]!;
     runtime.dispatch("TAP", bankingTap.payload.id);
     expect(runtime.route()).toBe("banking");
     const banking = runtime.render().scene;

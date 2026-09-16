@@ -142,7 +142,7 @@ export const MusicScreen = defineScreen({
                   glyph={state.playing ? "⏸" : "▶"}
                   size={76}
                   glyphSize={30}
-                  filled={true}
+                  variant="filled"
                   onPress={() => actions.playPause()}
                 />
                 <IconButton glyph="⏭" size={56} onPress={() => actions.next()} />
@@ -161,7 +161,7 @@ export const MusicScreen = defineScreen({
             {state.queue.map((item, index) => (
               <ListTile
                 key={item.title}
-                leading={<IconButton glyph={item.glyph} size={44} glyphSize={20} filled={index === state.trackIndex} />}
+                leading={<IconButton glyph={item.glyph} size={44} glyphSize={20} variant={index === state.trackIndex ? "filled" : "tonal"} />}
                 title={item.title}
                 subtitle={`${item.artist} · ${fmt(item.durationSec)}`}
                 trailing={
