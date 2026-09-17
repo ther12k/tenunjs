@@ -26,6 +26,7 @@
 import type { WidgetNode } from "@tenunjs/jsx-runtime";
 import { Column, Card, Row, Text } from "@tenunjs/widgets";
 import { Canvas, textWidth, wrapText, type DisplayOp } from "./display-list";
+import type { SchemeRoles } from "./scheme";
 
 /** Material-3-style dark palette defaults, aligned with examples/gallery. */
 const KIT = {
@@ -77,7 +78,8 @@ interface CanvasBoxProps {
   paint: (
     origin: { x: number; y: number; w: number },
     put: (op: DisplayOp) => void,
-    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void
+    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void,
+    palette: SchemeRoles
   ) => void;
 }
 
@@ -185,7 +187,8 @@ export function Avatar(props: AvatarProps): WidgetNode {
   return canvasBox({
     width: size,
     height: size,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       put({ op: "circle", cx: r, cy: r, r, color: props.color ?? C.primaryContainer });
       centerText(put, origin, props.label, r, Math.round(size * 0.38), 700, props.textColor ?? C.onPrimaryContainer);
     },
@@ -214,7 +217,8 @@ export function ProgressRing(props: ProgressRingProps): WidgetNode {
   return canvasBox({
     width: size,
     height: size,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       put({
         op: "ring",
         cx: size / 2,
@@ -251,7 +255,8 @@ export function Switch(props: SwitchProps): WidgetNode {
   return canvasBox({
     width: w,
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       if (props.on) {
         put({ op: "rect", x: 0, y: 0, w, h, r: h / 2, color: C.primary });
         put({ op: "circle", cx: w - 18, cy: h / 2, r: 14, color: C.onPrimary });
@@ -299,7 +304,8 @@ export function Chip(props: ChipProps): WidgetNode {
   return canvasBox({
     width: w,
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       if (props.selected) {
         put({ op: "rect", x: 0, y: 0, w, h, r: h / 2, color: C.secondaryContainer });
         centerText(put, origin, label, h / 2, size, 600, C.onSecondaryContainer);
@@ -322,7 +328,8 @@ export interface DividerProps {
 export function Divider(props: DividerProps = {}): WidgetNode {
   return canvasBox({
     height: 1,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       put({ op: "line", x1: 0, y1: 0, x2: origin.w, y2: 0, color: props.color ?? C.outlineVariant, width: 1 });
     },
   });
@@ -346,7 +353,8 @@ export function ProgressBar(props: ProgressBarProps): WidgetNode {
   const ratio = props.max > 0 ? Math.max(0, Math.min(1, props.value / props.max)) : 0;
   return canvasBox({
     height,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       const cy = height / 2;
       const inactive = height / 3;
       put({
@@ -399,7 +407,8 @@ export function HeroCard(props: HeroCardProps): WidgetNode {
   const height = props.height ?? 148;
   return canvasBox({
     height,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       softShadow(put, 0, 0, origin.w, height, 22, 2);
       put({
         op: "gradient",
@@ -442,12 +451,13 @@ export function Bubble(props: BubbleProps): WidgetNode {
   const widest = Math.max(...lines.map((line) => textWidth(line, size)));
   const w = Math.min(widest + padX * 2, 440);
   const h = lines.length * lineHeight + padY * 2;
-  const fill = props.mine ? C.primary : "#262631";
-  const textColor = props.mine ? C.onPrimary : C.onSurface;
   return canvasBox({
     width: w,
     height: h,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
+      const fill = props.mine ? C.primary : "#262631";
+      const textColor = props.mine ? C.onPrimary : C.onSurface;
       put({ op: "rect", x: 0, y: 0, w: origin.w, h, r: 18, color: fill });
       lines.forEach((line, index) => {
         put({
@@ -485,11 +495,12 @@ export function IconButton(props: IconButtonProps): WidgetNode {
   const variant = props.variant ?? "tonal";
   const glyphSize = props.glyphSize ?? Math.round(size * 0.42);
   const r = size / 2;
-  const tint = props.color ?? (variant === "filled" ? C.primary : C.primary);
   return canvasBox({
     width: size,
     height: size,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      const tint = props.color ?? C.primary;
       if (variant === "filled") {
         put({ op: "circle", cx: r, cy: r, r, color: tint });
         centerText(put, origin, props.glyph, r, glyphSize, 600, C.onPrimary);
@@ -525,15 +536,16 @@ export interface FabProps {
 export function FAB(props: FabProps): WidgetNode {
   const size = props.size ?? 104;
   const glyphSize = Math.round(size * 0.4);
-  const bg = props.color ?? C.primaryContainer;
-  const fg = C.onPrimaryContainer;
   const label = props.label;
   const w = label ? textWidth(label, 17) + size + 40 : size;
   const h = size;
   return canvasBox({
     width: w,
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      const bg = props.color ?? C.primaryContainer;
+      const fg = C.onPrimaryContainer;
       softShadow(put, 0, 0, w, h, h / 2, 2);
       put({ op: "rect", x: 0, y: 0, w, h, r: h / 2, color: bg });
       if (label) {
@@ -563,7 +575,8 @@ export function Checkbox(props: CheckboxProps): WidgetNode {
   const box = canvasBox({
     width: size,
     height: size,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       if (props.checked) {
         put({ op: "rect", x: 0, y: 0, w: size, h: size, r: 9, color: C.primary });
         centerText(put, origin, "✓", size / 2, 24, 700, C.onPrimary);
@@ -607,7 +620,8 @@ export function Slider(props: SliderProps): WidgetNode {
   const value = Math.max(0, Math.min(1, props.value));
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const cy = h / 2;
       const handleX = Math.min(Math.max(origin.w * value, 12), origin.w - 12);
       put({ op: "rect", x: 0, y: cy - 4, w: origin.w, h: 8, r: 4, color: C.surfaceContainerHigh });
@@ -647,13 +661,14 @@ export function TrackBar(props: TrackBarProps): WidgetNode {
   const ratio = Math.max(0, Math.min(1, props.ratio));
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const cy = h / 2;
       put({ op: "rect", x: 0, y: cy - 4, w: origin.w, h: 8, r: 4, color: KIT.track });
       if (ratio > 0) {
         put({ op: "rect", x: 0, y: cy - 4, w: Math.max(origin.w * ratio, 8), h: 8, r: 4, color: C.primary });
       }
-      put({ op: "circle", cx: Math.min(origin.w * ratio, origin.w - 10), cy, r: 10, color: C.white });
+      put({ op: "circle", cx: Math.min(origin.w * ratio, origin.w - 10), cy, r: 10, color: C.onPrimaryFixed });
       if (props.onSeek) {
         const slice = origin.w / SEEK_BUCKETS;
         for (let i = 0; i < SEEK_BUCKETS; i++) {
@@ -681,7 +696,8 @@ export function Tabs(props: TabsProps): WidgetNode {
   const h = 64;
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const each = origin.w / props.tabs.length;
       props.tabs.forEach((tab, index) => {
         const activeTab = index === props.active;
@@ -732,7 +748,8 @@ export function NavigationBar(props: NavigationBarProps): WidgetNode {
   const h = 104;
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       put({ op: "rect", x: -40, y: 0, w: origin.w + 80, h, r: 0, color: C.surfaceContainer });
       put({ op: "line", x1: -40, y1: 0, x2: origin.w + 40, y2: 0, color: C.outlineVariant, width: 2 });
       const each = origin.w / props.items.length;
@@ -782,7 +799,8 @@ export function Badge(props: BadgeProps = {}): WidgetNode {
   return canvasBox({
     width: props.count === undefined ? 16 : 36,
     height: props.count === undefined ? 16 : 36,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       if (props.count === undefined) {
         put({ op: "circle", cx: 8, cy: 8, r: 7, color });
         return;
@@ -809,9 +827,10 @@ export function SnackBar(props: SnackBarProps): WidgetNode {
   const h = 88;
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       softShadow(put, 0, 0, origin.w, h, 16, 2);
-      put({ op: "rect", x: 0, y: 0, w: origin.w, h, r: 16, color: "#2E2E3C" });
+      put({ op: "rect", x: 0, y: 0, w: origin.w, h, r: 16, color: C.inverseSurface });
       const actionW = props.actionLabel ? textWidth(props.actionLabel, 17) + 48 : 0;
       const messageW = origin.w - actionW - 64;
       const lines = wrapText(props.message, 16, messageW);
@@ -856,7 +875,8 @@ export function TextField(props: TextFieldProps): WidgetNode {
   const size = 17;
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const floating = props.focused || (props.value ?? "").length > 0;
       put({ op: "outline", x: 0, y: 0, w: origin.w, h, r: 16, color: props.focused ? C.primary : C.outlineVariant, width: props.focused ? 4 : 2 });
       const textX = props.leading ? 76 : 28;
@@ -899,7 +919,8 @@ export function SegmentedButton(props: SegmentedButtonProps): WidgetNode {
   const h = 60;
   return canvasBox({
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const each = origin.w / props.options.length;
       put({ op: "outline", x: 0, y: 0, w: origin.w, h, r: h / 2, color: C.outlineVariant, width: 2 });
       props.options.forEach((option, index) => {
@@ -946,7 +967,8 @@ export function PageIndicator(props: PageIndicatorProps): WidgetNode {
   return canvasBox({
     width: w,
     height: h,
-    paint: (origin, put, tap) => {
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
       const slice = w / props.count;
       for (let i = 0; i < props.count; i++) {
         const center = i * (dot + gap) + dot / 2;
@@ -989,7 +1011,8 @@ export function StarRating(props: StarRatingProps): WidgetNode {
   return canvasBox({
     width: 5 * size + 4 * gap,
     height: h,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
       for (let i = 0; i < 5; i++) {
         put({
           op: "text",
@@ -1001,6 +1024,97 @@ export function StarRating(props: StarRatingProps): WidgetNode {
           color: i < stars ? props.color ?? C.warning : props.inactiveColor ?? C.outline,
         });
       }
+    },
+  });
+}
+
+/** ---------- ModalDrawer ---------- */
+
+export interface DrawerItem {
+  glyph: string;
+  label: string;
+}
+
+export interface ModalDrawerProps {
+  open: boolean;
+  items: ReadonlyArray<DrawerItem>;
+  /** Index of the active destination, or -1 for none. */
+  active: number;
+  onSelect?: (index: number) => void;
+  /** Tapping the scrim dismisses the drawer. */
+  onDismiss?: () => void;
+  /** Headline shown at the top of the panel. */
+  heading?: string;
+}
+
+/**
+ * M3 modal navigation drawer as a zero-height overlay anchor: place it as
+ * the LAST child of a screen body so its ops paint after everything (paint
+ * order is z-order) and its tap regions register after all content — with
+ * the hosts' topmost-region-wins hit test, the scrim safely swallows taps
+ * that would otherwise reach the covered content. The paint compensates
+ * the anchor's absolute origin, so the overlay always covers the whole
+ * scene from its top-left, wherever the anchor sits in the tree. The
+ * panel is the M3 480-unit drawer: surface-container fill, a headline,
+ * and destination rows where the active item wears the
+ * secondary-container pill.
+ */
+export function ModalDrawer(props: ModalDrawerProps): WidgetNode {
+  if (!props.open) return canvasBox({ height: 0, paint: () => undefined });
+  const itemH = 76;
+  const headingH = 108;
+  const panelW = 480;
+  return canvasBox({
+    height: 0,
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      // Translate to scene space: ops are shifted by the anchor origin, so
+      // emitting -origin.x/-origin.y lands them at the scene's top-left.
+      const dx = -origin.x;
+      const dy = -origin.y;
+      const at = (x: number, y: number): { x: number; y: number } => ({ x: dx + x, y: dy + y });
+      // Scrim over the whole design surface (the engine never clips).
+      put({ op: "rect", ...at(-80, 0), w: origin.w + 160, h: 3200, r: 0, color: "#8C000000" });
+      if (props.onDismiss) {
+        tap({ x: dx + panelW, y: dy, w: origin.w - panelW + 160, h: 3200 }, props.onDismiss);
+      }
+      // Panel: full-height slab with a hairline leading edge.
+      put({ op: "rect", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.surfaceContainer });
+      put({ op: "outline", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.outlineVariant, width: 2 });
+      put({
+        op: "text",
+        ...at(40, 64),
+        text: props.heading ?? "Menu",
+        size: 30,
+        weight: 700,
+        color: C.onSurface,
+      });
+      props.items.forEach((item, index) => {
+        const top = headingH + index * itemH;
+        const active = index === props.active;
+        if (active) {
+          put({ op: "rect", ...at(24, top + 6), w: panelW - 48, h: itemH - 12, r: (itemH - 12) / 2, color: C.secondaryContainer });
+        }
+        put({
+          op: "text",
+          ...at(52, top + itemH / 2 + 24 * 0.36),
+          text: item.glyph,
+          size: 24,
+          weight: 600,
+          color: active ? C.onSecondaryContainer : C.onSurfaceVariant,
+        });
+        put({
+          op: "text",
+          ...at(112, top + itemH / 2 + 17 * 0.36),
+          text: item.label,
+          size: 17,
+          weight: active ? 700 : 500,
+          color: active ? C.onSecondaryContainer : C.onSurfaceVariant,
+        });
+        if (props.onSelect) {
+          tap({ x: dx, y: dy + top, w: panelW, h: itemH }, () => props.onSelect!(index));
+        }
+      });
     },
   });
 }
@@ -1019,11 +1133,12 @@ export interface SparklineProps {
 /** Compact line chart drawn as N-1 line segments, normalized to the box. */
 export function Sparkline(props: SparklineProps): WidgetNode {
   const height = props.height ?? 44;
-  const color = props.color ?? C.success;
   return canvasBox({
     width: props.width,
     height,
-    paint: (origin, put) => {
+    paint: (origin, put, _tap, pal) => {
+      const C = pal;
+      const color = props.color ?? C.success;
       const data = props.data;
       if (data.length < 2) return;
       const min = Math.min(...data);

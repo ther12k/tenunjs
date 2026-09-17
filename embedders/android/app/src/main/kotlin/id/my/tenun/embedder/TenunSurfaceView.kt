@@ -361,7 +361,11 @@ class TenunSurfaceView @JvmOverloads constructor(
                 if (!isScrolling) {
                     val designX = event.x / dlScale
                     val designY = event.y / dlScale + scrollY
-                    val hit = dl.taps.firstOrNull { it.contains(designX, designY) }
+                    // Topmost painted region wins: ops paint in order, so
+                    // the LAST containing tap is the one the user sees —
+                    // required for overlays (modal drawer scrim over
+                    // content). Matches the browser renderer.
+                    val hit = dl.taps.lastOrNull { it.contains(designX, designY) }
                     if (hit != null) {
                         engine?.let { eng ->
                             eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")

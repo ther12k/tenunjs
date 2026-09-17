@@ -16,6 +16,7 @@ import { ViewsScreen } from "../gallery/src/screens/views.screen";
 import { OnboardingScreen } from "../gallery/src/screens/onboarding.screen";
 import { PlantsScreen } from "../gallery/src/screens/plants.screen";
 import { ProfileScreen } from "../gallery/src/screens/profile.screen";
+import { ThemeLabScreen } from "../gallery/src/screens/theme-lab.screen";
 import { layoutScreen, type DisplayListScene } from "../ui-kit/src/display-list";
 
 type AnyScreen = ScreenDefinition<any, any>;
@@ -27,6 +28,7 @@ const screens: Record<string, AnyScreen> = {
   onboarding: OnboardingScreen as AnyScreen,
   plants: PlantsScreen as AnyScreen,
   profile: ProfileScreen as AnyScreen,
+  themeLab: ThemeLabScreen as AnyScreen,
   banking: BankingScreen as AnyScreen,
   smartHome: SmartHomeScreen as AnyScreen,
   fitness: FitnessScreen as AnyScreen,

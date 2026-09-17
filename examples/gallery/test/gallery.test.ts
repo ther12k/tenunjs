@@ -9,6 +9,7 @@ import { HomeScreen } from "../src/screens/home.screen";
 import { OnboardingScreen } from "../src/screens/onboarding.screen";
 import { PlantsScreen } from "../src/screens/plants.screen";
 import { ProfileScreen } from "../src/screens/profile.screen";
+import { ThemeLabScreen } from "../src/screens/theme-lab.screen";
 import type { BankingState } from "../src/screens/banking.screen";
 import type { SmartHomeState } from "../src/screens/smart-home.screen";
 import type { FitnessState } from "../src/screens/fitness.screen";
@@ -261,5 +262,26 @@ describe("Profile & account", () => {
     expect(h.state.loggedOut).toBe(true);
     h.press("signIn");
     expect(h.state.loggedOut).toBe(false);
+  });
+});
+
+describe("Theme lab", () => {
+  test("seed and mode selections land in state", () => {
+    const h = mountScreen(ThemeLabScreen);
+    expect(h.state.seedIndex).toBe(0);
+    expect(h.state.dark).toBe(false);
+    h.press("setSeed", 2);
+    expect(h.state.seedIndex).toBe(2);
+    h.press("setMode", 1);
+    expect(h.state.dark).toBe(true);
+    h.press("setMode", 0);
+    expect(h.state.dark).toBe(false);
+  });
+
+  test("toggle counting stays theme-independent", () => {
+    const h = mountScreen(ThemeLabScreen);
+    h.press("countToggle");
+    h.press("countToggle");
+    expect(h.state.toggles).toBe(2);
   });
 });

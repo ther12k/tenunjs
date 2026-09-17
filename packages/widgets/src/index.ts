@@ -65,10 +65,16 @@ export function Scaffold(props: ScaffoldProps): WidgetNode {
 
 export interface AppBarProps {
   title: string;
+  /** Leading burger; the M3 modal-drawer affordance. */
+  onMenu?: () => void;
 }
 
 export function AppBar(props: AppBarProps): WidgetNode {
-  return jsx(HostWidgetKind.APP_BAR, { title: props.title });
+  const node = jsx(HostWidgetKind.APP_BAR, {
+    title: props.title,
+    ...(props.onMenu ? { onMenu: props.onMenu } : {}),
+  });
+  return node;
 }
 
 export interface ColumnProps {

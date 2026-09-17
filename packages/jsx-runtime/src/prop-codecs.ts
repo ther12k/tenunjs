@@ -55,7 +55,7 @@ export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
     elevation: { type: "boolean" },
     semantics: { type: "object" },
   },
-  "app-bar": { title: { type: "string", required: true } },
+  "app-bar": { title: { type: "string", required: true }, onMenu: { type: "function" } },
   "input": {
     field: { type: "string" },
     value: { type: "string" },

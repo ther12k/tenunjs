@@ -8,15 +8,17 @@ import {
   Scaffold,
   Text,
 } from "@tenunjs/widgets";
-import { Avatar, HeroCard, ListTile } from "@tenunjs-examples/ui-kit";
+import { Avatar, HeroCard, ListTile, ModalDrawer } from "@tenunjs-examples/ui-kit";
 
 /**
  * Gallery hub — the all-in-one entry point, styled after Flutter's
  * showcase hubs: a gradient hero, then one rich list tile per module with
- * an icon avatar and an Open action.
+ * an icon avatar and an Open action. A burger in the app bar opens an M3
+ * modal drawer with every destination — the modern app shell.
  */
 export interface HomeState {
   opened: string | null;
+  drawerOpen: boolean;
 }
 
 export const HomeScreen = defineScreen({
@@ -24,11 +26,16 @@ export const HomeScreen = defineScreen({
 
   initialState: (): HomeState => ({
     opened: null,
+    drawerOpen: false,
   }),
 
   actions: {
     open({ input, state }: { input: string; state: HomeState }) {
       state.opened = input;
+      state.drawerOpen = false;
+    },
+    setDrawer({ state, input }: { state: HomeState; input: boolean }) {
+      state.drawerOpen = input;
     },
   },
 
@@ -57,6 +64,12 @@ export const HomeScreen = defineScreen({
         title: "Profile & account",
         blurb: "Gradient hero, stats row, tabs, and grouped settings.",
         glyph: "👤",
+      },
+      {
+        route: "themeLab",
+        title: "Theme lab",
+        blurb: "Seed-generated M3 schemes, light/dark, scoped subtrees.",
+        glyph: "🎚️",
       },
       {
         route: "banking",
@@ -121,12 +134,12 @@ export const HomeScreen = defineScreen({
     ];
 
     return (
-      <Scaffold appBar={<AppBar title="Tenun Gallery" />}>
+      <Scaffold appBar={<AppBar title="Tenun Gallery" onMenu={() => actions.setDrawer(true)} />}>
         <Column padding="lg" gap="lg">
           <HeroCard
             title="TENUNJS UI LAB"
             headline="Tenun Gallery"
-            caption="Fourteen Flutter-inspired reference layouts, one app."
+            caption="Fifteen Flutter-inspired reference layouts, one app."
           />
 
           <Card padding="lg" radius="lg" background="surfaceRaised">
@@ -162,6 +175,16 @@ export const HomeScreen = defineScreen({
               State is owned by screens; every tap is a typed action.
             </Text>
           </Row>
+
+          {/* Overlay anchor: last child, paints (and hits) above everything. */}
+          <ModalDrawer
+            open={state.drawerOpen}
+            heading="Tenun Gallery"
+            items={modules.map((module) => ({ glyph: module.glyph, label: module.title }))}
+            active={-1}
+            onSelect={(index) => actions.open(modules[index]!.route)}
+            onDismiss={() => actions.setDrawer(false)}
+          />
         </Column>
       </Scaffold>
     );

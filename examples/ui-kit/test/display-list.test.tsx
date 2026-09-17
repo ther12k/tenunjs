@@ -127,7 +127,7 @@ describe("display-list layout engine", () => {
 });
 
 describe("gallery device loop", () => {
-  test("initial scene is the home hub with fourteen module buttons", () => {
+  test("initial scene is the home hub with fifteen module buttons", () => {
     const scene = JSON.parse(__device.lastScene());
     expect(scene.tenun).toBe("display-list");
     const labels = scene.ops
@@ -139,10 +139,47 @@ describe("gallery device loop", () => {
     expect(labels).toContain("Onboarding");
     expect(labels).toContain("Plant shop");
     expect(labels).toContain("Profile & account");
+    expect(labels).toContain("Theme lab");
     expect(labels).toContain("Rally-style banking");
     expect(labels).toContain("Grouped settings");
-    // No back-tap on home: taps == module Open buttons only.
-    expect(scene.taps.length).toBe(14);
+    // No back-tap on home: taps == module Open buttons + the burger.
+    expect(scene.taps.length).toBe(16);
+  });
+
+  test("burger opens the modal drawer; items navigate and the scrim dismisses", () => {
+    __device.dispatch("tap", JSON.stringify({ id: 0 })); // burger
+    const open = JSON.parse(__device.lastScene());
+    const labels = open.ops
+      .filter((op: any) => op.op === "text")
+      .map((op: any) => op.text);
+    expect(labels).toContain("Tenun Gallery"); // drawer headline
+    expect(labels).toContain("Theme lab"); // destination row
+    // Scrim swallows content taps: its region sits on top (registered last).
+    // Host semantics: the LAST region containing the point wins (topmost
+    // painted). A point over the right-hand scrim hits nothing else.
+    const px = 600;
+    const py = 300;
+    const hits = open.taps.filter((t: any) => t.x <= px && px <= t.x + t.w && t.y <= py && py <= t.y + t.h);
+    const topmost = hits[hits.length - 1];
+    expect(topmost).toBeDefined();
+    expect(topmost.x).toBeGreaterThanOrEqual(480); // it is the scrim
+    // Scrim dismisses: dispatch it and the drawer ops disappear.
+    __device.dispatch("tap", JSON.stringify({ id: topmost.payload.id }));
+    const closed = JSON.parse(__device.lastScene());
+    expect(closed.ops.some((op: any) => op.op === "rect" && op.color === "#8C000000")).toBe(false);
+    expect(__device.route()).toBe("home");
+
+    // Reopen and navigate: the first destination opens the Views screen.
+    __device.dispatch("tap", JSON.stringify({ id: 0 })); // burger
+    const reopened = JSON.parse(__device.lastScene());
+    const firstItem = reopened.taps.find((t: any) => t.w === 480);
+    __device.dispatch("tap", JSON.stringify({ id: firstItem.payload.id })); // first item
+    expect(__device.route()).toBe("views");
+    // Back to home so the following device-loop tests start from the hub.
+    // The back strip is unshifted at index 0 on non-home routes.
+    const viewsScene = JSON.parse(__device.lastScene());
+    __device.dispatch("tap", JSON.stringify({ id: viewsScene.taps[0].payload.id }));
+    expect(__device.route()).toBe("home");
   });
 
   test("tapping a home card navigates to the banking screen", () => {
