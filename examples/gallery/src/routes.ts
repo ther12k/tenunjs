@@ -14,6 +14,7 @@ import { ViewsScreen } from "./screens/views.screen";
 import { OnboardingScreen } from "./screens/onboarding.screen";
 import { PlantsScreen } from "./screens/plants.screen";
 import { ProfileScreen } from "./screens/profile.screen";
+import { ThemeLabScreen } from "./screens/theme-lab.screen";
 
 // Typed route table: one route per Flutter-inspired module. Route params
 // are validated through the same schemas as incoming deep links once the
@@ -24,6 +25,7 @@ export const routes = defineRoutes({
   onboarding: { path: "/onboarding", screen: OnboardingScreen },
   plants: { path: "/plants", screen: PlantsScreen },
   profile: { path: "/profile", screen: ProfileScreen },
+  themeLab: { path: "/theme-lab", screen: ThemeLabScreen },
   banking: { path: "/banking", screen: BankingScreen },
   smartHome: { path: "/smart-home", screen: SmartHomeScreen },
   fitness: { path: "/fitness", screen: FitnessScreen },

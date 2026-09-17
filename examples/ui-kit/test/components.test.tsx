@@ -12,6 +12,7 @@ import {
   Badge,
   Checkbox,
   Chip,
+  colorSchemeFromSeed,
   Divider,
   FAB,
   HeroCard,
@@ -26,6 +27,7 @@ import {
   Switch,
   Tabs,
   TextField,
+  ThemeScopeBox,
   layoutScreen,
 } from "../src";
 
@@ -260,5 +262,54 @@ describe("M3 indicator components", () => {
     expect(stars.length).toBe(5);
     expect(stars.filter((s) => s.color === "#F5A623").length).toBe(4); // round(3.6)
     expect(stars.filter((s) => s.color === "#474B5A").length).toBe(1);
+  });
+});
+
+describe("ThemeScope", () => {
+  test("kit components resolve colors from the scoped scheme", () => {
+    const { scene } = layout(
+      <Column padding="lg" gap="sm">
+        <ThemeScopeBox scheme={colorSchemeFromSeed("#3DD68C", false)}>
+          <FAB glyph="✨" size={72} />
+        </ThemeScopeBox>
+        <FAB glyph="✨" size={72} />
+      </Column>
+    );
+    const rects = scene.ops.filter((op) => op.op === "rect") as Array<
+      Extract<(typeof scene.ops)[number], { op: "rect" }>
+    >;
+    // Scoped FAB carries the leaf-seed container tone; the ambient one keeps
+    // the default palette.
+    const fills = rects.map((r) => r.color);
+    expect(fills).toContain(colorSchemeFromSeed("#3DD68C", false).primaryContainer);
+    expect(fills).toContain("#223354");
+  });
+
+  test("engine widgets follow the scope through the mapped theme tokens", () => {
+    const { scene } = layout(
+      <ThemeScopeBox scheme={colorSchemeFromSeed("#3DD68C", false)}>
+        <Button variant="primary">Go</Button>
+      </ThemeScopeBox>
+    );
+    const fill = scene.ops.find(
+      (op) => op.op === "rect" && (op as any).h === 64
+    ) as unknown as Extract<(typeof scene.ops)[number], { op: "rect" }>;
+    expect(fill!.color).toBe(colorSchemeFromSeed("#3DD68C", false).primary);
+  });
+
+  test("nested scopes: the inner scope wins", () => {
+    const leaf = colorSchemeFromSeed("#3DD68C", false);
+    const amber = colorSchemeFromSeed("#F5A623", false);
+    const { scene } = layout(
+      <ThemeScopeBox scheme={leaf}>
+        <ThemeScopeBox scheme={amber}>
+          <FAB glyph="✨" size={72} />
+        </ThemeScopeBox>
+      </ThemeScopeBox>
+    );
+    const rects = scene.ops.filter((op) => op.op === "rect") as Array<
+      Extract<(typeof scene.ops)[number], { op: "rect" }>
+    >;
+    expect(rects.some((r) => r.color === amber.primaryContainer)).toBe(true);
   });
 });

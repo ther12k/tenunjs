@@ -1,6 +1,6 @@
 # Tenun Gallery (gallery)
 
-The all-in-one UI/UX showcase: **fourteen Flutter-inspired reference
+The all-in-one UI/UX showcase: **fifteen Flutter-inspired reference
 modules in one app**, written the TenunJS way — typed screens,
 controller-owned state, typed actions, and pure views that render through
 the shared display-list engine (the same scene JSON the browser preview
@@ -14,6 +14,7 @@ and the Android embedder consume).
 | Onboarding walkthrough | Walkthrough/onboarding screens in [mitesh77/Best-Flutter-UI-Templates](https://github.com/mitesh77/Best-Flutter-UI-Templates) and the community plant-app onboardings ([realflutternuggets/flutter-ui-plant-app](https://github.com/realflutternuggets/flutter-ui-plant-app)) | Three-page intro with dot indicator, Skip/Next, and the canonical sign-up form reveal |
 | Plant shop | The "Plant App" dribbble family, one of the most recreated Flutter UIs on GitHub ([ViktorKirjanov/flutter-ui-plant-shop](https://github.com/ViktorKirjanov/flutter-ui-plant-shop), plant-shop challenges) | Greeting header, search, category icon row, two-column product grid with favorites and a live cart, bottom navigation |
 | Profile & account | Profile/account pages of the e-commerce template family ([abuanwar072/E-commerce-Complete-Flutter-UI](https://github.com/abuanwar072/E-commerce-Complete-Flutter-UI)) | Gradient hero with avatar, three-up stats row, tabs, grouped settings with logout |
+| Theme lab | Flutter's `ThemeData` / `ColorScheme.fromSeed` | One seed generates every M3 role (OKLCH tonal palettes); `ThemeScope` re-tones whole subtrees; live seed and light/dark switching |
 | Banking | Rally (M3 design language) | Glanceable balance card, account list, bills with pay actions, transfer with balance clamping |
 | Smart home | Home-automation dashboards | Room grouping, live device tiles, one-tap scenes (Morning / Movie / Away) |
 | Fitness | Health/activity trackers | Gamified rings (steps/move/stand), weekly step bars, workout completion with derived energy |
@@ -46,6 +47,24 @@ drive the interactive flows: transfers (including clamping and
 conservation), scene application, ring/kcal math, cart totals and
 checkout, preference toggles + reset, onboarding paging and sign-up,
 plant favorites/cart/checkout, and profile tab/settings/logout flows.
+
+## Theming
+
+The kit's answer to Flutter theming lives in `examples/ui-kit/src/scheme.ts`:
+
+- `colorSchemeFromSeed(seed, dark)` generates a full Material-3 role set
+  from one hex seed — tonal palettes in OKLCH mapped through the M3 tone
+  table (primary 40/80, containers 90/30, neutrals 4–22, …), tested
+  against tone invariants and WCAG contrast rather than snapshot values.
+- `ThemeScopeBox` is the kit's `Theme` widget: everything below it resolves
+  colors from the wrapped scheme, including engine widgets (buttons, cards,
+  app bars) through mapped theme tokens.
+- All kit components read their palette at paint time, so screens are
+  themeable end-to-end; colors outside any scope keep the app theme.
+
+The theme lab screen demonstrates all three live. Swapping the whole app
+to a generated light scheme is a follow-up: existing screens hardcode some
+accent colors the way Flutter apps hardcode brand colors.
 
 ## Design notes
 

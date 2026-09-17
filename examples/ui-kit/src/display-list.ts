@@ -28,6 +28,7 @@
 
 import type { WidgetChild, WidgetNode } from "@tenunjs/jsx-runtime";
 import type { ThemeConfig } from "@tenunjs/widgets";
+import type { SchemeRoles } from "./scheme";
 
 /** ---------- scene types ---------- */
 
@@ -141,6 +142,8 @@ interface InternalContext extends RenderContext {
   ops: DisplayOp[];
   tapRegions: SerializedTap[];
   tapRuns: Array<() => void>;
+  /** Active color roles: theme-derived defaults until a ThemeScope narrows them. */
+  palette: SchemeRoles;
 }
 
 /**
@@ -150,6 +153,80 @@ interface InternalContext extends RenderContext {
  */
 export const Canvas = Symbol.for("tenun.preview.canvas");
 
+/**
+ * Virtual theme-scope kind — the kit's answer to Flutter's `Theme` widget:
+ * every widget below it resolves colors from the wrapped scheme instead of
+ * the ambient one. Layout is unaffected; only color resolution changes.
+ */
+export const ThemeScope = Symbol.for("tenun.preview.theme-scope");
+
+export interface ThemeScopeProps {
+  /** Role overrides merged over the ambient palette. */
+  scheme: Partial<SchemeRoles>;
+  children?: WidgetChild;
+}
+
+/**
+ * JSX-usable form of the theme scope (the CanvasBox precedent): a function
+ * component so the transform accepts it; resolves to the virtual symbol
+ * kind the layout engine narrows colors with.
+ */
+export function ThemeScopeBox(props: ThemeScopeProps): WidgetNode {
+  return {
+    kind: ThemeScope,
+    key: null,
+    props: { scheme: props.scheme },
+    children: (props as { children?: WidgetChild[] }).children ?? [],
+  } as unknown as WidgetNode;
+}
+
+/**
+ * Maps a full role set onto the engine's free-form color tokens so the
+ * engine widgets (button/card/app-bar/scaffold/text) inside a scope follow
+ * the same scheme as the canvas components.
+ */
+function scopeThemeColors(palette: SchemeRoles): Record<string, string> {
+  return {
+    accent: palette.primary,
+    danger: palette.error,
+    surface: palette.surface,
+    surfaceRaised: palette.surfaceContainer,
+    text: palette.onSurface,
+    primaryContainer: palette.primaryContainer,
+    onPrimaryContainer: palette.onPrimaryContainer,
+    outlineVariant: palette.outlineVariant,
+  };
+}
+
+/**
+ * The default role set: the kit's dark Material-3 palette, tightened by
+ * whatever matching tokens the ambient theme declares.
+ */
+export function resolveRoles(theme: ThemeConfig): SchemeRoles {
+  const c = theme.colors ?? {};
+  return {
+    primary: c.accent ?? "#4C8DFF",
+    onPrimary: "#FFFFFF",
+    primaryContainer: c.primaryContainer ?? "#223354",
+    onPrimaryContainer: c.onPrimaryContainer ?? "#D6E4FF",
+    secondaryContainer: c.secondaryContainer ?? "#30354A",
+    onSecondaryContainer: c.onSecondaryContainer ?? "#DCE4FF",
+    surface: c.surface ?? "#101014",
+    surfaceContainer: "#16161D",
+    surfaceContainerHigh: "#232330",
+    onSurface: c.text ?? "#F2F2F7",
+    onSurfaceVariant: "#9AA3B2",
+    outline: c.outline ?? "#474B5A",
+    outlineVariant: c.outlineVariant ?? "#26262F",
+    error: c.danger ?? "#FF5A5F",
+    success: c.success ?? "#3DD68C",
+    warning: c.warning ?? "#F5A623",
+    inverseSurface: "#2E2E3C",
+    onInverseSurface: "#F2F2F7",
+    onPrimaryFixed: "#FFFFFF",
+  };
+}
+
 export interface CanvasProps {
   /** Explicit height; width comes from the parent layout unless fixed. */
   height: number;
@@ -157,11 +234,14 @@ export interface CanvasProps {
   /**
    * Paints relative to the canvas origin (0,0 = top-left of the box) and
    * may register tap regions through the same callback table as widgets.
+   * The active color roles arrive last, so components read the ambient
+   * (or ThemeScope-narrowed) palette instead of global constants.
    */
   paint: (
     origin: { x: number; y: number; w: number },
     put: (op: DisplayOp) => void,
-    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void
+    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void,
+    palette: SchemeRoles
   ) => void;
 }
 
@@ -313,6 +393,10 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
   if (kind === Canvas) {
     return { w: Math.min(typeof props.width === "number" ? props.width : maxWidth, maxWidth), h: Number(props.height ?? 0) };
   }
+  // ThemeScope changes only color resolution, never geometry.
+  if (kind === ThemeScope) {
+    return measureStack(ctx, node, maxWidth, 0, 0);
+  }
   // Fragments are the one other virtual kind (Symbol.for("tenun.fragment")):
   // a bare stack of children, no box of their own.
   if (typeof kind === "symbol") {
@@ -404,10 +488,20 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       paint(
         { x, y, w: width },
         (op) => ctx.ops.push(offsetOp(op, x, y)),
-        (region, run) => addTap(ctx, x + region.x, y + region.y, region.w, region.h, run)
+        (region, run) => addTap(ctx, x + region.x, y + region.y, region.w, region.h, run),
+        ctx.palette
       );
     }
     return height;
+  }
+  if (kind === ThemeScope) {
+    const merged: SchemeRoles = { ...ctx.palette, ...((props.scheme as Partial<SchemeRoles>) ?? {}) };
+    const scoped: InternalContext = {
+      ...ctx,
+      palette: merged,
+      theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
+    };
+    return placeStack(scoped, node, x, y, w, 0, 0);
   }
   if (typeof kind === "symbol") {
     return placeStack(ctx, node, x, y, w, 0, 0);
@@ -443,7 +537,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       const danger = palette.danger ?? "#FF5A5F";
       const h = 64;
       const r = 32;
-      const onPrimary = "#FFFFFF";
+      const onPrimary = ctx.palette.onPrimary;
       const container = palette.primaryContainer ?? "#223354";
       const onContainer = palette.onPrimaryContainer ?? "#D6E4FF";
       // M3 button anatomy: a full-pill shape, one typography style, and
@@ -512,10 +606,17 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       return placeRow(ctx, node, x, y, w);
     case "app-bar": {
       ctx.ops.push({ op: "rect", x, y, w, h: 96, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
+      // Optional leading burger — the M3 modal-drawer affordance.
+      const hasMenu = typeof props.onMenu === "function";
+      const titleX = hasMenu ? 100 : 40;
+      if (hasMenu) {
+        ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: 34, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
+        addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu as () => void);
+      }
       const title = typeof props.title === "string" ? props.title : "";
       ctx.ops.push({
         op: "text",
-        x: x + 40,
+        x: x + titleX,
         y: y + 62,
         text: title,
         size: 32,
@@ -673,6 +774,7 @@ export function layoutScreen(
 ): { scene: DisplayListScene; tapRuns: Array<() => void> } {
   const ctx: InternalContext = {
     theme,
+    palette: resolveRoles(theme),
     ops: [],
     tapRegions: [],
     tapRuns: [],

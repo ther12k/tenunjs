@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { GalleryRuntime } from "../runtime";
+import { colorSchemeFromSeed } from "../../ui-kit/src/scheme";
 import type { DisplayListScene } from "../../ui-kit/src/display-list";
 
 function sceneWithTap(): DisplayListScene {
@@ -24,6 +25,7 @@ describe("GalleryRuntime", () => {
       "onboarding",
       "plants",
       "profile",
+      "themeLab",
       "banking",
       "smartHome",
       "fitness",
@@ -36,11 +38,12 @@ describe("GalleryRuntime", () => {
       "crypto",
     ]);
     const home = runtime.render().scene;
-    expect(home.taps.length).toBe(14);
+    // 15 module Open buttons + the app-bar burger.
+    expect(home.taps.length).toBe(16);
 
-    // First tile is the widget showcase; banking now sits after the three
-    // Flutter-recreation tiles.
-    const viewsTap = home.taps[0]!;
+    // First tile is the widget showcase (tap 0 is the app-bar burger);
+    // banking sits after the four Flutter-recreation tiles + the lab.
+    const viewsTap = home.taps[1]!;
     runtime.dispatch("TAP", viewsTap.payload.id);
     expect(runtime.route()).toBe("views");
     const views = runtime.render().scene;
@@ -48,7 +51,7 @@ describe("GalleryRuntime", () => {
 
     runtime.navigate("home");
     const homeAgain = runtime.render().scene;
-    const bankingTap = homeAgain.taps[4]!;
+    const bankingTap = homeAgain.taps[6]!;
     runtime.dispatch("TAP", bankingTap.payload.id);
     expect(runtime.route()).toBe("banking");
     const banking = runtime.render().scene;
@@ -158,6 +161,23 @@ describe("GalleryRuntime", () => {
     const activity = runtime.render().scene;
     expect(activity.ops.some((op) => op.op === "text" && op.text === "This week")).toBe(true);
     expect(activity.ops.some((op) => op.op === "text" && op.text === "Order #1042")).toBe(true);
+  });
+
+  test("theme lab renders scoped schemes and switches seeds live", () => {
+    const runtime = new GalleryRuntime();
+    runtime.navigate("themeLab");
+    const scene = runtime.render().scene;
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Theme lab")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Light · your seed")).toBe(true);
+
+    // Tap the second seed swatch (screen tap id 1 = "Leaf"): the "your
+    // seed" panel re-tones to the leaf scheme's container fill.
+    runtime.dispatch("TAP", 1);
+    const state = runtime.exportState().states.themeLab as { seedIndex: number };
+    expect(state.seedIndex).toBe(1);
+    const leaf = colorSchemeFromSeed("#3DD68C", false);
+    const retoned = runtime.render().scene;
+    expect(retoned.ops.some((op) => op.op === "rect" && op.color === leaf.primaryContainer)).toBe(true);
   });
 
   test("export and restore carry route plus mutated state", () => {
