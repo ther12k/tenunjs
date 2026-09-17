@@ -11,6 +11,9 @@ import { ChatScreen } from "./screens/chat.screen";
 import { RecipesScreen } from "./screens/recipes.screen";
 import { CryptoScreen } from "./screens/crypto.screen";
 import { ViewsScreen } from "./screens/views.screen";
+import { OnboardingScreen } from "./screens/onboarding.screen";
+import { PlantsScreen } from "./screens/plants.screen";
+import { ProfileScreen } from "./screens/profile.screen";
 
 // Typed route table: one route per Flutter-inspired module. Route params
 // are validated through the same schemas as incoming deep links once the
@@ -18,6 +21,9 @@ import { ViewsScreen } from "./screens/views.screen";
 export const routes = defineRoutes({
   home: { path: "/", screen: HomeScreen },
   views: { path: "/views", screen: ViewsScreen },
+  onboarding: { path: "/onboarding", screen: OnboardingScreen },
+  plants: { path: "/plants", screen: PlantsScreen },
+  profile: { path: "/profile", screen: ProfileScreen },
   banking: { path: "/banking", screen: BankingScreen },
   smartHome: { path: "/smart-home", screen: SmartHomeScreen },
   fitness: { path: "/fitness", screen: FitnessScreen },

@@ -16,11 +16,13 @@ import {
   FAB,
   HeroCard,
   NavigationBar,
+  PageIndicator,
   ProgressBar,
   ProgressRing,
   SegmentedButton,
   Slider,
   SnackBar,
+  StarRating,
   Switch,
   Tabs,
   TextField,
@@ -220,5 +222,43 @@ describe("ui-kit canvas components", () => {
     for (const op of [...rects, ...outlines]) {
       if ("r" in op && op.h === 64) expect(op.r).toBe(32);
     }
+  });
+});
+
+describe("M3 indicator components", () => {
+  test("PageIndicator elongates the active dot and keeps one tap per page", () => {
+    let picked = -1;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg">
+        <PageIndicator count={3} active={1} onSelect={(index) => (picked = index)} />
+      </Column>
+    );
+    const dots = scene.ops.filter((op) => op.op === "rect") as Array<
+      Extract<(typeof scene.ops)[number], { op: "rect" }>
+    >;
+    expect(dots.length).toBe(3);
+    const active = dots.find((d) => d.w === 30);
+    expect(active).toBeDefined();
+    expect(active!.color).toBe("#4C8DFF");
+    // Idle dots stay round and neutral; the pill keeps the dot radius.
+    expect(dots.filter((d) => d.w === 14).length).toBe(2);
+    expect(active!.r).toBe(7);
+    expect(scene.taps.length).toBe(3);
+    tapRuns[0]!();
+    expect(picked).toBe(0);
+  });
+
+  test("StarRating fills whole stars from the value and dims the rest", () => {
+    const { scene } = layout(
+      <Column padding="lg">
+        <StarRating value={3.6} />
+      </Column>
+    );
+    const stars = scene.ops.filter((op) => op.op === "text") as Array<
+      Extract<(typeof scene.ops)[number], { op: "text" }>
+    >;
+    expect(stars.length).toBe(5);
+    expect(stars.filter((s) => s.color === "#F5A623").length).toBe(4); // round(3.6)
+    expect(stars.filter((s) => s.color === "#474B5A").length).toBe(1);
   });
 });

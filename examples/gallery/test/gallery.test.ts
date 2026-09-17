@@ -6,6 +6,9 @@ import { FitnessScreen } from "../src/screens/fitness.screen";
 import { StoreScreen } from "../src/screens/store.screen";
 import { SettingsScreen } from "../src/screens/settings.screen";
 import { HomeScreen } from "../src/screens/home.screen";
+import { OnboardingScreen } from "../src/screens/onboarding.screen";
+import { PlantsScreen } from "../src/screens/plants.screen";
+import { ProfileScreen } from "../src/screens/profile.screen";
 import type { BankingState } from "../src/screens/banking.screen";
 import type { SmartHomeState } from "../src/screens/smart-home.screen";
 import type { FitnessState } from "../src/screens/fitness.screen";
@@ -170,5 +173,93 @@ describe("Settings", () => {
       analytics: false,
       haptics: true,
     });
+  });
+});
+
+describe("Onboarding walkthrough", () => {
+  test("next walks the pages, the last one finishes, and restart resets", () => {
+    const h = mountScreen(OnboardingScreen);
+    expect(h.state.page).toBe(0);
+    h.press("next");
+    h.press("next");
+    expect(h.state.page).toBe(2);
+    h.press("next");
+    expect(h.state.done).toBe(true);
+    expect(h.state.page).toBe(2);
+
+    h.press("restart");
+    expect(h.state.done).toBe(false);
+    expect(h.state.page).toBe(0);
+  });
+
+  test("skip jumps straight past the pages", () => {
+    const h = mountScreen(OnboardingScreen);
+    h.press("skip");
+    expect(h.state.done).toBe(true);
+    expect(h.state.page).toBe(0);
+  });
+
+  test("sign-up completes after skipping and dots jump pages", () => {
+    const h = mountScreen(OnboardingScreen);
+    h.press("skip");
+    h.press("signUp");
+    expect(h.state.signedUp).toBe(true);
+    h.press("restart");
+    h.press("setPage", 2);
+    expect(h.state.page).toBe(2);
+    expect(h.state.done).toBe(false);
+  });
+});
+
+describe("Plant shop", () => {
+  test("favorites toggle on and off by plant id", () => {
+    const h = mountScreen(PlantsScreen);
+    h.press("toggleFavorite", "monstera");
+    expect(h.state.favorites).toEqual(["monstera"]);
+    h.press("toggleFavorite", "monstera");
+    expect(h.state.favorites).toEqual([]);
+  });
+
+  test("cart accumulates per plant and checkout clears it with a receipt", () => {
+    const h = mountScreen(PlantsScreen);
+    h.press("addToCart", "monstera");
+    h.press("addToCart", "monstera");
+    h.press("addToCart", "candelabra");
+    expect(h.state.cart).toEqual({ monstera: 2, candelabra: 1 });
+    h.press("checkout");
+    expect(h.state.cart).toEqual({});
+    expect(h.state.ordered).toBe(true);
+    h.press("dismissOrder");
+    expect(h.state.ordered).toBe(false);
+  });
+
+  test("checkout with an empty cart is a no-op", () => {
+    const h = mountScreen(PlantsScreen);
+    h.press("checkout");
+    expect(h.state.ordered).toBe(false);
+  });
+
+  test("category and nav selections land in state", () => {
+    const h = mountScreen(PlantsScreen);
+    h.press("setCategory", 1);
+    expect(h.state.category).toBe(1);
+    h.press("setNav", 3);
+    expect(h.state.nav).toBe(3);
+  });
+});
+
+describe("Profile & account", () => {
+  test("tabs switch, settings mutate, and logout/sign-in round-trips", () => {
+    const h = mountScreen(ProfileScreen);
+    h.press("setTab", 2);
+    expect(h.state.tab).toBe(2);
+    h.press("toggleDark");
+    expect(h.state.darkMode).toBe(false);
+    h.press("setUnits", 1);
+    expect(h.state.units).toBe(1);
+    h.press("logOut");
+    expect(h.state.loggedOut).toBe(true);
+    h.press("signIn");
+    expect(h.state.loggedOut).toBe(false);
   });
 });

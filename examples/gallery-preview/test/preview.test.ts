@@ -21,6 +21,9 @@ describe("GalleryRuntime", () => {
     expect(runtime.routes()).toEqual([
       "home",
       "views",
+      "onboarding",
+      "plants",
+      "profile",
       "banking",
       "smartHome",
       "fitness",
@@ -33,9 +36,10 @@ describe("GalleryRuntime", () => {
       "crypto",
     ]);
     const home = runtime.render().scene;
-    expect(home.taps.length).toBe(11);
+    expect(home.taps.length).toBe(14);
 
-    // First tile is the widget showcase; the second opens banking.
+    // First tile is the widget showcase; banking now sits after the three
+    // Flutter-recreation tiles.
     const viewsTap = home.taps[0]!;
     runtime.dispatch("TAP", viewsTap.payload.id);
     expect(runtime.route()).toBe("views");
@@ -44,7 +48,7 @@ describe("GalleryRuntime", () => {
 
     runtime.navigate("home");
     const homeAgain = runtime.render().scene;
-    const bankingTap = homeAgain.taps[1]!;
+    const bankingTap = homeAgain.taps[4]!;
     runtime.dispatch("TAP", bankingTap.payload.id);
     expect(runtime.route()).toBe("banking");
     const banking = runtime.render().scene;
@@ -60,6 +64,100 @@ describe("GalleryRuntime", () => {
 
     runtime.dispatch("TAP", banking.taps[0]!.payload.id);
     expect(runtime.route()).toBe("home");
+  });
+
+  test("onboarding walkthrough advances pages, finishes, and restarts", () => {
+    const runtime = new GalleryRuntime();
+    runtime.navigate("onboarding");
+    const page1 = runtime.render().scene;
+    expect(page1.ops.some((op) => op.op === "text" && op.text === "Grow your world")).toBe(true);
+
+    const tapUnderText = (scene: DisplayListScene, text: string) => scene.taps.find((tap) =>
+      scene.ops.some(
+        (op) =>
+          op.op === "text" && op.text === text &&
+          op.y >= tap.y && op.y <= tap.y + tap.h &&
+          op.x >= tap.x && op.x <= tap.x + tap.w
+      )
+    );
+
+    runtime.dispatch("TAP", tapUnderText(page1, "Next")!.payload.id);
+    const page2 = runtime.render().scene;
+    expect(page2.ops.some((op) => op.op === "text" && op.text === "Identify instantly")).toBe(true);
+
+    runtime.dispatch("TAP", tapUnderText(page2, "Next")!.payload.id);
+    const page3 = runtime.render().scene;
+    expect(page3.ops.some((op) => op.op === "text" && op.text === "Never forget again")).toBe(true);
+
+    runtime.dispatch("TAP", tapUnderText(page3, "Get started")!.payload.id);
+    const signUp = runtime.render().scene;
+    expect(signUp.ops.some((op) => op.op === "text" && op.text === "Create your account")).toBe(true);
+
+    // "Back to walkthrough" restarts from page one.
+    runtime.dispatch("TAP", tapUnderText(signUp, "Back to walkthrough")!.payload.id);
+    const restarted = runtime.render().scene;
+    expect(restarted.ops.some((op) => op.op === "text" && op.text === "Grow your world")).toBe(true);
+
+    // Skip jumps straight past the pages.
+    runtime.dispatch("TAP", tapUnderText(restarted, "Skip")!.payload.id);
+    expect(runtime.render().scene.ops.some((op) => op.op === "text" && op.text === "Create your account")).toBe(true);
+  });
+
+  test("plant shop filters categories, favorites, and carts through taps", () => {
+    const runtime = new GalleryRuntime();
+    runtime.navigate("plants");
+    const scene = runtime.render().scene;
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Find your plant")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Monstera")).toBe(true);
+
+    const tapUnderText = (current: DisplayListScene, text: string) => current.taps.find((tap) =>
+      current.ops.some(
+        (op) =>
+          op.op === "text" && op.text === text &&
+          op.y >= tap.y && op.y <= tap.y + tap.h &&
+          op.x >= tap.x && op.x <= tap.x + tap.w
+      )
+    );
+
+    // Favorite the first plant: the hollow heart fills.
+    runtime.dispatch("TAP", tapUnderText(scene, "♡")!.payload.id);
+    const favorited = runtime.render().scene;
+    expect(favorited.ops.some((op) => op.op === "text" && op.text === "♥")).toBe(true);
+
+    // Add to cart via the card's "+" button; the price line and the
+    // checkout bar both react.
+    runtime.dispatch("TAP", tapUnderText(favorited, "+")!.payload.id);
+    const withCart = runtime.render().scene;
+    expect(withCart.ops.some((op) => op.op === "text" && op.text === "$24 · 1 in cart")).toBe(true);
+    expect(withCart.ops.some((op) => op.op === "text" && op.text === "Checkout")).toBe(true);
+
+    // The Cactus category narrows the grid.
+    runtime.dispatch("TAP", tapUnderText(withCart, "Cactus")!.payload.id);
+    const cactus = runtime.render().scene;
+    expect(cactus.ops.some((op) => op.op === "text" && op.text === "Candelabra")).toBe(true);
+    expect(cactus.ops.some((op) => op.op === "text" && op.text === "Monstera")).toBe(false);
+  });
+
+  test("profile hero and stats render and tabs switch sections", () => {
+    const runtime = new GalleryRuntime();
+    runtime.navigate("profile");
+    const scene = runtime.render().scene;
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Rizky Zulkarnaen")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "2.4k")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "★")).toBe(true);
+
+    const activityTap = scene.taps.find((tap) =>
+      scene.ops.some(
+        (op) =>
+          op.op === "text" && op.text === "Activity" &&
+          op.y >= tap.y && op.y <= tap.y + tap.h &&
+          op.x >= tap.x && op.x <= tap.x + tap.w
+      )
+    );
+    runtime.dispatch("TAP", activityTap!.payload.id);
+    const activity = runtime.render().scene;
+    expect(activity.ops.some((op) => op.op === "text" && op.text === "This week")).toBe(true);
+    expect(activity.ops.some((op) => op.op === "text" && op.text === "Order #1042")).toBe(true);
   });
 
   test("export and restore carry route plus mutated state", () => {
