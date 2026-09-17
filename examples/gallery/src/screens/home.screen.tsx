@@ -41,6 +41,24 @@ export const HomeScreen = defineScreen({
         glyph: "🎨",
       },
       {
+        route: "onboarding",
+        title: "Onboarding walkthrough",
+        blurb: "Three-page intro with dots, skip/next, and a sign-up reveal.",
+        glyph: "🚀",
+      },
+      {
+        route: "plants",
+        title: "Plant shop",
+        blurb: "Search, categories, product cards, favorites, live cart.",
+        glyph: "🪴",
+      },
+      {
+        route: "profile",
+        title: "Profile & account",
+        blurb: "Gradient hero, stats row, tabs, and grouped settings.",
+        glyph: "👤",
+      },
+      {
         route: "banking",
         title: "Rally-style banking",
         blurb: "Dark financial dashboard: balance card, accounts, bills.",
@@ -108,7 +126,7 @@ export const HomeScreen = defineScreen({
           <HeroCard
             title="TENUNJS UI LAB"
             headline="Tenun Gallery"
-            caption="Eleven Flutter-inspired reference layouts, one app."
+            caption="Fourteen Flutter-inspired reference layouts, one app."
           />
 
           <Card padding="lg" radius="lg" background="surfaceRaised">

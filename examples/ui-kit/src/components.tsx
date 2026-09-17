@@ -67,6 +67,7 @@ const C = {
   outlineVariant: KIT.outlineVariant,
   error: KIT.danger,
   success: KIT.success,
+  warning: KIT.warning,
   white: KIT.white,
 } as const;
 
@@ -916,6 +917,90 @@ export function SegmentedButton(props: SegmentedButtonProps): WidgetNode {
           tap({ x: x0, y: 0, w: each, h }, () => props.onSelect!(index));
         }
       });
+    },
+  });
+}
+
+/** ---------- PageIndicator ---------- */
+
+export interface PageIndicatorProps {
+  count: number;
+  active: number;
+  color?: string;
+  inactiveColor?: string;
+  /** Tapping a dot jumps to that page. */
+  onSelect?: (index: number) => void;
+}
+
+/**
+ * M3 page indicator: equal dot slots where the active dot elongates into a
+ * pill centered on its slot (the smooth_page_indicator "worm" look). Slots
+ * stay fixed so the tap targets never move when the active page changes.
+ */
+export function PageIndicator(props: PageIndicatorProps): WidgetNode {
+  const dot = 14;
+  const gap = 12;
+  const pill = 30;
+  const w = props.count * dot + (props.count - 1) * gap;
+  const h = dot;
+  return canvasBox({
+    width: w,
+    height: h,
+    paint: (origin, put, tap) => {
+      const slice = w / props.count;
+      for (let i = 0; i < props.count; i++) {
+        const center = i * (dot + gap) + dot / 2;
+        const activeDot = i === props.active;
+        put({
+          op: "rect",
+          x: activeDot ? center - pill / 2 : center - dot / 2,
+          y: 0,
+          w: activeDot ? pill : dot,
+          h: dot,
+          r: dot / 2,
+          color: activeDot
+            ? props.color ?? C.primary
+            : props.inactiveColor ?? C.surfaceContainerHigh,
+        });
+        if (props.onSelect) {
+          tap({ x: i * slice, y: 0, w: slice, h }, () => props.onSelect!(i));
+        }
+      }
+    },
+  });
+}
+
+/** ---------- StarRating ---------- */
+
+export interface StarRatingProps {
+  /** 0..5, rounded to whole stars. */
+  value: number;
+  size?: number;
+  color?: string;
+  inactiveColor?: string;
+}
+
+/** Five-star rating row — filled count from value, dim ghosts for the rest. */
+export function StarRating(props: StarRatingProps): WidgetNode {
+  const size = props.size ?? 16;
+  const gap = 4;
+  const h = Math.round(size * 1.2);
+  const stars = Math.max(0, Math.min(5, Math.round(props.value)));
+  return canvasBox({
+    width: 5 * size + 4 * gap,
+    height: h,
+    paint: (origin, put) => {
+      for (let i = 0; i < 5; i++) {
+        put({
+          op: "text",
+          x: i * (size + gap),
+          y: h / 2 + size * 0.36,
+          text: "★",
+          size,
+          weight: 600,
+          color: i < stars ? props.color ?? C.warning : props.inactiveColor ?? C.outline,
+        });
+      }
     },
   });
 }
