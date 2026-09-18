@@ -22,6 +22,8 @@ composition — no React, no hooks, no CSS.
 | [calculator](calculator/) | Layout composition (nested `Row`/`Column` grid), a custom function widget, one typed action driving a small state machine. |
 | [navigation-demo](navigation-demo/) | App skeleton: typed routes with `defineRoutes`, `NavigationHost`, and the split controller/view pattern with async `load()` and an injected service. |
 | [gallery](gallery/) | All-in-one UI/UX showcase inspired by public Flutter design studies: Rally-style banking, a smart-home dashboard, a fitness tracker, a Shrine-style store, and grouped settings — five modules, one app. |
+| [flutter-showcase](flutter-showcase/) | Launcher plus five independent app studies based on Best-Flutter-UI-Templates: introduction, hotel booking, fitness, design course, and custom drawer — one session each, no shared state. |
+| [flutter-showcase-preview](flutter-showcase-preview/) | Launcher-host browser UI lab for the studies at `/showcase/`: open/close apps like a native home screen with per-app state preserved and state-preserving hot reload. |
 | [gallery-preview](gallery-preview/) | Desktop/browser UI lab for the gallery: same screen state/actions, display-list rendering, drag scrolling, and hot reload before APK packaging. |
 
 ## What is verified today
@@ -47,7 +49,9 @@ examples/
 ├── todo-list/         list state, keyed children, typed action inputs
 ├── calculator/        layout grid, custom widget, action state machine
 ├── navigation-demo/   typed routes, NavigationHost, split controller/view
-├── gallery/           all-in-one UI/UX showcase: ten Flutter-inspired app-idea modules
+├── gallery/           all-in-one UI/UX showcase: fifteen Flutter-inspired modules
+├── flutter-showcase/  focused category showcase based on Best-Flutter-UI-Templates
+├── flutter-showcase-preview/ separate browser UI lab for the focused showcase
 ├── gallery-preview/   browser UI lab with canvas renderer and hot reload
 ├── test-support/      shared screen harness + cross-example graph gate
 ├── tsconfig.json      shared TSX settings (automatic TenunJS transform)

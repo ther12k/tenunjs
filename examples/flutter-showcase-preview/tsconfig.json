@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext", "dom"],
+    "noEmit": true,
+    "paths": {
+      "@tenunjs/core": ["../../packages/core/src/index.ts"],
+      "@tenunjs/jsx-runtime": ["../../packages/jsx-runtime/src/index.ts"],
+      "@tenunjs/jsx-runtime/*": ["../../packages/jsx-runtime/src/*"],
+      "@tenunjs/protocol": ["../../packages/protocol/src/index.ts"],
+      "@tenunjs/widgets": ["../../packages/widgets/src/index.ts"],
+      "@tenunjs/navigation": ["../../packages/navigation/src/index.ts"],
+      "@tenunjs-examples/flutter-showcase": ["../flutter-showcase/src/main.tsx"],
+      "@tenunjs-examples/ui-kit": ["../ui-kit/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../ui-kit/src/display-list.ts", "../flutter-showcase/src/**/*.ts", "../flutter-showcase/src/**/*.tsx"]
+}
