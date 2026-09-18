@@ -15,6 +15,7 @@ These examples are design targets, not a promise that names will never change be
 - [Single-file screen](single-file-screen.md)
 - [Split controller and view](split-controller-view.md)
 - [Widgets and styling](widgets-and-styling.md)
+- [Migrating from Flutter](flutter-migration.md)
 - [Async actions and effects](actions-and-effects.md)
 - [Navigation](navigation.md)
 - [Animation](animation.md)
