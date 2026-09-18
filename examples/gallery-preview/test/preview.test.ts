@@ -134,11 +134,24 @@ describe("GalleryRuntime", () => {
     expect(withCart.ops.some((op) => op.op === "text" && op.text === "$24 · 1 in cart")).toBe(true);
     expect(withCart.ops.some((op) => op.op === "text" && op.text === "Checkout")).toBe(true);
 
-    // The Cactus category narrows the grid.
-    runtime.dispatch("TAP", tapUnderText(withCart, "Cactus")!.payload.id);
+    // The Cactus category narrows the grid. The featured carousel also uses
+    // that word, so select the category-region match below the carousel.
+    const cactusCategoryTap = withCart.taps.find((tap) =>
+      withCart.ops.some(
+        (op) =>
+          op.op === "text" && op.text === "Cactus" &&
+          op.y >= tap.y && op.y <= tap.y + tap.h &&
+          op.x >= tap.x && op.x <= tap.x + tap.w &&
+          tap.y > 700
+      )
+    );
+    expect(cactusCategoryTap).toBeDefined();
+    runtime.dispatch("TAP", cactusCategoryTap!.payload.id);
     const cactus = runtime.render().scene;
     expect(cactus.ops.some((op) => op.op === "text" && op.text === "Candelabra")).toBe(true);
-    expect(cactus.ops.some((op) => op.op === "text" && op.text === "Monstera")).toBe(false);
+    // The featured carousel remains above the category grid, so scope the
+    // absence check to product-card text below the category row.
+    expect(cactus.ops.some((op) => op.op === "text" && op.op === "text" && op.text === "Monstera" && op.y > 1000)).toBe(false);
   });
 
   test("profile hero and stats render and tabs switch sections", () => {

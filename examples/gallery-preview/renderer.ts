@@ -1,4 +1,4 @@
-import type { DisplayListScene, DisplayOp } from "../ui-kit/src/display-list";
+import type { DisplayListScene, DisplayOp, FixedPosition } from "../ui-kit/src/display-list";
 
 /**
  * Normalizes the display-list color convention for CSS: scenes use
@@ -23,12 +23,32 @@ export interface PreviewRenderer {
   maxScroll(scene: DisplayListScene): number;
 }
 
+export function anchorOffsetForTest(position: FixedPosition, visibleHeight: number): number {
+  if (!position.fixed || position.anchorSize === undefined) return 0;
+  if (position.anchor === "bottom") return visibleHeight - position.anchorSize;
+  if (position.anchor === "center") return (visibleHeight - position.anchorSize) / 2;
+  return 0;
+}
+
+function translateFixedOp(op: DisplayOp, visibleHeight: number): DisplayOp {
+  const dy = anchorOffsetForTest(op, visibleHeight);
+  if (dy === 0) return op;
+  switch (op.op) {
+    case "circle":
+    case "ring":
+      return { ...op, cy: op.cy + dy };
+    case "line":
+      return { ...op, y1: op.y1 + dy, y2: op.y2 + dy };
+    default:
+      return { ...op, y: op.y + dy };
+  }
+}
+
 /**
  * CanvasKit-compatible drawing surface. CanvasKit is intentionally loaded by
  * the HTML shell so the bundle remains ordinary browser JavaScript. When
- * CanvasKit/WASM is unavailable (offline or blocked CDN), this deterministic
- * Canvas 2D implementation keeps the preview usable and reports the
- * fallback through the UI.
+ * CanvasKit/WASM is unavailable, this deterministic Canvas 2D implementation
+ * keeps the preview usable.
  */
 export class CanvasPreviewRenderer implements PreviewRenderer {
   private readonly canvas: HTMLCanvasElement;
@@ -66,13 +86,28 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = toCss(scene.background);
     ctx.fillRect(0, 0, width, height);
+
+    // Scrollable content is clipped and translated as before.
     ctx.save();
     ctx.scale(scale, scale);
     ctx.translate(0, -scrollY);
     ctx.beginPath();
     ctx.rect(0, scrollY, scene.designWidth, visibleHeight);
     ctx.clip();
-    for (const op of scene.ops) this.paint(ctx, op);
+    for (const op of scene.ops) {
+      if (!op.fixed) this.paint(ctx, op);
+    }
+    ctx.restore();
+
+    // Fixed overlays form a viewport layer above all scrollable content.
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.rect(0, 0, scene.designWidth, visibleHeight);
+    ctx.clip();
+    for (const op of scene.ops) {
+      if (op.fixed) this.paint(ctx, translateFixedOp(op, visibleHeight));
+    }
     ctx.restore();
   }
 
@@ -80,10 +115,12 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const scale = rect.width / scene.designWidth;
     const x = (clientX - rect.left) / scale;
-    const y = (clientY - rect.top) / scale + scrollY;
+    const viewportY = (clientY - rect.top) / scale;
+    const visibleHeight = rect.height / scale;
     for (let index = scene.taps.length - 1; index >= 0; index--) {
-      if (scene.taps[index]!.x <= x && x <= scene.taps[index]!.x + scene.taps[index]!.w &&
-          scene.taps[index]!.y <= y && y <= scene.taps[index]!.y + scene.taps[index]!.h) {
+      const tap = scene.taps[index]!;
+      const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y + scrollY;
+      if (tap.x <= x && x <= tap.x + tap.w && y <= viewportY && viewportY <= y + tap.h) {
         return index;
       }
     }
@@ -112,7 +149,6 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         return;
       }
       case "ring": {
-        // Track first, then the progress arc swept from 12 o'clock.
         if (op.track) {
           ctx.beginPath();
           ctx.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);

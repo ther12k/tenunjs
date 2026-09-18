@@ -22,6 +22,14 @@ import org.json.JSONObject
 /**
  * State of an editable field tracking committed text and active composition region.
  */
+private fun DisplayListScene.Op.isFixed(): Boolean = when (this) {
+    is DisplayListScene.Op.RectOp -> rect.fixed
+    is DisplayListScene.Op.TextOp -> text.fixed
+    is DisplayListScene.Op.CircleOp -> fixed
+    is DisplayListScene.Op.RingOp -> fixed
+    is DisplayListScene.Op.LineOp -> fixed
+}
+
 class EditableFieldState {
     var committedText: String = ""
     var composingText: String = ""
@@ -360,12 +368,16 @@ class TenunSurfaceView @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 if (!isScrolling) {
                     val designX = event.x / dlScale
-                    val designY = event.y / dlScale + scrollY
+                    val viewportY = event.y / dlScale
+                    val visibleHeight = height / dlScale
                     // Topmost painted region wins: ops paint in order, so
                     // the LAST containing tap is the one the user sees —
                     // required for overlays (modal drawer scrim over
-                    // content). Matches the browser renderer.
-                    val hit = dl.taps.lastOrNull { it.contains(designX, designY) }
+                    // content). Fixed overlays use viewport coordinates;
+                    // ordinary content is translated by the current scroll.
+                    val hit = dl.taps.lastOrNull {
+                        it.contains(designX, viewportY, visibleHeight, scrollY)
+                    }
                     if (hit != null) {
                         engine?.let { eng ->
                             eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")
@@ -405,81 +417,100 @@ class TenunSurfaceView @JvmOverloads constructor(
         canvas.scale(dlScale, dlScale)
         canvas.clipRect(0f, scrollY, dl.designWidth, scrollY + visibleHeight)
         canvas.translate(0f, -scrollY)
-
         for (op in dl.ops) {
-            when (op) {
-                is DisplayListScene.Op.RectOp -> {
-                    val r = op.rect
-                    // Elevation is emulated with a translucent underlay:
-                    // Paint.setShadowLayer is ignored for shapes on
-                    // hardware canvases, and this renders identically to
-                    // the browser fallback.
-                    if (!r.stroked && r.shadow > 0f) {
-                        val shadowPaint = fillPaint("#000000")
-                        shadowPaint.alpha = 64
-                        canvas.drawRoundRect(
-                            r.x, r.y + r.shadow / 2, r.x + r.w, r.y + r.h + r.shadow / 2,
-                            r.radius, r.radius, shadowPaint
-                        )
-                    }
-                    val paint = if (r.stroked) {
-                        outlinePaint(r.color, r.strokeWidth)
-                    } else if (r.colorTo != null) {
-                        val gradient = android.graphics.LinearGradient(
-                            r.x, r.y, r.x, r.y + r.h,
-                            Color.parseColor(r.color),
-                            Color.parseColor(r.colorTo),
-                            android.graphics.Shader.TileMode.CLAMP
-                        )
-                        fillPaint(r.color).apply { shader = gradient }
-                    } else {
-                        fillPaint(r.color)
-                    }
-                    canvas.drawRoundRect(
-                        r.x, r.y, r.x + r.w, r.y + r.h,
-                        r.radius, r.radius, paint
-                    )
-                }
-                is DisplayListScene.Op.CircleOp -> {
-                    val paint = fillPaint(op.color)
-                    canvas.drawCircle(op.cx, op.cy, op.r, paint)
-                }
-                is DisplayListScene.Op.RingOp -> {
-                    val bounds = RectF(
-                        op.cx - op.r, op.cy - op.r, op.cx + op.r, op.cy + op.r
-                    )
-                    if (op.track != null) {
-                        val trackPaint = outlinePaint(op.track, op.strokeWidth).apply {
-                            strokeCap = android.graphics.Paint.Cap.ROUND
-                        }
-                        canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
-                    }
-                    if (op.progress > 0f) {
-                        val sweep = 360f * op.progress.coerceAtMost(1f)
-                        val arcPaint = outlinePaint(op.color, op.strokeWidth).apply {
-                            strokeCap = android.graphics.Paint.Cap.ROUND
-                        }
-                        // -90f starts at 12 o'clock; sweep is clockwise.
-                        canvas.drawArc(bounds, -90f, sweep, false, arcPaint)
-                    }
-                }
-                is DisplayListScene.Op.LineOp -> {
-                    canvas.drawLine(op.x1, op.y1, op.x2, op.y2, outlinePaint(op.color, op.strokeWidth))
-                }
-                is DisplayListScene.Op.TextOp -> {
-                    val t = op.text
-                    textPaint.color = Color.parseColor(t.color)
-                    textPaint.textSize = t.size
-                    textPaint.typeface = if (t.weight >= 600) {
-                        android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
-                    } else {
-                        android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.NORMAL)
-                    }
-                    canvas.drawText(t.text, t.x, t.y, textPaint)
-                }
-            }
+            if (!op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
         }
         canvas.restore()
+
+        canvas.save()
+        canvas.scale(dlScale, dlScale)
+        canvas.clipRect(0f, 0f, dl.designWidth, visibleHeight)
+        for (op in dl.ops) {
+            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+        }
+        canvas.restore()
+    }
+
+    private fun anchorOffset(anchor: String?, anchorSize: Float?, visibleHeight: Float): Float {
+        if (anchorSize == null) return 0f
+        return when (anchor) {
+            "bottom" -> visibleHeight - anchorSize
+            "center" -> (visibleHeight - anchorSize) / 2f
+            else -> 0f
+        }
+    }
+
+    private fun paintDisplayOp(canvas: Canvas, op: DisplayListScene.Op, visibleHeight: Float) {
+        when (op) {
+            is DisplayListScene.Op.RectOp -> {
+                val r = op.rect
+                val dy = if (r.fixed) anchorOffset(r.anchor, r.anchorSize, visibleHeight) else 0f
+                if (!r.stroked && r.shadow > 0f) {
+                    val shadowPaint = fillPaint("#000000")
+                    shadowPaint.alpha = 64
+                    canvas.drawRoundRect(
+                        r.x, r.y + dy + r.shadow / 2, r.x + r.w, r.y + dy + r.h + r.shadow / 2,
+                        r.radius, r.radius, shadowPaint
+                    )
+                }
+                val paint = if (r.stroked) {
+                    outlinePaint(r.color, r.strokeWidth)
+                } else if (r.colorTo != null) {
+                    val gradient = android.graphics.LinearGradient(
+                        r.x, r.y + dy, r.x, r.y + dy + r.h,
+                        Color.parseColor(r.color),
+                        Color.parseColor(r.colorTo),
+                        android.graphics.Shader.TileMode.CLAMP
+                    )
+                    fillPaint(r.color).apply { shader = gradient }
+                } else {
+                    fillPaint(r.color)
+                }
+                canvas.drawRoundRect(
+                    r.x, r.y + dy, r.x + r.w, r.y + dy + r.h,
+                    r.radius, r.radius, paint
+                )
+            }
+            is DisplayListScene.Op.CircleOp -> {
+                val dy = if (op.fixed) anchorOffset(op.anchor, op.anchorSize, visibleHeight) else 0f
+                canvas.drawCircle(op.cx, op.cy + dy, op.r, fillPaint(op.color))
+            }
+            is DisplayListScene.Op.RingOp -> {
+                val dy = if (op.fixed) anchorOffset(op.anchor, op.anchorSize, visibleHeight) else 0f
+                val bounds = RectF(
+                    op.cx - op.r, op.cy - op.r + dy, op.cx + op.r, op.cy + op.r + dy
+                )
+                if (op.track != null) {
+                    val trackPaint = outlinePaint(op.track, op.strokeWidth).apply {
+                        strokeCap = android.graphics.Paint.Cap.ROUND
+                    }
+                    canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
+                }
+                if (op.progress > 0f) {
+                    val sweep = 360f * op.progress.coerceAtMost(1f)
+                    val arcPaint = outlinePaint(op.color, op.strokeWidth).apply {
+                        strokeCap = android.graphics.Paint.Cap.ROUND
+                    }
+                    canvas.drawArc(bounds, -90f, sweep, false, arcPaint)
+                }
+            }
+            is DisplayListScene.Op.LineOp -> {
+                val dy = if (op.fixed) anchorOffset(op.anchor, op.anchorSize, visibleHeight) else 0f
+                canvas.drawLine(op.x1, op.y1 + dy, op.x2, op.y2 + dy, outlinePaint(op.color, op.strokeWidth))
+            }
+            is DisplayListScene.Op.TextOp -> {
+                val t = op.text
+                val dy = if (t.fixed) anchorOffset(t.anchor, t.anchorSize, visibleHeight) else 0f
+                textPaint.color = Color.parseColor(t.color)
+                textPaint.textSize = t.size
+                textPaint.typeface = if (t.weight >= 600) {
+                    android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+                } else {
+                    android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.NORMAL)
+                }
+                canvas.drawText(t.text, t.x, t.y + dy, textPaint)
+            }
+        }
     }
 
     private fun fillPaint(color: String): Paint =

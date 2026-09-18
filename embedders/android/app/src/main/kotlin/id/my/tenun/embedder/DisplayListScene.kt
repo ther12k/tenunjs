@@ -38,7 +38,11 @@ data class DisplayListScene(
         /** Gradient second stop; null means flat [color]. */
         val colorTo: String?,
         /** Elevation 0..24; 0 means no shadow. */
-        val shadow: Float
+        val shadow: Float,
+        /** Viewport-fixed operation metadata. */
+        val fixed: Boolean = false,
+        val anchor: String? = null,
+        val anchorSize: Float? = null
     )
 
     /** A single line of text; [y] is the baseline. */
@@ -48,13 +52,25 @@ data class DisplayListScene(
         val text: String,
         val size: Float,
         val weight: Int,
-        val color: String
+        val color: String,
+        /** Viewport-fixed operation metadata. */
+        val fixed: Boolean = false,
+        val anchor: String? = null,
+        val anchorSize: Float? = null
     )
 
     sealed class Op {
         data class RectOp(val rect: Rect) : Op()
         data class TextOp(val text: Text) : Op()
-        data class CircleOp(val cx: Float, val cy: Float, val r: Float, val color: String) : Op()
+        data class CircleOp(
+            val cx: Float,
+            val cy: Float,
+            val r: Float,
+            val color: String,
+            val fixed: Boolean = false,
+            val anchor: String? = null,
+            val anchorSize: Float? = null
+        ) : Op()
         data class RingOp(
             val cx: Float,
             val cy: Float,
@@ -63,7 +79,10 @@ data class DisplayListScene(
             val color: String,
             /** 0..1 swept from 12 o'clock clockwise. */
             val progress: Float,
-            val track: String?
+            val track: String?,
+            val fixed: Boolean = false,
+            val anchor: String? = null,
+            val anchorSize: Float? = null
         ) : Op()
         data class LineOp(
             val x1: Float,
@@ -71,7 +90,10 @@ data class DisplayListScene(
             val x2: Float,
             val y2: Float,
             val color: String,
-            val strokeWidth: Float
+            val strokeWidth: Float,
+            val fixed: Boolean = false,
+            val anchor: String? = null,
+            val anchorSize: Float? = null
         ) : Op()
     }
 
@@ -82,10 +104,20 @@ data class DisplayListScene(
         val w: Float,
         val h: Float,
         val action: String,
-        val payloadJson: String?
+        val payloadJson: String?,
+        val fixed: Boolean = false,
+        val anchor: String? = null,
+        val anchorSize: Float? = null
     ) {
-        fun contains(px: Float, py: Float): Boolean =
-            px >= x && px <= x + w && py >= y && py <= y + h
+        fun contains(px: Float, py: Float, visibleHeight: Float, scrollY: Float): Boolean {
+            val offset = if (!fixed || anchorSize == null) 0f else when (anchor) {
+                "bottom" -> visibleHeight - anchorSize
+                "center" -> (visibleHeight - anchorSize) / 2f
+                else -> 0f
+            }
+            val targetY = if (fixed) y + offset else y - scrollY
+            return px >= x && px <= x + w && py >= targetY && py <= targetY + h
+        }
     }
 
     companion object {
@@ -111,7 +143,10 @@ data class DisplayListScene(
                                     stroked = op.optString("op") == "outline",
                                     strokeWidth = op.optDouble("width", 3.0).toFloat(),
                                     colorTo = if (op.has("colorTo")) op.getString("colorTo") else null,
-                                    shadow = op.optDouble("shadow", 0.0).toFloat()
+                                    shadow = op.optDouble("shadow", 0.0).toFloat(),
+                                    fixed = op.optBoolean("fixed", false),
+                                    anchor = if (op.has("anchor")) op.getString("anchor") else null,
+                                    anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
                                 )
                             )
                         )
@@ -120,7 +155,10 @@ data class DisplayListScene(
                                 cx = op.optDouble("cx", 0.0).toFloat(),
                                 cy = op.optDouble("cy", 0.0).toFloat(),
                                 r = op.optDouble("r", 0.0).toFloat(),
-                                color = op.optString("color", "#000000")
+                                color = op.optString("color", "#000000"),
+                                fixed = op.optBoolean("fixed", false),
+                                anchor = if (op.has("anchor")) op.getString("anchor") else null,
+                                anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
                             )
                         )
                         "ring" -> ops.add(
@@ -131,7 +169,10 @@ data class DisplayListScene(
                                 strokeWidth = op.optDouble("width", 4.0).toFloat(),
                                 color = op.optString("color", "#4C8DFF"),
                                 progress = op.optDouble("progress", 0.0).toFloat(),
-                                track = if (op.has("track")) op.getString("track") else null
+                                track = if (op.has("track")) op.getString("track") else null,
+                                fixed = op.optBoolean("fixed", false),
+                                anchor = if (op.has("anchor")) op.getString("anchor") else null,
+                                anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
                             )
                         )
                         "line" -> ops.add(
@@ -141,7 +182,10 @@ data class DisplayListScene(
                                 x2 = op.optDouble("x2", 0.0).toFloat(),
                                 y2 = op.optDouble("y2", 0.0).toFloat(),
                                 color = op.optString("color", "#FFFFFF"),
-                                strokeWidth = op.optDouble("width", 1.0).toFloat()
+                                strokeWidth = op.optDouble("width", 1.0).toFloat(),
+                                fixed = op.optBoolean("fixed", false),
+                                anchor = if (op.has("anchor")) op.getString("anchor") else null,
+                                anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
                             )
                         )
                         "text" -> ops.add(
@@ -152,7 +196,10 @@ data class DisplayListScene(
                                     text = op.optString("text", ""),
                                     size = op.optDouble("size", 16.0).toFloat(),
                                     weight = op.optInt("weight", 400),
-                                    color = op.optString("color", "#FFFFFF")
+                                    color = op.optString("color", "#FFFFFF"),
+                                    fixed = op.optBoolean("fixed", false),
+                                    anchor = if (op.has("anchor")) op.getString("anchor") else null,
+                                    anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
                                 )
                             )
                         )
@@ -173,7 +220,10 @@ data class DisplayListScene(
                                 w = tap.optDouble("w", 0.0).toFloat(),
                                 h = tap.optDouble("h", 0.0).toFloat(),
                                 action = tap.optString("action", "tap"),
-                                payloadJson = payload?.toString()
+                                payloadJson = payload?.toString(),
+                                fixed = tap.optBoolean("fixed", false),
+                                anchor = if (tap.has("anchor")) tap.getString("anchor") else null,
+                                anchorSize = if (tap.has("anchorSize")) tap.optDouble("anchorSize").toFloat() else null
                             )
                         )
                     }

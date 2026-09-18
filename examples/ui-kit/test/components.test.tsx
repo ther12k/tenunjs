@@ -8,18 +8,22 @@ import { describe, expect, test } from "bun:test";
 import { Button, Column } from "@tenunjs/widgets";
 import { galleryTheme } from "../../gallery/src/theme";
 import {
+  AlertDialog,
   Avatar,
   Badge,
+  Carousel,
   Checkbox,
   Chip,
   colorSchemeFromSeed,
   Divider,
   FAB,
   HeroCard,
+  ModalBottomSheet,
   NavigationBar,
   PageIndicator,
   ProgressBar,
   ProgressRing,
+  SearchBar,
   SegmentedButton,
   Slider,
   SnackBar,
@@ -262,6 +266,174 @@ describe("M3 indicator components", () => {
     expect(stars.length).toBe(5);
     expect(stars.filter((s) => s.color === "#F5A623").length).toBe(4); // round(3.6)
     expect(stars.filter((s) => s.color === "#474B5A").length).toBe(1);
+  });
+});
+
+describe("Modern surface components", () => {
+  test("SearchBar emits a tonal pill, optional avatar, and one whole-bar tap", () => {
+    let searches = 0;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg">
+        <SearchBar hint="Search plants" avatar="RZ" onTap={() => searches++} />
+      </Column>
+    );
+    const pill = scene.ops.find((op) => op.op === "rect" && op.r === 36) as Extract<
+      (typeof scene.ops)[number],
+      { op: "rect" }
+    >;
+    expect(pill).toBeDefined();
+    expect(pill.w).toBe(672);
+    expect(pill.h).toBe(72);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Search plants")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "RZ")).toBe(true);
+    expect(scene.taps).toHaveLength(1);
+    tapRuns[0]!();
+    expect(searches).toBe(1);
+  });
+
+  test("ModalBottomSheet paints an open sheet and preserves scrim, option, and confirm ordering", () => {
+    let dismissed = 0;
+    let toggled = -1;
+    let confirmed = 0;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg">
+        <ModalBottomSheet
+          open={true}
+          title="Filter plants"
+          options={[
+            { glyph: "🌿", label: "Pet friendly", selected: true },
+            { glyph: "☀️", label: "Low light" },
+          ]}
+          onToggle={(index) => (toggled = index)}
+          confirmLabel="Apply filters"
+          onConfirm={() => confirmed++}
+          onDismiss={() => dismissed++}
+        />
+      </Column>
+    );
+    expect(scene.ops.some((op) => op.op === "rect" && op.color === "#8C000000")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Filter plants")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "✓")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Apply filters")).toBe(true);
+    // Full-scene containment, scrim dismissal, two option rows, confirm.
+    expect(scene.taps).toHaveLength(5);
+
+    // Outside the sheet, resolve the bottom anchor before applying the same
+    // last-containing-region rule used by browser and Android hosts.
+    const visibleHeight = 900;
+    const resolvedY = (tap: (typeof scene.taps)[number]) =>
+      tap.fixed && tap.anchor === "bottom" && tap.anchorSize !== undefined
+        ? tap.y + visibleHeight - tap.anchorSize
+        : tap.y;
+    const outside = scene.taps.filter((tap) => {
+      const y = resolvedY(tap);
+      return 120 >= tap.x && 120 <= tap.x + tap.w && 200 >= y && 200 <= y + tap.h;
+    });
+    expect(outside.map((tap) => tap.payload.id)).toEqual([0, 1]);
+    tapRuns[outside[outside.length - 1]!.payload.id]!();
+    expect(dismissed).toBe(1);
+
+    // Option rows and confirm are later regions than the containment anchor.
+    tapRuns[2]!();
+    expect(toggled).toBe(0);
+    tapRuns[3]!();
+    expect(toggled).toBe(1);
+    tapRuns[4]!();
+    expect(confirmed).toBe(1);
+  });
+
+  test("closed ModalBottomSheet contributes no scene operations or taps", () => {
+    const { scene } = layout(
+      <Column padding="lg">
+        <ModalBottomSheet open={false} options={[]} />
+      </Column>
+    );
+    expect(scene.ops).toHaveLength(0);
+    expect(scene.taps).toHaveLength(0);
+  });
+
+  test("AlertDialog contains its card and exposes dismiss and confirm actions", () => {
+    let dismissed = 0;
+    let confirmed = 0;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg">
+        <AlertDialog
+          open={true}
+          glyph="!"
+          title="Delete plant?"
+          body="This removes the plant from your collection."
+          dismissLabel="Cancel"
+          confirmLabel="Delete"
+          onDismiss={() => dismissed++}
+          onConfirm={() => confirmed++}
+        />
+      </Column>
+    );
+    expect(scene.ops.some((op) => op.op === "rect" && op.color === "#99000000")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "circle" && op.r === 48)).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Delete plant?")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Cancel")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Delete")).toBe(true);
+    // Scrim, card containment, dismiss, confirm.
+    expect(scene.taps).toHaveLength(4);
+
+    const cardTap = scene.taps[1]!;
+    expect(cardTap.x).toBe(80);
+    expect(cardTap.y).toBe(0);
+    expect(cardTap.w).toBe(560);
+    expect(cardTap.h).toBe(440);
+    expect(cardTap.fixed).toBe(true);
+    expect(cardTap.anchor).toBe("center");
+    expect(cardTap.anchorSize).toBe(416);
+    tapRuns[2]!();
+    expect(dismissed).toBe(1);
+    tapRuns[3]!();
+    expect(confirmed).toBe(1);
+  });
+
+  test("closed AlertDialog is inert", () => {
+    const { scene } = layout(
+      <Column padding="lg">
+        <AlertDialog open={false} title="Hidden" />
+      </Column>
+    );
+    expect(scene.ops).toHaveLength(0);
+    expect(scene.taps).toHaveLength(0);
+  });
+
+  test("Carousel renders one hero plus peeking cards and routes controls", () => {
+    let cycle: number = 0;
+    let selected = -1;
+    const { scene, tapRuns } = layout(
+      <Column padding="lg">
+        <Carousel
+          active={0}
+          items={[
+            { glyph: "🌿", title: "Monstera", subtitle: "Statement green", tint: "#1E3A2F" },
+            { glyph: "🌵", title: "Cactus", subtitle: "Sun loving", tint: "#3A2F1E" },
+            { glyph: "🌸", title: "Peace lily", subtitle: "Soft blooms", tint: "#3A2430" },
+          ]}
+          onCycle={(direction) => (cycle = direction)}
+          onSelect={(index) => (selected = index)}
+        />
+      </Column>
+    );
+    const cards = scene.ops.filter((op) => op.op === "rect" && op.r === 24) as Array<
+      Extract<(typeof scene.ops)[number], { op: "rect" }>
+    >;
+    expect(cards.length).toBe(2);
+    expect(cards.some((card) => card.w === 372 && card.h === 420 && card.shadow === 8)).toBe(true);
+    expect(cards.some((card) => card.w >= 184 && card.h === 356)).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Monstera")).toBe(true);
+    expect(scene.ops.some((op) => op.op === "text" && op.text === "Cactus")).toBe(true);
+    // Previous, next, then first peeking card.
+    expect(scene.taps).toHaveLength(3);
+    tapRuns[0]!();
+    expect(cycle).toBe(-1);
+    tapRuns[1]!();
+    expect(cycle).toBe(1);
+    tapRuns[2]!();
+    expect(selected).toBe(1);
   });
 });
 

@@ -75,10 +75,26 @@ const C = {
 interface CanvasBoxProps {
   width?: number;
   height: number;
+  /** Paint and hit-test this canvas in viewport coordinates. */
+  fixed?: boolean;
+  /** Default viewport anchor for fixed ops and taps. */
+  anchor?: "bottom" | "center";
+  anchorSize?: number;
   paint: (
     origin: { x: number; y: number; w: number },
     put: (op: DisplayOp) => void,
-    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void,
+    tap: (
+      region: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        fixed?: boolean;
+        anchor?: "bottom" | "center";
+        anchorSize?: number;
+      },
+      run: () => void
+    ) => void,
     palette: SchemeRoles
   ) => void;
 }
@@ -1066,21 +1082,23 @@ export function ModalDrawer(props: ModalDrawerProps): WidgetNode {
   const panelW = 480;
   return canvasBox({
     height: 0,
+    fixed: true,
     paint: (origin, put, tap, pal) => {
       const C = pal;
-      // Translate to scene space: ops are shifted by the anchor origin, so
-      // emitting -origin.x/-origin.y lands them at the scene's top-left.
-      const dx = -origin.x;
-      const dy = -origin.y;
-      const at = (x: number, y: number): { x: number; y: number } => ({ x: dx + x, y: dy + y });
-      // Scrim over the whole design surface (the engine never clips).
-      put({ op: "rect", ...at(-80, 0), w: origin.w + 160, h: 3200, r: 0, color: "#8C000000" });
+      // Fixed canvas coordinates are already viewport-relative. The host
+      // clips the full-height drawer to the visible viewport.
+      const dx = 0;
+      const dy = 0;
+      const at = (x: number, y: number): { x: number; y: number } => ({ x, y });
+      // Scrim over the whole visible viewport. Fixed ops are clipped by the
+      // host, so the generous height remains safe on tall devices.
+      put({ op: "rect", ...at(-80, 0), w: origin.w + 160, h: 3200, r: 0, color: "#8C000000", fixed: true });
       if (props.onDismiss) {
-        tap({ x: dx + panelW, y: dy, w: origin.w - panelW + 160, h: 3200 }, props.onDismiss);
+        tap({ x: dx + panelW, y: dy, w: origin.w - panelW + 160, h: 3200, fixed: true }, props.onDismiss);
       }
       // Panel: full-height slab with a hairline leading edge.
-      put({ op: "rect", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.surfaceContainer });
-      put({ op: "outline", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.outlineVariant, width: 2 });
+      put({ op: "rect", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.surfaceContainer, fixed: true });
+      put({ op: "outline", ...at(0, 0), w: panelW, h: 3200, r: 0, color: C.outlineVariant, width: 2, fixed: true });
       put({
         op: "text",
         ...at(40, 64),
@@ -1088,12 +1106,13 @@ export function ModalDrawer(props: ModalDrawerProps): WidgetNode {
         size: 30,
         weight: 700,
         color: C.onSurface,
+        fixed: true,
       });
       props.items.forEach((item, index) => {
         const top = headingH + index * itemH;
         const active = index === props.active;
         if (active) {
-          put({ op: "rect", ...at(24, top + 6), w: panelW - 48, h: itemH - 12, r: (itemH - 12) / 2, color: C.secondaryContainer });
+          put({ op: "rect", ...at(24, top + 6), w: panelW - 48, h: itemH - 12, r: (itemH - 12) / 2, color: C.secondaryContainer, fixed: true });
         }
         put({
           op: "text",
@@ -1102,6 +1121,7 @@ export function ModalDrawer(props: ModalDrawerProps): WidgetNode {
           size: 24,
           weight: 600,
           color: active ? C.onSecondaryContainer : C.onSurfaceVariant,
+          fixed: true,
         });
         put({
           op: "text",
@@ -1110,11 +1130,452 @@ export function ModalDrawer(props: ModalDrawerProps): WidgetNode {
           size: 17,
           weight: active ? 700 : 500,
           color: active ? C.onSecondaryContainer : C.onSurfaceVariant,
+          fixed: true,
         });
         if (props.onSelect) {
-          tap({ x: dx, y: dy + top, w: panelW, h: itemH }, () => props.onSelect!(index));
+          tap({ x: dx, y: dy + top, w: panelW, h: itemH, fixed: true }, () => props.onSelect!(index));
         }
       });
+    },
+  });
+}
+
+/** ---------- SearchBar ---------- */
+
+export interface SearchBarProps {
+  /** Placeholder hint inside the pill. */
+  hint: string;
+  /** Trailing avatar initials or glyph. */
+  avatar?: string;
+  onTap?: () => void;
+}
+
+/**
+ * M3 search bar: a full-pill tonal container with a leading magnifier,
+ * hint, and trailing avatar — the docked-search anatomy from the M3 spec.
+ */
+export function SearchBar(props: SearchBarProps): WidgetNode {
+  const h = 72;
+  return canvasBox({
+    height: h,
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      put({ op: "rect", x: 0, y: 0, w: origin.w, h, r: h / 2, color: C.surfaceContainerHigh });
+      put({
+        op: "text",
+        x: 28,
+        y: h / 2 + 24 * 0.36,
+        text: "🔍",
+        size: 24,
+        weight: 400,
+        color: C.onSurfaceVariant,
+      });
+      put({
+        op: "text",
+        x: 76,
+        y: h / 2 + 17 * 0.36,
+        text: props.hint,
+        size: 17,
+        weight: 400,
+        color: C.onSurfaceVariant,
+      });
+      if (props.avatar) {
+        put({ op: "circle", cx: origin.w - 36, cy: h / 2, r: 20, color: C.primaryContainer });
+        put({
+          op: "text",
+          x: origin.w - 36 - textWidth(props.avatar, 15) / 2,
+          y: h / 2 + 15 * 0.36,
+          text: props.avatar,
+          size: 15,
+          weight: 700,
+          color: C.onPrimaryContainer,
+        });
+      }
+      if (props.onTap) tap({ x: 0, y: 0, w: origin.w, h }, props.onTap);
+    },
+  });
+}
+
+/** ---------- ModalBottomSheet ---------- */
+
+export interface SheetOption {
+  glyph: string;
+  label: string;
+  selected?: boolean;
+}
+
+export interface ModalBottomSheetProps {
+  open: boolean;
+  title?: string;
+  options: ReadonlyArray<SheetOption>;
+  onToggle?: (index: number) => void;
+  confirmLabel?: string;
+  onConfirm?: () => void;
+  /** Tapping the scrim dismisses the sheet. */
+  onDismiss?: () => void;
+}
+
+/**
+ * M3 modal bottom sheet — the same overlay-anchor contract as
+ * ModalDrawer: place it last so it paints (and hit-tests) above all
+ * content, compensating its absolute origin to cover the scene. Anatomy:
+ * scrim, surface sheet with 28-unit top corners, drag handle pill, title,
+ * option rows with the M3 checkbox look, and a full-width confirm pill.
+ */
+export function ModalBottomSheet(props: ModalBottomSheetProps): WidgetNode {
+  if (!props.open) return canvasBox({ height: 0, paint: () => undefined });
+  const rowH = 72;
+  const headH = 96;
+  const actionsH = props.confirmLabel ? 108 : 24;
+  const sheetH = headH + props.options.length * rowH + actionsH;
+  const r = 28;
+  return canvasBox({
+    height: 0,
+    fixed: true,
+    anchor: "bottom",
+    anchorSize: sheetH,
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      const dx = 0;
+      const dy = 0;
+      const at = (x: number, y: number): { x: number; y: number } => ({ x, y });
+      // Tap layering under topmost-wins hosts: a full-scene containment
+      // region first, the dismiss scrim over it, then rows and confirm —
+      // so gaps (handle, title) swallow taps instead of letting covered
+      // content receive them.
+      const noop = (): void => undefined;
+      tap({ x: dx, y: dy, w: origin.w, h: 3200, fixed: true }, noop);
+      // Scrim above the sheet dismisses. The anchored sheet containment below
+      // wins over this region for taps inside the sheet itself.
+      put({ op: "rect", ...at(-80, 0), w: origin.w + 160, h: 3200, r: 0, color: "#8C000000", fixed: true });
+      if (props.onDismiss) {
+        // The scrim is a top-anchored viewport region; the sheet containment
+        // and rows below are independently bottom-anchored.
+        tap({ x: dx, y: dy, w: origin.w, h: 3200 - sheetH, fixed: true }, props.onDismiss);
+      }
+      // The host resolves bottom anchoring against the visible viewport.
+      const sheetTop = 0;
+      put({ op: "rect", ...at(0, sheetTop), w: origin.w, h: sheetH, r, color: C.surfaceContainer, fixed: true, anchor: "bottom", anchorSize: sheetH });
+      // Drag handle.
+      put({ op: "rect", ...at((origin.w - 64) / 2, sheetTop + 20), w: 64, h: 6, r: 3, color: C.outlineVariant, fixed: true, anchor: "bottom", anchorSize: sheetH });
+      if (props.title) {
+        put({
+          op: "text",
+          ...at(32, sheetTop + 76),
+          text: props.title,
+          size: 22,
+          weight: 600,
+          color: C.onSurface,
+          fixed: true,
+          anchor: "bottom",
+          anchorSize: sheetH,
+        });
+      }
+      props.options.forEach((option, index) => {
+        const top = sheetTop + headH + index * rowH;
+        const box = 40;
+        const selected = option.selected === true;
+        if (selected) {
+          put({ op: "rect", ...at(32, top + (rowH - box) / 2), w: box, h: box, r: 9, color: C.primary, fixed: true, anchor: "bottom", anchorSize: sheetH });
+          put({
+            op: "text",
+            ...at(32 + (box - textWidth("✓", 24)) / 2, top + (rowH - box) / 2 + box / 2 + 24 * 0.36 - 12),
+            text: "✓",
+            size: 24,
+            weight: 700,
+            color: C.onPrimary,
+            fixed: true,
+            anchor: "bottom",
+            anchorSize: sheetH,
+          });
+        } else {
+          put({
+            op: "outline",
+            ...at(32, top + (rowH - box) / 2),
+            w: box,
+            h: box,
+            r: 9,
+            color: C.outline,
+            width: 3,
+            fixed: true,
+            anchor: "bottom",
+            anchorSize: sheetH,
+          });
+        }
+        put({
+          op: "text",
+          ...at(96, top + rowH / 2 + 17 * 0.36),
+          text: `${option.glyph}  ${option.label}`,
+          size: 17,
+          weight: selected ? 700 : 500,
+          color: selected ? C.onSurface : C.onSurfaceVariant,
+          fixed: true,
+          anchor: "bottom",
+          anchorSize: sheetH,
+        });
+        if (props.onToggle) {
+          tap({ x: dx, y: dy + top, w: origin.w, h: rowH, fixed: true, anchor: "bottom", anchorSize: sheetH }, () => props.onToggle!(index));
+        }
+      });
+      if (props.confirmLabel && props.onConfirm) {
+        const btnTop = sheetTop + sheetH - actionsH + 8;
+        put({ op: "rect", ...at(24, btnTop), w: origin.w - 48, h: 64, r: 32, color: C.primary, fixed: true, anchor: "bottom", anchorSize: sheetH });
+        put({
+          op: "text",
+          ...at((origin.w - textWidth(props.confirmLabel, 17)) / 2, btnTop + 32 + 17 * 0.36),
+          text: props.confirmLabel,
+          size: 17,
+          weight: 600,
+          color: C.onPrimary,
+          fixed: true,
+          anchor: "bottom",
+          anchorSize: sheetH,
+        });
+        tap({ x: dx + 24, y: dy + btnTop, w: origin.w - 48, h: 64, fixed: true, anchor: "bottom", anchorSize: sheetH }, props.onConfirm);
+      }
+    },
+  });
+}
+
+/** ---------- AlertDialog ---------- */
+
+export interface AlertDialogProps {
+  open: boolean;
+  glyph?: string;
+  title: string;
+  body?: string;
+  confirmLabel?: string;
+  onConfirm?: () => void;
+  dismissLabel?: string;
+  /** Scrim/empty areas dismiss. */
+  onDismiss?: () => void;
+}
+
+/**
+ * M3 basic dialog: scrim, centered 560-unit card with a 48-unit glyph in
+ * a secondary-container circle, headline, body, and a confirm/dismiss
+ * text-button row. Overlay-anchor contract like ModalDrawer.
+ */
+export function AlertDialog(props: AlertDialogProps): WidgetNode {
+  if (!props.open) return canvasBox({ height: 0, paint: () => undefined });
+  const w = 560;
+  const h = props.glyph ? 416 : 344;
+  return canvasBox({
+    height: 0,
+    fixed: true,
+    anchor: "center",
+    anchorSize: h,
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      const dx = 0;
+      const dy = 0;
+      const at = (x: number, y: number): { x: number; y: number } => ({ x, y });
+      // Layering: dismiss scrim first (tap-outside dismisses), then a
+      // card-sized containment region over it, then the buttons — topmost
+      // registration wins, so the card body never falls through.
+      put({ op: "rect", ...at(-80, 0), w: origin.w + 160, h: 3200, r: 0, color: "#99000000", fixed: true });
+      const noop: () => void = (): void => undefined;
+      const x0 = (origin.w - w) / 2;
+      const y0 = 0;
+      if (props.onDismiss) {
+        tap({ x: dx, y: dy, w: origin.w, h: 3200, fixed: true }, props.onDismiss);
+      }
+      tap({ x: dx + x0, y: dy + y0, w, h: h + 24, fixed: true, anchor: "center", anchorSize: h }, noop);
+      // Layered elevation in scene-compensated coordinates (same look as
+      // softShadow, kept consistent with the at() translation).
+      put({ op: "rect", ...at(x0 - 6, y0 + 4), w: w + 12, h: h + 12, r: 34, color: "#22000000", fixed: true, anchor: "center", anchorSize: h });
+      put({ op: "rect", ...at(x0 - 3, y0 + 2), w: w + 6, h: h + 7, r: 31, color: "#44000000", fixed: true, anchor: "center", anchorSize: h });
+      put({ op: "rect", ...at(x0, y0), w, h, r: 28, color: C.surfaceContainerHigh, fixed: true, anchor: "center", anchorSize: h });
+      let cursor = y0 + 40;
+      if (props.glyph) {
+        put({
+          op: "circle",
+          cx: dx + origin.w / 2,
+          cy: dy + cursor + 48,
+          r: 48,
+          color: C.secondaryContainer,
+          fixed: true,
+          anchor: "center",
+          anchorSize: h,
+        });
+        put({
+          op: "text",
+          ...at((origin.w - textWidth(props.glyph, 40)) / 2, cursor + 48 + 40 * 0.36),
+          text: props.glyph,
+          size: 40,
+          weight: 600,
+          color: C.onSecondaryContainer,
+          fixed: true,
+          anchor: "center",
+          anchorSize: h,
+        });
+        cursor += 128;
+      }
+      put({
+        op: "text",
+        ...at((origin.w - textWidth(props.title, 24)) / 2, cursor + 24 * 0.36),
+        text: props.title,
+        size: 24,
+        weight: 600,
+          color: C.onSurface,
+          fixed: true,
+          anchor: "center",
+          anchorSize: h,
+        });
+      cursor += 56;
+      if (props.body) {
+        const lines = wrapText(props.body, 15, w - 96);
+        lines.forEach((line, index) => {
+          put({
+            op: "text",
+            ...at((origin.w - textWidth(line, 15)) / 2, cursor + index * 22 + 15 * 0.36),
+            text: line,
+            size: 15,
+            weight: 400,
+            color: C.onSurfaceVariant,
+            fixed: true,
+            anchor: "center",
+            anchorSize: h,
+          });
+        });
+        cursor += lines.length * 22 + 16;
+      }
+      const by = y0 + h - 88;
+      const half = w / 2 - 12;
+      if (props.dismissLabel) {
+        const lx = x0 + 24;
+        put({
+          op: "text",
+          ...at(lx + (half - textWidth(props.dismissLabel, 17)) / 2, by + 17 * 0.36),
+          text: props.dismissLabel,
+          size: 17,
+          weight: 600,
+          color: C.primary,
+          fixed: true,
+          anchor: "center",
+          anchorSize: h,
+        });
+        if (props.onDismiss) {
+          tap({ x: dx + lx, y: dy + by - 12, w: half, h: 64, fixed: true, anchor: "center", anchorSize: h }, props.onDismiss);
+        }
+      }
+      if (props.confirmLabel && props.onConfirm) {
+        const rx = x0 + w - 24 - half;
+        put({
+          op: "text",
+          ...at(rx + (half - textWidth(props.confirmLabel, 17)) / 2, by + 17 * 0.36),
+          text: props.confirmLabel,
+          size: 17,
+          weight: 600,
+          color: C.primary,
+          fixed: true,
+          anchor: "center",
+          anchorSize: h,
+        });
+        tap({ x: dx + rx, y: dy + by - 12, w: half, h: 64, fixed: true, anchor: "center", anchorSize: h }, props.onConfirm);
+      }
+    },
+  });
+}
+
+/** ---------- Carousel ---------- */
+
+export interface CarouselItem {
+  glyph: string;
+  title: string;
+  subtitle: string;
+  tint: string;
+}
+
+export interface CarouselProps {
+  items: ReadonlyArray<CarouselItem>;
+  /** Index of the hero (large) item; others follow with wrap-around. */
+  active: number;
+  onSelect?: (index: number) => void;
+  onCycle?: (direction: 1 | -1) => void;
+}
+
+/**
+ * M3 hero carousel: one 372-unit hero card with smaller peeking cards
+ * beside it (the "varying-height" carousel layout). Chevrons cycle the
+ * hero; tapping a peek card promotes it. Height fixed at 420.
+ */
+export function Carousel(props: CarouselProps): WidgetNode {
+  const h = 420;
+  return canvasBox({
+    height: h,
+    paint: (origin, put, tap, pal) => {
+      const C = pal;
+      const count = props.items.length;
+      if (count === 0) return;
+      const order = Array.from({ length: count }, (_, i) => (props.active + i) % count);
+      // Hero: 372 wide, vertically centered; then two shrinking peeks.
+      const heroW = 372;
+      const heroH = h;
+      const hero = order[0]!;
+      const drawCard = (
+        item: CarouselItem,
+        x: number,
+        y: number,
+        w: number,
+        cardH: number,
+        index: number,
+        isHero: boolean
+      ): void => {
+        put({ op: "rect", x, y, w, h: cardH, r: 24, color: item.tint, ...(isHero ? { shadow: 8 } : {}) });
+        put({ op: "circle", cx: x + w / 2, cy: y + cardH * 0.38, r: Math.min(w, cardH) * 0.22, color: "#14FFFFFF" });
+        put({
+          op: "text",
+          x: x + (w - textWidth(item.glyph, Math.round(Math.min(w, cardH) * 0.28))) / 2,
+          y: y + cardH * 0.38 + Math.min(w, cardH) * 0.28 * 0.36,
+          text: item.glyph,
+          size: Math.round(Math.min(w, cardH) * 0.28),
+          weight: 600,
+          color: "#FFFFFF",
+        });
+        put({
+          op: "text",
+          x: x + 24,
+          y: y + cardH - 96,
+          text: item.title,
+          size: isHero ? 22 : 17,
+          weight: 700,
+          color: "#FFFFFF",
+        });
+        const sub = wrapText(item.subtitle, isHero ? 15 : 13, w - 48);
+        put({
+          op: "text",
+          x: x + 24,
+          y: y + cardH - 62,
+          text: sub[0] ?? "",
+          size: isHero ? 15 : 13,
+          weight: 400,
+          color: "#C0FFFFFF",
+        });
+        if (isHero && props.onCycle) {
+          // Chevron pills overlapping the hero edges: back on the left,
+          // forward on the right.
+          put({ op: "circle", cx: x + 16, cy: y + cardH / 2, r: 28, color: "#B31C1C24" });
+          put({ op: "text", x: x + 16 - textWidth("‹", 30) / 2, y: y + cardH / 2 + 30 * 0.36, text: "‹", size: 30, weight: 700, color: "#FFFFFF" });
+          tap({ x: x - 12, y: y + cardH / 2 - 44, w: 56, h: 88 }, () => props.onCycle!(-1));
+          put({ op: "circle", cx: x + heroW - 16, cy: y + cardH / 2, r: 28, color: "#B31C1C24" });
+          put({ op: "text", x: x + heroW - 16 - textWidth("›", 30) / 2, y: y + cardH / 2 + 30 * 0.36, text: "›", size: 30, weight: 700, color: "#FFFFFF" });
+          tap({ x: x + heroW - 44, y: y + cardH / 2 - 44, w: 56, h: 88 }, () => props.onCycle!(1));
+        }
+        if (props.onSelect && !isHero) {
+          tap({ x, y, w, h: cardH }, () => props.onSelect!(index));
+        }
+      };
+      drawCard(props.items[hero]!, 0, 0, heroW, heroH, hero, true);
+      let x = heroW + 16;
+      const peeks = Math.max(0, Math.floor((origin.w - heroW - 16) / 200));
+      for (let p = 1; p <= Math.min(peeks, count - 1); p++) {
+        const idx = order[p]!;
+        const pw = Math.max(184, origin.w - x);
+        const ph = h - p * 64;
+        drawCard(props.items[idx]!, x, (h - ph) / 2, pw, ph, idx, false);
+        x += pw + 16;
+      }
     },
   });
 }

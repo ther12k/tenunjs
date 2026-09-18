@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DisplayListScene } from "../../ui-kit/src/display-list";
+import { anchorOffsetForTest } from "../renderer";
 
 function scene(): DisplayListScene {
   return {
@@ -43,5 +44,11 @@ describe("browser display-list geometry", () => {
     expect(designY).toBeGreaterThanOrEqual(tap.y);
     expect(designX).toBeLessThanOrEqual(tap.x + tap.w);
     expect(designY).toBeLessThanOrEqual(tap.y + tap.h);
+  });
+
+  test("fixed anchors resolve against the visible viewport, not scroll", () => {
+    expect(anchorOffsetForTest({ fixed: true, anchor: "bottom", anchorSize: 320 }, 900)).toBe(580);
+    expect(anchorOffsetForTest({ fixed: true, anchor: "center", anchorSize: 416 }, 900)).toBe(242);
+    expect(anchorOffsetForTest({ fixed: true }, 900)).toBe(0);
   });
 });
