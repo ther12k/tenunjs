@@ -37,6 +37,35 @@
         "@tenunjs/cli": "workspace:*",
       },
     },
+    "examples/flutter-showcase": {
+      "name": "@tenunjs-examples/flutter-showcase",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
+    "examples/flutter-showcase-preview": {
+      "name": "@tenunjs-examples/flutter-showcase-preview",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/flutter-showcase": "workspace:*",
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/navigation": "workspace:*",
+      },
+    },
     "examples/gallery": {
       "name": "@tenunjs-examples/gallery",
       "version": "0.1.0",
@@ -158,6 +187,10 @@
     "@tenunjs-examples/calculator": ["@tenunjs-examples/calculator@workspace:examples/calculator"],
 
     "@tenunjs-examples/counter": ["@tenunjs-examples/counter@workspace:examples/counter"],
+
+    "@tenunjs-examples/flutter-showcase": ["@tenunjs-examples/flutter-showcase@workspace:examples/flutter-showcase"],
+
+    "@tenunjs-examples/flutter-showcase-preview": ["@tenunjs-examples/flutter-showcase-preview@workspace:examples/flutter-showcase-preview"],
 
     "@tenunjs-examples/gallery": ["@tenunjs-examples/gallery@workspace:examples/gallery"],
 

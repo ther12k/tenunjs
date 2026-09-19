@@ -41,6 +41,7 @@ describe("examples are valid application projects", () => {
     expect(exampleNames).toEqual([
       "calculator",
       "counter",
+      "flutter-showcase",
       "gallery",
       "navigation-demo",
       "todo-list",

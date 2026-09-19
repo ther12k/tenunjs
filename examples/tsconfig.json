@@ -21,5 +21,5 @@
     "noEmit": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["gallery-preview"]
+  "exclude": ["gallery-preview", "flutter-showcase-preview"]
 }

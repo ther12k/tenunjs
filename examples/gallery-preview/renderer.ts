@@ -1,4 +1,4 @@
-import type { DisplayListScene, DisplayOp } from "../ui-kit/src/display-list";
+import type { DisplayListScene, DisplayOp, FixedPosition, SerializedTap } from "../ui-kit/src/display-list";
 
 /**
  * Normalizes the display-list color convention for CSS: scenes use
@@ -23,18 +23,96 @@ export interface PreviewRenderer {
   maxScroll(scene: DisplayListScene): number;
 }
 
+export function anchorOffsetForTest(position: FixedPosition, visibleHeight: number): number {
+  if (!position.fixed || position.anchorSize === undefined) return 0;
+  if (position.anchor === "bottom") return visibleHeight - position.anchorSize;
+  if (position.anchor === "center") return (visibleHeight - position.anchorSize) / 2;
+  return 0;
+}
+
+/** Scene op kinds this renderer can paint — the browser twin of the Android parser's switch. */
+const KNOWN_OP_KINDS: ReadonlySet<string> = new Set([
+  "rect",
+  "outline",
+  "text",
+  "circle",
+  "ring",
+  "line",
+  "gradient",
+]);
+
+/**
+ * Fail-closed scene validation, symmetric with the Android host's
+ * SceneContractException: a scene version above SUPPORTED_SCENE_VERSION or
+ * any unknown op kind (at ANY position — validation completes before a
+ * candidate is accepted) rejects the whole scene. Returns the violation
+ * message, or null when the scene is acceptable.
+ */
+export function sceneContractError(scene: DisplayListScene): string | null {
+  if (scene.version > CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION) {
+    return `scene version ${scene.version} exceeds renderer support (${CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION})`;
+  }
+  for (let index = 0; index < scene.ops.length; index++) {
+    const kind: string = (scene.ops[index] as { op: string }).op;
+    if (!KNOWN_OP_KINDS.has(kind)) {
+      return `unknown op kind "${kind}" at ops[${index}]`;
+    }
+  }
+  return null;
+}
+
+/**
+ * The tap-resolution rule shared by every host surface: regions are tested
+ * in REVERSE registration order, so the topmost painted region wins (paint
+ * order is z-order). Fixed regions resolve in viewport coordinates with
+ * their anchor offset; scrollable regions translate by the current scroll.
+ * This is the browser twin of the Android host's Tap.contains + lastOrNull
+ * dispatch — one rule, two adapters.
+ */
+export function hitTestTaps(
+  taps: ReadonlyArray<SerializedTap>,
+  designX: number,
+  viewportY: number,
+  visibleHeight: number,
+  scrollY: number
+): number | null {
+  for (let index = taps.length - 1; index >= 0; index--) {
+    const tap = taps[index]!;
+    const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y + scrollY;
+    if (tap.x <= designX && designX <= tap.x + tap.w && y <= viewportY && viewportY <= y + tap.h) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function translateFixedOp(op: DisplayOp, visibleHeight: number): DisplayOp {
+  const dy = anchorOffsetForTest(op, visibleHeight);
+  if (dy === 0) return op;
+  switch (op.op) {
+    case "circle":
+    case "ring":
+      return { ...op, cy: op.cy + dy };
+    case "line":
+      return { ...op, y1: op.y1 + dy, y2: op.y2 + dy };
+    default:
+      return { ...op, y: op.y + dy };
+  }
+}
+
 /**
  * CanvasKit-compatible drawing surface. CanvasKit is intentionally loaded by
  * the HTML shell so the bundle remains ordinary browser JavaScript. When
- * CanvasKit/WASM is unavailable (offline or blocked CDN), this deterministic
- * Canvas 2D implementation keeps the preview usable and reports the
- * fallback through the UI.
+ * CanvasKit/WASM is unavailable, this deterministic Canvas 2D implementation
+ * keeps the preview usable.
  */
 export class CanvasPreviewRenderer implements PreviewRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private scale = 1;
   private designWidth = 720;
+  /** Scene contract version this renderer understands (mirrors the Android host). */
+  static readonly SUPPORTED_SCENE_VERSION = 1;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -53,6 +131,14 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
   }
 
   render(scene: DisplayListScene, scrollY: number): void {
+    // Fail-loud compatibility policy (same contract as the Android host):
+    // an unacceptable scene is rejected whole with a console error and the
+    // last painted canvas stays, instead of a partial render.
+    const error = sceneContractError(scene);
+    if (error !== null) {
+      console.error(`[TENUN_SCENE_ERROR] ${error}; keeping the last painted scene`);
+      return;
+    }
     this.designWidth = scene.designWidth;
     this.resize();
     const rect = this.canvas.getBoundingClientRect();
@@ -66,28 +152,44 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = toCss(scene.background);
     ctx.fillRect(0, 0, width, height);
+
+    // Scrollable content is clipped and translated as before.
     ctx.save();
     ctx.scale(scale, scale);
     ctx.translate(0, -scrollY);
     ctx.beginPath();
     ctx.rect(0, scrollY, scene.designWidth, visibleHeight);
     ctx.clip();
-    for (const op of scene.ops) this.paint(ctx, op);
+    for (const op of scene.ops) {
+      if (!op.fixed) this.paint(ctx, op);
+    }
+    ctx.restore();
+
+    // Fixed overlays form a viewport layer above all scrollable content.
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.rect(0, 0, scene.designWidth, visibleHeight);
+    ctx.clip();
+    for (const op of scene.ops) {
+      if (op.fixed) this.paint(ctx, translateFixedOp(op, visibleHeight));
+    }
     ctx.restore();
   }
 
   hitTest(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number): number | null {
+    // A scene this renderer rejected is not painted AND not hittable: its
+    // hit regions must never dispatch (no new action targets go live).
+    if (sceneContractError(scene) !== null) return null;
     const rect = this.canvas.getBoundingClientRect();
     const scale = rect.width / scene.designWidth;
-    const x = (clientX - rect.left) / scale;
-    const y = (clientY - rect.top) / scale + scrollY;
-    for (let index = scene.taps.length - 1; index >= 0; index--) {
-      if (scene.taps[index]!.x <= x && x <= scene.taps[index]!.x + scene.taps[index]!.w &&
-          scene.taps[index]!.y <= y && y <= scene.taps[index]!.y + scene.taps[index]!.h) {
-        return index;
-      }
-    }
-    return null;
+    return hitTestTaps(
+      scene.taps,
+      (clientX - rect.left) / scale,
+      (clientY - rect.top) / scale,
+      rect.height / scale,
+      scrollY
+    );
   }
 
   maxScroll(scene: DisplayListScene): number {
@@ -112,7 +214,6 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         return;
       }
       case "ring": {
-        // Track first, then the progress arc swept from 12 o'clock.
         if (op.track) {
           ctx.beginPath();
           ctx.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);

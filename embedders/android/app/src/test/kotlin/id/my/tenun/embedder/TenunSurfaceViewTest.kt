@@ -178,4 +178,77 @@ class TenunSurfaceViewTest {
         assertEquals("Project Alpha", titleField.displayText)
         assertEquals("Review Documentation", detailsField.displayText)
     }
+
+    @Test
+    fun testRejectedCandidateKeepsTheEntireCommittedScene() {
+        // The targeted rejection regression: commit a valid scene A WITH hit
+        // regions, then submit candidate B whose first op is valid but whose
+        // LAST op violates the contract (and whose taps differ). Rejection
+        // must leave A fully active — no partial B drawing, no B hit region.
+        val holder = SceneHolder()
+
+        val sceneA = """
+        {
+          "tenun": "display-list", "version": 1,
+          "designWidth": 720, "contentHeight": 900, "background": "#101014",
+          "ops": [ { "op": "text", "x": 40, "y": 60, "text": "Scene A", "size": 30, "weight": 700, "color": "#F2F2F7" } ],
+          "taps": [ { "x": 0, "y": 0, "w": 720, "h": 96, "action": "tap", "payload": { "id": 7 } } ]
+        }
+        """.trimIndent()
+        assertEquals(SceneHolder.Outcome.APPLIED, holder.apply(sceneA))
+        assertEquals(1, holder.current!!.taps.size)
+
+        val candidateB = """
+        {
+          "tenun": "display-list", "version": 1,
+          "designWidth": 720, "contentHeight": 900, "background": "#101014",
+          "ops": [
+            { "op": "text", "x": 0, "y": 0, "text": "B first op is fine", "size": 17, "weight": 400, "color": "#FFFFFF" },
+            { "op": "hologram", "x": 1 }
+          ],
+          "taps": [ { "x": 0, "y": 0, "w": 720, "h": 96, "action": "tap", "payload": { "id": 99 } } ]
+        }
+        """.trimIndent()
+        assertEquals(SceneHolder.Outcome.REJECTED, holder.apply(candidateB))
+
+        // A survives whole: its ops, its tap payload, and none of B's.
+        val active = holder.current!!
+        assertEquals(1, active.ops.size)
+        assertEquals(1, active.taps.size)
+        assertEquals("""{"id":7}""", active.taps[0].payloadJson)
+        assertTrue(holder.hasRejection)
+        assertTrue(holder.lastRejection!!.contains("hologram"))
+    }
+
+    @Test
+    fun testFirstCommitRejectionIsExplicitNotTheNotesFallback() {
+        // Initial launch with no previously committed scene: the rejection
+        // must surface as the incompatible-bundle state (hasRejection with a
+        // null scene), never as the legacy notes screen.
+        val holder = SceneHolder()
+        val invalid = """
+        {
+          "tenun": "display-list", "version": 2,
+          "ops": [ { "op": "text", "x": 0, "y": 0, "text": "future", "size": 16, "weight": 400, "color": "#FFFFFF" } ]
+        }
+        """.trimIndent()
+        assertEquals(SceneHolder.Outcome.REJECTED, holder.apply(invalid))
+        assertNull(holder.current)
+        assertTrue(holder.hasRejection)
+        assertTrue(holder.lastRejection!!.contains("version 2"))
+        // renderScene's policy: current==null && hasRejection -> incompatible
+        // state screen; the notes screen only renders when hasRejection is
+        // false and no display list was ever committed.
+    }
+
+    @Test
+    fun testLegacyTreeStillRoutesToTheNotesPath() {
+        // NOT_A_DISPLAY_LIST must stay distinguishable from REJECTED so the
+        // legacy notes application keeps its authoritative path.
+        val holder = SceneHolder()
+        val legacy = """{ "root": { "id": 0, "type": "column", "children": [] }, "entryCount": 0 }"""
+        assertEquals(SceneHolder.Outcome.NOT_A_DISPLAY_LIST, holder.apply(legacy))
+        assertNull(holder.current)
+        assertFalse(holder.hasRejection)
+    }
 }

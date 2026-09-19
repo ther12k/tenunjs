@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TenunJS Flutter Showcase</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #090b10; color: #f5f7fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 20% 0%, #3e2d2b, #090b10 62%); }
+      .workspace { width: min(100vw, 780px); padding: 28px; display: grid; gap: 14px; }
+      .eyebrow { color: #f5a56b; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; }
+      h1 { margin: 0; font-size: 24px; line-height: 1.1; }
+      .subtle { color: #aeb8c8; line-height: 1.5; font-size: 14px; }
+      .frame { border: 1px solid #384152; border-radius: 30px; padding: 14px; background: #0d1119; box-shadow: 0 28px 80px #0009; }
+      .framebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 8px 12px; color: #aeb8c8; font-size: 13px; }
+      .framebar .lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      #back-button { border: 1px solid #4b2e28; background: #241a17; color: #ffdccb; padding: 7px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; cursor: pointer; }
+      #back-button:hover { border-color: #f5a56b; color: #f5a56b; }
+      #back-button[hidden] { display: none; }
+      #app-accent { width: 10px; height: 10px; border-radius: 999px; background: #f5a56b; flex: none; }
+      #app-accent[hidden] { display: none; }
+      #surface-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .framebar .trail { display: flex; align-items: center; gap: 10px; flex: none; }
+      #reload-label { color: #aeb8c8; font-size: 12px; }
+      canvas { display: block; width: 100%; height: min(74vh, 780px); border-radius: 18px; background: #0e1118; touch-action: none; }
+      .screen { position: relative; }
+      #splash { position: absolute; inset: 0; border-radius: 18px; display: grid; place-items: center; opacity: 1; transition: opacity .3s ease; pointer-events: none; }
+      #splash.fade { opacity: 0; }
+      #splash[hidden] { display: none; }
+      #splash-glyph { font-size: 88px; color: #ffffff; }
+      .status { color: #70d6a2; font-size: 12px; padding: 0 8px; }
+      .hint { color: #aeb8c8; font-size: 12px; padding: 0 8px; }
+      @media (max-width: 800px) { .workspace { padding: 16px; } canvas { height: 66vh; } }
+    </style>
+  </head>
+  <body>
+    <main class="workspace">
+      <header>
+        <div class="eyebrow">TenunJS / Flutter study</div>
+        <h1>Beautiful by design</h1>
+        <p class="subtle">A launcher host for five independent app studies inspired by Best-Flutter-UI-Templates — open one, close it, and its state is still there.</p>
+      </header>
+      <section class="frame">
+        <div class="framebar">
+          <span class="lead">
+            <button id="back-button" hidden>← App library</button>
+            <span id="app-accent" hidden></span>
+            <span id="surface-label">App library</span>
+          </span>
+          <span class="trail"><span id="reload-label">live</span></span>
+        </div>
+        <div class="screen">
+          <canvas id="preview" aria-label="TenunJS Flutter showcase launcher"></canvas>
+          <div id="splash" hidden><span id="splash-glyph"></span></div>
+        </div>
+      </section>
+      <div class="status" id="status">Showcase launcher ready</div>
+      <p class="hint">Open a study from the library, use ← App library (or press <kbd>H</kbd>) to return. Drag to scroll; click actions to mutate state.</p>
+    </main>
+    <script type="module" src="./preview.js"></script>
+  </body>
+</html>

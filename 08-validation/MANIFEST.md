@@ -76,12 +76,13 @@ status: accepted
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
-| 04-api/index.md | dfb8908b3a8f1256c0b0fb4356294b986897376333fdc9b250fdfc733a3cfc29 |
+| 04-api/flutter-migration.md | c59b829a1ba7b59ce72969901e21f994e924aa0c297e46fd06df97a081c344f0 |
+| 04-api/index.md | 1ba586e7c3a9e1b2a2b4413bcab2008019a98d5558391b8415be4cf7e417bfdb |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
-| 04-api/widgets-and-styling.md | 3edbbb4473189ece5a6dbeef8eab964ddde7c6142b5427086cad2bbaacc24c61 |
+| 04-api/widgets-and-styling.md | b38e1e7327594eaecf6a0e587f501e62ceccde31e4cf88fce0f7514d92ee4e78 |
 | 05-delivery/definition-of-done.md | 17adc84f6703efedcde2aaecaf79c1f9946cb6a3c603e70949cde46f584fefe3 |
 | 05-delivery/dependency-graph.md | af2323a75df499ec9d1c58c9c6ea5d3e7a114b8f8fbfed29216ff8130a94c777 |
 | 05-delivery/github-setup.md | 9988283c92ed14677e71efcec3de569f37c90eeac7ea69ab52eea55f6f3fc437 |

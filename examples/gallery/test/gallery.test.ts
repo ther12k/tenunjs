@@ -10,11 +10,13 @@ import { OnboardingScreen } from "../src/screens/onboarding.screen";
 import { PlantsScreen } from "../src/screens/plants.screen";
 import { ProfileScreen } from "../src/screens/profile.screen";
 import { ThemeLabScreen } from "../src/screens/theme-lab.screen";
+import { ViewsScreen } from "../src/screens/views.screen";
 import type { BankingState } from "../src/screens/banking.screen";
 import type { SmartHomeState } from "../src/screens/smart-home.screen";
 import type { FitnessState } from "../src/screens/fitness.screen";
 import type { StoreState } from "../src/screens/store.screen";
 import type { SettingsState } from "../src/screens/settings.screen";
+import type { ViewsState } from "../src/screens/views.screen";
 
 /**
  * Interactive acceptance for the gallery modules: every flow runs through
@@ -247,9 +249,44 @@ describe("Plant shop", () => {
     h.press("setNav", 3);
     expect(h.state.nav).toBe(3);
   });
+
+  test("search, featured carousel, and filter sheet are stateful", () => {
+    const h = mountScreen(PlantsScreen);
+    h.press("cycleSearch");
+    expect(h.state.query).toBe("monstera");
+    h.press("cycleFeatured", 1);
+    expect(h.state.featured).toBe(1);
+    h.press("openFilters");
+    expect(h.state.filterOpen).toBe(true);
+    h.press("toggleFilter", 0);
+    h.press("toggleFilter", 2);
+    expect(h.state.filters).toEqual({ petFriendly: true, lowLight: false, lowPrice: true });
+    h.press("applyFilters");
+    expect(h.state.filterOpen).toBe(false);
+    const tree = h.render();
+    expect(tree).not.toBeNull();
+  });
+});
+
+describe("Widget showcase modern surfaces", () => {
+  test("dialog and bottom sheet actions preserve typed state", () => {
+    const h = mountScreen(ViewsScreen);
+    h.press("openDialog");
+    expect((h.state as ViewsState).dialogOpen).toBe(true);
+    h.press("confirmDialog");
+    expect((h.state as ViewsState).dialogOpen).toBe(false);
+    expect((h.state as ViewsState).snack).toBe(true);
+    h.press("openSheet");
+    expect((h.state as ViewsState).sheetOpen).toBe(true);
+    h.press("toggleSheetOption", 1);
+    expect((h.state as ViewsState).sheetOptions).toEqual([true, true, false]);
+    h.press("confirmSheet");
+    expect((h.state as ViewsState).sheetOpen).toBe(false);
+  });
 });
 
 describe("Profile & account", () => {
+
   test("tabs switch, settings mutate, and logout/sign-in round-trips", () => {
     const h = mountScreen(ProfileScreen);
     h.press("setTab", 2);

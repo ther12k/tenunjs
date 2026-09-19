@@ -20,6 +20,8 @@
     "verify:manifest": "python3 ./.github/scripts/verify-manifest.py",
     "verify:evidence": "python3 ./.github/scripts/verify-evidence.py",
     "gallery:preview": "bun embedders/android/tools/gallery-bundle/dev-server.ts",
+    "showcase:desktop": "bun embedders/android/tools/gallery-bundle/desktop.ts showcase",
+    "gallery:desktop": "bun embedders/android/tools/gallery-bundle/desktop.ts gallery",
     "verify": "bun run verify:ts && bun run verify:rust && bun run verify:abi && bun run verify:probe && bun run verify:android && bun run verify:manifest && bun run verify:evidence"
   },
   "devDependencies": {

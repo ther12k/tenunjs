@@ -10,6 +10,7 @@ import {
 } from "@tenunjs/widgets";
 import {
   Avatar,
+  AlertDialog,
   Badge,
   Checkbox,
   Chip,
@@ -17,6 +18,7 @@ import {
   FAB,
   IconButton,
   ListTile,
+  ModalBottomSheet,
   NavigationBar,
   ProgressBar,
   ProgressRing,
@@ -45,6 +47,9 @@ export interface ViewsState {
   nav: number;
   snack: boolean;
   ring: number;
+  dialogOpen: boolean;
+  sheetOpen: boolean;
+  sheetOptions: boolean[];
 }
 
 export const ViewsScreen = defineScreen({
@@ -61,6 +66,9 @@ export const ViewsScreen = defineScreen({
     nav: 0,
     snack: false,
     ring: 72,
+    dialogOpen: false,
+    sheetOpen: false,
+    sheetOptions: [true, false, false],
   }),
 
   actions: {
@@ -101,6 +109,29 @@ export const ViewsScreen = defineScreen({
     },
     pulseRing({ state }: { state: ViewsState }) {
       state.ring = state.ring >= 100 ? 24 : state.ring + 14;
+    },
+    openDialog({ state }: { state: ViewsState }) {
+      state.dialogOpen = true;
+    },
+    dismissDialog({ state }: { state: ViewsState }) {
+      state.dialogOpen = false;
+    },
+    confirmDialog({ state }: { state: ViewsState }) {
+      state.dialogOpen = false;
+      state.snack = true;
+    },
+    openSheet({ state }: { state: ViewsState }) {
+      state.sheetOpen = true;
+    },
+    dismissSheet({ state }: { state: ViewsState }) {
+      state.sheetOpen = false;
+    },
+    toggleSheetOption({ state, input }: { state: ViewsState; input: number }) {
+      state.sheetOptions = state.sheetOptions.map((selected, index) => index === input ? !selected : selected);
+    },
+    confirmSheet({ state }: { state: ViewsState }) {
+      state.sheetOpen = false;
+      state.snack = true;
     },
   },
 
@@ -287,6 +318,24 @@ export const ViewsScreen = defineScreen({
             </Button>
           )}
 
+          {/* --- Modern surfaces ----------------------------------------- */}
+          <Card padding="lg" radius="lg" background="surfaceRaised">
+            <Column gap="md">
+              <Text variant="title">Modern surfaces</Text>
+              <Text variant="body" color="#9AA3B2">
+                Dialogs and sheets keep focus above the page while preserving typed actions.
+              </Text>
+              <Row gap="sm">
+                <Button variant="secondary" onPress={() => actions.openDialog()}>
+                  Show dialog
+                </Button>
+                <Button variant="tonal" onPress={() => actions.openSheet()}>
+                  Open bottom sheet
+                </Button>
+              </Row>
+            </Column>
+          </Card>
+
           {/* --- Navigation bar ------------------------------------------ */}
           <NavigationBar
             items={[
@@ -297,6 +346,31 @@ export const ViewsScreen = defineScreen({
             ]}
             active={state.nav}
             onSelect={(index) => actions.setNav(index)}
+          />
+
+          {/* Overlays stay last so the display-list host resolves them above content. */}
+          <AlertDialog
+            open={state.dialogOpen}
+            glyph="✦"
+            title="Save this widget set?"
+            body="Your current selections will be available in the gallery next time."
+            dismissLabel="Not now"
+            confirmLabel="Save"
+            onDismiss={() => actions.dismissDialog()}
+            onConfirm={() => actions.confirmDialog()}
+          />
+          <ModalBottomSheet
+            open={state.sheetOpen}
+            title="Showcase settings"
+            options={[
+              { glyph: "🎨", label: "Use M3 colors", selected: state.sheetOptions[0] },
+              { glyph: "↕", label: "Compact spacing", selected: state.sheetOptions[1] },
+              { glyph: "✦", label: "Motion previews", selected: state.sheetOptions[2] },
+            ]}
+            onToggle={(index) => actions.toggleSheetOption(index)}
+            confirmLabel="Apply"
+            onConfirm={() => actions.confirmSheet()}
+            onDismiss={() => actions.dismissSheet()}
           />
         </Column>
       </Scaffold>

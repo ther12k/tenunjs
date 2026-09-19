@@ -11,3 +11,4 @@ target/
 .out/
 .zcode/
 .playwright-cli/
+review-artifacts/

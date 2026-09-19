@@ -16,11 +16,15 @@ export const repoRoot = path.resolve(here, "../../../..");
 const entry = path.join(here, "device-entry.ts");
 const previewEntry = path.join(repoRoot, "examples/gallery-preview/app-entry.ts");
 const previewShellEntry = path.join(repoRoot, "examples/gallery-preview/preview.ts");
+const showcasePreviewEntry = path.join(repoRoot, "examples/flutter-showcase-preview/app-entry.ts");
+const showcasePreviewShellEntry = path.join(repoRoot, "examples/flutter-showcase-preview/preview.ts");
 
 /** Source trees whose changes should trigger a dev-server rebuild. */
 export const watchedDirs = [
   path.join(here),
   path.join(repoRoot, "examples/gallery/src"),
+  path.join(repoRoot, "examples/flutter-showcase/src"),
+  path.join(repoRoot, "examples/flutter-showcase-preview"),
   path.join(repoRoot, "examples/ui-kit/src"),
   path.join(repoRoot, "packages/jsx-runtime/src"),
   path.join(repoRoot, "packages/widgets/src"),
@@ -60,6 +64,11 @@ export interface BundleArtifact {
 }
 
 export interface PreviewArtifacts {
+  app: BundleArtifact;
+  shell: BundleArtifact;
+}
+
+export interface ShowcasePreviewArtifacts {
   app: BundleArtifact;
   shell: BundleArtifact;
 }
@@ -116,21 +125,24 @@ async function buildEntry(entrypoint: string, format: "esm" | "iife"): Promise<s
   return result.outputs[0].text();
 }
 
+function artifact(code: string): BundleArtifact {
+  return {
+    code,
+    hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
+    builtAtMtime: latestSourceMtime(),
+  };
+}
+
 export async function buildPreviewArtifacts(): Promise<PreviewArtifacts> {
   const app = await buildEntry(previewEntry, "esm");
   const shell = await buildEntry(previewShellEntry, "esm");
-  return {
-    app: {
-      code: app,
-      hash: crypto.createHash("sha256").update(app).digest("hex").slice(0, 16),
-      builtAtMtime: latestSourceMtime(),
-    },
-    shell: {
-      code: shell,
-      hash: crypto.createHash("sha256").update(shell).digest("hex").slice(0, 16),
-      builtAtMtime: latestSourceMtime(),
-    },
-  };
+  return { app: artifact(app), shell: artifact(shell) };
+}
+
+export async function buildShowcasePreviewArtifacts(): Promise<ShowcasePreviewArtifacts> {
+  const app = await buildEntry(showcasePreviewEntry, "esm");
+  const shell = await buildEntry(showcasePreviewShellEntry, "esm");
+  return { app: artifact(app), shell: artifact(shell) };
 }
 
 function smokeRun(code: string): void {

@@ -27,12 +27,34 @@
  */
 
 import type { WidgetChild, WidgetNode } from "@tenunjs/jsx-runtime";
-import type { ThemeConfig } from "@tenunjs/widgets";
+import {
+  CenterKind,
+  ContainerKind,
+  ExpandedKind,
+  GestureDetectorKind,
+  IconKind,
+  PositionedKind,
+  SizedBoxKind,
+  StackKind,
+  WrapKind,
+  type ThemeConfig,
+} from "@tenunjs/widgets";
 import type { SchemeRoles } from "./scheme";
 
 /** ---------- scene types ---------- */
 
-export interface RectOp {
+export type FixedAnchor = "bottom" | "center";
+
+export interface FixedPosition {
+  /** Paint or hit-test in viewport coordinates instead of the scrollable scene. */
+  fixed?: boolean;
+  /** Optional viewport anchor for a group of fixed coordinates. */
+  anchor?: FixedAnchor;
+  /** Height of the anchored group in design units. */
+  anchorSize?: number;
+}
+
+export interface RectOp extends FixedPosition {
   op: "rect";
   x: number;
   y: number;
@@ -44,7 +66,7 @@ export interface RectOp {
   shadow?: number;
 }
 
-export interface OutlineOp {
+export interface OutlineOp extends FixedPosition {
   op: "outline";
   x: number;
   y: number;
@@ -55,7 +77,7 @@ export interface OutlineOp {
   width: number;
 }
 
-export interface TextOp {
+export interface TextOp extends FixedPosition {
   op: "text";
   x: number;
   /** Baseline of the line. */
@@ -69,7 +91,7 @@ export interface TextOp {
   width?: number;
 }
 
-export interface CircleOp {
+export interface CircleOp extends FixedPosition {
   op: "circle";
   cx: number;
   cy: number;
@@ -77,7 +99,7 @@ export interface CircleOp {
   color: string;
 }
 
-export interface RingOp {
+export interface RingOp extends FixedPosition {
   op: "ring";
   cx: number;
   cy: number;
@@ -90,7 +112,7 @@ export interface RingOp {
   track?: string;
 }
 
-export interface LineOp {
+export interface LineOp extends FixedPosition {
   op: "line";
   x1: number;
   y1: number;
@@ -100,7 +122,7 @@ export interface LineOp {
   width: number;
 }
 
-export interface GradientOp {
+export interface GradientOp extends FixedPosition {
   op: "gradient";
   x: number;
   y: number;
@@ -114,7 +136,7 @@ export interface GradientOp {
 
 export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp;
 
-export interface SerializedTap {
+export interface SerializedTap extends FixedPosition {
   x: number;
   y: number;
   w: number;
@@ -142,6 +164,8 @@ interface InternalContext extends RenderContext {
   ops: DisplayOp[];
   tapRegions: SerializedTap[];
   tapRuns: Array<() => void>;
+  /** Design width is needed when fixed canvas layers leave normal layout. */
+  designWidth: number;
   /** Active color roles: theme-derived defaults until a ThemeScope narrows them. */
   palette: SchemeRoles;
 }
@@ -231,6 +255,11 @@ export interface CanvasProps {
   /** Explicit height; width comes from the parent layout unless fixed. */
   height: number;
   width?: number;
+  /** Make every operation and tap use viewport design coordinates. */
+  fixed?: boolean;
+  /** Default anchor metadata for fixed operations and taps. */
+  anchor?: FixedAnchor;
+  anchorSize?: number;
   /**
    * Paints relative to the canvas origin (0,0 = top-left of the box) and
    * may register tap regions through the same callback table as widgets.
@@ -240,7 +269,18 @@ export interface CanvasProps {
   paint: (
     origin: { x: number; y: number; w: number },
     put: (op: DisplayOp) => void,
-    tap: (region: { x: number; y: number; w: number; h: number }, run: () => void) => void,
+    tap: (
+      region: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        fixed?: boolean;
+        anchor?: FixedAnchor;
+        anchorSize?: number;
+      },
+      run: () => void
+    ) => void,
     palette: SchemeRoles
   ) => void;
 }
@@ -276,15 +316,6 @@ function spacing(value: unknown, fallback: number): number {
 function radius(value: unknown, fallback: number): number {
   if (typeof value === "number") return value;
   if (typeof value === "string" && value in RADIUS) return RADIUS[value]!;
-  return fallback;
-}
-
-function color(theme: ThemeConfig, token: unknown, fallback: string): string {
-  if (typeof token === "string") {
-    if (token.startsWith("#")) return token;
-    const named = theme.colors?.[token];
-    if (typeof named === "string") return named;
-  }
   return fallback;
 }
 
@@ -370,6 +401,16 @@ function callComponent(node: AnyNode): AnyNode {
   return asNode(fn({ ...node.props, children: node.children }));
 }
 
+/**
+ * Fully resolves function-component wrappers so parent layouts can match
+ * the concrete kind (e.g. JSX `<Positioned>` resolving to PositionedKind).
+ */
+function resolveNode(kid: AnyNode): AnyNode {
+  let current = kid;
+  while (typeof current.kind === "function") current = callComponent(current);
+  return current;
+}
+
 /** ---------- layout ---------- */
 
 interface Frame {
@@ -395,6 +436,72 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
   }
   // ThemeScope changes only color resolution, never geometry.
   if (kind === ThemeScope) {
+    return measureStack(ctx, node, maxWidth, 0, 0);
+  }
+  if (kind === SizedBoxKind) {
+    const width = typeof props.width === "number" ? props.width : undefined;
+    const tight = width !== undefined ? Math.min(width, maxWidth) : maxWidth;
+    let contentW = 0;
+    let contentH = 0;
+    for (const kid of childNodes(node)) {
+      const frame = measure(ctx, kid, tight);
+      contentW = Math.max(contentW, frame.w);
+      contentH = Math.max(contentH, frame.h);
+    }
+    return {
+      w: width !== undefined ? tight : Math.min(contentW, maxWidth),
+      h: typeof props.height === "number" ? props.height : contentH,
+    };
+  }
+  if (kind === CenterKind) {
+    let contentH = 0;
+    for (const kid of childNodes(node)) contentH = Math.max(contentH, measure(ctx, kid, maxWidth).h);
+    return { w: maxWidth, h: contentH };
+  }
+  if (kind === StackKind) {
+    // Positioned children never size the stack (Flutter semantics).
+    let w = 0;
+    let h = 0;
+    for (const kid of childNodes(node).map(resolveNode)) {
+      if (kid.kind === PositionedKind) continue;
+      const frame = measure(ctx, kid, maxWidth);
+      w = Math.max(w, frame.w);
+      h = Math.max(h, frame.h);
+    }
+    return { w: Math.min(w, maxWidth), h };
+  }
+  if (kind === WrapKind) {
+    const flow = layoutWrapChildren(ctx, node, maxWidth);
+    return { w: Math.min(flow.width, maxWidth), h: flow.height };
+  }
+  if (kind === ContainerKind) {
+    const pad = paddingOf(props, 0);
+    const width = typeof props.width === "number" ? props.width : undefined;
+    const height = typeof props.height === "number" ? props.height : undefined;
+    if (width !== undefined && height !== undefined) {
+      return { w: Math.min(width, maxWidth), h: height };
+    }
+    // Flutter sizing: fixed size wins; with children the container hugs
+    // them; a childless container fills the available space.
+    if (childNodes(node).length === 0 && width === undefined) {
+      return { w: maxWidth, h: height ?? 0 };
+    }
+    const inner = measureStack(ctx, node, Math.max((width ?? maxWidth) - pad * 2, 1), pad, 0);
+    return {
+      w: width !== undefined ? Math.min(width, maxWidth) : inner.w,
+      h: height ?? inner.h,
+    };
+  }
+  if (kind === IconKind) {
+    const size = typeof props.size === "number" ? props.size : 24;
+    return {
+      w: textWidth(typeof props.glyph === "string" ? props.glyph : "", size),
+      h: Math.round(size * 1.2),
+    };
+  }
+  // Positioned/Expanded outside their parent widget are transparent
+  // wrappers; GestureDetector measures what it wraps.
+  if (kind === PositionedKind || kind === ExpandedKind || kind === GestureDetectorKind) {
     return measureStack(ctx, node, maxWidth, 0, 0);
   }
   // Fragments are the one other virtual kind (Symbol.for("tenun.fragment")):
@@ -425,7 +532,12 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
     case "row": {
       const pad = paddingOf(props, 0);
       const inner = Math.max(maxWidth - pad * 2, 1);
-      const kids = childNodes(node);
+      const kids = childNodes(node).map(resolveNode);
+      // Expanded children re-measure at their flex share, which can change
+      // their wrapped height — resolve frames the same way place does.
+      if (kids.some((kid) => kid.kind === ExpandedKind)) {
+        return { w: maxWidth, h: pad * 2 + layoutRowChildren(ctx, node, inner).rowHeight };
+      }
       let h = 0;
       for (const kid of kids) h = Math.max(h, measure(ctx, kid, inner).h);
       return { w: maxWidth, h: pad * 2 + h };
@@ -481,14 +593,41 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
     return place(ctx, callComponent(node), x, y, w);
   }
   if (kind === Canvas) {
-    const width = Math.min(typeof props.width === "number" ? props.width : w, w);
+    const fixedCanvas = props.fixed === true;
+    const width = fixedCanvas
+      ? ctx.designWidth
+      : Math.min(typeof props.width === "number" ? props.width : w, w);
     const height = Number(props.height ?? 0);
     const paint = props.paint as CanvasProps["paint"] | undefined;
     if (typeof paint === "function") {
       paint(
-        { x, y, w: width },
-        (op) => ctx.ops.push(offsetOp(op, x, y)),
-        (region, run) => addTap(ctx, x + region.x, y + region.y, region.w, region.h, run),
+        { x: fixedCanvas ? 0 : x, y: fixedCanvas ? 0 : y, w: width },
+        (op) => ctx.ops.push(offsetOp(op, x, y, {
+          fixed: fixedCanvas,
+          anchor: props.anchor as FixedAnchor | undefined,
+          anchorSize: typeof props.anchorSize === "number" ? props.anchorSize : undefined,
+        })),
+        (region, run) => {
+          const inheritedFixed = region.fixed === undefined && fixedCanvas;
+          const fixed = region.fixed ?? fixedCanvas;
+          const anchor = region.anchor ?? (inheritedFixed ? props.anchor as FixedAnchor | undefined : undefined);
+          const anchorSize = typeof region.anchorSize === "number"
+            ? region.anchorSize
+            : inheritedFixed && typeof props.anchorSize === "number"
+              ? props.anchorSize
+              : undefined;
+          addTap(
+            ctx,
+            fixed ? region.x : x + region.x,
+            fixed ? region.y : y + region.y,
+            region.w,
+            region.h,
+            run,
+            fixed,
+            anchor,
+            anchorSize
+          );
+        },
         ctx.palette
       );
     }
@@ -502,6 +641,94 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
     };
     return placeStack(scoped, node, x, y, w, 0, 0);
+  }
+  if (kind === SizedBoxKind) {
+    const tight = Math.min(typeof props.width === "number" ? props.width : w, w);
+    let maxH = 0;
+    for (const kid of childNodes(node)) {
+      const frame = measure(ctx, kid, tight);
+      maxH = Math.max(maxH, place(ctx, kid, x, y, frame.w));
+    }
+    return typeof props.height === "number" ? props.height : maxH;
+  }
+  if (kind === CenterKind) {
+    const kids = childNodes(node);
+    const frames = kids.map((kid) => measure(ctx, kid, w));
+    const contentH = Math.max(...frames.map((frame) => frame.h), 0);
+    kids.forEach((kid, index) => {
+      const frame = frames[index]!;
+      place(ctx, kid, x + Math.max((w - frame.w) / 2, 0), y + Math.max((contentH - frame.h) / 2, 0), frame.w);
+    });
+    return contentH;
+  }
+  if (kind === StackKind) {
+    return placeStackWidget(ctx, node, x, y, w);
+  }
+  if (kind === ExpandedKind) {
+    // Tight width: the row assigned this frame, so children stretch to it
+    // instead of re-measuring at their intrinsic width.
+    let h = 0;
+    for (const kid of childNodes(node)) {
+      h = Math.max(h, place(ctx, kid, x, y, w));
+    }
+    return h;
+  }
+  if (kind === PositionedKind) {
+    return placeStack(ctx, node, x, y, w, 0, 0);
+  }
+  if (kind === GestureDetectorKind) {
+    const h = placeStack(ctx, node, x, y, w, 0, 0);
+    if (typeof props.onTap === "function") {
+      addTap(ctx, x, y, w, h, props.onTap as () => void);
+    }
+    return h;
+  }
+  if (kind === ContainerKind) {
+    const pad = paddingOf(props, 0);
+    const tight = Math.min(typeof props.width === "number" ? props.width : w, w);
+    const height = typeof props.height === "number" ? props.height : undefined;
+    const h = height ?? measureStack(ctx, node, Math.max(tight - pad * 2, 1), pad, 0).h;
+    const radius = typeof props.radius === "number" ? props.radius : 0;
+    const fill = roleColor(ctx, props.color);
+    if (fill !== undefined) {
+      const shadow = typeof props.shadow === "number" ? props.shadow : undefined;
+      ctx.ops.push({ op: "rect", x, y, w: tight, h, r: radius, color: fill, ...(shadow ? { shadow } : {}) });
+    }
+    const stroke = roleColor(ctx, props.borderColor);
+    if (stroke !== undefined) {
+      const width = typeof props.borderWidth === "number" ? props.borderWidth : 3;
+      ctx.ops.push({ op: "outline", x, y, w: tight, h, r: radius, color: stroke, width });
+    }
+    const stacked = placeStack(ctx, node, x, y, tight, pad, 0);
+    return height !== undefined ? height : stacked;
+  }
+  if (kind === IconKind) {
+    const size = typeof props.size === "number" ? props.size : 24;
+    const glyph = typeof props.glyph === "string" ? props.glyph : "";
+    const h = Math.round(size * 1.2);
+    ctx.ops.push({
+      op: "text",
+      x: x + (w - textWidth(glyph, size)) / 2,
+      y: y + h / 2 + size * 0.36,
+      text: glyph,
+      size,
+      weight: 600,
+      color: roleColor(ctx, props.color) ?? ctx.palette.onSurface,
+    });
+    return h;
+  }
+  if (kind === WrapKind) {
+    const flow = layoutWrapChildren(ctx, node, w);
+    let cursorY = y;
+    for (const line of flow.lines) {
+      let cursorX = x;
+      for (const entry of line.entries) {
+        place(ctx, entry.kid, cursorX, cursorY, entry.frame.w);
+        cursorX += entry.frame.w + flow.spacing;
+      }
+      cursorY += line.height + flow.runSpacing;
+    }
+    return flow.height;
   }
   if (typeof kind === "symbol") {
     return placeStack(ctx, node, x, y, w, 0, 0);
@@ -523,7 +750,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
           text: line,
           size: ty.size,
           weight: ty.weight,
-          color: color(ctx.theme, props.color, ctx.theme.colors?.text ?? "#F2F2F7"),
+          color: roleColor(ctx, props.color) ?? ctx.theme.colors?.text ?? "#F2F2F7",
         });
       });
       return lines.length * ty.lineHeight;
@@ -593,14 +820,14 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
         w,
         h,
         r: radius(props.radius, 14),
-        color: color(ctx.theme, props.background, ctx.theme.colors?.surfaceRaised ?? "#1C1C24"),
+        color: roleColor(ctx, props.background) ?? ctx.theme.colors?.surfaceRaised ?? "#1C1C24",
         ...(elevated ? { shadow: 12 } : {}),
       });
       return placeStack(ctx, node, x, y, w, pad, spacing("sm", 8));
     }
     case "column": {
       const pad = paddingOf(props, 0);
-      return placeStack(ctx, node, x, y, w, pad, gapOf(props));
+      return placeStack(ctx, node, x, y, w, pad, gapOf(props), crossAlignOf(props, "start"));
     }
     case "row":
       return placeRow(ctx, node, x, y, w);
@@ -653,22 +880,187 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
   }
 }
 
-/** Translates a canvas-relative op into absolute scene coordinates. */
-function offsetOp(op: DisplayOp, dx: number, dy: number): DisplayOp {
+/**
+ * Translates a canvas-relative op into scene coordinates unless it is fixed.
+ * Fixed ops remain in viewport design coordinates; hosts resolve their optional
+ * anchor against the visible viewport height.
+ */
+function offsetOp(
+  op: DisplayOp,
+  dx: number,
+  dy: number,
+  defaults: FixedPosition = {}
+): DisplayOp {
+  const explicitlyFixed = op.fixed !== undefined;
+  const fixed = op.fixed ?? defaults.fixed === true;
+  const anchor = op.anchor ?? (!explicitlyFixed && fixed ? defaults.anchor : undefined);
+  const anchorSize = op.anchorSize ?? (!explicitlyFixed && fixed ? defaults.anchorSize : undefined);
+  const meta = fixed
+    ? { fixed: true as const, ...(anchor ? { anchor } : {}), ...(anchorSize !== undefined ? { anchorSize } : {}) }
+    : {};
   switch (op.op) {
     case "circle":
-      return { ...op, cx: op.cx + dx, cy: op.cy + dy };
+      return fixed
+        ? { ...op, ...meta, cx: op.cx, cy: op.cy }
+        : { ...op, cx: op.cx + dx, cy: op.cy + dy };
     case "ring":
-      return { ...op, cx: op.cx + dx, cy: op.cy + dy };
+      return fixed
+        ? { ...op, ...meta, cx: op.cx, cy: op.cy }
+        : { ...op, cx: op.cx + dx, cy: op.cy + dy };
     case "line":
-      return { ...op, x1: op.x1 + dx, y1: op.y1 + dy, x2: op.x2 + dx, y2: op.y2 + dy };
+      return fixed
+        ? { ...op, ...meta, x1: op.x1, y1: op.y1, x2: op.x2, y2: op.y2 }
+        : { ...op, x1: op.x1 + dx, y1: op.y1 + dy, x2: op.x2 + dx, y2: op.y2 + dy };
     case "text":
-      return { ...op, x: op.x + dx, y: op.y + dy };
+      return fixed
+        ? { ...op, ...meta, x: op.x, y: op.y }
+        : { ...op, x: op.x + dx, y: op.y + dy };
     default:
-      return { ...op, x: op.x + dx, y: op.y + dy };
+      return fixed
+        ? { ...op, ...meta, x: op.x, y: op.y }
+        : { ...op, x: op.x + dx, y: op.y + dy };
   }
 }
 
+type CrossAlign = "start" | "center" | "end" | "stretch";
+
+/**
+ * Resolves a color prop for the structural widgets: `#` literals pass
+ * through, SchemeRoles names ("primary", "onSurfaceVariant", ...) resolve
+ * against the active palette, then theme tokens; anything else paints
+ * nothing rather than guessing.
+ */
+function roleColor(ctx: InternalContext, token: unknown): string | undefined {
+  if (typeof token !== "string") return undefined;
+  if (token.startsWith("#")) return token;
+  const byRole = (ctx.palette as unknown as Record<string, string | undefined>)[token];
+  if (typeof byRole === "string") return byRole;
+  const themed = ctx.theme.colors?.[token];
+  if (typeof themed === "string") return themed;
+  return undefined;
+}
+
+/** Stack alignment: fractional position of non-positioned children. */
+const STACK_ALIGNMENT: Record<string, { ax: number; ay: number }> = {
+  topLeft: { ax: 0, ay: 0 },
+  topCenter: { ax: 0.5, ay: 0 },
+  topRight: { ax: 1, ay: 0 },
+  centerLeft: { ax: 0, ay: 0.5 },
+  center: { ax: 0.5, ay: 0.5 },
+  centerRight: { ax: 1, ay: 0.5 },
+  bottomLeft: { ax: 0, ay: 1 },
+  bottomCenter: { ax: 0.5, ay: 1 },
+  bottomRight: { ax: 1, ay: 1 },
+};
+
+/**
+ * Places a Stack: children in declaration order (later paints on top, and
+ * its taps register later so the hosts' topmost-wins hit test matches the
+ * paint order). The frame height comes from non-positioned children;
+ * Positioned children place by offset, stretching across an axis when both
+ * sides are given.
+ */
+function placeStackWidget(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
+  const kids = childNodes(node).map(resolveNode);
+  let frameH = 0;
+  for (const kid of kids) {
+    if (kid.kind === PositionedKind) continue;
+    frameH = Math.max(frameH, measure(ctx, kid, w).h);
+  }
+  const rawAlign = typeof node.props.alignment === "string" ? node.props.alignment : "topLeft";
+  const align = STACK_ALIGNMENT[rawAlign] ?? STACK_ALIGNMENT.topLeft!;
+  for (const kid of kids) {
+    if (kid.kind === PositionedKind) {
+      const { props } = kid;
+      const left = typeof props.left === "number" ? props.left : undefined;
+      const right = typeof props.right === "number" ? props.right : undefined;
+      const top = typeof props.top === "number" ? props.top : undefined;
+      const bottom = typeof props.bottom === "number" ? props.bottom : undefined;
+      const inner = childNodes(kid);
+      // left+right stretches the child across the frame width.
+      const tightW = left !== undefined && right !== undefined ? Math.max(w - left - right, 0) : undefined;
+      const frames = inner.map((child) => measure(ctx, child, tightW ?? w));
+      const useW = tightW ?? Math.max(...frames.map((frame) => frame.w), 0);
+      const firstH = frames[0]?.h ?? 0;
+      const cx = left !== undefined ? x + left : right !== undefined ? x + w - right - useW : x;
+      const cy = top !== undefined ? y + top : bottom !== undefined ? y + frameH - bottom - firstH : y;
+      inner.forEach((child, index) => {
+        place(ctx, child, cx, cy, index === 0 ? useW : frames[index]!.w);
+      });
+    } else {
+      const frame = measure(ctx, kid, w);
+      place(ctx, kid, x + (w - frame.w) * align.ax, y + (frameH - frame.h) * align.ay, frame.w);
+    }
+  }
+  return frameH;
+}
+
+interface WrapEntry {
+  kid: AnyNode;
+  frame: Frame;
+}
+
+interface WrapLine {
+  entries: WrapEntry[];
+  width: number;
+  height: number;
+}
+
+interface WrapLayout {
+  lines: WrapLine[];
+  width: number;
+  height: number;
+  spacing: number;
+  runSpacing: number;
+}
+
+/** Greedy line-fill of children within [maxWidth] (Flutter's Wrap). */
+function layoutWrapChildren(ctx: InternalContext, node: AnyNode, maxWidth: number): WrapLayout {
+  const spacingValue = spacing(node.props.spacing, 8);
+  const runSpacing = spacing(node.props.runSpacing, 8);
+  const lines: WrapLine[] = [];
+  let entries: WrapEntry[] = [];
+  let lineWidth = 0;
+  const flush = (): void => {
+    if (entries.length === 0) return;
+    lines.push({
+      entries,
+      width: lineWidth,
+      height: Math.max(...entries.map((entry) => entry.frame.h), 0),
+    });
+    entries = [];
+    lineWidth = 0;
+  };
+  for (const kid of childNodes(node)) {
+    const frame = measure(ctx, kid, maxWidth);
+    if (entries.length > 0 && lineWidth + spacingValue + frame.w > maxWidth) flush();
+    lineWidth += (entries.length > 0 ? spacingValue : 0) + frame.w;
+    entries.push({ kid, frame });
+  }
+  flush();
+  return {
+    lines,
+    width: lines.reduce((max, line) => Math.max(max, line.width), 0),
+    height:
+      lines.reduce((sum, line) => sum + line.height, 0) +
+      runSpacing * Math.max(lines.length - 1, 0),
+    spacing: spacingValue,
+    runSpacing,
+  };
+}
+
+function crossAlignOf(props: Record<string, unknown>, fallback: CrossAlign): CrossAlign {
+  const value = props.align;
+  if (value === "start" || value === "center" || value === "end" || value === "stretch") return value;
+  return fallback;
+}
+
+/**
+ * Places a vertically stacking box (column/card/fragment). [align] is the
+ * cross-axis placement of children; "start" keeps the original
+ * left-packed behavior, so callers that never pass `align` render exactly
+ * as before.
+ */
 function placeStack(
   ctx: InternalContext,
   node: AnyNode,
@@ -676,7 +1068,8 @@ function placeStack(
   y: number,
   w: number,
   pad: number,
-  gap: number
+  gap: number,
+  align: CrossAlign = "start"
 ): number {
   const innerX = x + pad;
   const innerW = Math.max(w - pad * 2, 1);
@@ -685,61 +1078,112 @@ function placeStack(
   for (let i = 0; i < kids.length; i++) {
     const kid = kids[i]!;
     const frame = measure(ctx, kid, innerW);
-    cursor += place(ctx, kid, innerX, cursor, innerW) + (i < kids.length - 1 ? gap : 0);
+    const kidW = align === "stretch" ? innerW : frame.w;
+    const kidX =
+      align === "center"
+        ? innerX + Math.max((innerW - frame.w) / 2, 0)
+        : align === "end"
+          ? innerX + Math.max(innerW - frame.w, 0)
+          : innerX;
+    cursor += place(ctx, kid, kidX, cursor, kidW) + (i < kids.length - 1 ? gap : 0);
   }
   return cursor + pad - y;
+}
+
+interface RowLayout {
+  kids: AnyNode[];
+  frames: Frame[];
+  rowHeight: number;
+}
+
+/**
+ * Resolves a row's children into final frames, shared by measure and place
+ * so an Expanded child can never measure at one width and place at another.
+ *
+ * Without Expanded children this is the legacy pass, including the implicit
+ * text-shrink heuristic, so existing scenes stay byte-identical. With
+ * Expanded children, fixed children keep their natural width and expanded
+ * children share the free width proportionally to flex.
+ */
+function layoutRowChildren(ctx: InternalContext, node: AnyNode, innerW: number): RowLayout {
+  const kids = childNodes(node).map(resolveNode);
+  const gap = gapOf(node.props);
+  const frames = kids.map((kid) => measure(ctx, kid, innerW));
+
+  if (!kids.some((kid) => kid.kind === ExpandedKind)) {
+    // Flex shrink pass: when the natural widths overflow the row, text (and
+    // text-stacking) children give back width and re-wrap — the prototype
+    // stand-in for Flutter's Flexible behavior when no Expanded is present.
+    const gapsTotal = kids.length > 1 ? gap * (kids.length - 1) : 0;
+    const available = Math.max(innerW - gapsTotal, 1);
+    let naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
+    if (naturalW > available) {
+      const SHRINK_MIN = 96;
+      const shrinkable = kids
+        .map((kid, index) => ({ kid, index, kind: kid.kind }))
+        .filter(({ kind }) => kind === "text" || kind === "column" || kind === "row");
+      let excess = naturalW - available;
+      if (shrinkable.length > 0) {
+        const shrinkTotal = shrinkable.reduce((sum, entry) => sum + frames[entry.index]!.w, 0);
+        for (const entry of shrinkable) {
+          const frame = frames[entry.index]!;
+          const share = shrinkTotal > 0 ? frame.w / shrinkTotal : 1 / shrinkable.length;
+          const reduced = Math.max(frame.w - excess * share, Math.min(SHRINK_MIN, frame.w));
+          const taken = frame.w - reduced;
+          if (taken > 0) {
+            frames[entry.index] = measure(ctx, entry.kid, reduced);
+            excess -= taken;
+          }
+          if (excess <= 0) break;
+        }
+      }
+    }
+    return { kids, frames, rowHeight: frames.reduce((max, frame) => Math.max(max, frame.h), 0) };
+  }
+
+  // Expanded pass: fixed children keep natural width; expanded children
+  // re-measure at their flex share of the free space.
+  const gapsTotal = kids.length > 1 ? gap * (kids.length - 1) : 0;
+  let fixedW = 0;
+  let flexSum = 0;
+  const flexes = kids.map((kid) => {
+    if (kid.kind !== ExpandedKind) return 0;
+    const raw = kid.props.flex;
+    return typeof raw === "number" && raw > 0 ? raw : 1;
+  });
+  flexes.forEach((flex, index) => {
+    if (flex > 0) flexSum += flex;
+    else fixedW += frames[index]!.w;
+  });
+  const free = Math.max(innerW - gapsTotal - fixedW, 0);
+  const unit = flexSum > 0 ? free / flexSum : 0;
+  flexes.forEach((flex, index) => {
+    if (flex > 0) {
+      // Tight constraints: the flex share IS the child's width (Flutter's
+      // Expanded), so intrinsic measurers (buttons, text) stretch at place
+      // time instead of packing at their natural width.
+      const share = Math.max(unit * flex, 1);
+      frames[index] = { w: share, h: measure(ctx, kids[index]!, share).h };
+    }
+  });
+  return { kids, frames, rowHeight: frames.reduce((max, frame) => Math.max(max, frame.h), 0) };
 }
 
 function placeRow(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
   const pad = paddingOf(node.props, 0);
   const innerX = x + pad;
   const innerW = Math.max(w - pad * 2, 1);
-  const kids = childNodes(node);
   const justify = typeof node.props.justify === "string" ? node.props.justify : "start";
   const gap = gapOf(node.props);
+  // CrossAxisAlignment: center is the historical (and Flutter) row default;
+  // stretch degrades to start — the engine has no cross-axis size forcing.
+  const align = crossAlignOf(node.props, "center");
 
-  const frames = kids.map((kid) => measure(ctx, kid, innerW));
-  // Flex shrink pass: when the natural widths overflow the row, text (and
-  // text-stacking) children give back width and re-wrap — the prototype
-  // stand-in for Flutter's Flexible/Expanded behavior.
-  const gapsTotal = kids.length > 1 ? gap * (kids.length - 1) : 0;
-  const available = Math.max(innerW - gapsTotal, 1);
-  let naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
-  if (naturalW > available) {
-    const SHRINK_MIN = 96;
-    // Function components (e.g. a ListTile's leading <Row>) resolve to a
-    // host layout kind only when called, so resolve before matching.
-    const shrinkable = kids
-      .map((kid, index) => ({
-        kid,
-        index,
-        kind:
-          typeof kid.kind === "function"
-            ? callComponent(kid).kind
-            : kid.kind,
-      }))
-      .filter(({ kind }) => kind === "text" || kind === "column" || kind === "row");
-    let excess = naturalW - available;
-    if (shrinkable.length > 0) {
-      const shrinkTotal = shrinkable.reduce((sum, entry) => sum + frames[entry.index]!.w, 0);
-      for (const entry of shrinkable) {
-        const frame = frames[entry.index]!;
-        const share = shrinkTotal > 0 ? frame.w / shrinkTotal : 1 / shrinkable.length;
-        const reduced = Math.max(frame.w - excess * share, Math.min(SHRINK_MIN, frame.w));
-        const taken = frame.w - reduced;
-        if (taken > 0) {
-          frames[entry.index] = measure(ctx, entry.kid, reduced);
-          excess -= taken;
-        }
-        if (excess <= 0) break;
-      }
-      naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
-    }
-  }
-  const rowHeight = frames.reduce((max, frame) => Math.max(max, frame.h), 0);
+  const { kids, frames, rowHeight } = layoutRowChildren(ctx, node, innerW);
+  const naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
   const between = justify === "between" && kids.length > 1;
   const slack = Math.max(innerW - naturalW - (between ? 0 : gap * (kids.length - 1)), 0);
-  const extra = between ? slack / (kids.length - 1) : 0;
+  const extra = between ? slack / Math.max(kids.length - 1, 1) : 0;
   // MainAxisAlignment.end / center: shift the packed run instead of
   // spreading it (between already consumes the slack above).
   const lead = !between && justify === "end" ? slack : !between && justify === "center" ? slack / 2 : 0;
@@ -747,7 +1191,12 @@ function placeRow(ctx: InternalContext, node: AnyNode, x: number, y: number, w: 
   let cursor = innerX + lead;
   kids.forEach((kid, index) => {
     const frame = frames[index]!;
-    const childY = y + pad + (rowHeight - frame.h) / 2;
+    const childY =
+      align === "start" || align === "stretch"
+        ? y + pad
+        : align === "end"
+          ? y + pad + rowHeight - frame.h
+          : y + pad + (rowHeight - frame.h) / 2;
     place(ctx, kid, cursor, childY, frame.w);
     cursor += frame.w + (index < kids.length - 1 ? (between ? extra : gap) : 0);
   });
@@ -756,10 +1205,30 @@ function placeRow(ctx: InternalContext, node: AnyNode, x: number, y: number, w: 
 
 /** ---------- context / entry ---------- */
 
-function addTap(ctx: InternalContext, x: number, y: number, w: number, h: number, run: () => void): void {
+function addTap(
+  ctx: InternalContext,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  run: () => void,
+  fixed = false,
+  anchor?: FixedAnchor,
+  anchorSize?: number
+): void {
   const id = ctx.tapRuns.length;
   ctx.tapRuns.push(run);
-  ctx.tapRegions.push({ x, y, w, h, action: "tap", payload: { id } });
+  ctx.tapRegions.push({
+    x,
+    y,
+    w,
+    h,
+    action: "tap",
+    payload: { id },
+    ...(fixed ? { fixed: true } : {}),
+    ...(fixed && anchor ? { anchor } : {}),
+    ...(fixed && anchorSize !== undefined ? { anchorSize } : {}),
+  });
 }
 
 /**
@@ -774,6 +1243,7 @@ export function layoutScreen(
 ): { scene: DisplayListScene; tapRuns: Array<() => void> } {
   const ctx: InternalContext = {
     theme,
+    designWidth,
     palette: resolveRoles(theme),
     ops: [],
     tapRegions: [],

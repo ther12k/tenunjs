@@ -11,10 +11,12 @@ import type { WidgetNode } from "@tenunjs/jsx-runtime";
 import {
   Avatar,
   Badge,
+  Carousel,
   CanvasBox,
   IconButton,
+  ModalBottomSheet,
   NavigationBar,
-  TextField,
+  SearchBar,
   textWidth,
 } from "@tenunjs-examples/ui-kit";
 
@@ -22,8 +24,8 @@ import {
  * Plant shop — the "Plant App" dribbble family, one of the most recreated
  * Flutter UIs on GitHub (flutter-ui-plant-app, plant-shop challenges, and
  * the e-commerce template home pages): greeting header, search, category
- * icon row, a two-column product grid with favorites and add-to-cart, and a
- * bottom navigation bar.
+ * icon row, a featured hero carousel, filter/search surfaces, a two-column
+ * product grid with favorites and add-to-cart, and a bottom navigation bar.
  */
 
 interface Category {
@@ -48,16 +50,25 @@ interface Plant {
   glyph: string;
   tint: string;
   cat: string;
+  petFriendly: boolean;
+  lowLight: boolean;
 }
 
 const PLANTS: Plant[] = [
-  { id: "monstera", name: "Monstera", latin: "Monstera deliciosa", price: 24, glyph: "🌿", tint: "#1E3A2F", cat: "greens" },
-  { id: "candelabra", name: "Candelabra", latin: "Euphorbia trigona", price: 19, glyph: "🌵", tint: "#3A2F1E", cat: "cactus" },
-  { id: "peace-lily", name: "Peace lily", latin: "Spathiphyllum", price: 27, glyph: "🌸", tint: "#3A2430", cat: "blooms" },
-  { id: "snake", name: "Snake plant", latin: "Sansevieria", price: 21, glyph: "🌾", tint: "#22303A", cat: "greens" },
-  { id: "golden-barrel", name: "Golden barrel", latin: "Echinocactus", price: 32, glyph: "🌵", tint: "#3A351E", cat: "cactus" },
-  { id: "anthurium", name: "Anthurium", latin: "Anthurium andraeanum", price: 29, glyph: "🌺", tint: "#3A2230", cat: "blooms" },
+  { id: "monstera", name: "Monstera", latin: "Monstera deliciosa", price: 24, glyph: "🌿", tint: "#1E3A2F", cat: "greens", petFriendly: true, lowLight: true },
+  { id: "candelabra", name: "Candelabra", latin: "Euphorbia trigona", price: 19, glyph: "🌵", tint: "#3A2F1E", cat: "cactus", petFriendly: false, lowLight: false },
+  { id: "peace-lily", name: "Peace lily", latin: "Spathiphyllum", price: 27, glyph: "🌸", tint: "#3A2430", cat: "blooms", petFriendly: false, lowLight: true },
+  { id: "snake", name: "Snake plant", latin: "Sansevieria", price: 21, glyph: "🌾", tint: "#22303A", cat: "greens", petFriendly: false, lowLight: true },
+  { id: "golden-barrel", name: "Golden barrel", latin: "Echinocactus", price: 32, glyph: "🌵", tint: "#3A351E", cat: "cactus", petFriendly: true, lowLight: false },
+  { id: "anthurium", name: "Anthurium", latin: "Anthurium andraeanum", price: 29, glyph: "🌺", tint: "#3A2230", cat: "blooms", petFriendly: true, lowLight: false },
 ];
+
+const FEATURED_PLANTS = PLANTS.slice(0, 3);
+const SEARCH_PRESETS = [
+  { label: "All plants", query: "" },
+  { label: "Monstera", query: "monstera" },
+  { label: "Peace lily", query: "peace lily" },
+] as const;
 
 /** Two-column grid cell: 672 content width minus one sm gap. */
 const CARD_W = 332;
@@ -178,6 +189,10 @@ export interface PlantsState {
   ordered: boolean;
   nav: number;
   searchFocused: boolean;
+  query: string;
+  featured: number;
+  filterOpen: boolean;
+  filters: { petFriendly: boolean; lowLight: boolean; lowPrice: boolean };
 }
 
 export const PlantsScreen = defineScreen({
@@ -190,6 +205,10 @@ export const PlantsScreen = defineScreen({
     ordered: false,
     nav: 1,
     searchFocused: false,
+    query: "",
+    featured: 0,
+    filterOpen: false,
+    filters: { petFriendly: false, lowLight: false, lowPrice: false },
   }),
 
   actions: {
@@ -219,11 +238,48 @@ export const PlantsScreen = defineScreen({
     focusSearch({ state }: { state: PlantsState }) {
       state.searchFocused = !state.searchFocused;
     },
+    cycleSearch({ state }: { state: PlantsState }) {
+      const current = SEARCH_PRESETS.findIndex((preset) => preset.query === state.query);
+      const next = SEARCH_PRESETS[(current + 1) % SEARCH_PRESETS.length]!;
+      state.query = next.query;
+      state.searchFocused = next.query.length > 0;
+    },
+    cycleFeatured({ state, input }: { state: PlantsState; input: number }) {
+      state.featured = (state.featured + input + 3) % 3;
+    },
+    selectFeatured({ state, input }: { state: PlantsState; input: number }) {
+      state.featured = input;
+    },
+    openFilters({ state }: { state: PlantsState }) {
+      state.filterOpen = true;
+    },
+    dismissFilters({ state }: { state: PlantsState }) {
+      state.filterOpen = false;
+    },
+    toggleFilter({ state, input }: { state: PlantsState; input: number }) {
+      if (input === 0) state.filters = { ...state.filters, petFriendly: !state.filters.petFriendly };
+      if (input === 1) state.filters = { ...state.filters, lowLight: !state.filters.lowLight };
+      if (input === 2) state.filters = { ...state.filters, lowPrice: !state.filters.lowPrice };
+    },
+    applyFilters({ state }: { state: PlantsState }) {
+      state.filterOpen = false;
+    },
+    setQuery({ state, input }: { state: PlantsState; input: string }) {
+      state.query = input;
+      state.searchFocused = input.length > 0;
+    },
   },
 
   view({ state, actions }) {
     const activeCategory = CATEGORIES[state.category]!.id;
-    const visible = activeCategory === "all" ? PLANTS : PLANTS.filter((p) => p.cat === activeCategory);
+    const query = state.query.trim().toLowerCase();
+    const visible = PLANTS
+      .filter((plant) => activeCategory === "all" || plant.cat === activeCategory)
+      .filter((plant) => query.length === 0 || `${plant.name} ${plant.latin}`.toLowerCase().includes(query))
+      .filter((plant) => !state.filters.petFriendly || plant.petFriendly)
+      .filter((plant) => !state.filters.lowLight || plant.lowLight)
+      .filter((plant) => !state.filters.lowPrice || plant.price <= 25)
+      .sort((a, b) => state.filters.lowPrice ? a.price - b.price : 0);
     const cartCount = Object.values(state.cart).reduce((sum, qty) => sum + qty, 0);
     const cartTotal = Object.entries(state.cart).reduce(
       (sum, [id, qty]) => sum + (PLANTS.find((p) => p.id === id)?.price ?? 0) * qty,
@@ -256,11 +312,30 @@ export const PlantsScreen = defineScreen({
             <Avatar label="RZ" size={48} />
           </Row>
 
-          <TextField
-            label="Search plants"
-            leading="🔍"
-            focused={state.searchFocused}
-            onFocusChange={() => actions.focusSearch()}
+          <SearchBar
+            hint={state.query ? `Search “${state.query}”` : "Search plants"}
+            onTap={() => actions.cycleSearch()}
+          />
+
+          <Row justify="between" align="center">
+            <Text variant="caption" color="#9AA3B2">
+              {state.query ? `Showing matches for “${state.query}”` : "Tap search to explore plant picks"}
+            </Text>
+            <Button variant="secondary" onPress={() => actions.openFilters()}>
+              Filters
+            </Button>
+          </Row>
+
+          <Carousel
+            items={FEATURED_PLANTS.map((plant) => ({
+              glyph: plant.glyph,
+              title: plant.name,
+              subtitle: `${plant.latin} · $${plant.price}`,
+              tint: plant.tint,
+            }))}
+            active={state.featured}
+            onCycle={(direction) => actions.cycleFeatured(direction)}
+            onSelect={(index) => actions.selectFeatured(index)}
           />
 
           <Row gap="md" justify="between">
@@ -333,6 +408,21 @@ export const PlantsScreen = defineScreen({
             ]}
             active={state.nav}
             onSelect={(index) => actions.setNav(index)}
+          />
+
+          {/* Overlay anchor: keep the sheet last so its scrim and rows win hit testing. */}
+          <ModalBottomSheet
+            open={state.filterOpen}
+            title="Filter plants"
+            options={[
+              { glyph: "🐾", label: "Pet friendly", selected: state.filters.petFriendly },
+              { glyph: "☀️", label: "Low light", selected: state.filters.lowLight },
+              { glyph: "↕", label: "Under $25", selected: state.filters.lowPrice },
+            ]}
+            onToggle={(index) => actions.toggleFilter(index)}
+            confirmLabel="Apply filters"
+            onConfirm={() => actions.applyFilters()}
+            onDismiss={() => actions.dismissFilters()}
           />
         </Column>
       </Scaffold>
