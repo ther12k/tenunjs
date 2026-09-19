@@ -187,9 +187,20 @@ abstract class DeviceAcceptanceBase {
     ): DesignPoint? {
         val op = scene.ops.filterIsInstance<DisplayListScene.Op.TextOp>()
             .firstOrNull { it.text.text == text } ?: return null
-        // Baseline to approximate glyph-center for containment.
+        // Text point in VIEWPORT terms, mirroring Tap.contains: fixed ops
+        // resolve through their anchor offset, scrollable ops translate by
+        // the current scroll. Baseline nudged to approximate glyph-center.
+        val opAnchorOffset = if (!op.text.fixed || op.text.anchorSize == null) 0f else when (op.text.anchor) {
+            "bottom" -> visibleDesignHeight - op.text.anchorSize
+            "center" -> (visibleDesignHeight - op.text.anchorSize) / 2f
+            else -> 0f
+        }
         val px = op.text.x
-        val pyViewport = op.text.y - op.text.size * 0.35f - scrollY
+        val pyViewport = if (op.text.fixed) {
+            op.text.y + opAnchorOffset - op.text.size * 0.35f
+        } else {
+            op.text.y - op.text.size * 0.35f - scrollY
+        }
         for (index in scene.taps.indices.reversed()) {
             val tap = scene.taps[index]
             val anchorOffset = if (!tap.fixed || tap.anchorSize == null) 0f else when (tap.anchor) {
@@ -215,6 +226,12 @@ abstract class DeviceAcceptanceBase {
             val visibleDesign = v.height.toFloat() / scale
             val center = tapRegionCenterForText(committed, scroll, visibleDesign, text)
                 ?: throw AssertionError("no tap region covers text '$text' in the committed scene")
+            if (center.y < 0f || center.y > visibleDesign) {
+                throw AssertionError(
+                    "resolved region for '$text' sits outside the viewport " +
+                        "(centerY=${center.y}, visible=$visibleDesign) — refusing a blind tap",
+                )
+            }
             (center.x * scale).toInt() to (center.y * scale).toInt()
         }
         assertTrue("UiDevice tap at ($point.first, $point.second) for '$text' failed",
