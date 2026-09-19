@@ -141,6 +141,126 @@ abstract class DeviceAcceptanceBase {
         assertTrue("UiDevice tap at ($x, $y) failed", device.click(x, y))
     }
 
+    // ---- display-list (gallery bundle) driving: locate targets in the
+    // committed scene, then tap them through the same UiDevice pipeline.
+
+    /** Committed display-list scene plus design-unit scroll; null scene = legacy notes mode. */
+    protected fun committedDisplayScene(
+        scenario: ActivityScenario<MainActivity>
+    ): Pair<DisplayListScene?, Float> = onViewSurface(scenario) { it.committedSceneForTest() }
+
+    protected fun sceneTexts(scene: DisplayListScene): List<String> =
+        scene.ops.filterIsInstance<DisplayListScene.Op.TextOp>().map { it.text.text }
+
+    /** Polls until the committed display-list scene satisfies [predicate]. */
+    protected fun awaitDisplayScene(
+        scenario: ActivityScenario<MainActivity>,
+        timeoutMs: Long,
+        description: String,
+        predicate: (DisplayListScene) -> Boolean,
+    ) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        while (true) {
+            val (scene, _) = committedDisplayScene(scenario)
+            if (scene != null && predicate(scene)) return
+            if (SystemClock.uptimeMillis() > deadline) {
+                val texts = scene?.let { sceneTexts(it).take(12) } ?: emptyList()
+                fail("Timed out after ${timeoutMs}ms waiting for display scene: $description; sample texts: $texts")
+            }
+            SystemClock.sleep(200)
+        }
+    }
+
+    private data class DesignPoint(var x: Float, var y: Float)
+
+    /**
+     * Resolves the tap region whose rect covers the text op for [text]
+     * (topmost-wins, mirroring the view's dispatch rule) and returns the
+     * region center in VIEWPORT design units. Location only — the tap is a
+     * real UiDevice click.
+     */
+    private fun tapRegionCenterForText(
+        scene: DisplayListScene,
+        scrollY: Float,
+        visibleDesignHeight: Float,
+        text: String,
+    ): DesignPoint? {
+        val op = scene.ops.filterIsInstance<DisplayListScene.Op.TextOp>()
+            .firstOrNull { it.text.text == text } ?: return null
+        // Baseline to approximate glyph-center for containment.
+        val px = op.text.x
+        val pyViewport = op.text.y - op.text.size * 0.35f - scrollY
+        for (index in scene.taps.indices.reversed()) {
+            val tap = scene.taps[index]
+            val anchorOffset = if (!tap.fixed || tap.anchorSize == null) 0f else when (tap.anchor) {
+                "bottom" -> visibleDesignHeight - tap.anchorSize
+                "center" -> (visibleDesignHeight - tap.anchorSize) / 2f
+                else -> 0f
+            }
+            val regionY = if (tap.fixed) tap.y + anchorOffset else tap.y - scrollY
+            if (tap.x <= px && px <= tap.x + tap.w && regionY <= pyViewport && pyViewport <= regionY + tap.h) {
+                return DesignPoint(tap.x + tap.w / 2f, regionY + tap.h / 2f)
+            }
+        }
+        return null
+    }
+
+    /** Taps the control labelled [text] through the system touch pipeline. */
+    protected fun tapSceneText(scenario: ActivityScenario<MainActivity>, text: String) {
+        val point = onViewSurface(scenario) { v ->
+            val (scene, scroll) = v.committedSceneForTest()
+            val committed = scene
+                ?: throw AssertionError("no committed display-list scene when tapping '$text'")
+            val scale = v.width.toFloat() / committed.designWidth
+            val visibleDesign = v.height.toFloat() / scale
+            val center = tapRegionCenterForText(committed, scroll, visibleDesign, text)
+                ?: throw AssertionError("no tap region covers text '$text' in the committed scene")
+            (center.x * scale).toInt() to (center.y * scale).toInt()
+        }
+        assertTrue("UiDevice tap at ($point.first, $point.second) for '$text' failed",
+            device.click(point.first, point.second))
+    }
+
+    /** Taps a viewport design-space point through the system touch pipeline. */
+    protected fun tapDesignPoint(scenario: ActivityScenario<MainActivity>, dx: Float, dy: Float) {
+        val point = onViewSurface(scenario) { v ->
+            val (scene, _) = v.committedSceneForTest()
+            val committed = scene
+                ?: throw AssertionError("no committed display-list scene for design tap")
+            val scale = v.width.toFloat() / committed.designWidth
+            (dx * scale).toInt() to (dy * scale).toInt()
+        }
+        assertTrue("UiDevice tap at ($point.first, $point.second) failed",
+            device.click(point.first, point.second))
+    }
+
+    /**
+     * Taps a home-hub module card's Open button by its row: the card title
+     * sits in the leading column, the tap region is the trailing button on
+     * the same row, so text-containment does not apply. Row association:
+     * vertical alignment with the title baseline, right half of the scene.
+     */
+    protected fun tapSceneModule(scenario: ActivityScenario<MainActivity>, title: String) {
+        val point = onViewSurface(scenario) { v ->
+            val (sceneNullable, scroll) = v.committedSceneForTest()
+            val scene = sceneNullable
+                ?: throw AssertionError("no committed display-list scene when tapping module '$title'")
+            val scale = v.width.toFloat() / scene.designWidth
+            val op = scene.ops.filterIsInstance<DisplayListScene.Op.TextOp>()
+                .firstOrNull { it.text.text == title }
+                ?: throw AssertionError("no text op for module title '$title'")
+            val tap = scene.taps.firstOrNull { candidate ->
+                !candidate.fixed &&
+                    abs((candidate.y + candidate.h / 2f) - (op.text.y - scroll)) < 90f &&
+                    candidate.x > scene.designWidth / 2f
+            } ?: throw AssertionError("no module Open region on the row of '$title'")
+            val regionY = tap.y - scroll
+            ((tap.x + tap.w / 2f) * scale).toInt() to ((regionY + tap.h / 2f) * scale).toInt()
+        }
+        assertTrue("UiDevice module tap at ($point.first, $point.second) for '$title' failed",
+            device.click(point.first, point.second))
+    }
+
     /**
      * DIRECT ADAPTER PATH (recorded input method): drives the view's own
      * InputConnection from the instrumentation main thread. This is NOT a

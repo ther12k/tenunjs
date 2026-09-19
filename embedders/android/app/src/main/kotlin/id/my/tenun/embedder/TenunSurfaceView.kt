@@ -388,6 +388,14 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Acceptance-observation accessor: the committed display-list scene and
+     * the current design-unit scroll offset. Observation only — installed-
+     * device tests drive input through the real touch pipeline and use this
+     * to assert what the renderer actually committed.
+     */
+    fun committedSceneForTest(): Pair<DisplayListScene?, Float> = sceneHolder.current to scrollY
+
     fun redraw() {
         if (!isSurfaceValid) return
         val canvas = holder.lockCanvas() ?: return

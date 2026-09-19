@@ -254,6 +254,20 @@ grep -E "tenun_app.js|libtenun_android" "$OUT_DIR/apk_contents.txt" || true
 if ! grep -q "assets/tenun_app.js" "$OUT_DIR/apk_contents.txt"; then
   accept_fail "packaged APK does not contain assets/tenun_app.js — the JS application cannot load"
 fi
+# Packaged-only JavaScript control: acceptance must not carry development
+# reload assets. dev_server.txt (LAN hot-reload endpoint) and
+# update_channel.json (OTA manifest URL) are dev-machine-local and absent
+# from a clean checkout; their absence is ASSERTED here, not assumed, so
+# acceptance can never silently depend on — or be replaced from — a network
+# bundle source. The app's poll loop is a no-op without dev_server.txt, and
+# OtaManager has no channel without update_channel.json.
+if grep -q "assets/dev_server.txt" "$OUT_DIR/apk_contents.txt"; then
+  accept_fail "acceptance APK must not contain assets/dev_server.txt (dev hot-reload endpoint)"
+fi
+if grep -q "assets/update_channel.json" "$OUT_DIR/apk_contents.txt"; then
+  accept_fail "acceptance APK must not contain assets/update_channel.json (OTA channel)"
+fi
+echo "reload mode: packaged-only (dev_server.txt and update_channel.json asserted absent from the acceptance build)"
 STD_SHA_PUSH="$(sha256sum "$STD_APK" | awk '{print $1}')"
 echo "standard APK (pushed) sha256: $STD_SHA_PUSH"
 
@@ -261,8 +275,9 @@ echo "== 6. Standard suite: :app:connectedDebugAndroidTest on the booted emulato
 # VariantCustomizationTest is excluded here: it can only run against the
 # JS-only variant APK in stage 9 (am instrument), never against the standard
 # build — a failure there would be by construction, not by defect.
+# OverlayInteractionTest likewise needs the gallery-bundle APK from stage 10.
 if ! ./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest" \
+  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   accept_fail ":app:connectedDebugAndroidTest failed"
@@ -412,10 +427,82 @@ if printf '%s' "$V_OUT" | grep -q "FAILURES"; then
   accept_fail "variant instrumentation reported failures"
 fi
 
-echo "== 10. Evidence collection: screenshots, logcat, environment summary =="
+echo "== 10. Overlay scenario APK: gallery bundle injected from the reviewed revision =="
+# The tracked asset set carries only the notes reference app; the gallery
+# bundle (anchored overlay families) is BUILT FROM THIS CHECKOUT so the
+# overlay scenario runs JavaScript from the reviewed revision — no network
+# bundle source at any point.
+if ! command -v bun >/dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash >"$OUT_DIR/bun_install.txt" 2>&1 \
+    || accept_fail "bun installation failed (needed to build the gallery bundle)"
+  export PATH="$HOME/.bun/bin:$PATH"
+fi
+command -v bun >/dev/null 2>&1 || accept_fail "bun unavailable: cannot build the gallery bundle"
+REPO_ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if ! (cd "$REPO_ROOT_DIR" && bun install --frozen-lockfile \
+      && bun embedders/android/tools/gallery-bundle/rebuild.ts) >"$OUT_DIR/overlay_rebuild.txt" 2>&1; then
+  tail -20 "$OUT_DIR/overlay_rebuild.txt"
+  accept_fail "gallery bundle build failed"
+fi
+GALLERY_JS="$SCRIPT_DIR/app/src/main/assets/gallery_app.js"
+[ -f "$GALLERY_JS" ] || accept_fail "gallery bundle was not produced by the rebuild"
+GALLERY_SHA="$(sha256sum "$GALLERY_JS" | awk '{print $1}')"
+echo "overlay bundle (gallery_app.js, built from the reviewed revision) sha256: $GALLERY_SHA"
+
+OVL_DIR="$WORK_DIR/overlay-asset"
+rm -rf "$OVL_DIR"
+mkdir -p "$OVL_DIR/assets"
+cp "$GALLERY_JS" "$OVL_DIR/assets/gallery_app.js"
+OVL_APK="$WORK_DIR/tenun-overlay.apk"
+cp "$STD_APK" "$OVL_APK"
+(cd "$OVL_DIR" && zip -q "$OVL_APK" assets/gallery_app.js) || accept_fail "zip injection of the gallery asset failed"
+"$BUILD_TOOLS/zipalign" -f 4 "$OVL_APK" "$OVL_APK.aligned" || accept_fail "zipalign failed"
+mv "$OVL_APK.aligned" "$OVL_APK"
+"$BUILD_TOOLS/apksigner" sign --ks "$DEBUG_KS" --ks-pass pass:android --key-pass pass:android "$OVL_APK" \
+  || accept_fail "apksigner could not sign the overlay APK"
+"$BUILD_TOOLS/apksigner" verify "$OVL_APK" || accept_fail "overlay APK signature verification failed"
+OVL_SHA_PUSH="$(sha256sum "$OVL_APK" | awk '{print $1}')"
+echo "overlay APK (pushed) sha256: $OVL_SHA_PUSH"
+"$BUILD_TOOLS/apksigner" verify --print-certs "$OVL_APK" >"$OUT_DIR/certs_overlay.txt" 2>&1 || true
+"$ADB" uninstall "$APP_ID" >/dev/null 2>&1 || true
+if ! "$ADB" install -r "$OVL_APK" >"$OUT_DIR/adb_install_overlay.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_overlay.txt"
+  accept_fail "overlay APK install failed"
+fi
+OVL_DEVICE_APK="$("$ADB" shell pm path "$APP_ID" | head -1 | sed 's/^package://' | tr -d '\r')"
+"$ADB" pull "$OVL_DEVICE_APK" "$OUT_DIR/installed_overlay.apk" >/dev/null
+OVL_SHA_PULLED="$(sha256sum "$OUT_DIR/installed_overlay.apk" | awk '{print $1}')"
+echo "overlay APK (pulled from device) sha256: $OVL_SHA_PULLED"
+[ "$OVL_SHA_PUSH" = "$OVL_SHA_PULLED" ] || accept_fail "installed overlay artifact identity mismatch: pushed=$OVL_SHA_PUSH pulled=$OVL_SHA_PULLED"
+
+echo "== 10b. Overlay suite: anchored bottom sheet on installed Android (am instrument) =="
+if ! "$ADB" install -r "$TEST_APK" >"$OUT_DIR/adb_install_overlay_test.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_overlay_test.txt"
+  accept_fail "instrumented-test APK install failed for the overlay phase"
+fi
+set +e
+O_OUT="$("$ADB" shell am instrument -w -e class "$APP_ID.OverlayInteractionTest" "$TEST_APP_ID/androidx.test.runner.AndroidJUnitRunner" 2>&1)"
+O_RC=$?
+set -e
+printf '%s\n' "$O_OUT" | tee "$OUT_DIR/am_instrument_overlay.txt" | tail -15
+if [ "$O_RC" -ne 0 ]; then
+  accept_fail "overlay instrumentation returned rc=$O_RC"
+fi
+if printf '%s' "$O_OUT" | grep -q "OK (1 test)"; then
+  echo "overlay suite: 1 executed test, OK"
+else
+  accept_fail "overlay instrumentation did not end with 'OK (1 test)' (zero executed tests cannot pass acceptance)"
+fi
+if printf '%s' "$O_OUT" | grep -q "FAILURES"; then
+  accept_fail "overlay instrumentation reported failures"
+fi
+
+echo "== 11. Evidence collection: screenshots, logcat, environment summary =="
 PULL_FAIL=0
 for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry \
-  tenun_after_recreation tenun_baseline tenun_variant_initial tenun_variant_after; do
+  tenun_after_recreation tenun_baseline tenun_variant_initial tenun_variant_after \
+  tenun_overlay_home tenun_overlay_plants tenun_overlay_sheet \
+  tenun_overlay_scrim_dismiss tenun_overlay_after; do
   if ! "$ADB" pull "/data/local/tmp/$f.png" "$OUT_DIR/" >/dev/null 2>&1; then
     echo "MISSING SCREENSHOT: $f.png"
     PULL_FAIL=1
@@ -444,19 +531,25 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "api_level": "$("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')",
   "abi": "$("$ADB" shell getprop ro.product.cpu.abi | tr -d '\r')",
   "emulator_version": "$(head -1 "$OUT_DIR/emulator-version.txt")",
+  "reload_mode": "packaged-only: dev_server.txt (LAN hot-reload endpoint) and update_channel.json (OTA manifest) are asserted absent from the acceptance APK; the overlay APK's gallery bundle is built from the reviewed revision, never fetched",
   "checkjni": {"ro.kernel.android.checkjni": "$CHECKJNI_RO", "dalvik.vm.checkjni": "$CHECKJNI_DALVIK", "note": "image default is OFF; enabled deliberately per TN-132, never disabled; activation via the documented setprop dalvik.vm.checkjni=1 + framework restart (property reads back 1, zygote pid changed)"},
   "input_methods": {
     "ime_session_two_entry_loop": "real LatinIME soft-key taps (SOFT_KEY_TAPS), per-character verified against field state; the executed mode per field is recorded in the connected-test stdout (INPUT-METHOD lines); KEY_EVENT_INJECTION would label fallback runs",
     "unicode_round_trip": "direct InputConnection adapter calls (NOT an IME session) — production JNI/QuickJS round-trip under CheckJNI",
     "lifecycle_recreation": "ActivityScenario.recreate() + direct InputConnection adapter calls after recreation",
-    "variant_customization": "direct InputConnection adapter calls; on-screen proof via region pixel diff against the standard-APK baseline"
+    "variant_customization": "direct InputConnection adapter calls; on-screen proof via region pixel diff against the standard-APK baseline",
+    "overlay_interaction": "real UiDevice taps on the surface view (production touch pipeline): module navigation, sheet open, scrim tap over a covered control, uncovered-control reopen, and the sheet's confirm control"
   },
   "standard_apk_sha256_pushed": "$STD_SHA_PUSH",
   "standard_apk_sha256_pulled_from_device": "$STD_SHA_PULLED",
   "standard_suite": {"executed": $SUM_TESTS, "failures": $SUM_FAILURES, "errors": $SUM_ERRORS, "skipped": $SUM_SKIPPED, "runner": "gradlew :app:connectedDebugAndroidTest"},
   "variant_apk_sha256_pushed": "$VAR_SHA_PUSH",
   "variant_apk_sha256_pulled_from_device": "$VAR_SHA_PULLED",
-  "variant_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class VariantCustomizationTest"}
+  "variant_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class VariantCustomizationTest"},
+  "overlay_bundle_sha256": "$GALLERY_SHA",
+  "overlay_apk_sha256_pushed": "$OVL_SHA_PUSH",
+  "overlay_apk_sha256_pulled_from_device": "$OVL_SHA_PULLED",
+  "overlay_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class OverlayInteractionTest"}
 }
 EOF
 
@@ -469,5 +562,7 @@ echo ""
 echo "DEVICE ACCEPTANCE PASS"
 echo "  standard APK: $STD_SHA_PULLED"
 echo "  variant APK:  $VAR_SHA_PULLED"
-echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), variant=1 (OK)"
+echo "  overlay APK:  $OVL_SHA_PULLED (gallery bundle $GALLERY_SHA, built from the reviewed revision)"
+echo "  reload mode:  packaged-only (dev_server.txt and update_channel.json asserted absent)"
+echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), variant=1 (OK), overlay=1 (OK)"
 echo "  evidence: $OUT_DIR"
