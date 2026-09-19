@@ -13,11 +13,23 @@ import org.json.JSONObject
  *     "ops":  [ {op:"rect"|"outline"|"text", ...} ],
  *     "taps": [ {x,y,w,h, action:"tap", payload:{id:N}} ] }
  *
+ * Compatibility contract (fail-closed): a scene whose `version` exceeds
+ * [SUPPORTED_SCENE_VERSION], or that contains an unknown op kind, is a
+ * contract violation and throws [SceneContractException] — the host keeps
+ * its last committed scene instead of rendering a partial interface.
+ * Unknown FIELDS are additive within a version (e.g. the anchored-overlay
+ * metadata) and default off; a bundle using them needs a host from the
+ * same tree, which is why the OTA boundary is JS application bundles only
+ * (no DEX/JAR/native library updates; an APK update ships host changes).
+ *
  * This is embedder-prototype glue, not the TN-034/TN-035 widget host
  * contract. Parsing returns null for anything that is not a display-list
  * scene, so the legacy notes-application path stays authoritative for
  * scenes that carry a "root" tree (TN-132 acceptance depends on it).
  */
+
+/** A display-list scene this host cannot render whole: reject, never partially render. */
+class SceneContractException(message: String) : Exception(message)
 data class DisplayListScene(
     val designWidth: Float,
     val contentHeight: Float,
@@ -121,11 +133,20 @@ data class DisplayListScene(
     }
 
     companion object {
+        /** Scene `version` this host understands; higher versions are contract violations. */
+        const val SUPPORTED_SCENE_VERSION = 1
+
         fun parse(sceneJson: String): DisplayListScene? {
             return try {
                 val root = JSONObject(sceneJson)
                 if (root.optString("tenun") != "display-list") return null
                 if (!root.has("ops")) return null
+                val version = root.optInt("version", 1)
+                if (version > SUPPORTED_SCENE_VERSION) {
+                    throw SceneContractException(
+                        "scene version $version exceeds host support ($SUPPORTED_SCENE_VERSION); update the host APK"
+                    )
+                }
                 val opsJson = root.getJSONArray("ops")
                 val ops = ArrayList<Op>(opsJson.length())
                 for (i in 0 until opsJson.length()) {
@@ -203,8 +224,13 @@ data class DisplayListScene(
                                 )
                             )
                         )
-                        // Unknown op kinds are skipped, not fatal: the
-                        // display list is a forward-compatible paint stream.
+                        // Fail-closed: an op kind this host does not know
+                        // means the bundle is newer than the host. Skipping
+                        // it would render a partially functional interface,
+                        // so the whole scene is rejected instead.
+                        else -> throw SceneContractException(
+                            "unknown op kind \"${op.optString("op")}\" at ops[$i]; update the host APK"
+                        )
                     }
                 }
                 val tapsJson = root.optJSONArray("taps")
@@ -235,6 +261,10 @@ data class DisplayListScene(
                     ops = ops,
                     taps = taps
                 )
+            } catch (e: SceneContractException) {
+                // Contract violations must surface to the host, not fall
+                // into the not-a-display-list null path.
+                throw e
             } catch (e: Exception) {
                 null
             }

@@ -63,6 +63,56 @@ class EditableFieldState {
 }
 
 /**
+ * Commits display-list scenes atomically (JVM-testable; the view itself
+ * cannot be instantiated on the JVM). A candidate that violates the scene
+ * contract — unsupported version or unknown op kind, at ANY position — is
+ * rejected whole: the previously committed scene stays active INCLUDING its
+ * hit regions, and no candidate op or tap ever becomes partially live.
+ *
+ * [hasRejection] with a null [current] means the FIRST candidate was
+ * rejected: the view renders an explicit incompatible-bundle state rather
+ * than falling back to the unrelated legacy notes screen.
+ */
+class SceneHolder {
+    var current: DisplayListScene? = null
+        private set
+    var hasRejection: Boolean = false
+        private set
+
+    /** The most recent contract violation, for host-side diagnostics. */
+    var lastRejection: String? = null
+        private set
+
+    enum class Outcome { APPLIED, REJECTED, NOT_A_DISPLAY_LIST }
+
+    fun apply(sceneJson: String): Outcome {
+        return try {
+            val parsed = DisplayListScene.parse(sceneJson)
+            if (parsed != null) {
+                current = parsed
+                Outcome.APPLIED
+            } else {
+                Outcome.NOT_A_DISPLAY_LIST
+            }
+        } catch (e: SceneContractException) {
+            hasRejection = true
+            lastRejection = e.message
+            Outcome.REJECTED
+        }
+    }
+
+    /**
+     * Leaves display-list mode for the legacy root-tree scene — a valid
+     * alternative application, superseding any stale rejection state.
+     */
+    fun clear() {
+        current = null
+        hasRejection = false
+        lastRejection = null
+    }
+}
+
+/**
  * TenunSurfaceView renders the TenunJS UI scene onto an Android SurfaceView,
  * dispatches touch events to native button actions, and bridges Android IME (InputConnection).
  */
@@ -92,9 +142,9 @@ class TenunSurfaceView @JvmOverloads constructor(
     var buttonLabel: String = "Add Entry"
         private set
 
-    // Display-list scene (gallery device bundle). Null while the legacy
-    // notes scene drives the view.
-    private var displayList: DisplayListScene? = null
+    // Display-list scene (gallery device bundle), committed atomically via
+    // [SceneHolder]. Null while the legacy notes scene drives the view.
+    private val sceneHolder = SceneHolder()
     private var dlScale = 1f
     private var scrollY = 0f
     private var maxScroll = 0f
@@ -173,7 +223,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (displayList != null) return onDisplayListTouch(event)
+        if (sceneHolder.current != null) return onDisplayListTouch(event)
 
         if (event.action == MotionEvent.ACTION_UP) {
             val x = event.x
@@ -286,12 +336,19 @@ class TenunSurfaceView @JvmOverloads constructor(
     fun syncFromScene(sceneJson: String) {
         // Display-list scenes (gallery device bundle) take priority; the
         // legacy notes path stays authoritative for "root"-tree scenes.
-        val parsed = DisplayListScene.parse(sceneJson)
-        if (parsed != null) {
-            displayList = parsed
-            return
+        // A scene the host cannot render WHOLE (unsupported version or op
+        // kind) is a compatibility failure: SceneHolder keeps the last
+        // committed scene atomically — never a partial interface.
+        when (sceneHolder.apply(sceneJson)) {
+            SceneHolder.Outcome.APPLIED -> return
+            SceneHolder.Outcome.REJECTED ->
+                Log.e(
+                    TAG,
+                    "scene rejected (${sceneHolder.lastRejection}); " +
+                        if (sceneHolder.current != null) "keeping last committed scene" else "no committed scene: incompatible-bundle state"
+                )
+            SceneHolder.Outcome.NOT_A_DISPLAY_LIST -> sceneHolder.clear()
         }
-        displayList = null
         try {
             val root = JSONObject(sceneJson)
             val children = root.optJSONObject("root")?.optJSONArray("children")
@@ -347,7 +404,7 @@ class TenunSurfaceView @JvmOverloads constructor(
      * committed scene after the dispatch is what gets drawn.
      */
     private fun onDisplayListTouch(event: MotionEvent): Boolean {
-        val dl = displayList ?: return false
+        val dl = sceneHolder.current ?: return false
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 touchDownY = event.y
@@ -398,12 +455,34 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     private fun renderScene(canvas: Canvas) {
-        val dl = displayList
+        val dl = sceneHolder.current
         if (dl != null) {
             renderDisplayList(canvas, dl)
             return
         }
+        // A rejected first commit is an explicit incompatible-bundle state —
+        // never the unrelated legacy notes screen, which would make the
+        // application appear to have loaded.
+        if (sceneHolder.hasRejection) {
+            renderIncompatibleScene(canvas)
+            return
+        }
         renderNotesScene(canvas)
+    }
+
+    /** Explicit fail-closed outcome: the bundle needs a newer host APK. */
+    private fun renderIncompatibleScene(canvas: Canvas) {
+        canvas.drawColor(Color.parseColor("#101014"))
+        textPaint.color = Color.parseColor("#FF5A5F")
+        textPaint.textSize = 30f
+        canvas.drawText("Application bundle incompatible with this host", 40f, 120f, textPaint)
+        textPaint.color = Color.parseColor("#9AA3B2")
+        textPaint.textSize = 22f
+        canvas.drawText("Update the app to run this bundle.", 40f, 170f, textPaint)
+        val reason = sceneHolder.lastRejection
+        if (reason != null) {
+            canvas.drawText(reason.take(60), 40f, 220f, textPaint)
+        }
     }
 
     private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {

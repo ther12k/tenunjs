@@ -49,7 +49,7 @@ The three authoring tiers:
 | `Positioned` | `Positioned` | `left`+`right` (or `top`+`bottom`) stretches |
 | `Expanded` | `Expanded` | `flex` shares the Row's free width |
 | `Flexible` | — | implicit text shrink covers the loose case |
-| `GestureDetector` / `InkWell` | `GestureDetector` | `onTap` around any widget |
+| `GestureDetector` / `InkWell` | `GestureDetector` | `onTap` around any widget; see the input-model note below |
 | `Spacer` | `Spacer` | Columns; Rows space with `gap` |
 | `Wrap` | `Wrap` | `spacing` / `runSpacing` |
 | `Icon` | `Icon` | `name` registry (check, close, star, favorite, menu, …) or direct `glyph`; no icon font |
@@ -92,6 +92,23 @@ The three authoring tiers:
 Colors on structural widgets accept `#rrggbb`/`#aarrggbb` literals or
 palette role names (`"primary"`, `"onSurfaceVariant"`, ...), so themes flow
 without imports.
+
+## Input model differences (deliberate, not missing)
+
+- **Tap dispatch is region-based, topmost-wins.** There is no gesture
+  arena and no disambiguation between competing detectors: tap regions
+  register in paint order and the last containing region receives the
+  event. This is what makes modal scrims safe (they register after the
+  content they cover) — the same rule on every host.
+- **One gesture type.** `GestureDetector` means `onTap`. Drag/pinch/
+  long-press are not part of the contract yet; vertical drag is owned by
+  the host's scene scrolling (with touch-slop separation, so a drag never
+  fires a tap).
+- **"Hot reload" is engine replacement + snapshot restore.** A replaced
+  engine gets a serialized snapshot — exported state survives, live
+  objects and callback identity do not. Flutter's hot reload preserves
+  state in place and skips `main()`/`initState()`; the mechanisms differ
+  and so do their limits.
 
 ## Honest gaps today
 

@@ -183,3 +183,83 @@ describe("ShowcaseRuntime display-list contract", () => {
     expect(intro.page).toBe(1);
   });
 });
+
+describe("snapshot failure semantics", () => {
+  test("a future-schema snapshot resets deliberately instead of being guessed at", () => {
+    const runtime = new ShowcaseRuntime();
+    runtime.openApp("hotel");
+    runtime.dispatch("TAP", tapByText(runtime, "Filters"));
+    expect(hotelState(runtime).filterOpen).toBe(true);
+
+    runtime.restore({
+      stateSchema: 3,
+      surface: "app",
+      appId: "hotel",
+      launcherState: { opened: "hotel", drawerOpen: false },
+      appStates: { hotel: { filterOpen: true } },
+    });
+
+    expect(runtime.stateSchema()).toBe(2);
+    expect(runtime.isLauncher()).toBe(true);
+    expect(runtime.activeAppId()).toBeNull();
+    expect((runtime.exportState().launcherState as { opened: string | null }).opened).toBeNull();
+    expect(runtime.exportState().appStates.hotel).toBeUndefined();
+  });
+
+  test("malformed state entries mount fresh instead of restoring garbage", () => {
+    const runtime = new ShowcaseRuntime();
+    runtime.restore({
+      stateSchema: 2,
+      surface: "app",
+      appId: "hotel",
+      launcherState: 42,
+      appStates: {
+        hotel: "not an object",
+        fitness: ["also", "malformed"],
+        course: { category: 1 },
+      },
+    });
+    // hotel and fitness mounted fresh despite being named; launcher ignored
+    // the scalar and kept a fresh state; course's valid object restored.
+    const snapshot = runtime.exportState();
+    expect(snapshot.surface).toBe("app");
+    expect((snapshot.launcherState as { opened: string | null }).opened).toBeNull();
+    expect((snapshot.appStates.hotel as { filterOpen: boolean }).filterOpen).toBe(false);
+    expect((snapshot.appStates.fitness as { stepsToday: number }).stepsToday).toBe(4820);
+    expect((snapshot.appStates.course as { category: number }).category).toBe(1);
+  });
+
+  test("malformed legacy states are ignored the same way", () => {
+    const runtime = new ShowcaseRuntime();
+    runtime.restore({
+      stateSchema: 1,
+      route: "hotel",
+      states: { home: "garbage", hotel: { destination: 2 }, ghost: {} },
+    });
+    const snapshot = runtime.exportState();
+    expect(snapshot.surface).toBe("app");
+    expect((snapshot.appStates.hotel as { destination: number }).destination).toBe(2);
+    expect((snapshot.launcherState as { opened: string | null }).opened).toBeNull();
+  });
+
+  test("a replaced runtime is isolated from the previous engine's state", () => {
+    // The hot-reload path: the shell builds a replacement runtime and
+    // restores a serialized snapshot. Nothing the OLD runtime does
+    // afterwards may reach the replacement.
+    const old = new ShowcaseRuntime();
+    old.openApp("hotel");
+    const snapshot = JSON.parse(JSON.stringify(old.exportState())) as ShowcaseSnapshot;
+
+    const replacement = new ShowcaseRuntime();
+    replacement.restore(snapshot);
+    expect((replacement.exportState().appStates.hotel as { destination: number }).destination).toBe(0);
+
+    // Late mutation on the old engine must not leak into the replacement.
+    old.dispatch("NAVIGATE", "hotel");
+    old.dispatch("TAP", tapByText(old, "Filters"));
+    expect((old.exportState().appStates.hotel as { filterOpen: boolean }).filterOpen).toBe(true);
+    expect((replacement.exportState().appStates.hotel as { filterOpen: boolean }).filterOpen).toBe(false);
+    expect(replacement.isLauncher()).toBe(false);
+    expect(replacement.activeAppId()).toBe("hotel");
+  });
+});

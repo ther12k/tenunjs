@@ -97,3 +97,41 @@ line, gradient); taps are hit regions whose payload ids index a callback
 table rebuilt on every render. Hosts stay dumb painter/dispatchers — no
 widget knowledge crosses the boundary, which is why the structural tier
 could grow without touching the Android prototype.
+
+## Host compatibility contract
+
+Three version identities exist and none implies the others:
+
+1. **Application bundle version** — which JS bundle is running.
+2. **Snapshot state schema** — the serialized app-state shape (e.g. the
+   showcase's `stateSchema: 2`); a host rejects or resets on newer ones.
+3. **Scene contract version** — the display-list shape (`version: 1`
+   today) and the host's `SUPPORTED_SCENE_VERSION`.
+
+Host policy is **fail-closed**: a scene whose version exceeds host
+support, or that contains an unknown op kind, is rejected whole — the
+Android host keeps its last committed scene (including its hit regions)
+and logs; the browser renderer neither paints nor hit-tests the rejected
+scene and keeps its last painted canvas. A partially rendered interface
+is never an acceptable outcome, and a rejected first commit renders an
+explicit incompatible-bundle state, not a fallback UI.
+
+One boundary a version number cannot draw: additive *fields* within a
+scene version (like the anchored-overlay metadata) look identical to a
+pre-anchor scene — `version` stays 1 either way, so version gating alone
+cannot detect that a bundle *uses* them. Safe bundle↔host pairing
+therefore comes from distribution — ship the matching APK from the same
+tree — not from negotiation. This is exactly why the OTA boundary is
+**JS application bundles only; no DEX/JAR/native library OTA**: the
+fail-closed parser protects updated hosts, and host-contract changes
+ship as an APK update. Bottom-anchored overlays resolve against the
+application viewport height and are not IME-inset aware.
+
+## Accessibility boundary
+
+Drawn controls are not automatically accessible controls. The display
+list paints glyphs and hit rectangles; no accessibility tree, content
+descriptions, or virtual view hierarchy crosses the host boundary yet.
+Interactive regions are currently reachable only by pointer. Full
+accessibility (a virtual hierarchy with actions per region) is tracked
+future work, not an implied capability of this API.

@@ -261,4 +261,65 @@ describe("structural widgets — layout", () => {
     const icon = texts(row.scene).find((op) => op.text === "★")!;
     expect(icon.y).toBeCloseTo(8 + 24 + 40 * 0.36, 5);
   });
+
+  test("Expanded outside a Row is a transparent wrapper (documented placement rule)", () => {
+    // The scene is content-height, so Column flex has no free space to
+    // share; misplaced Expanded degrades to a full-width stack, never a
+    // crash or a zero-size hole.
+    const { scene } = render(
+      Column({ children: [Expanded({ children: Text({ children: ["misplaced"] }) })] })
+    );
+    expect(scene.contentHeight).toBe(24);
+    expect(texts(scene)[0]!.x).toBe(0);
+  });
+
+  test("Wrap gives an oversized child its own line and stays defined", () => {
+    const { scene } = render(
+      Wrap({
+        children: [
+          Container({ width: 200, height: 40, color: "#FF0000" }),
+          Container({ width: 900, height: 40, color: "#00FF00" }),
+          Container({ width: 200, height: 40, color: "#0000FF" }),
+        ],
+      })
+    );
+    const fills = rects(scene);
+    // Line 1: the 200 box; line 2: the oversized box alone; line 3: the
+    // trailing 200 box. Nothing overflows into a neighbor's line.
+    expect(fills.map((op) => op.y)).toEqual([0, 48, 96]);
+    expect(scene.contentHeight).toBe(136);
+  });
+
+  test("Wrap reflows when the same tree lays out at a different width", () => {
+    const chips = () => [
+      Container({ width: 200, height: 40, color: "#FF0000" }),
+      Container({ width: 200, height: 40, color: "#FF0000" }),
+      Container({ width: 200, height: 40, color: "#FF0000" }),
+    ];
+    const wide = layoutScreen(theme, Wrap({ children: chips() }), 720);
+    const narrow = layoutScreen(theme, Wrap({ children: chips() }), 500);
+    // 720 fits all three; 500 breaks 2 + 1.
+    expect(new Set(rects(wide.scene).map((op) => op.y)).size).toBe(1);
+    expect(new Set(rects(narrow.scene).map((op) => op.y)).size).toBe(2);
+  });
+
+  test("unknown palette roles fall back to defined defaults, never garbage", () => {
+    const { scene } = render(
+      Column({
+        children: [
+          Text({ variant: "body", color: "notARole", children: ["x"] }),
+          Container({ height: 8, color: "notARole" }),
+        ],
+      })
+    );
+    expect(texts(scene)[0]!.color).toBe("#F2F2F7");
+    // An unresolvable container color paints nothing (defined: no fill).
+    expect(rects(scene).length).toBe(0);
+  });
+
+  test("Column align=stretch degrades to start (documented: no cross-axis forcing)", () => {
+    const start = render(Column({ children: [Text({ children: ["hi"] })] }));
+    const stretch = render(Column({ align: "stretch", children: [Text({ children: ["hi"] })] }));
+    expect(texts(stretch.scene)[0]!.x).toBe(texts(start.scene)[0]!.x);
+  });
 });

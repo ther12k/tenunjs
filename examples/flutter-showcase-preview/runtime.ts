@@ -36,6 +36,16 @@ const LAUNCHER = "home";
  */
 export const STATE_SCHEMA = 2;
 
+/**
+ * A restorable state value must be a plain object — every screen state is
+ * one. Anything else (string, number, array, null) is treated as malformed
+ * snapshot data and the session mounts fresh instead of crashing or
+ * mutating garbage.
+ */
+function asRestorableState(value: unknown): unknown {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+}
+
 export type ShowcaseSurface = "launcher" | "app";
 
 export interface ShowcaseSnapshot {
@@ -216,20 +226,36 @@ export class ShowcaseRuntime {
    * Restores the current schema-2 snapshot, or migrates a schema-1 flat
    * snapshot ({ route, states }) by mapping states.home to the launcher and
    * every other known screen key to its app session.
+   *
+   * Failure semantics (deliberate, never a throw): a snapshot from a NEWER
+   * schema resets to a fresh launcher instead of being guessed at; unknown
+   * app ids and malformed (non-object) state entries are ignored so that
+   * study mounts fresh.
    */
   restore(snapshot: Partial<ShowcaseSnapshot> & { route?: unknown; states?: unknown }): void {
     const legacy = snapshot as { stateSchema?: unknown; states?: Record<string, unknown>; route?: unknown };
+    if (
+      typeof legacy.stateSchema === "number" &&
+      legacy.stateSchema > STATE_SCHEMA
+    ) {
+      // Future snapshot shape: identification is not validation. Reset
+      // deliberately rather than restore a guess.
+      this.launcherSession = this.mount(LAUNCHER);
+      this.appSessions.clear();
+      this.closeApp();
+      return;
+    }
     if (typeof legacy.stateSchema !== "number" || legacy.stateSchema < 2) {
       this.restoreLegacy(legacy);
       return;
     }
     if (snapshot.launcherState !== undefined) {
-      this.launcherSession = this.mount(LAUNCHER, snapshot.launcherState);
+      this.launcherSession = this.mount(LAUNCHER, asRestorableState(snapshot.launcherState));
     }
     const appStates = (snapshot.appStates ?? {}) as Record<string, unknown>;
     for (const key of Object.keys(appStates)) {
       if (isShowcaseAppId(key)) {
-        this.appSessions.set(key, this.mount(key, appStates[key]));
+        this.appSessions.set(key, this.mount(key, asRestorableState(appStates[key])));
       }
     }
     if (snapshot.surface === "app" && snapshot.appId && isShowcaseAppId(snapshot.appId)) {
@@ -241,13 +267,13 @@ export class ShowcaseRuntime {
 
   private restoreLegacy(snapshot: { states?: Record<string, unknown>; route?: unknown }): void {
     const states = snapshot.states;
-    if (states && typeof states === "object") {
+    if (states && typeof states === "object" && !Array.isArray(states)) {
       if (states[LAUNCHER] !== undefined) {
-        this.launcherSession = this.mount(LAUNCHER, states[LAUNCHER]);
+        this.launcherSession = this.mount(LAUNCHER, asRestorableState(states[LAUNCHER]));
       }
       for (const key of Object.keys(states)) {
         if (isShowcaseAppId(key)) {
-          this.appSessions.set(key, this.mount(key, states[key]));
+          this.appSessions.set(key, this.mount(key, asRestorableState(states[key])));
         }
       }
     }

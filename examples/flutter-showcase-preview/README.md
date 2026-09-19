@@ -42,6 +42,27 @@ launcherState, appStates }`. Flat schema-1 snapshots (`{ route, states }`)
 still restore via a small migration, so old hosts and saved states keep
 working.
 
+### Snapshot failure semantics
+
+A schema number is identification, not validation. `restore()` is
+deliberate about incompatible input and never throws:
+
+- a snapshot from a **newer schema** (3+) resets to a fresh launcher
+  rather than restoring a guess;
+- **unknown app ids** and **malformed state entries** (non-object values)
+  are ignored, so that study mounts fresh;
+- a **missing or renamed study** simply never restores — known ids only.
+
+### What "hot reload" means here
+
+The preview's reload path replaces the entire engine and restores a
+serialized snapshot: what survives is exported state (surface, launcher,
+per-app session state), not live objects. This is a different mechanism
+from Flutter's hot reload, which preserves state in place without
+re-running `main()` or `initState()`. A replaced runtime is fully
+isolated from the previous one — late mutations on an old engine cannot
+reach the replacement (pinned by tests).
+
 ## Interactions
 
 - The first surface is a home-screen grid of app icons — tap an icon (or the
