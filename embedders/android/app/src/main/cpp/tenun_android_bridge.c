@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <unistd.h>
 
 #if defined(__ANDROID__) || defined(ANDROID)
 #include <android/log.h>
@@ -89,6 +90,23 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
     return NULL;
   }
 
+  /* Evaluation-boundary evidence (incident #191): identity of the exact
+   * buffer handed to JS_Eval — hash of the supplied bytes (not a re-read
+   * asset), length, flags, and calling thread — logged at every eval so
+   * failures correlate without depending on a separate capture path.
+   * FNV-1a 64 is an identity hash, not cryptographic. */
+  {
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i = 0; i < bundle_len; i++) {
+      h ^= (uint64_t)bundle[i];
+      h *= 1099511628211ULL;
+    }
+    TENUN_LOG_WARN(
+        "TENUN_EVAL_BOUNDARY attempt=%ld len=%zu fnv1a64=%016llx flags=%d thread=%d",
+        attempt, bundle_len, (unsigned long long)h, (int)JS_EVAL_TYPE_GLOBAL,
+        (int)gettid());
+  }
+
   tenun_android_engine* engine = (tenun_android_engine*)calloc(1, sizeof(tenun_android_engine));
   if (!engine || tenun_injected(TENUN_INIT_ENGINE_ALLOC)) {
     tenun_log_init_failure(attempt, TENUN_INIT_ENGINE_ALLOC);
@@ -134,23 +152,33 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   // Evaluate the real JavaScript application bundle
   JSValue eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
   if (JS_IsException(eval_res)) {
-    /* #191 evidence: first bytes actually evaluated, on the failure path
-     * only. If a future failure shows valid bytes here (as observed on a
-     * software-TCG emulator), the parse input was NOT the problem — see
-     * the incident notes before blaming the bundle. */
+    /* #191 evidence: the bytes actually evaluated, on the failure path
+     * only. Small bundles (≤ 8 KiB) are retained IN FULL so the complete
+     * controlled input survives in the log; larger ones keep the leading
+     * 512 bytes plus the boundary hash logged at eval entry. */
     {
-      size_t dump_n = bundle_len < 64 ? bundle_len : 64;
-      char dump[3 * 64 + 1];
+      const size_t full_max = 8192;
+      size_t dump_n = bundle_len < full_max ? bundle_len : 512;
+      char dump[3 * full_max + 1];
       size_t di = 0;
+      static const char hexd[] = "0123456789abcdef";
       for (size_t i = 0; i < dump_n; i++) {
         unsigned char b = (unsigned char)bundle[i];
-        static const char hexd[] = "0123456789abcdef";
         dump[di++] = hexd[b >> 4];
         dump[di++] = hexd[b & 0xF];
         dump[di++] = ' ';
       }
       dump[di] = '\0';
-      TENUN_LOG_WARN("TENUN_EVAL_BYTES len=%zu first64: %s", bundle_len, dump);
+      if (bundle_len <= full_max) {
+        /* Chunk the full hex across logcat-safe lines. */
+        const size_t per_line = 3 * 512;
+        for (size_t off = 0; off < di; off += per_line) {
+          TENUN_LOG_WARN("TENUN_EVAL_BYTES_FULL len=%zu chunk=%zu: %.*s",
+                         bundle_len, off / 3, (int)(di - off < per_line ? di - off : per_line), dump + off);
+        }
+      } else {
+        TENUN_LOG_WARN("TENUN_EVAL_BYTES len=%zu first512: %s", bundle_len, dump);
+      }
     }
     // Fail-closed on invalid JavaScript. A context exists here, so the
     // actual JS exception is available via JS_GetException (unlike the
