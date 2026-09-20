@@ -116,9 +116,18 @@ class FailVisibleTest : DeviceAcceptanceBase() {
         awaitSurfaceState(scenario, 10_000, "normal boot after clearing injection") {
             it.engine != null && it.buttonLabel == "Add Entry"
         }
+        // The stock bundle's Add Entry only commits when the input fields
+        // carry text (an empty-input tap is a documented no-op), so mirror
+        // the standard suite's canonical flow: commit both fields through
+        // the IME, then tap the button.
+        typeIntoFieldViaIme(scenario, "title", "recovered") { it.titleRect }
+        typeIntoFieldViaIme(scenario, "details", "fresh boot works") { it.detailsRect }
         tapRect(scenario) { it.buttonRect }
         awaitSurfaceState(scenario, 10_000, "interaction works on the fresh boot") {
-            it.entries.size == 1
+            it.entries.size == 1 &&
+                it.entries[0] == "recovered - fresh boot works" &&
+                it.titleField.displayText.isEmpty() &&
+                it.detailsField.displayText.isEmpty()
         }
         screencap("tenun_failvisible_recovered.png")
     }
