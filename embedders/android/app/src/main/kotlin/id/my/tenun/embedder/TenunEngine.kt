@@ -52,8 +52,11 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
             try {
                 nativeSetTestInitInjection(stage)
             } catch (e: UnsatisfiedLinkError) {
+                // Keep the underlying link error visible: a wrong build
+                // flavor and a symbol-name mismatch must not read the same.
                 throw IllegalStateException(
-                    "test injection requires a build with -Ptenun.testInjection=true",
+                    "test injection hook unavailable (requires a build with " +
+                        "-Ptenun.testInjection=true): ${e.message}",
                     e,
                 )
             }

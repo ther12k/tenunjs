@@ -494,8 +494,11 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
 #ifdef TENUN_TEST_INJECTION
 /* Test-only init-failure injection hook. Compiled ONLY when Gradle passes
  * -Ptenun.testInjection=true (device acceptance fail-visible stage); the
- * symbol does not exist in production or standard debug builds. */
-JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetTestInitInjection(
+ * symbol does not exist in production or standard debug builds.
+ * The Kotlin external fun lives in TenunEngine's companion object, so JNI
+ * requires the mangled name ($Companion -> _00024Companion); the plain
+ * TenunEngine_ name is never resolved for it. */
+JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_00024Companion_nativeSetTestInitInjection(
     JNIEnv *env, jclass clazz, jint stage_code) {
   (void)env;
   (void)clazz;
