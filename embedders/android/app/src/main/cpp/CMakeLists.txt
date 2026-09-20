@@ -3,6 +3,15 @@ project("tenun_android")
 
 add_definitions(-D_GNU_SOURCE -DCONFIG_VERSION="2024-01-13" -DCONFIG_BIGNUM)
 
+# Test-only init-failure injection. Enabled ONLY when Gradle passes
+# -Ptenun.testInjection=true (device acceptance stage: fail-visible tests).
+# Production and standard debug builds compile without it — the injection
+# hook does not exist in those binaries.
+option(TENUN_ENABLE_TEST_INJECTION "Compile the test-only init-failure injection hook" OFF)
+if(TENUN_ENABLE_TEST_INJECTION)
+    add_definitions(-DTENUN_TEST_INJECTION)
+endif()
+
 add_library(tenun_android SHARED
     tenun_android_bridge.c
     quickjs/quickjs.c

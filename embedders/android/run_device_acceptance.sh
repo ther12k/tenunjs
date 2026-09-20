@@ -275,9 +275,10 @@ echo "== 6. Standard suite: :app:connectedDebugAndroidTest on the booted emulato
 # VariantCustomizationTest is excluded here: it can only run against the
 # JS-only variant APK in stage 9 (am instrument), never against the standard
 # build — a failure there would be by construction, not by defect.
-# OverlayInteractionTest likewise needs the gallery-bundle APK from stage 10.
+# OverlayInteractionTest likewise needs the gallery-bundle APK from stage 10;
+# FailVisibleTest needs the injection build from stage 11.
 if ! ./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest" \
+  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest,$APP_ID.FailVisibleTest" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   # Preserve the decisive app-side evidence BEFORE failing the run. The
@@ -508,7 +509,60 @@ if printf '%s' "$O_OUT" | grep -q "FAILURES"; then
   accept_fail "overlay instrumentation reported failures"
 fi
 
-echo "== 11. Evidence collection: screenshots, logcat, environment summary =="
+echo "== 11. Fail-visible startup stage: injection build (deterministic failure states) =="
+# Keep the standard APK bytes aside: the injection build overwrites the
+# same output path, and every earlier digest already recorded the standard
+# artifact's identity.
+STD_APK_KEEP="$WORK_DIR/tenun-standard-kept.apk"
+cp "$STD_APK" "$STD_APK_KEEP"
+
+if ! ./gradlew -Ptenun.testInjection=true :app:assembleDebug \
+  >"$OUT_DIR/gradle_assemble_injection.txt" 2>&1; then
+  tail -40 "$OUT_DIR/gradle_assemble_injection.txt"
+  accept_fail ":app:assembleDebug with -Ptenun.testInjection=true failed"
+fi
+INJ_APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+[ -f "$INJ_APK" ] || accept_fail "injection APK was not produced"
+INJ_SHA_PUSH="$(sha256sum "$INJ_APK" | awk '{print $1}')"
+echo "injection APK (pushed) sha256: $INJ_SHA_PUSH"
+grep -q "TENUN_TEST_INJECTION" "$OUT_DIR/gradle_assemble_injection.txt" 2>/dev/null || true
+
+"$ADB" uninstall "$APP_ID" >/dev/null 2>&1 || true
+if ! "$ADB" install -r "$INJ_APK" >"$OUT_DIR/adb_install_injection.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_injection.txt"
+  accept_fail "injection APK install failed"
+fi
+INJ_DEVICE_APK="$("$ADB" shell pm path "$APP_ID" | head -1 | sed 's/^package://' | tr -d '\r')"
+"$ADB" pull "$INJ_DEVICE_APK" "$OUT_DIR/installed_injection.apk" >/dev/null
+INJ_SHA_PULLED="$(sha256sum "$OUT_DIR/installed_injection.apk" | awk '{print $1}')"
+echo "injection APK (pulled from device) sha256: $INJ_SHA_PULLED"
+[ "$INJ_SHA_PUSH" = "$INJ_SHA_PULLED" ] || accept_fail "installed injection artifact identity mismatch"
+"$BUILD_TOOLS/apksigner" verify --print-certs "$INJ_APK" >"$OUT_DIR/certs_injection.txt" 2>&1 || true
+
+if ! "$ADB" install -r "$TEST_APK" >"$OUT_DIR/adb_install_injection_test.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_injection_test.txt"
+  accept_fail "instrumented-test APK install failed for the fail-visible phase"
+fi
+set +e
+FV_OUT="$("$ADB" shell am instrument -w -e class "$APP_ID.FailVisibleTest" "$TEST_APP_ID/androidx.test.runner.AndroidJUnitRunner" 2>&1)"
+FV_RC=$?
+set -e
+printf '%s\n' "$FV_OUT" | tee "$OUT_DIR/am_instrument_failvisible.txt" | tail -15
+if [ "$FV_RC" -ne 0 ]; then
+  accept_fail "fail-visible instrumentation returned rc=$FV_RC"
+fi
+if printf '%s' "$FV_OUT" | grep -q "OK (4 tests)"; then
+  echo "fail-visible suite: 4 executed tests, OK"
+else
+  accept_fail "fail-visible instrumentation did not end with 'OK (4 tests)' (zero executed tests cannot pass acceptance)"
+fi
+if printf '%s' "$FV_OUT" | grep -q "FAILURES"; then
+  accept_fail "fail-visible instrumentation reported failures"
+fi
+# Restore the standard artifact for the record (stage digests unchanged).
+cp "$STD_APK_KEEP" "$STD_APK"
+
+echo "== 12. Evidence collection: screenshots, logcat, environment summary =="
 
 # AGP captures one logcat file per instrumented test under app/build/outputs;
 # those runner-local files are what a rerun would otherwise orphan — always
@@ -519,7 +573,9 @@ PULL_FAIL=0
 for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry \
   tenun_after_recreation tenun_baseline tenun_variant_initial tenun_variant_after \
   tenun_overlay_home tenun_overlay_plants tenun_overlay_sheet \
-  tenun_overlay_scrim_dismiss tenun_overlay_after; do
+  tenun_overlay_scrim_dismiss tenun_overlay_after \
+  tenun_failvisible_alloc tenun_failvisible_eval \
+  tenun_failvisible_recreated tenun_failvisible_recovered; do
   if ! "$ADB" pull "/data/local/tmp/$f.png" "$OUT_DIR/" >/dev/null 2>&1; then
     echo "MISSING SCREENSHOT: $f.png"
     PULL_FAIL=1
@@ -566,7 +622,10 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "overlay_bundle_sha256": "$GALLERY_SHA",
   "overlay_apk_sha256_pushed": "$OVL_SHA_PUSH",
   "overlay_apk_sha256_pulled_from_device": "$OVL_SHA_PULLED",
-  "overlay_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class OverlayInteractionTest"}
+  "overlay_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class OverlayInteractionTest"},
+  "injection_apk_sha256_pushed": "$INJ_SHA_PUSH",
+  "injection_apk_sha256_pulled_from_device": "$INJ_SHA_PULLED",
+  "failvisible_suite": {"executed": 4, "failures": 0, "runner": "adb shell am instrument -e class FailVisibleTest", "note": "injection build (-Ptenun.testInjection=true); forced boot failure, forced eval failure, recreation-while-injected, injection-removed fresh boot"}
 }
 EOF
 
@@ -580,6 +639,7 @@ echo "DEVICE ACCEPTANCE PASS"
 echo "  standard APK: $STD_SHA_PULLED"
 echo "  variant APK:  $VAR_SHA_PULLED"
 echo "  overlay APK:  $OVL_SHA_PULLED (gallery bundle $GALLERY_SHA, built from the reviewed revision)"
+echo "  injection APK: $INJ_SHA_PULLED (test-only init-failure injection build)"
 echo "  reload mode:  packaged-only (dev_server.txt and update_channel.json asserted absent)"
-echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), variant=1 (OK), overlay=1 (OK)"
+echo "  executed tests: standard=6 (0 failures/0 errors/0 skipped), variant=1 (OK), overlay=1 (OK), fail-visible=4 (OK)"
 echo "  evidence: $OUT_DIR"

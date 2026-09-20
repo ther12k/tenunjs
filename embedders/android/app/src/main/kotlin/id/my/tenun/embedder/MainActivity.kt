@@ -73,6 +73,18 @@ class MainActivity : Activity() {
 
         engine = bootEngine()
 
+        // Startup state: Starting → Ready | Failed. A null engine is a
+        // TERMINAL, fail-visible state: the application is not running.
+        // An explicit host-owned error panel replaces the UI — no legacy
+        // fallback, no active controls, no retry, no substituted bundle.
+        // (An intentionally selected legacy application still runs through
+        // its own successful boot path; this only removes the null-engine
+        // fallback.) Detailed stage/attempt diagnostics stay in logcat.
+        if (engine == null) {
+            renderStartupFailure()
+            return
+        }
+
         surfaceView = TenunSurfaceView(this).apply {
             engine = this@MainActivity.engine
             onFirstSuccessfulDispatch = { onTrialHealthSignal() }
@@ -122,6 +134,60 @@ class MainActivity : Activity() {
         if (devServerUrl == null) otaManager?.checkNow()
     }
 
+    /**
+     * Terminal startup-failure panel, host-owned and QuickJS-free: plain
+     * framework views only. No cause speculation (the underlying reason
+     * may be unknown); the correlation reference points at the structured
+     * logcat lines. No controls are exposed, so no stale action targets
+     * can remain active.
+     */
+    private fun renderStartupFailure() {
+        val correlation = lastBootCorrelation
+        val pad = 48
+        val panel = android.widget.ScrollView(this).apply {
+            setBackgroundColor(android.graphics.Color.parseColor("#101014"))
+            addView(
+                android.widget.LinearLayout(this@MainActivity).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setPadding(pad, pad * 2, pad, pad)
+                    addView(
+                        android.widget.TextView(this@MainActivity).apply {
+                            text = "Unable to start this app."
+                            textSize = 26f
+                            setTextColor(android.graphics.Color.parseColor("#F2F2F7"))
+                        },
+                    )
+                    addView(
+                        android.widget.TextView(this@MainActivity).apply {
+                            text = "Error reference: $correlation"
+                            textSize = 15f
+                            setTextColor(android.graphics.Color.parseColor("#9AA3B2"))
+                            setPadding(0, pad / 2, 0, 0)
+                        },
+                    )
+                    addView(
+                        android.widget.TextView(this@MainActivity).apply {
+                            text = "Update the app and try again."
+                            textSize = 15f
+                            setTextColor(android.graphics.Color.parseColor("#9AA3B2"))
+                            setPadding(0, pad, 0, 0)
+                        },
+                    )
+                },
+            )
+        }
+        startupFailed = true
+        setContentView(panel)
+        Log.e(TAG, "startup FAILED (terminal); error reference: $correlation")
+    }
+
+    /** Correlation id of the last boot attempt, for the failure panel and tests. */
+    private var lastBootCorrelation: String = "attempt unknown"
+
+    /** True once a terminal startup failure was rendered. */
+    var startupFailed: Boolean = false
+        private set
+
     /** Boots stored (confirmed) OTA bundle, falling back to packaged asset. */
     private fun bootEngine(): TenunEngine? {
         val store = bundleStore
@@ -130,7 +196,7 @@ class MainActivity : Activity() {
             if (stored != null) {
                 try {
                     Log.i(TAG, "booting confirmed OTA bundle v${store.installedVersion()}")
-                    return TenunEngine(stored)
+                    return TenunEngine(stored).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
                 } catch (e: Exception) {
                     Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
                     // Confirmed-but-broken is treated like a failed trial.
@@ -139,8 +205,12 @@ class MainActivity : Activity() {
             }
         }
         return try {
-            TenunEngine(assetBundleBytes)
+            TenunEngine(assetBundleBytes).also { lastBootCorrelation = "packaged" }
         } catch (e: Exception) {
+            // The structured native attribution lines (stage/attempt) are
+            // in logcat under TenunEngine; the panel keeps only the boot
+            // source here — no cause speculation.
+            lastBootCorrelation = "packaged (see logcat TenunEngine)"
             Log.e(TAG, "packaged bundle failed to boot: ${e.message}")
             null
         }
