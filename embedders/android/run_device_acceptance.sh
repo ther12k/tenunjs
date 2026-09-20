@@ -516,6 +516,16 @@ echo "== 11. Fail-visible startup stage: injection build (deterministic failure 
 STD_APK_KEEP="$WORK_DIR/tenun-standard-kept.apk"
 cp "$STD_APK" "$STD_APK_KEEP"
 
+# The overlay rebuild (stage 10) leaves its gallery_app.js in the source
+# asset dir as an untracked build artifact, and MainActivity prefers that
+# bundle (TN-132). Built as-is, the injection APK would boot the gallery
+# app while the fail-visible suite's recovery flow drives the stock notes
+# reference app (title/details inputs, Add Entry). Remove the artifact so
+# the injection APK packages exactly the reviewed stock assets; the guard
+# below proves it.
+GALLERY_ASSET_SRC="$SCRIPT_DIR/app/src/main/assets/gallery_app.js"
+rm -f "$GALLERY_ASSET_SRC"
+
 if ! ./gradlew -Ptenun.testInjection=true :app:assembleDebug \
   >"$OUT_DIR/gradle_assemble_injection.txt" 2>&1; then
   tail -40 "$OUT_DIR/gradle_assemble_injection.txt"
@@ -523,6 +533,13 @@ if ! ./gradlew -Ptenun.testInjection=true :app:assembleDebug \
 fi
 INJ_APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$INJ_APK" ] || accept_fail "injection APK was not produced"
+unzip -l "$INJ_APK" >"$OUT_DIR/apk_contents_injection.txt" 2>&1 || true
+if grep -q "assets/gallery_app.js" "$OUT_DIR/apk_contents_injection.txt"; then
+  accept_fail "injection APK must not carry the gallery overlay asset — the fail-visible stage tests the stock notes reference app"
+fi
+if ! grep -q "assets/tenun_app.js" "$OUT_DIR/apk_contents_injection.txt"; then
+  accept_fail "injection APK does not contain assets/tenun_app.js — the JS application cannot load"
+fi
 INJ_SHA_PUSH="$(sha256sum "$INJ_APK" | awk '{print $1}')"
 echo "injection APK (pushed) sha256: $INJ_SHA_PUSH"
 grep -q "TENUN_TEST_INJECTION" "$OUT_DIR/gradle_assemble_injection.txt" 2>/dev/null || true

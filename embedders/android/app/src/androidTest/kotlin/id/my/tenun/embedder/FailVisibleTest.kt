@@ -116,6 +116,13 @@ class FailVisibleTest : DeviceAcceptanceBase() {
         awaitSurfaceState(scenario, 10_000, "normal boot after clearing injection") {
             it.engine != null && it.buttonLabel == "Add Entry"
         }
+        onViewSurface(scenario) { v ->
+            // Pin the bundle, not just the label default: the recovery flow
+            // drives the stock notes reference app, and a leaked gallery
+            // overlay asset would boot a different UI entirely.
+            val scene = v.engine!!.getLatestScene()
+            assertTrue("fresh boot must run the stock notes reference app", scene.contains("Add Entry"))
+        }
         // The stock bundle's Add Entry only commits when the input fields
         // carry text (an empty-input tap is a documented no-op), so mirror
         // the standard suite's canonical flow: commit both fields through
