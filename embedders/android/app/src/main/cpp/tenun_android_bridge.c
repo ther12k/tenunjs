@@ -403,11 +403,20 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
    * evaluating: JS_Eval runs the whole bundle (with QuickJS allocations)
    * while holding this pointer, and the array's storage is managed by the
    * VM. A native copy keeps the evaluated bytes in stable memory for the
-   * entire eval (incident #191 hardening). */
-  uint8_t* bundle_copy = (uint8_t*)malloc((size_t)len);
+   * entire eval (incident #191 hardening).
+   *
+   * JS_Eval's documented contract (quickjs.h) requires
+   * input[input_len] == '\0', and the lexer reads that byte before its
+   * bounds check. The copy therefore allocates len + 1 and terminates:
+   * without this, the end-of-input read hits uninitialized heap, and a
+   * non-NUL byte there produces an intermittent
+   * "SyntaxError: unexpected token" on valid bundles (incident #191 —
+   * deterministic regression in test_engine_loop.c section 11). */
+  uint8_t* bundle_copy = (uint8_t*)malloc((size_t)len + 1);
   tenun_android_engine* engine = NULL;
   if (bundle_copy) {
     memcpy(bundle_copy, bytes, (size_t)len);
+    bundle_copy[len] = '\0';
     (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
     engine = tenun_android_engine_create(bundle_copy, (size_t)len);
     free(bundle_copy);

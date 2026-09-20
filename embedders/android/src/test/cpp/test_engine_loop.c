@@ -268,6 +268,35 @@ int main(int argc, char** argv) {
   printf("SKIPPED: TENUN_TEST_INJECTION not defined (Android/NDK builds exclude injection)\n");
 #endif
 
+  /* 11. JS_Eval NUL-termination contract (incident #191 mechanism):
+   * quickjs.h requires input[input_len] == '\0', and the lexer reads that
+   * byte before its bounds check — a non-NUL trailing byte becomes a
+   * spurious token and fails the parse of otherwise-valid source. This is
+   * the deterministic regression for the Android JNI bundle copy, which
+   * must always allocate len+1 and terminate. */
+  printf("== 11. JS_Eval NUL-termination contract (deterministic mechanism) ==\n");
+  {
+    const char* src = "var state = {}; tenun_commit('{}');";
+    size_t src_len = strlen(src);
+
+    uint8_t* terminated = (uint8_t*)malloc(src_len + 1);
+    CHECK(terminated != NULL, "alloc terminated copy");
+    if (terminated) {
+      memcpy(terminated, src, src_len);
+      terminated[src_len] = '\0';
+      tenun_android_engine* ok_engine = tenun_android_engine_create(terminated, src_len);
+      CHECK(ok_engine != NULL, "valid source + NUL at input[len] initializes");
+      if (ok_engine) tenun_android_engine_destroy(ok_engine);
+
+      terminated[src_len] = 'x'; /* same bytes, non-NUL terminator */
+      tenun_android_engine* bad_engine = tenun_android_engine_create(terminated, src_len);
+      CHECK(bad_engine == NULL,
+            "valid source + NON-NUL byte at input[len] fails script_eval (contract)");
+      terminated[src_len] = '\0';
+      free(terminated);
+    }
+  }
+
   if (failures > 0) {
     printf("FAILED: %d checks failed\n", failures);
     return 1;
