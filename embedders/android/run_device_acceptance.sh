@@ -280,6 +280,17 @@ if ! ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
+  # Preserve the decisive app-side evidence BEFORE failing the run. The
+  # generic last-120 tail cannot reach back to the failing test's window:
+  # capture the app's own tagged log (engine init stages incl. the
+  # structured TENUN_ENGINE_INIT_FAILED line, activity lifecycle, surface
+  # events), AGP's per-test logcat captures, and point-in-time memory
+  # snapshots (evidence only — a snapshot alone does not identify a leak).
+  "$ADB" logcat -d -s TenunMainActivity:V TenunEngine:V TenunSurfaceView:V art:W \
+    >"$OUT_DIR/app_logcat_on_failure.txt" 2>&1 || true
+  find "$SCRIPT_DIR/app/build/outputs" -name 'logcat-*.txt' -exec cp {} "$OUT_DIR/" \; 2>/dev/null || true
+  "$ADB" shell dumpsys meminfo "$APP_ID" >"$OUT_DIR/meminfo_on_failure.txt" 2>&1 || true
+  "$ADB" shell dumpsys procstats --hours 1 "$APP_ID" >"$OUT_DIR/procstats_on_failure.txt" 2>&1 || true
   accept_fail ":app:connectedDebugAndroidTest failed"
 fi
 tail -12 "$OUT_DIR/connected_debug_android_test.txt"
@@ -498,6 +509,12 @@ if printf '%s' "$O_OUT" | grep -q "FAILURES"; then
 fi
 
 echo "== 11. Evidence collection: screenshots, logcat, environment summary =="
+
+# AGP captures one logcat file per instrumented test under app/build/outputs;
+# those runner-local files are what a rerun would otherwise orphan — always
+# copy them into the evidence set.
+find "$SCRIPT_DIR/app/build/outputs" -name 'logcat-*.txt' -exec cp {} "$OUT_DIR/" \; 2>/dev/null || true
+
 PULL_FAIL=0
 for f in tenun_initial tenun_after_entry1 tenun_two_entries tenun_unicode_entry \
   tenun_after_recreation tenun_baseline tenun_variant_initial tenun_variant_after \

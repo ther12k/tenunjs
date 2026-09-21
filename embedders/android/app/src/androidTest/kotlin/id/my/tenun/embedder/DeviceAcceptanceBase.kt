@@ -67,9 +67,23 @@ abstract class DeviceAcceptanceBase {
         return scenario to findSurface(scenario)
     }
 
+    /**
+     * Timeout diagnostics: instance-correlated state, so the next
+     * readiness failure shows WHICH activity instance and WHICH engine
+     * generation the observation belongs to, and whether a display-list
+     * scene was committed — distinguishing actual initialization failure
+     * (engine null on a fresh instance), stale-instance observation
+     * (identity differing between polls), and late surface/scene arrival
+     * (engine present, scene pending).
+     */
     protected fun describeSurface(scenario: ActivityScenario<MainActivity>): String =
         onViewSurface(scenario) { v ->
-            "focus=${v.hasFocus()} active=${if (v.getActiveFieldState() === v.titleField) "title" else "details"} " +
+            val engine = v.engine
+            val scene = v.committedSceneForTest().first
+            "activity=${System.identityHashCode(v.context)} view=${System.identityHashCode(v)} " +
+                "engine=${engine?.let { System.identityHashCode(it) } ?: "null"} " +
+                "displayScene=${if (scene != null) "committed" else "none"} " +
+                "focus=${v.hasFocus()} active=${if (v.getActiveFieldState() === v.titleField) "title" else "details"} " +
                 "title='${v.titleField.displayText}' details='${v.detailsField.displayText}' " +
                 "entries=${v.entries} buttonLabel='${v.buttonLabel}'"
         }
@@ -82,12 +96,17 @@ abstract class DeviceAcceptanceBase {
         predicate: (TenunSurfaceView) -> Boolean,
     ) {
         val deadline = SystemClock.uptimeMillis() + timeoutMs
+        var first: String? = null
         while (true) {
             if (onViewSurface(scenario) { predicate(it) }) return
             val last = describeSurface(scenario)
+            if (first == null) first = last
             if (SystemClock.uptimeMillis() > deadline) {
+                // First vs last identity shows whether the observed
+                // instance changed mid-wait (recreation / relaunch).
                 fail(
-                    "Timed out after ${timeoutMs}ms waiting for: $description; last state: $last; " +
+                    "Timed out after ${timeoutMs}ms waiting for: $description; first state: $first; " +
+                        "last state: $last; " +
                         inputEnvironmentDiagnosis()
                 )
             }
