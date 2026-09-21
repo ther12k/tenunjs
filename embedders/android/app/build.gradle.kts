@@ -3,6 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Test-only init-failure injection: `-Ptenun.testInjection=true` compiles
+// the native hook (CMake TENUN_ENABLE_TEST_INJECTION). Used exclusively by
+// the device-acceptance fail-visible stage; production and standard debug
+// builds never define it.
+val tenunTestInjection = providers.gradleProperty("tenun.testInjection").map { it == "true" }.getOrElse(false)
+
 android {
     namespace = "id.my.tenun.embedder"
     compileSdk = 36
@@ -20,6 +26,9 @@ android {
         externalNativeBuild {
             cmake {
                 cFlags("-std=c11 -Wall -Wextra -Werror")
+                if (tenunTestInjection) {
+                    arguments("-DTENUN_ENABLE_TEST_INJECTION=ON")
+                }
             }
         }
 

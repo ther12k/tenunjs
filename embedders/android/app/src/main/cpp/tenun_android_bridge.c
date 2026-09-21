@@ -150,13 +150,29 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   JS_FreeValue(engine->ctx, global);
 
   // Evaluate the real JavaScript application bundle
-  JSValue eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
+  /* Test-only script_eval injection (never compiled into production or
+   * standard debug builds): takes the common eval-failure/cleanup path
+   * with an explicit attribution line, exercising the fail-visible
+   * startup state deterministically. */
+  int eval_injected = 0;
+  JSValue eval_res;
+#ifdef TENUN_TEST_INJECTION
+  if (tenun_injected(TENUN_INIT_SCRIPT_EVAL)) {
+    eval_injected = 1;
+    TENUN_LOG_WARN(
+        "TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null js_error=test-injected",
+        tenun_stage_name(TENUN_INIT_SCRIPT_EVAL), attempt);
+    eval_res = JS_EXCEPTION;
+  } else
+#endif
+  eval_res = JS_Eval(engine->ctx, (const char*)bundle, bundle_len, "tenun_app.js", JS_EVAL_TYPE_GLOBAL);
   if (JS_IsException(eval_res)) {
     /* #191 evidence: the bytes actually evaluated, on the failure path
      * only. Small bundles (≤ 8 KiB) are retained IN FULL so the complete
      * controlled input survives in the log; larger ones keep the leading
-     * 512 bytes plus the boundary hash logged at eval entry. */
-    {
+     * 512 bytes plus the boundary hash logged at eval entry. The
+     * test-injected path already logged its attribution line above. */
+    if (!eval_injected) {
       const size_t full_max = 8192;
       size_t dump_n = bundle_len < full_max ? bundle_len : 512;
       char dump[3 * full_max + 1];
@@ -183,12 +199,14 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
     // Fail-closed on invalid JavaScript. A context exists here, so the
     // actual JS exception is available via JS_GetException (unlike the
     // pre-context stages, which log only code/stage/attempt).
-    JSValue exc = JS_GetException(engine->ctx);
-    const char *err = JS_ToCString(engine->ctx, exc);
-    TENUN_LOG_WARN("TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null js_error=%s",
-                   tenun_stage_name(TENUN_INIT_SCRIPT_EVAL), attempt, err ? err : "unknown error");
-    if (err) JS_FreeCString(engine->ctx, err);
-    JS_FreeValue(engine->ctx, exc);
+    if (!eval_injected) {
+      JSValue exc = JS_GetException(engine->ctx);
+      const char *err = JS_ToCString(engine->ctx, exc);
+      TENUN_LOG_WARN("TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null js_error=%s",
+                     tenun_stage_name(TENUN_INIT_SCRIPT_EVAL), attempt, err ? err : "unknown error");
+      if (err) JS_FreeCString(engine->ctx, err);
+      JS_FreeValue(engine->ctx, exc);
+    }
     JS_FreeValue(engine->ctx, eval_res);
 
     JS_FreeContext(engine->ctx);
@@ -472,3 +490,19 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
     tenun_android_engine_destroy(engine);
   }
 }
+
+#ifdef TENUN_TEST_INJECTION
+/* Test-only init-failure injection hook. Compiled ONLY when Gradle passes
+ * -Ptenun.testInjection=true (device acceptance fail-visible stage); the
+ * symbol does not exist in production or standard debug builds.
+ * The Kotlin external fun lives in TenunEngine's companion object, so JNI
+ * requires the mangled name ($Companion -> _00024Companion); the plain
+ * TenunEngine_ name is never resolved for it. */
+JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_00024Companion_nativeSetTestInitInjection(
+    JNIEnv *env, jclass clazz, jint stage_code) {
+  (void)env;
+  (void)clazz;
+  tenun_test_inject_init_failure = (tenun_init_stage)stage_code;
+  TENUN_LOG_WARN("TENUN_TEST_INJECTION set stage=%d", (int)stage_code);
+}
+#endif

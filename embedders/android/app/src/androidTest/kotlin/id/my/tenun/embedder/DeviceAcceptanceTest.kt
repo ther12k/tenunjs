@@ -49,53 +49,6 @@ class DeviceAcceptanceTest : DeviceAcceptanceBase() {
         screencap("tenun_initial.png")
     }
 
-    /**
-     * Types [text] into one field through the IME with a bounded retry
-     * cycle. Delivery can stall when the IME session is mid-rebind after a
-     * field switch (observed once: both soft-key taps and key-event
-     * injection landed nothing for 20s while focus and the IME state looked
-     * ready); a retry re-taps, forces a clean IME restart, clears any
-     * partial text through the production delete path, and re-enters. The
-     * final text equality is strictly enforced regardless of attempts.
-     */
-    private fun typeIntoFieldViaIme(
-        scenario: ActivityScenario<MainActivity>,
-        field: String,
-        text: String,
-        rectSelector: (TenunSurfaceView) -> RectF,
-    ): ImeMode {
-        var mode = ImeMode.KEY_EVENT_INJECTION
-        for (attempt in 1..3) {
-            if (attempt > 1) {
-                // Force a fresh IME session and remove partial text.
-                dismissImeIfShown()
-                tapRect(scenario, rectSelector)
-                awaitViewFocus(scenario)
-                clearActiveFieldViaInputConnection(scenario)
-            }
-            tapRect(scenario, rectSelector)
-            awaitViewFocus(scenario)
-            awaitImeActive()
-            mode = enterTextViaIme(scenario, field, text)
-            if (pollSurfaceState(scenario, 8_000) {
-                    (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField)
-                        .displayText == text
-                }
-            ) {
-                println("INPUT-METHOD-ATTEMPTS[$field]: attempt $attempt succeeded ($mode)")
-                return mode
-            }
-        }
-        awaitSurfaceState(
-            scenario, 20_000,
-            "'$text' committed through the IME session in field '$field' (3 attempts)"
-        ) {
-            (if (it.getActiveFieldState() === it.titleField) it.titleField else it.detailsField)
-                .displayText == text
-        }
-        return mode
-    }
-
     @Test
     fun imeSessionTwoEntryLoop() {
         val scenario = launchApp()

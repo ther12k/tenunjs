@@ -36,6 +36,34 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
     }
 
     companion object {
+        /** tenun_init_stage codes (must match tenun_android_bridge.h). */
+        const val INIT_OK = 0
+        const val INIT_ENGINE_ALLOC = 2
+        const val INIT_SCRIPT_EVAL = 6
+
+        /**
+         * TEST-ONLY init-failure injection. Exists exclusively in builds
+         * compiled with `-Ptenun.testInjection=true` (device acceptance
+         * fail-visible stage); calling it in any other build throws —
+         * the hook symbol is deliberately absent there.
+         */
+        @JvmStatic
+        fun setTestInitInjection(stage: Int) {
+            try {
+                nativeSetTestInitInjection(stage)
+            } catch (e: UnsatisfiedLinkError) {
+                // Keep the underlying link error visible: a wrong build
+                // flavor and a symbol-name mismatch must not read the same.
+                throw IllegalStateException(
+                    "test injection hook unavailable (requires a build with " +
+                        "-Ptenun.testInjection=true): ${e.message}",
+                    e,
+                )
+            }
+        }
+
+        private external fun nativeSetTestInitInjection(stage: Int)
+
         init {
             try {
                 System.loadLibrary("tenun_android")
