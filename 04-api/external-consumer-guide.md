@@ -56,10 +56,26 @@ The application has its own `package.json`, `bun.lock`, and
 
 ```sh
 cd /path/to/app
-bun install          # 11 packages, all local; zero registry entries for @tenunjs/*
+bun install
 ```
 
+Dependency-set precision — what is local and what is not:
+
+- **No registry-hosted TenunJS packages are needed.** The lockfile
+  records all five `@tenunjs/*` packages as `file:vendor/…` tarball
+  resolutions (that positive lockfile evidence is what the rehearsal
+  script asserts).
+- **The setup is not offline.** `typescript` and `@types/bun` (the
+  toolchain) install from the npm registry, and bun's global package
+  cache means two fresh application directories are not two empty-cache
+  installation environments. The local-only claim covers the TenunJS
+  package set, not the toolchain or cache state.
+
 ### 3. Author and compile
+
+The fixture is a task-list-shaped authoring and compilation exercise,
+deliberately input-less — it is not a functional task-entry application
+(the public text-input widget is TN-079).
 
 ```sh
 bun run typecheck      # tsc --noEmit, BOTH jsx: react-jsx and react-jsxdev
@@ -68,17 +84,28 @@ bun run build:app:dev  # bun build …                     → jsxDEV from ./jsx
 bun run check:runtimes # asserts jsx, jsxs, Fragment, jsxDEV are real functions
 ```
 
+Type-checking and bundling are separate layers on purpose: bun's
+bundler documentation states plainly that bundling does not replace
+`tsc` type checking, so the rehearsal runs both.
+
 Verified properties (this is packaging coverage for TN-020's dual
 automatic-JSX entry points):
 
 - TypeScript resolves the TS-source packages from `node_modules` under
   `moduleResolution: "bundler"` — including both subpath exports.
-- bun's automatic JSX transform picks the **production** subpath when
-  `NODE_ENV=production` (zero `jsxDEV` references in the output) and the
-  **development** subpath otherwise (only `jsxDEV` references). Both
-  subpaths resolve from the packed tarballs.
-- The production bundle is deterministic: two independent
-  pack → install → build runs produced byte-identical `main.js`.
+- **Behavior of the pinned bun 1.4.0 toolchain** (recorded so future
+  callers need not rediscover it): the automatic JSX transform picks
+  the **production** subpath when `NODE_ENV=production` (zero `jsxDEV`
+  references in the output) and the **development** subpath otherwise
+  (only `jsxDEV` references). That is why `build:app` sets the variable
+  explicitly and the rehearsal script asserts the resulting output
+  rather than trusting ambient environment.
+- The production bundle is repeatable within the tested inputs: two
+  independent pack → install → build runs with the pinned toolchain
+  (bun 1.4.0, TypeScript 7.0.2, `react-jsx`, `NODE_ENV=production`)
+  produced byte-identical `main.js`. This is repeatability across
+  runs — not a claim across Bun versions, operating systems, or build
+  configurations.
 
 Application-only iteration was exercised: a label change ("Clear done" →
 "Clear completed"), a layout change (root `Column gap` `md` → `lg`), and
@@ -89,21 +116,26 @@ inside `src/`, framework untouched, every check still green.
 
 These are **not** defects fixed by this guide; each is an unfinished
 subsystem with a designated owner. Do not work around them by importing
-example files — that defeats the boundary this rehearsal tests.
+example files — that defeats the boundary this rehearsal tests. Do not
+duplicate the example renderer inside a consumer fixture either: that
+would make a rehearsal pass while preserving the underlying product gap.
 
-| Boundary | Evidence | Owner |
+| Missing capability (today) | Evidence | Owner |
 |---|---|---|
-| No text-input widget in the public widget layer — the rehearsal app (like the monorepo's own `examples/todo-list`) is input-less by design | `packages/widgets/src/index.ts` exports no input widget; `examples/todo-list/src/screens/tasks.screen.tsx` records the same constraint | TN-079 (text-field/form widgets) |
-| Browser preview cannot load an external application | `examples/gallery-preview/index.html:41` loads a fixed `./preview.js` shell; `examples/gallery-preview/runtime.ts` hard-wires the 16 gallery screens; there is no generic "load this app bundle" entry | TN-042 (renderer-neutral display list) / TN-023 |
-| The Android device bundle path is gallery-specific | `embedders/android/tools/gallery-bundle/bundle-lib.ts:16` compiles a hard-coded device entry; `device-entry.ts:2` imports the example-private `GalleryRuntime`; the widget-tree → display-list lowering lives in `examples/ui-kit/src/display-list.ts`, not a package | TN-023 (runtime-compatible bundle compiler, status: ready/not implemented) |
-| `runApp` does not yet bind a host | `packages/core/src/index.ts` — `runApp` returns an instance handle only; scene commit and dispatch are provided by the example runtimes | TN-023 / TN-024 |
+| Resolve and package an **arbitrary external application entry** into a host-consumable artifact | `bundle-lib.ts:16` compiles a hard-coded gallery entry; `device-entry.ts:2` imports the example-private `GalleryRuntime` | TN-023 (runtime-compatible bundle/bytecode compiler, status: ready/not implemented) |
+| Supply an external application to the **browser preview** (today a fixed shell with hard-wired screens) | `examples/gallery-preview/index.html:41` loads a fixed `./preview.js`; `runtime.ts` hard-wires the 16 gallery screens; no generic "load this app bundle" entry | TN-042 (renderer-neutral display list); its integration relationship to TN-023 should be made explicit when either is scheduled |
+| Make the **runtime/lowering functionality available outside `examples/`** as a public contract (widget tree → display list lives in `examples/ui-kit/src/display-list.ts`; `runApp` binds no host, `packages/core/src/index.ts`) | the example runtimes are the only scene-commit/dispatch providers | no owner recorded yet — needs an authoritative public-package contract; example-private APIs must not silently become permanent |
+| Public **text-input widget** | `packages/widgets/src/index.ts` exports no input widget; the rehearsal app is input-less like the monorepo's own todo-list example | TN-079 (text-field/form widgets) |
 
 Consequence: an external app can currently be **installed, authored,
 type-checked, and compiled** entirely from package artifacts, but it
 cannot yet be previewed in a browser or packaged for the Android
-prototype without importing monorepo example code. Closing that gap
-means finishing the owned subsystems above (most directly TN-023), not
-extending this guide.
+prototype without importing monorepo example code. TN-023 **coordinates
+the missing route** — it owns resolving and packaging an external entry —
+but it does not absorb the preview, widget, or runtime-publicization
+responsibilities, which stay with TN-042, TN-079, and a yet-unrecorded
+public-contract decision respectively. Closing the gap means finishing
+those owned pieces, not extending this guide or the fixture.
 
 ## Reproducing the rehearsal
 

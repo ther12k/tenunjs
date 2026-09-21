@@ -43,10 +43,16 @@ fi
 echo "== consumer rehearsal: install from tarballs =="
 cd "$WORK/app"
 bun install
-if grep -q "registry.npmjs.org/@tenunjs" bun.lock; then
-  echo "CONSUMER-REHEARSAL-FAILURE: @tenunjs resolved from a registry"
-  exit 1
-fi
+# Positive lockfile evidence: every @tenunjs package must resolve to a
+# vendored tarball (bun.lock records file: paths for tarball installs;
+# it carries no registry URLs at all, so absence-of-URL greps prove
+# nothing).
+for pkg in core jsx-runtime navigation protocol widgets; do
+  if ! grep -q "\"@tenunjs/$pkg\": \"file:vendor/tenunjs-$pkg-[0-9.]*\.tgz\"" bun.lock; then
+    echo "CONSUMER-REHEARSAL-FAILURE: @tenunjs/$pkg is not resolved from a vendored tarball in bun.lock"
+    exit 1
+  fi
+done
 
 echo "== consumer rehearsal: typecheck (react-jsx + react-jsxdev) =="
 bun run typecheck
