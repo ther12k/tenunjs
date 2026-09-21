@@ -12,6 +12,7 @@ These examples are design targets, not a promise that names will never change be
 
 - [Application entry](application-entry.md)
 - [Complete example app](counter-app-example.md)
+- [External consumer guide](external-consumer-guide.md)
 - [Single-file screen](single-file-screen.md)
 - [Split controller and view](split-controller-view.md)
 - [Widgets and styling](widgets-and-styling.md)

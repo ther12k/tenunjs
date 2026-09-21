@@ -1,0 +1,32 @@
+{
+  "name": "tenun-consumer-rehearsal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "External-consumer rehearsal app: authored, installed, and compiled entirely outside the TenunJS monorepo",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.dev.json",
+    "build:app": "NODE_ENV=production bun build src/main.tsx --target browser --outdir .out/prod --tsconfig-override tsconfig.json",
+    "build:app:dev": "bun build src/main.tsx --target browser --outdir .out/dev --tsconfig-override tsconfig.dev.json",
+    "check:runtimes": "bun run scripts/check-jsx-runtimes.ts"
+  },
+  "dependencies": {
+    "@tenunjs/core": "file:vendor/tenunjs-core-0.1.0.tgz",
+    "@tenunjs/jsx-runtime": "file:vendor/tenunjs-jsx-runtime-0.1.0.tgz",
+    "@tenunjs/navigation": "file:vendor/tenunjs-navigation-0.1.0.tgz",
+    "@tenunjs/protocol": "file:vendor/tenunjs-protocol-0.1.0.tgz",
+    "@tenunjs/widgets": "file:vendor/tenunjs-widgets-0.1.0.tgz"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.1",
+    "typescript": "7.0.2"
+  },
+  "resolutions": {
+    "@tenunjs/core": "file:vendor/tenunjs-core-0.1.0.tgz",
+    "@tenunjs/jsx-runtime": "file:vendor/tenunjs-jsx-runtime-0.1.0.tgz",
+    "@tenunjs/navigation": "file:vendor/tenunjs-navigation-0.1.0.tgz",
+    "@tenunjs/protocol": "file:vendor/tenunjs-protocol-0.1.0.tgz",
+    "@tenunjs/widgets": "file:vendor/tenunjs-widgets-0.1.0.tgz"
+  }
+}
