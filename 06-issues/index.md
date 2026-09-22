@@ -202,3 +202,4 @@ Validate the framework in a real application and freeze a credible beta surface.
 | --- | --- | --- | --- |
 | [TN-131](tn-131-native-integration-risk-probe.md) | P0 | TN-006, TN-007, TN-008 | Execute native-integration risk probes before engine selection |
 | [TN-132](tn-132-installed-android-run-acceptance.md) | P0 | TN-131 | Run the packaged Android application on an installed emulator or device |
+| [TN-133](tn-133-own-public-application-execution-and-scene-lowering-contract.md) | P0 | TN-020, TN-022 | Own the public application execution and scene-lowering contract |
