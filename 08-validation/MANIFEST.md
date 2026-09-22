@@ -114,7 +114,7 @@ status: accepted
 | 06-issues/tn-010-freeze-the-javascript-runtime-host-adapter.md | ad49eecdb4b2735526717177bf6001434de74bca24ab1a52955850a988414902 |
 | 06-issues/tn-011-implement-quickjs-ng-runtime-spike.md | b90569d49ead60a7b3c2e118deeffe229c312b63d8a7239f381666457ad79ffc |
 | 06-issues/tn-012-implement-hermes-runtime-spike.md | 01835b99d21071e1dd4fd85abaeeae677debafe69ac11bf1e81802328347853b |
-| 06-issues/tn-013-select-the-initial-embedded-javascript-runtime.md | 257026d9a0daeaeb80c6dd7a6610e7e292d5ac533f3352b6cf508eb9bfdc2123 |
+| 06-issues/tn-013-select-the-initial-embedded-javascript-runtime.md | 825781a9d88d61854d1171be6f30d56b297165c7c2ae1f5809aa791e79cc54f1 |
 | 06-issues/tn-014-freeze-the-layout-backend-adapter-and-conformance-corpus.md | 4a3dd6d9b63482d33444d16ef5f16f01272cc266a10429868ad474a4a05f42b8 |
 | 06-issues/tn-015-implement-yoga-layout-spike.md | c90eb65d32ee330014b1d2452a5fe76ff148875c2814784911e81698bc8c6a85 |
 | 06-issues/tn-016-implement-taffy-layout-spike.md | 1ec220fe121604b2598b5361f986751542feaad5a54ac6eade29afd5a36310a4 |
