@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
   "label": "yoga-spike-v3",
-  "timestamp_utc": "2026-09-22T16:02:41.953Z",
+  "timestamp_utc": "2026-09-22T16:03:03.881Z",
   "build_profile": "release",
-  "inputs_digest": "56716dcb9402629c6e2e134e572e7d191bd25987da003120699a03cbf0c3143d",
+  "inputs_digest": "188a69be4745a362815f104c93180a6cf89b2ee3a20115234a9d52260d08bf8c",
   "source": {
-    "commit": "58bf5c5a8bf3b62093ab89891f02f16296a3006f",
+    "commit": "5cf003e4eb6af4b43fc0765578f76a1ebd3f5338",
     "dirty": false,
     "changed_files": 0
   },
@@ -35,9 +35,9 @@
       "name": "build-lib",
       "command": "(cd spikes/layout/yoga-candidate && BINDGEN_EXTRA_CLANG_ARGS=\"-I$(gcc -print-file-name=include)\" cargo build --release)",
       "exit_code": 0,
-      "duration_ms": 70,
+      "duration_ms": 46,
       "stdout_tail": "",
-      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.04s\n",
+      "stderr_tail": "    Finished `release` profile [optimized] target(s) in 0.03s\n",
       "timed_out": false
     },
     {
