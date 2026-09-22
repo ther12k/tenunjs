@@ -234,7 +234,7 @@ status: accepted
 | 06-issues/tn-130-close-beta-gate-and-publish-evidence-index.md | b9833d7686966eaa31ac813237f590abb682451c283bf88799cba750c7d14ffd |
 | 06-issues/tn-131-native-integration-risk-probe.md | 0da8247d7bc6877c9993ec466ad490edf2502c3abab58b223e748c057fce6963 |
 | 06-issues/tn-132-installed-android-run-acceptance.md | b34e2da36903edbc34271559e1883c48c35ec60e34b6c5bf70e6f8752b22a76e |
-| 06-issues/tn-133-own-public-application-execution-and-scene-lowering-contract.md | a7d8a5550d96fb93b1cc8a80d6fa60affe80ecaef2344330c4f3b76b7777d72c |
+| 06-issues/tn-133-own-public-application-execution-and-scene-lowering-contract.md | f7501e8ddd81fe96222a00a7522041a963e99194c28cb20b3fd8464948339b33 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
