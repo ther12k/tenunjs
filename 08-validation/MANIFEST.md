@@ -124,7 +124,7 @@ status: accepted
 | 06-issues/tn-020-implement-custom-jsx-jsxs-fragment-runtime.md | 5f06c8975e07f45607900df9edbd47a9e2846a7d31bbbda50d038df9fee6fa48 |
 | 06-issues/tn-021-implement-project-configuration-schema-and-loader.md | fc401fe06d0400da3caa6ccfc3e6c1c07c772ac4c844c966b4f6dc8d9e734548 |
 | 06-issues/tn-022-implement-module-graph-and-asset-manifest-builder.md | 5bdb698b638a1ee249e1187330f86a4af2ee9c14f3a4ce89a83894e0cd5cd31e |
-| 06-issues/tn-023-implement-runtime-compatible-bundle-or-bytecode-compiler.md | 201613c6f7539f7e9117d4b4b2d6bd1d1a114e48bbe3500e57801ecd46651b1f |
+| 06-issues/tn-023-implement-runtime-compatible-bundle-or-bytecode-compiler.md | e510ffadf144bfd85aa662475bdfff5e9fdce75d48005c7a74e21e3c8846a7cc |
 | 06-issues/tn-024-implement-native-runtime-host-lifecycle.md | f72a2bbf05ce28b93ab4b80157d3b8d540db2a14a8a25986de9ff90aa8b364a3 |
 | 06-issues/tn-025-implement-bounded-host-value-and-callback-abi.md | 85ed98094962be788e06c58215f52e3ab283c6cf11cc85817d6c8438a422154a |
 | 06-issues/tn-026-implement-ios-application-embedder-shell.md | bf974f962784cfe85b3f92820c53b3a3b57bc77f6d4475f33abeab09c8afe5e2 |

@@ -39,6 +39,37 @@ This task isolates one reviewable contract or vertical slice. It should leave th
 
 Do not start implementation against guessed dependency APIs. When a dependency is incomplete or its accepted behavior conflicts with this issue, stop the patch at the boundary and record the conflict as a blocker or ADR proposal.
 
+### Prerequisite reconciliation (2026-09-21, post #205)
+
+Recorded so TN-023 starts from verified ground instead of re-derived
+assumptions. A status-model note first: the `status:` frontmatter across
+`06-issues/*.md` is a **planning-readiness vocabulary** (95 `ready`,
+4 `blocked`, zero `closed` values tree-wide); lifecycle authority is the
+GitHub issue state plus each issue's in-file closure record. "Ready" in
+frontmatter never means "not implemented."
+
+| Prerequisite | Implementation and tests today | Acceptance / decision evidence | Authoritative status | Genuine remaining prerequisite for TN-023 |
+|---|---|---|---|---|
+| TN-020 (JSX runtime) | `packages/jsx-runtime` with both automatic-JSX subpaths (`./jsx-runtime`: jsx/jsxs/Fragment; `./jsx-dev-runtime`: jsxDEV); consumer-rehearsal coverage in `verify-consumer.sh` (PR #205) compiles real TSX through both transforms from packed tarballs | Closure record 2026-09-12 (PRs #186 + #188, main at 2956b79): 95 automated tests incl. red fixtures; satisfaction record merged as #189 (`732d919`) | Issue #20 CLOSED | None. Text/IME matrix and device metadata are linked-downstream acceptance (TN-077/078, TN-112/115), not TN-023 inputs. |
+| TN-022 (module graph + asset manifest) | `packages/cli/src/module-graph.ts` — `buildApplicationGraph(validatedConfig, projectRoot, {assets, jsxDevelopment})`; 29 tests incl. 15 filesystem fixtures (no-execution discovery, distinct runtime/type edges, implicit JSX edges, recorded cycles, realpath confinement, `complete:false` on computed dynamics) | Closure record 2026-09-12 (PR #193, main at `9bc41bc`) — closed as satisfied by the graph/manifest slice | Issue #22 CLOSED | None from TN-022 itself. Its open-sounding leftovers are recorded as **downstream acceptance this issue produces** (source-map records) or other issues' work (screens → TN-059/060; capabilities → TN-101; config-level asset declaration → TN-021/TN-105). The apparent TN-022↔TN-023 cycle resolves here: source maps are TN-023 output flowing back, not open prerequisite work — no dependency is waived. |
+| TN-013 (select initial embedded runtime) | QuickJS is vendored and running in the experimental Android embedder (JNI bridge, `JS_Eval` device contract) — **provisional implementation, not acceptance** | ADR-0007 (runtime adapter and bake-off) is **accepted** and defines the process; the selection ADR naming the initial runtime does not exist in `03-decisions/` | Issue #13 **OPEN** | The issue's own required outcome: an **accepted runtime selection ADR + compatibility envelope** ("without leaking runtime-specific APIs"). TN-023 compiles *for* the selected runtime — the ADR is the genuine gate. Prototype engine use does not ratify it; an accepted decision may simply need linking if it exists outside this tree. |
+
+**Second gap, not a declared dependency but a hard one:** TN-023's
+output must be consumed through a **public application/runtime
+contract**. Today the widget-tree → display-list lowering and the
+scene-commit/dispatch runtime live in `examples/`
+(`examples/ui-kit/src/display-list.ts`, `examples/gallery-preview/runtime.ts`)
+and the device entry imports them (`device-entry.ts:2`); `runApp`
+returns an instance handle with no host binding. Which example behavior
+becomes supported, what stays provisional, and where the contract lives
+is an **unowned decision** — it must be assigned before TN-023's
+interface can be finalized. Neither this record nor PR #205 exposes
+example-private APIs as public.
+
+**Entry point for implementation (when authorized):** TN-013's ADR
+decision + the public runtime/lowering contract owner. TN-020 and
+TN-022 contribute settled contracts, not blockers.
+
 ## Required reading
 
 - [product-definition.md](../00-project/product-definition.md)
