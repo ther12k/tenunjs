@@ -40,9 +40,13 @@ weakened for this candidate.
 
 ```sh
 ./acquire_hermes.sh          # clone+build pinned Hermes into .hermes/ (recorded config)
-cmake -B build -DHERMES_BUILD_DIR=.hermes/hermes-build && make -C build abi_smoke -j
-LD_LIBRARY_PATH=.hermes/hermes-build/API/hermes:.hermes/hermes-build/jsi ./build/abi_smoke
+cmake -B target/cmake -DHERMES_BUILD_DIR=.hermes/hermes-build && make -C target/cmake abi_smoke -j
+LD_LIBRARY_PATH=.hermes/hermes-build/API/hermes:.hermes/hermes-build/jsi ./target/cmake/abi_smoke
 ```
 
 Selection-neutral per ADR-0022: this slice selects nothing and satisfies
 no TN-013 acceptance criterion; physical-device rows stay blocked.
+
+(The cmake tree lives under `target/` — the evidence drift-check walks the
+spikes tree skipping only `target/` and `evidence/`, matching the cargo
+convention the QuickJS candidate uses.)
