@@ -138,6 +138,29 @@ contract violation, fixed with regression coverage — engine-neutral.
   assembled now is assembled; the only remaining input when hardware
   arrives is device evidence for both candidates.
 
+### Authority decision (2026-09-22)
+
+**A + C approved; B not authorized now** (no new strategic
+justification has been presented for changing the accepted invariant;
+the exception remains available if one is). Controls recorded for C's
+execution: stay faithful to ADR-0007's prescribed candidates, workload,
+measurements, and acceptance definitions — no new benchmark framework,
+no invented thresholds; pin each measured implementation (engine
+revision, embedding path, build configuration, workload) with the two
+QuickJS bodies kept separately identified; measure comparable things
+under the same defined conditions or label results separately — never a
+misleading ranking; host/emulator captures may not be entered as
+physical-device acceptance (device-dependent rows stay unexercised or
+blocked); reuse existing evidence that genuinely meets a criterion (no
+rerun of the accepted QuickJS conformance history); the deliverable is
+executed comparative evidence plus an explicit remaining-gap list —
+**not a selected winner**; hardware availability permits the prescribed
+bake-offs to run and ratifies nothing by codebase size. The corrected
+NUL-termination defect keeps its established attribution to the
+embedder's input-buffer contract. This decision satisfies no TN-013
+acceptance criterion by itself; TN-023 remains blocked on the accepted
+selection.
+
 ### Compatibility envelope (draft skeleton — filled by whichever option is accepted)
 
 Whichever candidate is selected, the envelope must distinguish: tested
