@@ -102,7 +102,11 @@ that answers, for an independently authored application:
 
 ## Ownership
 
-Accountable maintainer: **the project owner** (to be confirmed on this
-issue's acceptance — this file is created by the executor following the
-TN-131/132 late-issue pattern; number and assignment take effect on
-merge).
+Accountable maintainer: **@ther12k** (the project owner per
+`CODEOWNERS`; confirmed by the acceptance authority on 2026-09-22).
+Accountability covers the public contract, its package/dependency
+boundaries, and acceptance of the external-consumer route; it does not
+replace the separate authority or process for runtime selection
+(TN-013/ADR-0007). The implementation contributor may be someone else.
+This file follows the TN-131/132 late-issue pattern; number and
+assignment take effect on merge.
