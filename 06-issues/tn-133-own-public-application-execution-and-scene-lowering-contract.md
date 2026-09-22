@@ -61,6 +61,34 @@ that answers, for an independently authored application:
    `device-entry.ts` (host-handoff adapter), `packages/core` `runApp`
    (entry shape today: instance handle, no host binding). Classify each
    behavior: becomes supported / stays example-specific / provisional.
+
+### Classification (2026-09-22, step-1 draft — for maintainer acceptance)
+
+**Supported** = deliberately adopted with an owned public interface and
+contract tests. **Example-specific** = demo choices that must not become
+framework requirements. **Provisional** = existing behavior reusable
+experimentally, not yet a stable public commitment.
+
+| Behavior (source) | Boundary | Classification | Note |
+|---|---|---|---|
+| `defineScreen` / `defineController` / `defineAction` (`packages/core`) | Entry, Execution | **Supported** (already public, contract-tested) | consumed unchanged by the external fixture (#205) |
+| `defineRoutes` / `NavigationHost` (`packages/navigation`) | Execution | **Supported** (already public) | route state source of truth |
+| `runApp(options) → RunningAppInstance` (`packages/core/src/index.ts:171`) | Entry | **Supported shape, incomplete** | must grow the bindable application handle a host resolves — extension, not replacement |
+| Screen-session loop: initialState/load/view/dispatch per active screen (`GalleryRuntime`, `runtime.ts`) | Execution | **Provisional → candidate for supported** | generic over screens; needs extraction from the class and contract tests |
+| Route/param state + per-screen state records + `STATE_SCHEMA`-versioned snapshot export/restore (`runtime.ts:54–62`) | Execution, Host handoff | **Provisional → candidate for supported** | versioned snapshot semantics worth keeping; contract tests required |
+| Display-list scene model: 7 ops + serialized taps + version + fail-closed `SceneContractException`, atomic commit (`display-list.ts:46–148`) | Lowering, Host handoff | **Candidate for supported as-is** | the already-proven host contract (Android JNI host + browser renderer both consume it); the version field is load-bearing |
+| `layoutScreen` lowering: measure/place of the structural tier + text + taps (`display-list.ts`) | Lowering | **Candidate for supported as-is** | working lowering over public widget nodes — extract/reuse, do not rewrite |
+| ui-kit theme/style constants used by the lowering | Lowering | **Example-specific (split needed)** | neutral lowering must not hard-code gallery theming; theme input stays application-owned |
+| Host-handoff adapter: `tenun_commit`, `__tenun_dispatch_action`, `__TENUN_EXPORT`/`__TENUN_STATE_SCHEMA`, commit-after-TAP (`device-entry.ts`) | Host handoff | **Candidate for supported as-is** | literally the contract the Android bridge consumes; currently gallery-named and example-placed |
+| The 16-screen gallery registry + `galleryTheme` (`runtime.ts:6–52`) | Execution | **Example-specific** | stays in examples |
+| Gallery/bundle build entry hard-coding (`bundle-lib.ts:16`, `device-entry.ts:2`) | Entry | **Example-specific** | exactly what TN-133 replaces with arbitrary-entry resolution |
+
+Dependency notes: the browser checkpoint can proceed under existing
+tooling (bun build + the scene contract) once the supported set above is
+owned and placed; the Android leg additionally waits on TN-013's
+selection. Nothing here implements TN-023's compiler interface — an
+arbitrary-entry build route remains TN-023's to own; TN-133 defines the
+contract that route targets.
 2. Decide the contract's shape and home (extend `@tenunjs/core`, a new
    public package, or a subpath) with its dependency edges; record as an
    ADR if it changes package boundaries (TN-123 coordinates policy).
