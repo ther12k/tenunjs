@@ -1,0 +1,103 @@
+{
+  "tenun": "display-list",
+  "version": 1,
+  "designWidth": 720,
+  "contentHeight": 326,
+  "background": "#101014",
+  "ops": [
+    {
+      "op": "rect",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 326,
+      "r": 0,
+      "color": "#101014"
+    },
+    {
+      "op": "rect",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 96,
+      "r": 0,
+      "color": "#101014"
+    },
+    {
+      "op": "text",
+      "x": 40,
+      "y": 62,
+      "text": "Golden",
+      "size": 32,
+      "weight": 700,
+      "color": "#F2F2F7"
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 94,
+      "x2": 720,
+      "y2": 94,
+      "color": "#26262F",
+      "width": 2
+    },
+    {
+      "op": "text",
+      "x": 24,
+      "y": 143.4,
+      "text": "Structural fixture",
+      "size": 22,
+      "weight": 600,
+      "color": "#F2F2F7"
+    },
+    {
+      "op": "rect",
+      "x": 24,
+      "y": 166,
+      "w": 105.12,
+      "h": 64,
+      "r": 32,
+      "color": "#7C4DFF",
+      "shadow": 10
+    },
+    {
+      "op": "text",
+      "x": 48,
+      "y": 204.12,
+      "text": "Tap me",
+      "size": 17,
+      "weight": 600,
+      "color": "#FFFFFF"
+    },
+    {
+      "op": "rect",
+      "x": 24,
+      "y": 246,
+      "w": 117.68,
+      "h": 56,
+      "r": 14,
+      "color": "#1C1C24"
+    },
+    {
+      "op": "text",
+      "x": 40,
+      "y": 280.72,
+      "text": "card body",
+      "size": 17,
+      "weight": 400,
+      "color": "#F2F2F7"
+    }
+  ],
+  "taps": [
+    {
+      "x": 24,
+      "y": 166,
+      "w": 105.12,
+      "h": 64,
+      "action": "tap",
+      "payload": {
+        "id": 0
+      }
+    }
+  ]
+}

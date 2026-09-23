@@ -72,4 +72,19 @@ fi
 echo "== consumer rehearsal: JSX runtime subpath check =="
 bun run check:runtimes
 
+echo "== consumer rehearsal: scene production through the public lowering (TN-133) =="
+# The external fixture must produce a host-consumable scene using only
+# the public @tenunjs/widgets API — no examples/ imports (independence
+# guard above already enforces that for this script's imports too).
+SCENE_OUT="$(bun run scripts/produce-scene.ts)"
+echo "$SCENE_OUT" | grep -q "CONSUMER-SCENE-OK" || {
+  echo "CONSUMER-REHEARSAL-FAILURE: scene production failed"; echo "$SCENE_OUT"; exit 1; }
+SCENE_SHA="$(echo "$SCENE_OUT" | grep -o 'scene-sha256=[0-9a-f]*' | cut -d= -f2)"
+EXPECTED_SHA="$(cat scripts/expected-scene.sha256)"
+if [ "$SCENE_SHA" != "$EXPECTED_SHA" ]; then
+  echo "CONSUMER-REHEARSAL-FAILURE: scene digest mismatch (got $SCENE_SHA, expected $EXPECTED_SHA)"
+  exit 1
+fi
+echo "consumer scene digest matches the committed fixture: $SCENE_SHA"
+
 echo "CONSUMER REHEARSAL PASS (install, author, both JSX transforms, runtime subpaths, independence guard)"

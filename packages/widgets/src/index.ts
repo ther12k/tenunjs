@@ -8,6 +8,7 @@ import { HostWidgetKind } from "@tenunjs/protocol";
 import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
 
 export * from "./structural";
+export * from "./display-list";
 
 export interface ThemeColors {
   surface?: string;
