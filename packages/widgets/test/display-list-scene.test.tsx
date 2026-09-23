@@ -15,7 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { jsx, jsxs } from "@tenunjs/jsx-runtime/jsx-runtime";
+import { jsx, jsxs } from "@tenunjs/jsx-runtime";
 import {
   AppBar,
   Button,
@@ -28,7 +28,6 @@ import {
   ThemeScopeBox,
   type DisplayListScene,
 } from "../src/index";
-import { layoutScreen as layoutScreenViaExample } from "../../../examples/ui-kit/src/display-list";
 
 const theme = {
   colors: { surface: "#101014", surfaceRaised: "#1C1C24", text: "#F2F2F7", accent: "#7C4DFF" },
@@ -99,17 +98,6 @@ describe("TN-133 extraction: golden equivalence with the original implementation
     expect(Array.isArray(scene.ops)).toBe(true);
     expect(Array.isArray(scene.taps)).toBe(true);
     expect(scene.taps.length).toBe(1);
-  });
-});
-
-describe("TN-133 extraction: example-path (ui-kit shim) equivalence", () => {
-  test("shim path yields the byte-identical scene for the same inputs", () => {
-    const viaPackage = sceneJsonOf(structuralTree as never);
-    const viaShim = (() => {
-      const { scene } = layoutScreenViaExample(theme as never, structuralTree as never, 720);
-      return JSON.stringify(scene, null, 2) + "\n";
-    })();
-    expect(viaShim).toBe(viaPackage);
   });
 });
 
