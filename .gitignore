@@ -12,3 +12,4 @@ target/
 .zcode/
 .playwright-cli/
 review-artifacts/
+spikes/runtime/hermes-candidate/build/
