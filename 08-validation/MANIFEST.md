@@ -76,7 +76,7 @@ status: accepted
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
-| 04-api/external-consumer-guide.md | c6ebdc11acc3c83f904fdfffb9a3edbf08b4cf18d6d7104090582b59664433ab |
+| 04-api/external-consumer-guide.md | 9f7f59d5e7fd064e8843b40e7e029f025fd947fb4cb9655df69160d28416a5c5 |
 | 04-api/flutter-migration.md | c59b829a1ba7b59ce72969901e21f994e924aa0c297e46fd06df97a081c344f0 |
 | 04-api/index.md | 421cc7b890ea8ef4767f6a0221a5c0dd5365aa5206293863cef7612dca0d1e18 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
@@ -234,7 +234,7 @@ status: accepted
 | 06-issues/tn-130-close-beta-gate-and-publish-evidence-index.md | b9833d7686966eaa31ac813237f590abb682451c283bf88799cba750c7d14ffd |
 | 06-issues/tn-131-native-integration-risk-probe.md | 0da8247d7bc6877c9993ec466ad490edf2502c3abab58b223e748c057fce6963 |
 | 06-issues/tn-132-installed-android-run-acceptance.md | b34e2da36903edbc34271559e1883c48c35ec60e34b6c5bf70e6f8752b22a76e |
-| 06-issues/tn-133-own-public-application-execution-and-scene-lowering-contract.md | a024b7d80c34d07bde217c34a3fb486061113dcc0fb2a0420e7504fb8315d807 |
+| 06-issues/tn-133-own-public-application-execution-and-scene-lowering-contract.md | 9c4316ddfdc2bbd616ed1dd6b352efda5c1bf277a758f94fc26166ae23a98fa2 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

@@ -162,3 +162,25 @@ replace the separate authority or process for runtime selection
 (TN-013/ADR-0007). The implementation contributor may be someone else.
 This file follows the TN-131/132 late-issue pattern; number and
 assignment take effect on merge.
+
+### Slice record — 2026-09-26: slices 1–3 landed; browser acceptance leg executed
+
+- **Slice 1 (PR #211):** scene model + `layoutScreen` lowered into
+  `@tenunjs/widgets`; consumer fixture produces scenes through public API
+  (digest-gated in CI).
+- **Slice 2 (PR #212):** `ApplicationRuntime` + `installHostHandoff`
+  public in `@tenunjs/widgets`; fail-closed contract tests; Android
+  device entry composes the public contract. Device gate caught and PR
+  fixed a QuickJS boot regression (no AbortController at eval time).
+- **Slice 3 (this PR):** the acceptance criterion "consumer fixture runs
+  through the contract in the browser preview with application-only
+  changes observed" is executed: a generic contract host
+  (`examples/gallery-preview/host.html`, no application knowledge)
+  loads the fixture's public-API host bundle and drives it with real
+  input; `verify-consumer.sh` proves the same loop headlessly for stock
+  and application-only variants (label + `toggleAll` behavior). The
+  integrated-shell UX (route rail, hot reload, dev-server routes) stays
+  with TN-042; arbitrary-entry packaging stays with TN-023; ticking the
+  acceptance boxes remains the authority's call on review of this
+  evidence.
+

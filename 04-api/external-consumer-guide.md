@@ -164,6 +164,37 @@ lowering contract it will target is now public package API, and
 `@tenunjs/widgets` declaring `@tenunjs/core` is part of that boundary
 decision (the dependency policy map is updated with it).
 
+## Addendum — 2026-09-26 (later): the preview boundary, contract-level (TN-133 slice 3)
+
+The second boundary row above ("supply an external application to the
+browser preview") is now closed at the **contract** level:
+
+- `examples/gallery-preview/host.html` + `host.ts` is a GENERIC
+  application host — no gallery or screen knowledge. It installs
+  `tenun_commit` before loading, dynamic-imports the bundle named by
+  `?bundle=<same-origin url>`, paints committed display-list scenes with
+  the shared renderer, dispatches tap hits through
+  `__tenun_dispatch_action`, and rejects scene-contract violations
+  fail-visibly. It is the browser twin of the Android JNI bridge: one
+  protocol, three hosts (device, gallery shell, contract host).
+- This fixture builds a host bundle through public API only
+  (`src/host.ts`: `ApplicationRuntime` + `installHostHandoff` over
+  `TasksScreen`; `bun run build:host` → `.out/host-app.js`).
+- `bun run check:host` (run by `verify-consumer.sh`) proves the loop
+  headlessly through the protocol alone — including an
+  application-only variant (label + `toggleAll` behavior changed in
+  `src/`, framework untouched) whose outcome differs observably.
+- Observed in the browser host with real input: stock sequence reaches
+  "2 of 2 done" with both items checked; the application-only variant
+  shows "Clear done" and inverts membership ("1 of 2 done", ✓ moves to
+  the second item). Both through taps on the committed scene only.
+
+Still open, unchanged: packaging an arbitrary entry for the Android
+prototype (TN-023) and integrating the generic host into the main
+preview shell's UX — hot reload, route rail, dev-server routes (TN-042).
+The host page builds with a one-line `bun build` (see its header
+comment); dev-server integration is deliberately not in this slice.
+
 ## Reproducing the rehearsal
 
 `.github/scripts/verify-consumer.sh` (run by the `verify-typescript` CI
