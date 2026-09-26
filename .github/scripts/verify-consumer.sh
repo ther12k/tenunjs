@@ -87,4 +87,47 @@ if [ "$SCENE_SHA" != "$EXPECTED_SHA" ]; then
 fi
 echo "consumer scene digest matches the committed fixture: $SCENE_SHA"
 
-echo "CONSUMER REHEARSAL PASS (install, author, both JSX transforms, runtime subpaths, independence guard)"
+echo "== consumer rehearsal: host-contract execution (TN-133 browser leg) =="
+# The fixture's host bundle must boot and run through the PUBLIC
+# commit/dispatch protocol only — the same contract the Android bridge
+# and the generic browser host consume.
+bun run build:host
+HOST_OUT="$(bun run check:host)" || {
+  echo "CONSUMER-REHEARSAL-FAILURE: headless host-contract check failed"; echo "$HOST_OUT"; exit 1; }
+echo "$HOST_OUT" | grep -q "HOST-CONTRACT-OK" || {
+  echo "CONSUMER-REHEARSAL-FAILURE: host-contract check did not pass"; echo "$HOST_OUT"; exit 1; }
+
+echo "== consumer rehearsal: application-only change through the contract =="
+# TN-133 acceptance shape: change a label AND an action's behavior in
+# APPLICATION code only (framework untouched), rebuild, and observe both
+# changes through the contract.
+python3 - <<'PATCH'
+from pathlib import Path
+screen = Path("src/screens/tasks.screen.tsx")
+source = screen.read_text()
+
+label_old = "Clear completed"
+label_new = "Clear done"
+assert source.count(label_old) == 1, "label occurrence changed"
+source = source.replace(label_old, label_new)
+
+behavior_old = """    toggleAll({ state }: ScreenActionContext<TasksState>) {
+      const anyOpen = state.items.some((item) => !item.done);
+      for (const item of state.items) item.done = anyOpen;
+    },"""
+behavior_new = """    toggleAll({ state }: ScreenActionContext<TasksState>) {
+      for (const item of state.items) item.done = !item.done;
+    },"""
+assert source.count(behavior_old) == 1, "toggleAll body changed"
+source = source.replace(behavior_old, behavior_new)
+
+screen.write_text(source)
+print("application-only patch applied (label + toggleAll invert)")
+PATCH
+bun run build:host
+MOD_OUT="$(bun run check:host -- --modified)" || {
+  echo "CONSUMER-REHEARSAL-FAILURE: modified-variant host-contract check failed"; echo "$MOD_OUT"; exit 1; }
+echo "$MOD_OUT" | grep -q "HOST-CONTRACT-OK (application-only variant)" || {
+  echo "CONSUMER-REHEARSAL-FAILURE: modified variant did not pass"; echo "$MOD_OUT"; exit 1; }
+
+echo "CONSUMER REHEARSAL PASS (install, author, both JSX transforms, runtime subpaths, host-contract execution, application-only change, independence guard)"
