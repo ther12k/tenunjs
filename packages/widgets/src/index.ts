@@ -1,7 +1,11 @@
 /**
  * @tenunjs/widgets
  *
- * Core layout and UI widgets for TenunJS (ADR-0004, TN-068–TN-074).
+ * Core layout and UI widgets for TenunJS (ADR-0004, TN-068–TN-074), and —
+ * per the TN-133 extraction — the public application execution and
+ * scene-lowering contract: the display-list scene model, layoutScreen
+ * lowering, the ApplicationRuntime execution loop, and the host-handoff
+ * commit/dispatch adapter hosts consume.
  */
 
 import { HostWidgetKind } from "@tenunjs/protocol";
@@ -9,6 +13,8 @@ import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
 
 export * from "./structural";
 export * from "./display-list";
+export * from "./app-runtime";
+export * from "./host-handoff";
 
 export interface ThemeColors {
   surface?: string;

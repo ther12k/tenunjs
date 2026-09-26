@@ -1,50 +1,43 @@
-/** Android/QuickJS adapter around the shared browser-independent GalleryRuntime. */
+/**
+ * Android/QuickJS adapter: the gallery application composition behind
+ * the PUBLIC host-handoff contract (TN-133 extraction). Execution,
+ * lowering, snapshots, and the commit/dispatch protocol are the
+ * supported @tenunjs/widgets runtime; this entry contributes only the
+ * application itself (screens, theme, chrome) and the QuickJS global
+ * wiring the native bridge looks for.
+ */
+import { installHostHandoff } from "@tenunjs/widgets";
 import { GalleryRuntime } from "../../../../examples/gallery-preview/runtime";
-const runtime = new GalleryRuntime();
 
-function commit(): void {
-  const host = globalThis as Record<string, unknown>;
-  const json = JSON.stringify(runtime.render().scene);
-  if (typeof host["tenun_commit"] === "function") {
-    (host["tenun_commit"] as (value: string) => void)(json);
-  } else {
-    host["__tenun_last_scene"] = json;
-  }
-}
+const app = new GalleryRuntime();
+const host = globalThis as Record<string, unknown>;
+const handoff = installHostHandoff({
+  app,
+  // Late-bound, matching the legacy adapter: inside QuickJS the native
+  // tenun_commit binding exists at eval time; in the headless smoke run
+  // the harness installs a recorder; otherwise the last scene lands in
+  // a global for dev drivers.
+  commit: (json: string) => {
+    const sink = host["tenun_commit"];
+    if (typeof sink === "function") {
+      (sink as (value: string) => void)(json);
+    } else {
+      host["__tenun_last_scene"] = json;
+    }
+  },
+});
 
-(globalThis as Record<string, unknown>)["__tenun_dispatch_action"] = (
-  action: string,
-  payloadJson: string,
-): string => {
-  let payload: unknown = {};
-  try {
-    payload = JSON.parse(payloadJson || "{}");
-  } catch {
-    payload = {};
-  }
-  // Case-insensitive: the display-list contract puts lowercase "tap" in
-  // scene regions, and the host echoes it back verbatim. The commit after
-  // TAP is what repaints the phone — without it the engine keeps the stale
-  // scene even when the action ran.
-  const normalized = action.toUpperCase();
-  if (normalized === "__TENUN_EXPORT") return JSON.stringify(runtime.exportState());
-  if (normalized === "__TENUN_STATE_SCHEMA") {
-    return JSON.stringify({ stateSchema: runtime.stateSchema() });
-  }
-  runtime.dispatch(normalized, payload);
-  if (normalized === "TENUN_RESTORE" || normalized === "TAP") commit();
-  return JSON.stringify({ route: runtime.route() });
-};
-
-commit();
+(globalThis as Record<string, unknown>)["__tenun_dispatch_action"] = handoff.dispatch;
 
 // Headless tests can drive the same adapter without a native host. This is
 // intentionally a global rather than an export so the QuickJS bundle remains
 // valid script input to JS_Eval(GLOBAL).
 if (typeof (globalThis as Record<string, unknown>)["tenun_commit"] !== "function") {
   (globalThis as Record<string, unknown>)["__tenun_device_test"] = {
-    route: () => runtime.route(),
-    dispatch: (globalThis as Record<string, unknown>)["__tenun_dispatch_action"],
-    lastScene: () => (globalThis as Record<string, unknown>)["__tenun_last_scene"],
+    route: () => app.route(),
+    dispatch: handoff.dispatch,
+    // Legacy-exact: read the global the late-binding sink wrote (the
+    // handoff's internal store stays empty when a sink is supplied).
+    lastScene: () => host["__tenun_last_scene"] as string | null,
   };
 }

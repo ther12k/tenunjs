@@ -10,6 +10,7 @@ This workspace hosts the TypeScript/TSX public application layer and core framew
   │     ├── @tenunjs/core
   │     │     └── @tenunjs/navigation
   │     └── @tenunjs/widgets
+  │           └── @tenunjs/core (TN-133: the app-execution/scene contract)
   └── @tenunjs/cli
 ```
 
@@ -22,7 +23,7 @@ All packages are strictly acyclic and compile under TypeScript `strict: true` wi
 | `@tenunjs/protocol` | Mutation opcode names, host widget kinds, and structured error codes (ADR-0012). Symbolic values only — the numeric ABI binding is owned by TN-034/TN-035. | None |
 | `@tenunjs/jsx-runtime` | Custom `jsx`, `jsxs`, and `Fragment` runtime without React (ADR-0003, TN-020). Automatic-transform subpaths: `./jsx-runtime` (production `jsx`/`jsxs`) and `./jsx-dev-runtime` (`jsxDEV` with source locations). Provisional runtime prop codecs; authoritative registry is TN-034's. | `@tenunjs/protocol` |
 | `@tenunjs/core` | Controller and typed action state model, screen definition, and application lifecycle (ADR-0009, TN-055–TN-057) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime` |
-| `@tenunjs/widgets` | Core layout and UI widgets (`Column`, `Row`, `Text`, `Button`, `Card`, `Scaffold`, `AppBar`) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime` |
+| `@tenunjs/widgets` | Core layout and UI widgets (`Column`, `Row`, `Text`, `Button`, `Card`, `Scaffold`, `AppBar`), plus the TN-133 application execution and scene contract: display-list scene model + `layoutScreen` lowering, `ApplicationRuntime` (screen sessions, host-verb dispatch, `STATE_SCHEMA` snapshots, fail-closed errors), and `installHostHandoff` (the commit/dispatch adapter hosts consume) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime`, `@tenunjs/core` |
 | `@tenunjs/navigation` | Typed route definitions, route builders, and `NavigationHost` (ADR-0010, TN-062, TN-063) | `@tenunjs/protocol`, `@tenunjs/jsx-runtime`, `@tenunjs/core` |
 | `@tenunjs/cli` | Developer CLI entrypoint, command registry, project configuration schema/loader (TN-021), and the module-graph/asset-manifest builder (TN-022: discovery without execution, runtime/type/implicit edge tracking, content-hashed deterministic manifests) | `@tenunjs/protocol` |
 

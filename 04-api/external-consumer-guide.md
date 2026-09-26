@@ -137,6 +137,33 @@ responsibilities, which stay with TN-042, TN-079, and a yet-unrecorded
 public-contract decision respectively. Closing the gap means finishing
 those owned pieces, not extending this guide or the fixture.
 
+## Addendum — 2026-09-26: the runtime-publicization boundary closed (TN-133 slices 1+2)
+
+The third boundary row above ("runtime/lowering functionality available
+outside `examples/`") is now closed at the contract level, in two stacked
+steps against this guide's recorded gaps:
+
+1. **Lowering public** (slice 1, PR #211): the display-list scene model
+   and `layoutScreen` moved verbatim into `@tenunjs/widgets`; this
+   fixture's `produce-scene.ts` already consumes them from tarballs (see
+   above), and the ui-kit module became a compatibility shim.
+2. **Execution + host handoff public** (slice 2, stacked on #211):
+   `@tenunjs/widgets` additionally owns `ApplicationRuntime` — the
+   screen-session loop, host-verb dispatch, and `STATE_SCHEMA`-versioned
+   snapshots, fail-closed on unknown screens/verbs/tap targets/snapshots
+   and after dispose — plus `installHostHandoff`, the commit/dispatch
+   adapter the Android bridge consumes. The Android device entry now
+   composes the public contract; `runApp` in `@tenunjs/core` remains the
+   minimal entry convenience and gains no host binding from this slice.
+
+The consequence above narrows accordingly: an external app still cannot
+be **packaged for the Android prototype or previewed in a browser**
+without example code — those are TN-023 (arbitrary-entry packaging) and
+TN-042 (preview shell integration), unchanged — but the execution and
+lowering contract it will target is now public package API, and
+`@tenunjs/widgets` declaring `@tenunjs/core` is part of that boundary
+decision (the dependency policy map is updated with it).
+
 ## Reproducing the rehearsal
 
 `.github/scripts/verify-consumer.sh` (run by the `verify-typescript` CI

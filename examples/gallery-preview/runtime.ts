@@ -1,5 +1,5 @@
 import type { ScreenDefinition } from "@tenunjs/core";
-import type { WidgetNode } from "@tenunjs/jsx-runtime";
+import { ApplicationRuntime } from "@tenunjs/widgets";
 import { galleryTheme } from "../gallery/src/theme";
 import { HomeScreen } from "../gallery/src/screens/home.screen";
 import { BankingScreen } from "../gallery/src/screens/banking.screen";
@@ -17,11 +17,18 @@ import { OnboardingScreen } from "../gallery/src/screens/onboarding.screen";
 import { PlantsScreen } from "../gallery/src/screens/plants.screen";
 import { ProfileScreen } from "../gallery/src/screens/profile.screen";
 import { ThemeLabScreen } from "../gallery/src/screens/theme-lab.screen";
-import { layoutScreen, type DisplayListScene } from "../ui-kit/src/display-list";
+import type { DisplayListScene } from "../ui-kit/src/display-list";
 
 type AnyScreen = ScreenDefinition<any, any>;
-type Action = (input?: unknown) => void;
 
+/**
+ * Gallery application composition — the EXAMPLE residue after the
+ * TN-133 extraction: which screens exist, the shared theme, the
+ * non-home back affordance, and the forgiving navigate service the
+ * home screen wires through `services.navigate`. Execution, lowering,
+ * snapshots, and host handoff live in the public @tenunjs/widgets
+ * runtime this wrapper composes.
+ */
 const screens: Record<string, AnyScreen> = {
   home: HomeScreen as AnyScreen,
   views: ViewsScreen as AnyScreen,
@@ -41,18 +48,6 @@ const screens: Record<string, AnyScreen> = {
   crypto: CryptoScreen as AnyScreen,
 };
 
-interface Session {
-  readonly name: string;
-  readonly state: any;
-  readonly actions: Record<string, Action>;
-}
-
-/**
- * Bump only with a deliberate migration design: the host carries exported
- * state across a bundle swap only when old and new declare the same value.
- */
-export const STATE_SCHEMA = 1;
-
 export interface GallerySnapshot {
   route: string;
   states: Record<string, unknown>;
@@ -65,99 +60,93 @@ export interface GalleryRender {
 }
 
 /**
- * Shared, deterministic application model for all preview/host adapters.
- * It runs the real gallery screen definitions: initialState(), action
- * handlers, view(), and the shared display-list layout. No browser globals,
- * Android APIs, or Canvas code belong here.
+ * Thin gallery wrapper over the public ApplicationRuntime. Keeps the
+ * shape every existing consumer (browser preview shell, preview app
+ * bundle, Android device bundle) already drives, while the loop itself
+ * is the supported public contract. Adds exactly two example behaviors
+ * on top:
+ *
+ *  - a back bar on every non-home scene (chrome — the runtime renders
+ *    screens, the app decides navigation affordances), and
+ *  - state carry across bundle swaps that is FORGIVING about screens a
+ *    newer bundle removed (hot-reload/Fast-Refresh semantics; the
+ *    public runtime's strict restore would reject them).
  */
 export class GalleryRuntime {
-  private current = "home";
-  private readonly sessions = new Map<string, Session>();
-  private tapRuns: Array<() => void> = [];
+  private readonly app: ApplicationRuntime;
 
   constructor() {
-    this.sessions.set("home", this.mount("home"));
+    this.app = new ApplicationRuntime({
+      screens,
+      initial: "home",
+      theme: galleryTheme,
+      services: {
+        // Home-screen navigation goes through the service, not runtime
+        // magic; unknown routes stay on the current screen (the legacy
+        // loop's behavior, preserved example-side).
+        navigate: (route: string) => {
+          if (route in screens) this.app.navigate(route);
+        },
+      },
+    });
+  }
+
+  /** The public runtime this wrapper composes (host handoff target). */
+  get runtime(): ApplicationRuntime {
+    return this.app;
   }
 
   route(): string {
-    return this.current;
+    return this.app.route();
   }
 
   routes(): string[] {
-    return Object.keys(screens);
+    return this.app.routes();
   }
 
   render(): GalleryRender {
-    const session = this.sessions.get(this.current) ?? this.mount(this.current);
-    this.sessions.set(this.current, session);
-    const tree = screens[session.name]!.view({ state: session.state, actions: session.actions }) as WidgetNode;
-    const { scene, tapRuns } = layoutScreen(galleryTheme, tree);
-    if (this.current !== "home") {
-      scene.taps.unshift({ x: 0, y: 0, w: scene.designWidth, h: 96, action: "tap", payload: { id: tapRuns.length } });
-      tapRuns.push(() => this.navigate("home"));
+    const render = this.app.render();
+    if (this.app.route() !== "home") {
+      render.scene.taps.unshift({
+        x: 0,
+        y: 0,
+        w: render.scene.designWidth,
+        h: 96,
+        action: "tap",
+        payload: { id: render.tapRuns.length },
+      });
+      render.tapRuns.push(() => this.app.navigate("home"));
     }
-    this.tapRuns = tapRuns;
-    return { scene, tapRuns };
+    return render;
   }
 
   navigate(name: string): void {
-    if (!(name in screens)) return;
-    this.current = name;
-    if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
+    // Legacy gallery behavior: unknown routes are ignored (the strict
+    // public runtime would throw — this wrapper keeps the example's
+    // forgiving surface for its existing consumers).
+    if (name in screens) this.app.navigate(name);
   }
 
   dispatch(action: string, payload: unknown = {}): void {
-    // Hosts echo the tap region's action string verbatim ("tap" in the
-    // display-list contract), so dispatch is case-insensitive on purpose.
-    const normalized = action.toUpperCase();
-    if (normalized === "TAP") {
-      const id = typeof payload === "number" ? payload : (payload as { id?: unknown })?.id;
-      if (typeof id === "number") this.tapRuns[id]?.();
-      return;
-    }
-    if (normalized === "__TENUN_EXPORT") return;
-    if (normalized === "TENUN_RESTORE") {
+    // Restore through the gallery's forgiving path: the public runtime
+    // restores strictly when dispatched directly, and state carry across
+    // bundle swaps must tolerate screens a newer bundle removed.
+    if (action.toUpperCase() === "TENUN_RESTORE") {
       this.restore(payload as Partial<GallerySnapshot>);
       return;
     }
+    this.app.dispatch(action, payload);
   }
 
   exportState(): GallerySnapshot {
-    const states: Record<string, unknown> = {};
-    for (const [name, session] of this.sessions) states[name] = session.state;
-    return { route: this.current, states, stateSchema: STATE_SCHEMA };
+    return this.app.exportState();
   }
 
   stateSchema(): number {
-    return STATE_SCHEMA;
+    return this.app.stateSchema();
   }
 
   restore(snapshot: Partial<GallerySnapshot>): void {
-    const states = snapshot.states;
-    if (states && typeof states === "object") {
-      for (const name of Object.keys(states)) {
-        if (name in screens) this.sessions.set(name, this.mount(name, states[name]));
-      }
-    }
-    if (typeof snapshot.route === "string" && snapshot.route in screens) this.current = snapshot.route;
-  }
-
-  private mount(name: string, restoredState?: unknown): Session {
-    const screen = screens[name]!;
-    const controller = "controller" in screen ? screen.controller : screen;
-    const state = restoredState !== undefined ? restoredState : controller.initialState();
-    const actions: Record<string, Action> = {};
-    for (const key of Object.keys(controller.actions)) {
-      actions[key] = (input?: unknown) => {
-        const handler = (controller.actions as Record<string, unknown>)[key] as any;
-        const context = { input, state, services: {}, signal: undefined };
-        if (typeof handler === "function") handler(context);
-        else handler.run(context);
-        if (name === "home" && key === "open" && typeof input === "string" && input in screens) {
-          this.navigate(input);
-        }
-      };
-    }
-    return { name, state, actions };
+    this.app.restore(snapshot, { ignoreUnknownScreens: true });
   }
 }

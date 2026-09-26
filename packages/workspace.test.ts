@@ -35,7 +35,7 @@ const allowedDependencies: Record<string, string[]> = {
   "@tenunjs/protocol": [],
   "@tenunjs/jsx-runtime": ["@tenunjs/protocol"],
   "@tenunjs/core": ["@tenunjs/protocol", "@tenunjs/jsx-runtime"],
-  "@tenunjs/widgets": ["@tenunjs/protocol", "@tenunjs/jsx-runtime"],
+  "@tenunjs/widgets": ["@tenunjs/protocol", "@tenunjs/jsx-runtime", "@tenunjs/core"],
   "@tenunjs/navigation": ["@tenunjs/protocol", "@tenunjs/jsx-runtime", "@tenunjs/core"],
   "@tenunjs/cli": ["@tenunjs/protocol"],
 };
@@ -317,9 +317,9 @@ describe("workspace dependency topology and package boundaries (TN-019)", () => 
 
     // Undeclared internal package import (static import form).
     expect(
-      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/a.ts", 'import { defineScreen } from "@tenunjs/core";')
+      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/a.ts", 'import { defineRoutes } from "@tenunjs/navigation";')
     ).toEqual([
-      '@tenunjs/widgets:widgets/src/a.ts: "@tenunjs/core" is imported but not declared in @tenunjs/widgets/package.json dependencies',
+      '@tenunjs/widgets:widgets/src/a.ts: "@tenunjs/navigation" is imported but not declared in @tenunjs/widgets/package.json dependencies',
     ]);
 
     // Declared in package.json but forbidden by the policy map.
@@ -348,12 +348,12 @@ describe("workspace dependency topology and package boundaries (TN-019)", () => 
     // import type ... from an undeclared internal package (erased at runtime,
     // caught by the token-scanner pass).
     expect(
-      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/types.ts", 'import type { WidgetNode } from "@tenunjs/core";')
+      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/types.ts", 'import type { RouteConfig } from "@tenunjs/navigation";')
     ).toHaveLength(1);
 
     // CommonJS require of an undeclared internal package.
     expect(
-      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/cjs.ts", 'const c = require("@tenunjs/core");')
+      violationsForSource(widgets.name, widgets.dependencies, "widgets/src/cjs.ts", 'const c = require("@tenunjs/navigation");')
     ).toHaveLength(1);
 
     // Relative import escaping the package root (widgets/src/../../ leaves
