@@ -62,6 +62,30 @@ that answers, for an independently authored application:
    (entry shape today: instance handle, no host binding). Classify each
    behavior: becomes supported / stays example-specific / provisional.
 
+> **Status note (2026-09-23, extraction slice executed — steps 1/4 partial):**
+> The scene model + `layoutScreen` lowering moved verbatim from
+> `examples/ui-kit/src/display-list.ts` into **`@tenunjs/widgets`**
+> (proposed home per the classification; owner confirms at review),
+> with the `SchemeRoles` type inlined field-for-field; ui-kit keeps a
+> compatibility re-export shim, and the seed-driven scheme generator
+> stays example-side. Behavior-preserving by evidence: pre-move golden
+> fixtures for three representative trees (structural+taps,
+> theme-scope+wrap, canvas emit) are byte-identical post-move; the full
+> existing suite (301 tests, including every gallery/showcase scene
+> assertion through the shim) is green; invalid-input behavior pinned
+> (unknown host kinds fail closed at construction with the stable
+> TENUNJS error). External-consumer acceptance: the PR #205 fixture
+> produces a host-consumable scene through ONLY the public package API
+> from vendored tarballs (no examples/ imports — guarded), with a digest
+> equal to the pre-move golden; the consumer rehearsal in CI now asserts
+> it. Explicitly OUT of this slice per classification: GalleryRuntime
+> orchestration, snapshot restoration, preview wiring, Android
+> integration, entry resolution/packaging (TN-023), text input (TN-079).
+> One repo-convention defect found and fixed during extraction: a
+> hash-in-backticks character sequence in a moved comment hung the
+> workspace topology scanner (the documented issue-#200 construct);
+> reworded per the convention.
+
 ### Classification (2026-09-22, step-1 draft — for maintainer acceptance)
 
 **Supported** = deliberately adopted with an owned public interface and

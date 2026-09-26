@@ -1,0 +1,17 @@
+{
+  "tenun": "display-list",
+  "version": 1,
+  "designWidth": 720,
+  "contentHeight": 0,
+  "background": "#101014",
+  "ops": [
+    {
+      "op": "circle",
+      "cx": 60,
+      "cy": 60,
+      "r": 40,
+      "color": "#7C4DFF"
+    }
+  ],
+  "taps": []
+}

@@ -1,0 +1,37 @@
+{
+  "tenun": "display-list",
+  "version": 1,
+  "designWidth": 720,
+  "contentHeight": 80,
+  "background": "#101014",
+  "ops": [
+    {
+      "op": "text",
+      "x": 0,
+      "y": 18.72,
+      "text": "Scoped color text that is long enough to require wrapping across multiple",
+      "size": 17,
+      "weight": 400,
+      "color": "#00E5FF"
+    },
+    {
+      "op": "text",
+      "x": 0,
+      "y": 42.72,
+      "text": "lines in the seven hundred twenty pixel design width.",
+      "size": 17,
+      "weight": 400,
+      "color": "#00E5FF"
+    },
+    {
+      "op": "text",
+      "x": 0,
+      "y": 74.72,
+      "text": "plain",
+      "size": 17,
+      "weight": 400,
+      "color": "#F2F2F7"
+    }
+  ],
+  "taps": []
+}
