@@ -178,6 +178,7 @@
       "name": "@tenunjs/widgets",
       "version": "0.1.0",
       "dependencies": {
+        "@tenunjs/core": "workspace:*",
         "@tenunjs/jsx-runtime": "workspace:*",
         "@tenunjs/protocol": "workspace:*",
       },

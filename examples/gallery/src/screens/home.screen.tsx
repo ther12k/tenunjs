@@ -30,9 +30,23 @@ export const HomeScreen = defineScreen({
   }),
 
   actions: {
-    open({ input, state }: { input: string; state: HomeState }) {
+    // Navigation is wired through the runtime-provided services record
+    // (an explicit application dependency, not runtime magic); the
+    // gallery composition injects a forgiving navigate that ignores
+    // unknown routes.
+    open({
+      input,
+      state,
+      services,
+    }: {
+      input: string;
+      state: HomeState;
+      services?: Record<string, unknown>;
+    }) {
       state.opened = input;
       state.drawerOpen = false;
+      const navigate = services?.["navigate"] as ((route: string) => void) | undefined;
+      navigate?.(input);
     },
     setDrawer({ state, input }: { state: HomeState; input: boolean }) {
       state.drawerOpen = input;
