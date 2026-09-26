@@ -17,8 +17,10 @@
  *    null view() results, schema-mismatched snapshots, and use after
  *    dispose throw ApplicationRuntimeError instead of being silently
  *    swallowed (the gallery loop ignored all of these);
- *  - action contexts receive a REAL AbortSignal (aborted by dispose())
- *    instead of `undefined`;
+ *  - action contexts receive a REAL AbortSignal when the engine provides
+ *    one (aborted by dispose()); bare embeddable engines without the Web
+ *    API — QuickJS today — get the runtime's minimal abort surface with
+ *    the same `aborted` + 'abort'-listener semantics;
  *  - async action results are still not awaited across the synchronous
  *    host bridge, but rejections are routed to onAsyncActionError
  *    instead of becoming dropped promises;
@@ -118,6 +120,39 @@ function isThenable(value: unknown): value is Promise<unknown> {
   );
 }
 
+/**
+ * Abort source for action signals. The platform AbortController is used
+ * whenever the engine provides one (browsers, Node/Bun tooling, host
+ * tests); bare embeddable engines — QuickJS in the Android prototype —
+ * ship no AbortController (it is a Web API, not ECMAScript), and
+ * constructing one at bundle-eval time failed the device boot
+ * (verify-android-device, overlay suite). The fallback keeps the surface
+ * actions actually consume: `aborted` plus 'abort' listener notification.
+ */
+function createAbortSource(): { signal: AbortSignal; abort(): void } {
+  if (typeof AbortController === "function") {
+    return new AbortController();
+  }
+  const listeners = new Set<() => void>();
+  const signal = {
+    aborted: false,
+    addEventListener(_type: string, listener: () => void) {
+      listeners.add(listener);
+    },
+    removeEventListener(_type: string, listener: () => void) {
+      listeners.delete(listener);
+    },
+  };
+  return {
+    signal: signal as unknown as AbortSignal,
+    abort() {
+      if (signal.aborted) return;
+      signal.aborted = true;
+      for (const listener of [...listeners]) listener();
+    },
+  };
+}
+
 export class ApplicationRuntime {
   private readonly screens: Record<string, ScreenDefinition<any, any>>;
   private readonly theme: ThemeConfig;
@@ -126,7 +161,7 @@ export class ApplicationRuntime {
   private readonly onAsyncActionError:
     | ((info: { screen: string; action: string; error: unknown }) => void)
     | undefined;
-  private readonly abort = new AbortController();
+  private readonly abort = createAbortSource();
   private readonly sessions = new Map<string, Session>();
   private current: string;
   private lastTapRuns: Array<() => void> = [];

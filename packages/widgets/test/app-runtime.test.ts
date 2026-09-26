@@ -192,6 +192,53 @@ describe("ApplicationRuntime — execution contract", () => {
     expect(captured!.aborted).toBe(true);
   });
 
+  test("boots without AbortController (QuickJS embedder) and still aborts on dispose", () => {
+    // Regression for the verify-android-device overlay failure: the
+    // Android bundle evaluates under QuickJS, which ships no
+    // AbortController (Web API, not ECMAScript) — constructing one at
+    // eval time failed the whole bundle boot.
+    const holders = globalThis as Record<string, unknown>;
+    const savedController = holders["AbortController"];
+    const savedSignal = holders["AbortSignal"];
+    delete holders["AbortController"];
+    delete holders["AbortSignal"];
+    let captured: { aborted: boolean; addEventListener?: unknown } | undefined;
+    let notified = false;
+    try {
+      const runtime = makeRuntime(
+        {},
+        {
+          signalScreen: defineScreen({
+            name: "Signal",
+            initialState: () => ({}),
+            actions: {
+              capture: ({ signal }: ScreenActionContext<Record<string, unknown>>) => {
+                captured = signal as never;
+                (signal as never as { addEventListener: (t: string, l: () => void) => void })
+                  .addEventListener("abort", () => {
+                    notified = true;
+                  });
+              },
+            },
+            view: ({ actions }) =>
+              jsx(Button, { onPress: () => actions.capture(), children: "capture" }) as never,
+          }),
+        },
+      );
+      runtime.navigate("signalScreen");
+      runtime.render();
+      runtime.dispatch("TAP", { id: firstTapId(runtime) });
+      expect(captured).toBeDefined();
+      expect(captured!.aborted).toBe(false);
+      runtime.dispose();
+      expect(captured!.aborted).toBe(true);
+      expect(notified).toBe(true);
+    } finally {
+      if (savedController !== undefined) holders["AbortController"] = savedController;
+      if (savedSignal !== undefined) holders["AbortSignal"] = savedSignal;
+    }
+  });
+
   test("async action rejections route to onAsyncActionError", async () => {
     const failures: Array<{ screen: string; action: string; error: unknown }> = [];
     const runtime = makeRuntime(
