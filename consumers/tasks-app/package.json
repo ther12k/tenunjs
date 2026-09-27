@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.dev.json",
     "build:app": "NODE_ENV=production bun build src/main.tsx --target browser --outdir .out/prod --tsconfig-override tsconfig.json",
     "build:app:dev": "bun build src/main.tsx --target browser --outdir .out/dev --tsconfig-override tsconfig.dev.json",
+    "build:host": "bun run scripts/build-host.ts",
+    "check:host": "bun run scripts/check-host-contract.ts",
     "check:runtimes": "bun run scripts/check-jsx-runtimes.ts"
   },
   "dependencies": {

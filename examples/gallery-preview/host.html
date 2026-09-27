@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TenunJS App Host (TN-133 contract)</title>
+    <!--
+      Generic application host — the TN-133 browser leg of the host-handoff
+      contract. This page knows NOTHING about any application: it installs
+      tenun_commit (the browser twin of the Android JNI binding), then loads
+      the bundle named by ?bundle=<url> and paints whatever display-list
+      scenes that application commits. Taps are dispatched back through
+      __tenun_dispatch_action — the identical protocol the Android bridge
+      consumes, so an application that runs here runs on the device host
+      unchanged.
+
+      Build the shell once (output is gitignored):
+        bun build examples/gallery-preview/host.ts \
+          --target browser --outfile examples/gallery-preview/host.js
+
+      Serve the repository root over HTTP and open:
+        /examples/gallery-preview/host.html?bundle=/consumers/tasks-app/.out/host-app.js
+    -->
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #08090d; color: #f2f2f7; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #1c2436, #08090d 60%); }
+      .workspace { width: min(100vw, 760px); padding: 28px; display: grid; gap: 18px; justify-items: center; }
+      .eyebrow { color: #8aaeff; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; }
+      h1 { margin: 0; font-size: 24px; }
+      .subtle { color: #aeb5c4; line-height: 1.5; font-size: 13.5px; margin: 0; text-align: center; }
+      .status { color: #7ff0bd; font-size: 12px; min-height: 1em; }
+      .status.error { color: #ff8a8a; white-space: pre-wrap; font-family: ui-monospace, monospace; max-width: 640px; }
+      .frame { width: min(92vw, 420px); border: 1px solid #31394a; border-radius: 30px; padding: 14px; background: #0d1018; box-shadow: 0 28px 80px #0009; }
+      .framebar { display: flex; justify-content: space-between; padding: 2px 8px 12px; color: #9ca8bd; font-size: 12px; }
+      canvas { display: block; width: 100%; height: min(72vh, 780px); border-radius: 18px; background: #101014; touch-action: none; }
+    </style>
+  </head>
+  <body>
+    <main class="workspace">
+      <div class="eyebrow">TenunJS / app host</div>
+      <h1>Contract Host</h1>
+      <p class="subtle">Any application bundle that installs the handoff protocol renders here — the same commit/dispatch contract the Android bridge speaks.</p>
+      <div class="status" id="status">loading…</div>
+      <section class="frame">
+        <div class="framebar"><span id="route-label">—</span><span id="bundle-label">no bundle</span></div>
+        <canvas id="preview" aria-label="TenunJS application preview"></canvas>
+      </section>
+    </main>
+    <script type="module" src="./host.js"></script>
+  </body>
+</html>
