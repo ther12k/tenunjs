@@ -340,10 +340,21 @@ describe("gallery device loop", () => {
 
   test("hot reload: restore tolerates unknown routes and screens", () => {
     const before = __device.route();
+    // A schema-less snapshot is rejected whole (SNAPSHOT_INVALID) — hosts
+    // restore what __TENUN_EXPORT handed them, which always carries it.
+    let rejected = "";
+    try {
+      __device.dispatch("TENUN_RESTORE", JSON.stringify({ route: "ghost", states: { ghost: { x: 1 } } }));
+    } catch (error) {
+      rejected = (error as Error).message;
+    }
+    expect(rejected).toContain("TENUN_APP_ERROR");
+    expect(__device.route()).toBe(before);
+
     const result = JSON.parse(
       __device.dispatch(
         "TENUN_RESTORE",
-        JSON.stringify({ route: "ghost", states: { ghost: { x: 1 } } })
+        JSON.stringify({ route: "ghost", states: { ghost: { x: 1 } }, stateSchema: 1 })
       )
     );
     expect(result.route).toBe(before);
