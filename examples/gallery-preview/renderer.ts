@@ -65,7 +65,12 @@ export function sceneContractError(scene: DisplayListScene): string | null {
  * The tap-resolution rule shared by every host surface: regions are tested
  * in REVERSE registration order, so the topmost painted region wins (paint
  * order is z-order). Fixed regions resolve in viewport coordinates with
- * their anchor offset; scrollable regions translate by the current scroll.
+ * their anchor offset; scrollable regions translate by the current scroll
+ * the same way painting does — scene y MINUS scrollY is the viewport
+ * position (render() draws scrollable ops after translate(0, -scrollY),
+ * and the Android host's Tap.contains uses y - scrollY; this rule
+ * previously tested y + scrollY, which diverged from the painted
+ * position by 2×scrollY).
  * This is the browser twin of the Android host's Tap.contains + lastOrNull
  * dispatch — one rule, two adapters.
  */
@@ -78,7 +83,7 @@ export function hitTestTaps(
 ): number | null {
   for (let index = taps.length - 1; index >= 0; index--) {
     const tap = taps[index]!;
-    const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y + scrollY;
+    const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y - scrollY;
     if (tap.x <= designX && designX <= tap.x + tap.w && y <= viewportY && viewportY <= y + tap.h) {
       return index;
     }
