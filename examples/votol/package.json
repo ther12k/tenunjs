@@ -1,0 +1,14 @@
+{
+  "name": "@tenunjs-examples/votol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VOTOL EM-series bike companion app (telemetry, parameters, keyless alarm) — TenunJS example wired to the esp-votol dashboard backend",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs-examples/ui-kit": "workspace:*",
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  }
+}
