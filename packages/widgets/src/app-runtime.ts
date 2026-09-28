@@ -23,7 +23,9 @@
  *    the same `aborted` + 'abort'-listener semantics;
  *  - async action results are still not awaited across the synchronous
  *    host bridge, but rejections are routed to onAsyncActionError
- *    instead of becoming dropped promises;
+ *    instead of becoming dropped promises, and settlement (fulfilled or
+ *    rejected) fires onStateInvalidation so a host can repaint — the
+ *    commit-after-TAP path alone cannot see async completion;
  *  - navigation-by-action is not baked in: applications wire it through
  *    `services` (the gallery's home-screen special case moved into the
  *    example, where it belongs).
@@ -165,6 +167,7 @@ export class ApplicationRuntime {
   private readonly sessions = new Map<string, Session>();
   private current: string;
   private lastTapRuns: Array<() => void> = [];
+  private readonly staleListeners = new Set<() => void>();
   private disposedState = false;
 
   constructor(options: ApplicationRuntimeOptions) {
@@ -213,6 +216,10 @@ export class ApplicationRuntime {
     }
     this.current = name;
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
+    // The new screen has not rendered yet: tap ids from the PREVIOUS
+    // scene's committed table must not dispatch against it. render()
+    // repopulates the table for the new scene.
+    this.lastTapRuns = [];
   }
 
   /**
@@ -292,25 +299,37 @@ export class ApplicationRuntime {
     if (!snapshot || typeof snapshot !== "object") {
       throw new ApplicationRuntimeError("SNAPSHOT_INVALID", "snapshot must be an object");
     }
-    if (
-      snapshot.stateSchema !== undefined &&
-      snapshot.stateSchema !== APPLICATION_STATE_SCHEMA
-    ) {
+    // Cross-bundle state carry is schema-versioned by contract: a snapshot
+    // without a schema cannot be compared and is rejected whole. (A schema
+    // LESS restore was previously accepted silently — the review probe that
+    // pinned this made it a documented fail-closed edge.)
+    if (snapshot.stateSchema === undefined) {
+      throw new ApplicationRuntimeError(
+        "SNAPSHOT_INVALID",
+        "snapshot is missing stateSchema — export via exportState() before restoring"
+      );
+    }
+    if (snapshot.stateSchema !== APPLICATION_STATE_SCHEMA) {
       throw new ApplicationRuntimeError(
         "SNAPSHOT_SCHEMA_MISMATCH",
         `snapshot stateSchema ${String(snapshot.stateSchema)} does not match runtime schema ${APPLICATION_STATE_SCHEMA}`
       );
     }
+    if (snapshot.route !== undefined && typeof snapshot.route !== "string") {
+      throw new ApplicationRuntimeError("SNAPSHOT_INVALID", "snapshot.route must be a string");
+    }
     const ignoreUnknown = options.ignoreUnknownScreens === true;
     const states = snapshot.states;
+    if (states !== undefined && (!states || typeof states !== "object")) {
+      throw new ApplicationRuntimeError("SNAPSHOT_INVALID", "snapshot.states must be an object");
+    }
+    // Validate the WHOLE snapshot before touching any session: a rejected
+    // restore leaves route and per-screen state exactly as they were
+    // (restore is atomic; the previous apply-as-you-iterate shape could
+    // half-apply before throwing on a later key).
     if (states !== undefined) {
-      if (!states || typeof states !== "object") {
-        throw new ApplicationRuntimeError("SNAPSHOT_INVALID", "snapshot.states must be an object");
-      }
       for (const name of Object.keys(states)) {
-        if (name in this.screens) {
-          this.sessions.set(name, this.mount(name, (states as Record<string, unknown>)[name]));
-        } else if (!ignoreUnknown) {
+        if (!(name in this.screens) && !ignoreUnknown) {
           throw new ApplicationRuntimeError(
             "UNKNOWN_SCREEN",
             `snapshot references unknown screen "${name}"`
@@ -318,16 +337,41 @@ export class ApplicationRuntime {
         }
       }
     }
-    if (typeof snapshot.route === "string") {
-      if (snapshot.route in this.screens) {
-        this.current = snapshot.route;
-      } else if (!ignoreUnknown) {
-        throw new ApplicationRuntimeError(
-          "UNKNOWN_SCREEN",
-          `snapshot route "${snapshot.route}" is not a registered screen`
-        );
+    if (typeof snapshot.route === "string" && !(snapshot.route in this.screens) && !ignoreUnknown) {
+      throw new ApplicationRuntimeError(
+        "UNKNOWN_SCREEN",
+        `snapshot route "${snapshot.route}" is not a registered screen`
+      );
+    }
+    if (states !== undefined) {
+      for (const name of Object.keys(states)) {
+        if (name in this.screens) {
+          this.sessions.set(name, this.mount(name, (states as Record<string, unknown>)[name]));
+        }
       }
     }
+    if (typeof snapshot.route === "string" && snapshot.route in this.screens) {
+      this.current = snapshot.route;
+    }
+    // The restored screen has not rendered yet: ids from the previously
+    // committed scene must not dispatch against it.
+    this.lastTapRuns = [];
+  }
+
+  /**
+   * Subscribe to out-of-band state changes: fired when an async action
+   * settles (fulfilled OR rejected) — the moments state may have mutated
+   * without a synchronous dispatch the host could commit after. Hosts use
+   * this to repaint; the commit-after-TAP path alone cannot see async
+   * completion (the review probe pinned a settled action leaving the
+   * committed scene stale). Returns an unsubscribe function. Listeners
+   * registered on a disposed runtime simply never fire.
+   */
+  onStateInvalidation(listener: () => void): () => void {
+    this.staleListeners.add(listener);
+    return () => {
+      this.staleListeners.delete(listener);
+    };
   }
 
   /**
@@ -347,6 +391,12 @@ export class ApplicationRuntime {
     if (this.disposedState) {
       throw new ApplicationRuntimeError("RUNTIME_DISPOSED", "runtime has been disposed");
     }
+  }
+
+  /** Out-of-band state changed (async settle) while still live. */
+  private notifyStale(): void {
+    if (this.disposedState) return;
+    for (const listener of [...this.staleListeners]) listener();
   }
 
   private mount(name: string, restoredState?: unknown): Session {
@@ -374,13 +424,19 @@ export class ApplicationRuntime {
         const result =
           typeof handler === "function" ? handler(context) : handler.run(context);
         if (isThenable(result)) {
-          result.catch((error: unknown) => {
-            if (this.onAsyncActionError) {
-              this.onAsyncActionError({ screen: name, action: key, error });
-            } else {
-              throw error;
-            }
-          });
+          result.then(
+            () => {
+              this.notifyStale();
+            },
+            (error: unknown) => {
+              this.notifyStale();
+              if (this.onAsyncActionError) {
+                this.onAsyncActionError({ screen: name, action: key, error });
+              } else {
+                throw error;
+              }
+            },
+          );
         }
       };
     }

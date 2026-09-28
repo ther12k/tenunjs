@@ -209,7 +209,7 @@ describe("GalleryRuntime", () => {
     const runtime = new GalleryRuntime();
     runtime.navigate("ghost");
     expect(runtime.route()).toBe("home");
-    runtime.restore({ route: "ghost", states: { ghost: { value: 1 } } });
+    runtime.restore({ route: "ghost", states: { ghost: { value: 1 } }, stateSchema: 1 });
     expect(runtime.route()).toBe("home");
   });
 });
