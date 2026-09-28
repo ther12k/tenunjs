@@ -17,6 +17,9 @@
  *    restores a snapshot and commits. Verb comparison is
  *    case-insensitive because display-list regions carry lowercase
  *    "tap" and hosts echo it verbatim.
+ *  - When the application exposes onStateInvalidation (async action
+ *    settlement), the handoff commits a fresh scene out-of-band too —
+ *    state that changes without a dispatch still reaches the host.
  *  - Malformed payload JSON degrades to `{}` (hosts may send empty
  *    strings); every other contract violation propagates as
  *    ApplicationRuntimeError to the host — never swallowed here.
@@ -41,6 +44,14 @@ export interface HandoffApplication {
   exportState(): unknown;
   stateSchema(): number;
   route(): string;
+  /**
+   * Optional out-of-band repaint signal: when application state can
+   * change without a synchronous dispatch (async action settlement),
+   * the host needs a fresh commit. ApplicationRuntime provides it;
+   * wrappers may delegate or omit it (omitting keeps the
+   * commit-after-dispatch-only behavior).
+   */
+  onStateInvalidation?(listener: () => void): () => void;
 }
 
 export interface HostHandoff {
@@ -48,6 +59,8 @@ export interface HostHandoff {
   dispatch(action: string, payloadJson: string): string;
   /** Last committed scene JSON when no native commit sink was supplied. */
   lastScene(): string | null;
+  /** Unregisters the invalidation listener; safe to call repeatedly. */
+  dispose(): void;
 }
 
 export interface HostHandoffOptions {
@@ -88,7 +101,23 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
     return JSON.stringify({ route: app.route() });
   };
 
+  // Async repaint: a settled async action mutates state without a
+  // synchronous dispatch to commit after — when the application exposes
+  // the invalidation signal, subscribe and commit the fresh scene. (On
+  // engines whose job queue the host never drains — the QuickJS bridge
+  // today — settlement itself cannot occur, so this path is proven by
+  // the browser and headless hosts.)
+  const unsubscribe = app.onStateInvalidation?.(() => {
+    commit();
+  });
+
   commit();
 
-  return { dispatch, lastScene: () => last };
+  return {
+    dispatch,
+    lastScene: () => last,
+    dispose() {
+      unsubscribe?.();
+    },
+  };
 }

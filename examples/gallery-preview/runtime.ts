@@ -146,6 +146,11 @@ export class GalleryRuntime {
     return this.app.stateSchema();
   }
 
+  /** Delegate the async-settlement repaint signal to the public runtime. */
+  onStateInvalidation(listener: () => void): () => void {
+    return this.app.onStateInvalidation(listener);
+  }
+
   restore(snapshot: Partial<GallerySnapshot>): void {
     this.app.restore(snapshot, { ignoreUnknownScreens: true });
   }

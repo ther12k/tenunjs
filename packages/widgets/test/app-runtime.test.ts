@@ -121,6 +121,14 @@ describe("ApplicationRuntime — execution contract", () => {
 
     const target = makeRuntime();
     target.restore(snapshot as never);
+    // Restore invalidated the pre-restore scene's tap table (fail-closed
+    // until the next render establishes the new scene's).
+    try {
+      target.dispatch("TAP", { id: 0 });
+      throw new Error("expected TAP_TARGET_UNKNOWN after restore");
+    } catch (error) {
+      expect((error as ApplicationRuntimeError).code).toBe("TAP_TARGET_UNKNOWN");
+    }
     expect(target.route()).toBe("other");
     expect(JSON.stringify(target.render().scene)).toContain("other untouched");
     expect((target.exportState().states.counter as CounterState).count).toBe(1);
@@ -239,7 +247,7 @@ describe("ApplicationRuntime — execution contract", () => {
     }
   });
 
-  test("async action rejections route to onAsyncActionError", async () => {
+  test("async action rejections route to onAsyncActionError and fire invalidation", async () => {
     const failures: Array<{ screen: string; action: string; error: unknown }> = [];
     const runtime = makeRuntime(
       { onAsyncActionError: (info: { screen: string; action: string; error: unknown }) => failures.push(info) },
@@ -258,12 +266,59 @@ describe("ApplicationRuntime — execution contract", () => {
         }),
       },
     );
+    const stale: number[] = [];
+    runtime.onStateInvalidation(() => stale.push(1));
     runtime.navigate("asyncScreen");
     runtime.dispatch("TAP", { id: firstTapId(runtime) });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(failures.length).toBe(1);
     expect(failures[0]!.action).toBe("boom");
     expect((failures[0]!.error as Error).message).toBe("boom");
+    expect(stale.length).toBe(1);
+  });
+
+  test("async action fulfillment fires invalidation, then render shows it", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runtime = makeRuntime(
+      {},
+      {
+        asyncScreen: defineScreen({
+          name: "Async",
+          initialState: () => ({ n: 0 }),
+          actions: {
+            slow: defineAction({
+              run: async ({ state }) => {
+                await gate;
+                state.n = 7;
+              },
+            }),
+          },
+          view: ({ state, actions }) =>
+            jsxs(Column, {
+              gap: "md",
+              children: [
+                jsx(Text, { variant: "body", children: `n ${state.n}` }),
+                jsx(Button, { onPress: () => actions.slow(undefined), children: "go" }),
+              ],
+            }) as never,
+        }),
+      },
+    );
+    runtime.navigate("asyncScreen");
+    runtime.render();
+    const stale: number[] = [];
+    const unsubscribe = runtime.onStateInvalidation(() => stale.push(1));
+    runtime.dispatch("TAP", { id: firstTapId(runtime) });
+    expect(stale.length).toBe(0); // not settled yet
+    expect(JSON.stringify(runtime.render().scene)).toContain("n 0");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stale.length).toBe(1);
+    expect(JSON.stringify(runtime.render().scene)).toContain("n 7");
+    unsubscribe();
   });
 
   test("render returns the live tap table: appended runs stay dispatchable (wrapper chrome pattern)", () => {
@@ -382,6 +437,82 @@ describe("ApplicationRuntime — fail-closed contract", () => {
     } catch (error) {
       expect((error as ApplicationRuntimeError).code).toBe("SNAPSHOT_INVALID");
     }
+  });
+
+  test("snapshots without a state schema throw SNAPSHOT_INVALID", () => {
+    const runtime = makeRuntime();
+    for (const snapshot of [
+      { route: "counter", states: {} },
+      { route: "counter" },
+    ]) {
+      try {
+        runtime.restore(snapshot as never);
+        throw new Error(`expected SNAPSHOT_INVALID for ${JSON.stringify(snapshot)}`);
+      } catch (error) {
+        expect((error as ApplicationRuntimeError).code).toBe("SNAPSHOT_INVALID");
+      }
+    }
+  });
+
+  test("restore is atomic: a rejected snapshot leaves route and sessions untouched", () => {
+    const runtime = makeRuntime();
+    runtime.dispatch("TAP", { id: firstTapId(runtime) }); // count 1
+    // A VALID state precedes the ghost key: validation must reject the
+    // whole snapshot BEFORE any session is replaced with count 99.
+    try {
+      runtime.restore({
+        route: "counter",
+        states: { counter: { count: 99 }, ghost: {} },
+        stateSchema: 1,
+      } as never);
+      throw new Error("expected UNKNOWN_SCREEN");
+    } catch (error) {
+      expect((error as ApplicationRuntimeError).code).toBe("UNKNOWN_SCREEN");
+    }
+    expect(runtime.route()).toBe("counter");
+    expect((runtime.exportState().states.counter as CounterState).count).toBe(1);
+    // Same for an unknown route: nothing from the snapshot is applied.
+    try {
+      runtime.restore({ route: "ghost", states: { counter: { count: 50 } }, stateSchema: 1 } as never);
+      throw new Error("expected UNKNOWN_SCREEN (route)");
+    } catch (error) {
+      expect((error as ApplicationRuntimeError).code).toBe("UNKNOWN_SCREEN");
+    }
+    expect((runtime.exportState().states.counter as CounterState).count).toBe(1);
+    // A rejected restore changed NOTHING: the old committed scene's tap
+    // table still dispatches coherently (count 1 -> 2 through it).
+    runtime.dispatch("TAP", { id: 0 });
+    expect((runtime.exportState().states.counter as CounterState).count).toBe(2);
+    // A SUCCESSFUL restore swaps the sessions and invalidates the old
+    // table until the next render establishes the new scene's.
+    runtime.restore({ route: "counter", states: { counter: { count: 40 } }, stateSchema: 1 } as never);
+    let code = "";
+    try {
+      runtime.dispatch("TAP", { id: 0 });
+    } catch (error) {
+      code = (error as ApplicationRuntimeError).code;
+    }
+    expect(code).toBe("TAP_TARGET_UNKNOWN");
+    runtime.render(); // repopulates the table
+    runtime.dispatch("TAP", { id: firstTapId(runtime) });
+    expect((runtime.exportState().states.counter as CounterState).count).toBe(41);
+  });
+
+  test("navigate invalidates the previous scene's tap table", () => {
+    const runtime = makeRuntime();
+    runtime.render(); // counter scene committed with 1 tap
+    runtime.navigate("other");
+    let code = "";
+    try {
+      runtime.dispatch("TAP", { id: 0 });
+    } catch (error) {
+      code = (error as ApplicationRuntimeError).code;
+    }
+    expect(code).toBe("TAP_TARGET_UNKNOWN"); // "other" renders no taps
+    runtime.navigate("counter");
+    runtime.render();
+    runtime.dispatch("TAP", { id: firstTapId(runtime) });
+    expect((runtime.exportState().states.counter as CounterState).count).toBe(1);
   });
 
   test("disposed runtime rejects mutating entry points (pure reads stay)", () => {
