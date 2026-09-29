@@ -194,6 +194,14 @@ interface InternalContext extends RenderContext {
   designWidth: number;
   /** Active color roles: theme-derived defaults until a ThemeScope narrows them. */
   palette: SchemeRoles;
+  /**
+   * Per-render function-component resolutions. measure and place walk the
+   * tree separately; without this cache every component would be INVOKED
+   * once per walk, so an impure component painted its second result while
+   * geometry was measured from its first. One resolution per node per
+   * render: the first invocation is authoritative for both passes.
+   */
+  componentCache: Map<AnyNode, AnyNode>;
 }
 
 /**
@@ -389,8 +397,20 @@ function isWidgetNode(child: WidgetChild): child is WidgetNode {
   return typeof child === "object" && child !== null && "kind" in child;
 }
 
+/**
+ * WidgetNode → AnyNode adapter, memoized by tree-object identity: the same
+ * WidgetNode must yield the SAME AnyNode across the measure and place walks
+ * (the per-render component cache keys on it). WeakMap: entries die with the
+ * tree. Nothing in the lowering mutates a node wrapper (verified: reads only).
+ */
+const asNodeCache = new WeakMap<WidgetNode, AnyNode>();
 function asNode(node: WidgetNode): AnyNode {
-  return { kind: node.kind, props: node.props as Record<string, unknown>, children: node.children };
+  let cached = asNodeCache.get(node);
+  if (!cached) {
+    cached = { kind: node.kind, props: node.props as Record<string, unknown>, children: node.children };
+    asNodeCache.set(node, cached);
+  }
+  return cached;
 }
 
 /** Concatenates string/number children (JSX text interpolation output). */
@@ -421,19 +441,32 @@ function childNodes(node: AnyNode): AnyNode[] {
 /**
  * Invokes a function-component node. buildNode moves `children` out of
  * props onto the node, so the call hands them back the way JSX would.
+ * Callers go through resolveOnce/resolveNode so each node's component
+ * runs at most once per render (see InternalContext.componentCache).
  */
 function callComponent(node: AnyNode): AnyNode {
   const fn = node.kind as (props: Record<string, unknown>) => WidgetNode;
   return asNode(fn({ ...node.props, children: node.children }));
 }
 
+/** Memoized single invocation of a node's component within one render. */
+function resolveOnce(ctx: InternalContext, node: AnyNode): AnyNode {
+  let resolved = ctx.componentCache.get(node);
+  if (!resolved) {
+    resolved = callComponent(node);
+    ctx.componentCache.set(node, resolved);
+  }
+  return resolved;
+}
+
 /**
  * Fully resolves function-component wrappers so parent layouts can match
  * the concrete kind (e.g. JSX `<Positioned>` resolving to PositionedKind).
+ * Each link of the chain resolves through the per-render cache.
  */
-function resolveNode(kid: AnyNode): AnyNode {
+function resolveNode(ctx: InternalContext, kid: AnyNode): AnyNode {
   let current = kid;
-  while (typeof current.kind === "function") current = callComponent(current);
+  while (typeof current.kind === "function") current = resolveOnce(ctx, current);
   return current;
 }
 
@@ -455,7 +488,7 @@ function paddingOf(props: Record<string, unknown>, fallback: number): number {
 function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
   const { kind, props } = node;
   if (typeof kind === "function") {
-    return measure(ctx, callComponent(node), maxWidth);
+    return measure(ctx, resolveOnce(ctx, node), maxWidth);
   }
   if (kind === Canvas) {
     return { w: Math.min(typeof props.width === "number" ? props.width : maxWidth, maxWidth), h: Number(props.height ?? 0) };
@@ -488,7 +521,7 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
     // Positioned children never size the stack (Flutter semantics).
     let w = 0;
     let h = 0;
-    for (const kid of childNodes(node).map(resolveNode)) {
+    for (const kid of childNodes(node).map((kid) => resolveNode(ctx, kid))) {
       if (kid.kind === PositionedKind) continue;
       const frame = measure(ctx, kid, maxWidth);
       w = Math.max(w, frame.w);
@@ -558,7 +591,7 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
     case "row": {
       const pad = paddingOf(props, 0);
       const inner = Math.max(maxWidth - pad * 2, 1);
-      const kids = childNodes(node).map(resolveNode);
+      const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
       // Expanded children re-measure at their flex share, which can change
       // their wrapped height — resolve frames the same way place does.
       if (kids.some((kid) => kid.kind === ExpandedKind)) {
@@ -576,7 +609,7 @@ function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
       // Children arrive as function components (Scaffold/AppBar usage);
       // resolve before matching by host kind.
       const kids = widgetChildren(node).map((kid) =>
-        typeof kid.kind === "function" ? callComponent(kid) : kid
+        typeof kid.kind === "function" ? resolveOnce(ctx, kid) : kid
       );
       const appBar = kids.find((kid) => kid.kind === "app-bar");
       const body = kids.find((kid) => kid.kind !== "app-bar");
@@ -616,7 +649,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
   const { kind, props } = node;
 
   if (typeof kind === "function") {
-    return place(ctx, callComponent(node), x, y, w);
+    return place(ctx, resolveOnce(ctx, node), x, y, w);
   }
   if (kind === Canvas) {
     const fixedCanvas = props.fixed === true;
@@ -987,7 +1020,7 @@ const STACK_ALIGNMENT: Record<string, { ax: number; ay: number }> = {
  * sides are given.
  */
 function placeStackWidget(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
-  const kids = childNodes(node).map(resolveNode);
+  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
   let frameH = 0;
   for (const kid of kids) {
     if (kid.kind === PositionedKind) continue;
@@ -1132,7 +1165,7 @@ interface RowLayout {
  * children share the free width proportionally to flex.
  */
 function layoutRowChildren(ctx: InternalContext, node: AnyNode, innerW: number): RowLayout {
-  const kids = childNodes(node).map(resolveNode);
+  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
   const gap = gapOf(node.props);
   const frames = kids.map((kid) => measure(ctx, kid, innerW));
 
@@ -1274,6 +1307,7 @@ export function layoutScreen(
     ops: [],
     tapRegions: [],
     tapRuns: [],
+    componentCache: new Map(),
     finish() {
       return {
         tenun: "display-list" as const,
