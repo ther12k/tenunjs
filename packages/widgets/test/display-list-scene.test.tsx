@@ -118,3 +118,43 @@ describe("TN-133 extraction: invalid-input behavior preserved", () => {
 test("Canvas virtual kind is the documented registered symbol", () => {
   expect(Canvas === Symbol.for("tenun.preview.canvas")).toBe(true);
 });
+
+describe("function components resolve once per render (measure and place share one resolution)", () => {
+  test("a component is invoked exactly once per layoutScreen call", () => {
+    let calls = 0;
+    const Once = (props: { children?: unknown }): ReturnType<typeof jsx> => {
+      calls += 1;
+      return jsx(Text, { variant: "body", children: props.children }) as never;
+    };
+    const tree = jsxs(Column, {
+      padding: "lg",
+      gap: "md",
+      children: [
+        jsx(Once, { children: "stable" }),
+        jsx(Once, { children: "stable" }),
+      ],
+    });
+    // measure and place each walk the tree; without the per-render cache
+    // the component ran once PER WALK (call-count 4 for two nodes).
+    const { scene } = layoutScreen(theme as never, tree as never, 720);
+    expect(calls).toBe(2);
+    const texts = scene.ops.filter((op) => op.op === "text").map((op) => (op as { text: string }).text);
+    expect(texts.filter((t) => t === "stable")).toHaveLength(2);
+  });
+
+  test("an impure component paints its FIRST result — geometry and paint agree", () => {
+    let calls = 0;
+    const Impure = (): ReturnType<typeof jsx> => {
+      calls += 1;
+      // Returns a different label each invocation: pre-fix, measure sized
+      // result #1 while place painted result #2.
+      return jsx(Text, { variant: "title", children: `invocation ${calls}` }) as never;
+    };
+    const tree = jsxs(Column, { padding: "lg", gap: "md", children: jsx(Impure, {}) });
+    const { scene } = layoutScreen(theme as never, tree as never, 720);
+    expect(calls).toBe(1);
+    const texts = scene.ops.filter((op) => op.op === "text").map((op) => (op as { text: string }).text);
+    expect(texts).toContain("invocation 1");
+    expect(texts.some((t) => t === "invocation 2")).toBe(false);
+  });
+});
