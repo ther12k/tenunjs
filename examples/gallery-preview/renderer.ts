@@ -46,9 +46,21 @@ const KNOWN_OP_KINDS: ReadonlySet<string> = new Set([
  * SceneContractException: a scene version above SUPPORTED_SCENE_VERSION or
  * any unknown op kind (at ANY position — validation completes before a
  * candidate is accepted) rejects the whole scene. Returns the violation
- * message, or null when the scene is acceptable.
+ * message, or null when the scene is acceptable. Structurally malformed
+ * input (JSON that parsed but is not a scene — ops/taps not arrays, null
+ * scene) is a CONTRACT VIOLATION, not a crash: the message stays in the
+ * host's diagnostic channel instead of a TypeError from the caller.
  */
 export function sceneContractError(scene: DisplayListScene): string | null {
+  if (!scene || typeof scene !== "object") {
+    return "scene is not an object";
+  }
+  if (typeof scene.version !== "number") {
+    return "scene.version is missing or not a number";
+  }
+  if (!Array.isArray(scene.ops)) {
+    return "scene.ops is missing or not an array";
+  }
   if (scene.version > CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION) {
     return `scene version ${scene.version} exceeds renderer support (${CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION})`;
   }

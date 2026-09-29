@@ -145,3 +145,17 @@ describe("scene contract validation (browser twin of the Android parser)", () =>
     expect(error).toContain("ops[2]");
   });
 });
+
+describe("scene contract validation rejects malformed shapes as violations, not crashes", () => {
+  test("a JSON-parsed non-scene yields a violation string", () => {
+    expect(sceneContractError(null as never)).toContain("not an object");
+    expect(sceneContractError({ tenun: "display-list", ops: null } as never)).toContain(
+      "scene.version",
+    );
+    expect(
+      sceneContractError({ tenun: "display-list", version: 1, ops: "no" } as never),
+    ).toContain("scene.ops");
+    // Sanity: the well-formed shape still passes.
+    expect(sceneContractError(scene())).toBeNull();
+  });
+});
