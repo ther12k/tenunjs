@@ -240,6 +240,7 @@ status: accepted
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
 | 07-agent/review-prompt.md | d7d6e81c8c9f5006e59b37139cfad671def4560aca2777bf2579463d88cd84f2 |
 | 07-agent/single-issue-prompt.md | 64ed7fbd68de6f2fa65c09c195b7b09f67b609400cf253aa07aed03d90766e07 |
+| 08-validation/android-host-review-2026-09-28.md | 38387b9da6dcb9bddbf45d784b54b7c0f661d4d335769824474a2315db8769cb |
 | 08-validation/bundle-report.md | 8c30d2ade2d3f8c4d8f9cd9e0f120379eb8c711d14353105a58a98a5f7abd727 |
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | CONTRIBUTING.md | 4c0cace7528d2660fe223bc5dae2cb666515c7e75668727af7bec34851b42884 |
