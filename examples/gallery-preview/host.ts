@@ -40,6 +40,12 @@ function setStatus(text: string): void {
   statusEl.textContent = text;
 }
 
+/** Boot-completion note; must never clear a contract failure already shown. */
+function noteLoaded(): void {
+  if (statusEl.classList.contains("error")) return;
+  setStatus(`${statusEl.textContent ?? ""} · bundle loaded`);
+}
+
 function paint(): void {
   if (!scene) return;
   scrollY = Math.min(scrollY, renderer.maxScroll(scene));
@@ -135,7 +141,10 @@ if (!bundleUrl) {
     // Same-origin application bundles only — this is a local dev host,
     // not a distribution surface.
     await import(bundleUrl);
-    setStatus((statusEl.textContent ?? "") + " · bundle loaded");
+    // A successful import says nothing about the SCENE the bundle
+    // committed: tenun_commit may already have rejected it fail-visibly,
+    // and that diagnostic must survive boot completion.
+    noteLoaded();
   } catch (error) {
     fail(`host: bundle failed to load or boot: ${(error as Error).message}`);
   }
