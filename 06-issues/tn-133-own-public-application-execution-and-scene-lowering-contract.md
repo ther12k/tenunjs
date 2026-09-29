@@ -225,3 +225,17 @@ that did (`gallery-preview` schema-less restore, the ui-kit device-loop
 hot-reload fixture) were updated to send schema-carrying snapshots like
 a real host.
 
+### Slice record — 2026-09-29: lowering resolves function components once per render
+
+The same review's fifth finding: `layoutScreen` walks the tree twice
+(measure, then place) and invoked every function component once per
+walk, so an impure component painted its SECOND result while geometry
+was measured from its first. The lowering now resolves each component
+node exactly once per render through a per-render cache (measure's
+resolution is authoritative for place), and the WidgetNode→AnyNode
+adapter is memoized by tree identity so both walks share node identity.
+Contract pinned by two tests (call-count; first-result-painted). All
+golden fixtures and the external-consumer scene digest are unchanged —
+pure components see no difference; only measure/paint divergence in
+impure components is corrected.
+
