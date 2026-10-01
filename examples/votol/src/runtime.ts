@@ -5,7 +5,9 @@ import { HomeScreen } from "./screens/home.screen";
 import { TelemetryScreen } from "./screens/telemetry.screen";
 import { KeylessScreen } from "./screens/keyless.screen";
 import { ParamsScreen } from "./screens/params.screen";
+import { PodScreen } from "./screens/pod.screen";
 import type { KeylessCommandResult } from "./screens/keyless.screen";
+import type { PodCmd, PodLinkState, PodReply } from "./screens/pod.screen";
 import type { VotolSnapshot } from "./snapshot";
 
 type AnyScreen = ScreenDefinition<any, any>;
@@ -17,6 +19,8 @@ type AnyScreen = ScreenDefinition<any, any>;
  *  - services.navigate(route) — screen navigation (in-app links)
  *  - services.command(action) — dashboard API actions (monitor_on, …)
  *  - services.keyless(action) — keyless commands resolving {ok,msg}
+ *  - services.pod — BLE direct link to the display pod (pair/connect/
+ *    send); the host pushes link reality back via runtime.podSync()
  *
  * The ApplicationRuntime's dispatch surface is host-verbs only (TAP /
  * TENUN_RESTORE), so live data enters through the SNAPSHOT SERVICE, not
@@ -30,6 +34,7 @@ const screens: Record<string, AnyScreen> = {
   telemetry: TelemetryScreen as AnyScreen,
   keyless: KeylessScreen as AnyScreen,
   params: ParamsScreen as AnyScreen,
+  pod: PodScreen as AnyScreen,
 };
 
 /**
@@ -51,6 +56,18 @@ function seam(name: string, def: AnyScreen): AnyScreen {
 const seamedScreens: Record<string, AnyScreen> = {};
 for (const [name, def] of Object.entries(screens)) seamedScreens[name] = seam(name, def);
 
+/** Pod BLE seam: the host implements; screens only call. */
+export interface PodServices {
+  /** Web Bluetooth / native BLE available in this host? */
+  supported(): boolean;
+  /** Host pairing flow (QR scan / paste). Resolves true once a key is stored. */
+  pair(): Promise<boolean>;
+  forget(): void;
+  /** BLE session connect (browser: must run inside a user gesture). */
+  connect(): Promise<boolean>;
+  send(cmd: PodCmd): Promise<PodReply>;
+}
+
 export interface VotolServices {
   snapshot: () => VotolSnapshot | null;
   navigate: (route: string) => void;
@@ -58,11 +75,23 @@ export interface VotolServices {
   keyless: (action: string) => Promise<KeylessCommandResult>;
   /** Routes a finished keyless command back into the keyless screen. */
   keylessDone: (result: KeylessCommandResult) => void;
+  pod: PodServices;
+  /** Routes a finished pod command back into the pod screen. */
+  podDone: (reply: PodReply) => void;
 }
+
+const noPodHost: PodServices = {
+  supported: () => false,
+  pair: () => Promise.resolve(false),
+  forget: () => undefined,
+  connect: () => Promise.resolve(false),
+  send: () => Promise.resolve({ ok: false, msg: "no host" }),
+};
 
 export class VotolRuntime {
   private readonly app: ApplicationRuntime;
   private services: VotolServices;
+  private lastPodLink: Partial<PodLinkState> | null = null;
 
   constructor(host: Partial<Omit<VotolServices, "snapshot" | "navigate" | "keylessDone">> = {}) {
     this.services = {
@@ -71,6 +100,8 @@ export class VotolRuntime {
       command: () => undefined,
       keyless: () => Promise.resolve({ ok: false, msg: "no host" }),
       keylessDone: (r) => actionSeams["keyless"]?.result?.(r),
+      pod: noPodHost,
+      podDone: (r) => actionSeams["pod"]?.result?.(r),
       ...host,
     };
     this.app = new ApplicationRuntime({
@@ -97,6 +128,11 @@ export class VotolRuntime {
       this.app.navigate(name);
       this.app.render(); // mount + capture the new screen's action seam
       this.deliver(this.lastSnapshot);
+      // the pod screen's link state arrives out-of-band (BLE events), so
+      // the latest push is replayed on every mount — never a blank hero
+      if (name === "pod" && this.lastPodLink) {
+        actionSeams["pod"]?.link?.(this.lastPodLink);
+      }
     }
   }
 
@@ -104,6 +140,15 @@ export class VotolRuntime {
   sync(snapshot: VotolSnapshot): void {
     this.lastSnapshot = snapshot;
     this.deliver(snapshot);
+  }
+
+  /**
+   * Host entry: push BLE link reality into the pod screen (cached and
+   * replayed on mount, so the host can call it before the route exists).
+   */
+  podSync(link: Partial<PodLinkState>): void {
+    this.lastPodLink = { ...(this.lastPodLink ?? {}), ...link };
+    actionSeams["pod"]?.link?.(this.lastPodLink);
   }
 
   private deliver(snapshot: VotolSnapshot | null): void {

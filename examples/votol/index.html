@@ -24,6 +24,16 @@
       .status.ok { color: #10b981; }
       .status.error { color: #ef4444; }
       a { color: #f59e0b; }
+      #pod-pair { position: fixed; inset: 0; background: #07090df2; display: grid; place-items: center; z-index: 10; }
+      #pod-pair[hidden] { display: none; }
+      .pair-card { width: min(92vw, 420px); border: 1px solid #2a3242; border-radius: 20px; background: #0b0e14; padding: 18px; display: grid; gap: 12px; }
+      .pair-card h2 { margin: 0; font-size: 17px; }
+      #pod-pair-video { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; background: #11151f; }
+      #pod-pair-key { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a3242; background: #11151f; color: #f5f7fb; font: 600 13px ui-monospace, monospace; letter-spacing: .06em; }
+      #pod-pair-msg { color: #9aa3b2; font-size: 12px; line-height: 1.5; min-height: 18px; }
+      .pair-actions { display: flex; gap: 8px; }
+      .pair-actions button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #2a3242; background: #11151f; color: #f5f7fb; font-weight: 700; cursor: pointer; }
+      #pod-pair-save { border-color: #f59e0b; color: #f59e0b; background: #1d160a; }
     </style>
   </head>
   <body>
@@ -42,6 +52,18 @@
           <div class="meta"><span id="route-label">home</span> · <span id="status" class="status">connecting…</span></div>
         </div>
         <canvas id="preview" width="720" height="1520"></canvas>
+      </div>
+    </div>
+    <div id="pod-pair" hidden>
+      <div class="pair-card">
+        <h2>Pair with the pod</h2>
+        <video id="pod-pair-video" muted playsinline></video>
+        <input id="pod-pair-key" placeholder="VOTOL:… or 32-hex key" autocomplete="off" spellcheck="false" />
+        <div id="pod-pair-msg"></div>
+        <div class="pair-actions">
+          <button id="pod-pair-save">Save key</button>
+          <button id="pod-pair-cancel">Cancel</button>
+        </div>
       </div>
     </div>
     <script type="module" src="./preview.js"></script>

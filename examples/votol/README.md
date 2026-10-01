@@ -28,6 +28,25 @@ controller → ESP32 bridge → dashboard backend (webapp/app.py, :8080)
   interlocks stay authoritative — the app only relays commands and reports
   the module's verdict.
 
+## Pod screen (direct Bluetooth link)
+
+The **Pod** screen talks straight to the `tft-dash` display pod over its
+BLE GATT command service (no dashboard backend involved):
+
+- **Pair once** — the pod shows a QR in `SYS → SET`; the app scans it
+  (camera, `BarcodeDetector`) or you paste the 32-hex key. Stored in
+  `localStorage`.
+- **Connect** at the bike — Web Bluetooth `requestDevice` filtered on
+  the pod service UUID.
+- **DISARM / ARM / PANIC / status** — writes `CMD:KEY`, the pod's reply
+  (`OK …` / `ERR …`) and live status (`ARMED FON`) arrive as
+  notifications and render verbatim. The pod stays authoritative.
+
+Browser host: Android Chrome (Web Bluetooth). iOS Safari has no Web
+Bluetooth — the Android embedder will bind the same `pod` service seam
+to a native BLE module. The screen itself is host-free and
+headless-tested.
+
 ## Run it
 
 Terminal 1 — the dashboard backend (with the emulator for bench data):

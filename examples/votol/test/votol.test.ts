@@ -157,3 +157,100 @@ describe("VotolRuntime screens", () => {
     expect(texts).toContain("fault 12");
   });
 });
+
+describe("pod direct link screen", () => {
+  test("no Web Bluetooth host explains the requirement instead of a dead end", () => {
+    const runtime = new VotolRuntime();
+    runtime.navigate("pod");
+    runtime.podSync({ supported: false, paired: false });
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Bluetooth unavailable");
+    expect(texts).toContain("Chrome");
+    expect(texts).toContain("Android");
+  });
+
+  test("unpaired host offers the pairing flow", () => {
+    const runtime = new VotolRuntime();
+    runtime.navigate("pod");
+    runtime.podSync({ supported: true, paired: false });
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Pair with the pod");
+    expect(texts).toContain("Scan QR");
+  });
+
+  test("paired but offline offers connect, then the hero follows link pushes", () => {
+    const runtime = new VotolRuntime();
+    runtime.podSync({ supported: true, paired: true }); // before mount: cached
+    runtime.navigate("pod");
+    expect(sceneTexts(runtime).join("\n")).toContain("Connect");
+    runtime.podSync({ connected: true, armed: true, fobNear: false });
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("ARMED");
+    expect(texts).toContain("DISARM");
+    expect(texts).toContain("PANIC");
+    expect(texts).toContain("fob away");
+  });
+
+  test("tap DISARM sends the command and renders the pod's verdict", async () => {
+    const sent: string[] = [];
+    const runtime = new VotolRuntime({
+      pod: {
+        supported: () => true,
+        pair: () => Promise.resolve(true),
+        forget: () => undefined,
+        connect: () => Promise.resolve(true),
+        send: (cmd) => {
+          sent.push(cmd);
+          return Promise.resolve({ ok: true, msg: "OK DISARM" });
+        },
+      },
+    });
+    runtime.navigate("pod");
+    runtime.podSync({ supported: true, paired: true, connected: true, armed: true, fobNear: false });
+    const scene = runtime.render().scene;
+    let tapId = -1;
+    scene.taps.forEach((tap, i) => {
+      for (const op of scene.ops) {
+        if (op.op === "text" && op.text === "🔓 DISARM" && op.y >= tap.y && op.y <= tap.y + tap.h) {
+          tapId = i;
+        }
+      }
+    });
+    expect(tapId).toBeGreaterThanOrEqual(0);
+    runtime.tap(tapId);
+    await new Promise((r) => setTimeout(r, 0)); // let the send promise settle
+    const texts = sceneTexts(runtime).join("\n");
+    expect(sent).toEqual(["DISARM"]);
+    expect(texts).toContain("✓ OK DISARM");
+    expect(texts).toContain("disarmed"); // hero flipped by the reply parse
+  });
+
+  test("ERR replies surface verbatim and never flip the hero", async () => {
+    const runtime = new VotolRuntime({
+      pod: {
+        supported: () => true,
+        pair: () => Promise.resolve(true),
+        forget: () => undefined,
+        connect: () => Promise.resolve(true),
+        send: () => Promise.resolve({ ok: false, msg: "ERR KEY" }),
+      },
+    });
+    runtime.navigate("pod");
+    runtime.podSync({ supported: true, paired: true, connected: true, armed: true, fobNear: false });
+    const scene = runtime.render().scene;
+    let tapId = -1;
+    scene.taps.forEach((tap, i) => {
+      for (const op of scene.ops) {
+        if (op.op === "text" && op.text === "🔓 DISARM" && op.y >= tap.y && op.y <= tap.y + tap.h) {
+          tapId = i;
+        }
+      }
+    });
+    expect(tapId).toBeGreaterThanOrEqual(0);
+    runtime.tap(tapId);
+    await new Promise((r) => setTimeout(r, 0));
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("✗ ERR KEY");
+    expect(texts).toContain("ARMED"); // still armed — the pod refused
+  });
+});
