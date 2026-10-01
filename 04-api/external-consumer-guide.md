@@ -195,6 +195,30 @@ preview shell's UX — hot reload, route rail, dev-server routes (TN-042).
 The host page builds with a one-line `bun build` (see its header
 comment); dev-server integration is deliberately not in this slice.
 
+## Addendum — 2026-09-28: contract edges hardened (post-landing review)
+
+A review of the landed contract probed its fail-closed edges and found
+four loosenings, all closed in the public packages with pinned tests
+(full record in TN-133's slice record of the same date). Consumers see:
+
+- **`restore()` requires `stateSchema` and is atomic.** A snapshot
+  without a schema is rejected (`SNAPSHOT_INVALID`) instead of silently
+  accepted, and a rejected restore leaves route, per-screen state, and
+  the tap table exactly as they were. Restoring the JSON string
+  `__TENUN_EXPORT` returns is the supported shape — it always carried
+  the schema, so no caller inside or outside the tree had to change.
+- **Tap ids are invalidated by `navigate()` and successful restores.**
+  Ids from a previously committed scene fail closed
+  (`TAP_TARGET_UNKNOWN`) until the next `render()` — the interim window
+  where an old id could mutate the newly-mounted screen is gone.
+- **Async actions repaint.** `ApplicationRuntime.onStateInvalidation()`
+  fires when an async action settles (fulfilled or rejected), and
+  `installHostHandoff` subscribes to it when present, committing a
+  fresh scene out-of-band; the returned handle gained `dispose()` to
+  unsubscribe. `HandoffApplication` marks `onStateInvalidation?`
+  optional, so existing wrappers stay valid — the gallery wrapper
+  delegates it.
+
 ## Reproducing the rehearsal
 
 `.github/scripts/verify-consumer.sh` (run by the `verify-typescript` CI

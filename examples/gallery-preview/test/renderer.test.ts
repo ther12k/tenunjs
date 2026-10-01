@@ -92,9 +92,13 @@ describe("tap resolution order (topmost wins, one rule with the Android host)", 
   test("scrollable content translates by scroll; fixed regions do not", () => {
     const scrolled = hitTestTaps(sheetTaps, 360, 60, visibleHeight, 400);
     expect(sheetTaps[scrolled!]!.payload.id).toBe(14); // scrim still at viewport 60
+    // A scrollable region at scene y 1200 paints at viewport 1200-scrollY
+    // (render translates by -scrollY): hit-testing must resolve to the
+    // PAINTED position, matching the Android host's y - scrollY.
     const plain = [tap({ y: 1200, payload: { id: 7 } })];
-    expect(hitTestTaps(plain, 360, 1300, visibleHeight, 0)).toBeNull();
-    expect(hitTestTaps(plain, 360, 1300, visibleHeight, 100)).toBe(0);
+    expect(hitTestTaps(plain, 360, 1250, visibleHeight, 0)).toBe(0);    // unscrolled: painted at 1200..1296
+    expect(hitTestTaps(plain, 360, 1150, visibleHeight, 100)).toBe(0);  // scrolled 100: painted at 1100..1196
+    expect(hitTestTaps(plain, 360, 1300, visibleHeight, 100)).toBeNull(); // the old +scrollY bug hit here
   });
 });
 
@@ -139,5 +143,19 @@ describe("scene contract validation (browser twin of the Android parser)", () =>
     const error = sceneContractError(lateInvalid);
     expect(error).toContain("hologram");
     expect(error).toContain("ops[2]");
+  });
+});
+
+describe("scene contract validation rejects malformed shapes as violations, not crashes", () => {
+  test("a JSON-parsed non-scene yields a violation string", () => {
+    expect(sceneContractError(null as never)).toContain("not an object");
+    expect(sceneContractError({ tenun: "display-list", ops: null } as never)).toContain(
+      "scene.version",
+    );
+    expect(
+      sceneContractError({ tenun: "display-list", version: 1, ops: "no" } as never),
+    ).toContain("scene.ops");
+    // Sanity: the well-formed shape still passes.
+    expect(sceneContractError(scene())).toBeNull();
   });
 });

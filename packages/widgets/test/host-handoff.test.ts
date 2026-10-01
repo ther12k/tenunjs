@@ -143,4 +143,54 @@ describe("installHostHandoff — host protocol", () => {
     const backId = scene.taps[1].payload.id;
     expect(() => handoff.dispatch("tap", JSON.stringify({ id: backId }))).not.toThrow();
   });
+
+  test("async action settlement commits a fresh scene out-of-band; dispose stops it", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = new ApplicationRuntime({
+      screens: {
+        counter: defineScreen({
+          name: "Counter",
+          initialState: () => ({ count: 0 }),
+          actions: {
+            increment: async ({ state }: { state: { count: number } }) => {
+              await gate;
+              state.count = 5;
+            },
+          },
+          view: ({ state, actions }) =>
+            jsxs(Column, {
+              padding: "lg",
+              gap: "md",
+              children: [
+                jsx(Text, { variant: "title", children: `count ${state.count}` }),
+                jsx(Button, { onPress: () => actions.increment(), children: "Add" }),
+              ],
+            }) as never,
+        }) as never,
+      },
+      initial: "counter",
+      theme,
+    } as never);
+    const committed: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (j: string) => committed.push(j) });
+    const id = tapIdOf(committed[0]!);
+
+    handoff.dispatch("tap", JSON.stringify({ id })); // sync commit: still count 0
+    expect(committed.length).toBe(2);
+    expect(committed[1]!).toContain("count 0");
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(committed.length).toBe(3); // settlement commit
+    expect(committed[2]!).toContain("count 5");
+
+    handoff.dispose();
+    handoff.dispose(); // idempotent
+    const before = committed.length;
+    handoff.dispatch("__TENUN_STATE_SCHEMA", "");
+    expect(committed.length).toBe(before); // no further out-of-band commits
+  });
 });

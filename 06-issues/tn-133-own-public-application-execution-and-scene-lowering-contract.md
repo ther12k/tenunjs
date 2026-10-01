@@ -172,7 +172,7 @@ assignment take effect on merge.
   public in `@tenunjs/widgets`; fail-closed contract tests; Android
   device entry composes the public contract. Device gate caught and PR
   fixed a QuickJS boot regression (no AbortController at eval time).
-- **Slice 3 (this PR):** the acceptance criterion "consumer fixture runs
+- **Slice 3 (PR #213):** the acceptance criterion "consumer fixture runs
   through the contract in the browser preview with application-only
   changes observed" is executed: a generic contract host
   (`examples/gallery-preview/host.html`, no application knowledge)
@@ -183,4 +183,59 @@ assignment take effect on merge.
   with TN-042; arbitrary-entry packaging stays with TN-023; ticking the
   acceptance boxes remains the authority's call on review of this
   evidence.
+
+### Slice record — 2026-09-28: contract hardening from the post-landing review
+
+A read-only review after the slices landed probed the public contract
+edges with focused runtimes (not device runs). Four gaps were
+demonstrated and are closed in this slice, each pinned by a new test:
+
+1. **Async settlement never repainted.** The runtime observed async
+   actions only for rejection; the handoff committed synchronously after
+   TAP. A probe ended with state `n=7` while the last committed scene
+   still showed `n=0`. Now `ApplicationRuntime.onStateInvalidation()`
+   fires on fulfillment AND rejection, and `installHostHandoff`
+   subscribes when the application exposes it, committing a fresh scene
+   out-of-band (`HandoffApplication.onStateInvalidation?` is optional so
+   wrappers may omit it); `HostHandoff.dispose()` unsubscribes.
+2. **Restore was not atomic.** `restore()` applied session states while
+   iterating and could throw on a later unknown key — a probe left a
+   valid earlier session replaced after a rejected restore. The whole
+   snapshot is now validated before anything is applied; a rejected
+   restore provably leaves route, sessions, and the tap table exactly as
+   they were.
+3. **Schema-less snapshots were accepted.** The "schema-versioned"
+   restore silently tolerated a missing `stateSchema` (probe-confirmed).
+   Missing schema is now `SNAPSHOT_INVALID` — hosts restore what
+   `__TENUN_EXPORT` hands them, which always carries it. The Android
+   OTA path and the hot-reload carry both already send schema-carrying
+   snapshots (verified by grep over every `TENUN_RESTORE` caller).
+4. **Stale tap tables survived navigation/restore.** `navigate()` and a
+   successful `restore()` previously left the previous scene's tap ids
+   dispatchable against the not-yet-rendered new screen. Both now clear
+   the table; dispatch fails closed (`TAP_TARGET_UNKNOWN`) until the
+   next `render()` repopulates it.
+
+Test posture: widgets 47/47 (five new contract tests), full suite
+340/340, `verify:ts` and the external-consumer rehearsal
+(`verify-consumer.sh`, both host-contract variants) pass against the
+changed packages. No behavior intentionally preserved from the legacy
+gallery loop depended on the loosened edges; the two example fixtures
+that did (`gallery-preview` schema-less restore, the ui-kit device-loop
+hot-reload fixture) were updated to send schema-carrying snapshots like
+a real host.
+
+### Slice record — 2026-09-29: lowering resolves function components once per render
+
+The same review's fifth finding: `layoutScreen` walks the tree twice
+(measure, then place) and invoked every function component once per
+walk, so an impure component painted its SECOND result while geometry
+was measured from its first. The lowering now resolves each component
+node exactly once per render through a per-render cache (measure's
+resolution is authoritative for place), and the WidgetNode→AnyNode
+adapter is memoized by tree identity so both walks share node identity.
+Contract pinned by two tests (call-count; first-result-painted). All
+golden fixtures and the external-consumer scene digest are unchanged —
+pure components see no difference; only measure/paint divergence in
+impure components is corrected.
 
