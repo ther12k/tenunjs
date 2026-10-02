@@ -243,6 +243,7 @@ status: accepted
 | 08-validation/android-host-review-2026-09-28.md | 38387b9da6dcb9bddbf45d784b54b7c0f661d4d335769824474a2315db8769cb |
 | 08-validation/bundle-report.md | 8c30d2ade2d3f8c4d8f9cd9e0f120379eb8c711d14353105a58a98a5f7abd727 |
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
+| 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |
 | CONTRIBUTING.md | 4c0cace7528d2660fe223bc5dae2cb666515c7e75668727af7bec34851b42884 |
 | README.md | 765f220170671450d93415cc97d23b9987c11f28070c3cc41bd0ee5984b47bce |
 | index.md | f1952fc49182e6d5132d3e733c0d025d5881b63ceeb18353d5e595d30b8524af |

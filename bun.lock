@@ -138,6 +138,19 @@
         "@tenunjs/widgets": "workspace:*",
       },
     },
+    "examples/votol": {
+      "name": "@tenunjs-examples/votol",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@tenunjs/cli",
       "version": "0.1.0",
@@ -204,6 +217,8 @@
     "@tenunjs-examples/todo-list": ["@tenunjs-examples/todo-list@workspace:examples/todo-list"],
 
     "@tenunjs-examples/ui-kit": ["@tenunjs-examples/ui-kit@workspace:examples/ui-kit"],
+
+    "@tenunjs-examples/votol": ["@tenunjs-examples/votol@workspace:examples/votol"],
 
     "@tenunjs/cli": ["@tenunjs/cli@workspace:packages/cli"],
 

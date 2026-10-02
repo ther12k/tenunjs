@@ -103,6 +103,19 @@ Bun.serve({
         headers: { "Content-Type": "text/javascript; charset=utf-8", ...noCache },
       });
     }
+    // Phone-over-WiFi loop: the debug APK itself, so a phone on the LAN can
+    // install straight from its browser without USB/adb.
+    if (pathname === "/apk") {
+      const apkPath = path.join(repoRoot, "embedders/android/app/build/outputs/apk/debug/app-debug.apk");
+      if (!fs.existsSync(apkPath)) return new Response("apk not built yet\n", { status: 404 });
+      return new Response(fs.readFileSync(apkPath), {
+        headers: {
+          "Content-Type": "application/vnd.android.package-archive",
+          "Content-Disposition": 'attachment; filename="tenun-debug.apk"',
+          ...noCache,
+        },
+      });
+    }
     // OTA channel artifacts (published by publish-update.mjs). 404 when
     // none are published — the app treats that as "no update available".
     const otaDir = path.join(repoRoot, "examples/gallery-preview/.out/ota");
