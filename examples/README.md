@@ -12,6 +12,10 @@ composition — no React, no hooks, no CSS.
 > and view logic is exercised by tests, and each is a valid TN-021
 > application project with a complete TN-022 module graph — but nothing
 > here installs or runs on a device, and names may change before beta.
+> (The votol sample's browser host does run against real hardware from a
+> phone — same-origin proxy plus Web Bluetooth; the native rewrite that
+> followed, and the framework gaps behind it, are recorded in
+> [08-validation/votol-consumer-feedback-2026-10-02.md](../08-validation/votol-consumer-feedback-2026-10-02.md).)
 
 ## The samples
 
@@ -25,6 +29,7 @@ composition — no React, no hooks, no CSS.
 | [flutter-showcase](flutter-showcase/) | Launcher plus five independent app studies based on Best-Flutter-UI-Templates: introduction, hotel booking, fitness, design course, and custom drawer — one session each, no shared state. |
 | [flutter-showcase-preview](flutter-showcase-preview/) | Launcher-host browser UI lab for the studies at `/showcase/`: open/close apps like a native home screen with per-app state preserved and state-preserving hot reload. |
 | [gallery-preview](gallery-preview/) | Desktop/browser UI lab for the gallery: same screen state/actions, display-list rendering, drag scrolling, and hot reload before APK packaging. |
+| [votol](votol/) | The external-consumer sample: a real companion app for the esp-votol motorcycle project (live telemetry, read-only parameters, keyless panel, direct BLE pod link) wired to its dashboard backend. Demonstrates the host-injected service-seam pattern, fail-soft data normalization, and push-driven live data. |
 
 ## What is verified today
 
@@ -40,6 +45,9 @@ composition — no React, no hooks, no CSS.
 - `examples/test-support/test/examples-graph.test.ts` builds the TN-022
   application module graph for every sample and requires it to resolve
   every import with no cycles and no diagnostics.
+- `votol` typechecks through its own `tsconfig.json` (its browser host
+  needs DOM types, so it is excluded from the shared examples config),
+  wired into `bun run typecheck` alongside the other samples.
 
 ## Layout
 
@@ -53,6 +61,7 @@ examples/
 ├── flutter-showcase/  focused category showcase based on Best-Flutter-UI-Templates
 ├── flutter-showcase-preview/ separate browser UI lab for the focused showcase
 ├── gallery-preview/   browser UI lab with canvas renderer and hot reload
+├── votol/             external-consumer app: service seams, fail-soft data, BLE pod link
 ├── test-support/      shared screen harness + cross-example graph gate
 ├── tsconfig.json      shared TSX settings (automatic TenunJS transform)
 └── globals.d.ts       intended embedder globals (`__DEV__`)

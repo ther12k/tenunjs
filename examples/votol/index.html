@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VOTOL · TenunJS</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #07090d; color: #f5f7fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 15% 0%, #2a2110, #07090d 60%); }
+      .workspace { width: min(100vw, 560px); padding: 20px; display: grid; gap: 12px; }
+      .eyebrow { color: #f59e0b; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; }
+      h1 { margin: 0; font-size: 22px; line-height: 1.1; }
+      .subtle { color: #9aa3b2; font-size: 13px; line-height: 1.5; }
+      .frame { border: 1px solid #2a3242; border-radius: 26px; padding: 12px; background: #0b0e14; box-shadow: 0 24px 70px #0009; }
+      canvas { display: block; width: 100%; height: min(72vh, 760px); border-radius: 16px; background: #0b0e14; touch-action: none; }
+      .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 6px 10px; }
+      #routes { display: flex; gap: 6px; flex-wrap: wrap; }
+      #routes button { border: 1px solid #2a3242; background: #11151f; color: #9aa3b2; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; }
+      #routes button.active { border-color: #f59e0b; color: #f59e0b; background: #1d160a; }
+      .meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #9aa3b2; }
+      #route-label { color: #f5f7fb; font-weight: 700; }
+      .status { font-size: 12px; }
+      .status.ok { color: #10b981; }
+      .status.error { color: #ef4444; }
+      a { color: #f59e0b; }
+      #pod-pair { position: fixed; inset: 0; background: #07090df2; display: grid; place-items: center; z-index: 10; }
+      #pod-pair[hidden] { display: none; }
+      .pair-card { width: min(92vw, 420px); border: 1px solid #2a3242; border-radius: 20px; background: #0b0e14; padding: 18px; display: grid; gap: 12px; }
+      .pair-card h2 { margin: 0; font-size: 17px; }
+      #pod-pair-video { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; background: #11151f; }
+      #pod-pair-key { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a3242; background: #11151f; color: #f5f7fb; font: 600 13px ui-monospace, monospace; letter-spacing: .06em; }
+      #pod-pair-msg { color: #9aa3b2; font-size: 12px; line-height: 1.5; min-height: 18px; }
+      .pair-actions { display: flex; gap: 8px; }
+      .pair-actions button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #2a3242; background: #11151f; color: #f5f7fb; font-weight: 700; cursor: pointer; }
+      #pod-pair-save { border-color: #f59e0b; color: #f59e0b; background: #1d160a; }
+    </style>
+  </head>
+  <body>
+    <div class="workspace">
+      <div>
+        <div class="eyebrow">TenunJS · esp-votol</div>
+        <h1>VOTOL companion</h1>
+        <div class="subtle">
+          telemetry · parameters · keyless — rendered as TenunJS display lists,
+          fed by the <span id="backend-label">dashboard backend</span> behind the proxy.
+        </div>
+      </div>
+      <div class="frame">
+        <div class="bar">
+          <div id="routes"></div>
+          <div class="meta"><span id="route-label">home</span> · <span id="status" class="status">connecting…</span></div>
+        </div>
+        <canvas id="preview" width="720" height="1520"></canvas>
+      </div>
+    </div>
+    <div id="pod-pair" hidden>
+      <div class="pair-card">
+        <h2>Pair with the pod</h2>
+        <video id="pod-pair-video" muted playsinline></video>
+        <input id="pod-pair-key" placeholder="VOTOL:… or 32-hex key" autocomplete="off" spellcheck="false" />
+        <div id="pod-pair-msg"></div>
+        <div class="pair-actions">
+          <button id="pod-pair-save">Save key</button>
+          <button id="pod-pair-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./preview.js"></script>
+  </body>
+</html>
