@@ -5,6 +5,32 @@ electric-motorcycle project: live telemetry (LOCAL observe mode), controller
 parameters (read-only), and the keyless-alarm panel — rendered entirely as
 TenunJS display lists.
 
+## Sample-app status
+
+This is the **external-consumer sample**: the first TenunJS app written
+against a real product need rather than as a UI study, and the reference
+for three patterns the other samples don't exercise:
+
+- **Service seams as the host boundary.** Screens and runtime are
+  environment-agnostic; every capability (`navigate` / `command` /
+  `keyless` / `pod`) is a seam the host injects. The browser host wires
+  `fetch` and Web Bluetooth; a native host binds the same seams to
+  platform modules — the app logic is never rewritten per host.
+- **Fail-soft data normalization.** `src/snapshot.ts` turns a down
+  backend, an offline bridge, or a missing module into honest "unknown"
+  surfaces — the companion-app posture for absent hardware.
+- **Push-driven live data.** Traffic the user didn't cause (poll
+  snapshots, BLE link-state flips) enters through `runtime.sync()` and
+  `runtime.podSync()`, not through screen actions.
+
+It is a TN-021 application project (`tenun.config.ts`, entry
+`src/main.tsx`): covered by the cross-example module-graph gate and
+typechecked through its own tsconfig. The entry re-exports the
+`VotolRuntime` composition instead of calling `runApp` because the sample
+is host-driven by design — the phone build that fell off the framework
+onto native Kotlin, and the gaps behind it, are recorded in
+[08-validation/votol-consumer-feedback-2026-10-02.md](../../08-validation/votol-consumer-feedback-2026-10-02.md).
+
 ## Architecture
 
 ```

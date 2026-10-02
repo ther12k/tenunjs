@@ -10,7 +10,7 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p examples/tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p examples/tsconfig.json && tsc --noEmit -p examples/votol/tsconfig.json",
     "test": "bun test",
     "verify:ts": "test -f bun.lock && bun install --frozen-lockfile && bun run typecheck && bun test",
     "verify:rust": "./.github/scripts/verify-rust.sh",

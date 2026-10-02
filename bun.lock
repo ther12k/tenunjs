@@ -147,6 +147,9 @@
         "@tenunjs/jsx-runtime": "workspace:*",
         "@tenunjs/widgets": "workspace:*",
       },
+      "devDependencies": {
+        "@tenunjs/cli": "workspace:*",
+      },
     },
     "packages/cli": {
       "name": "@tenunjs/cli",

@@ -10,5 +10,8 @@
     "@tenunjs/core": "workspace:*",
     "@tenunjs/jsx-runtime": "workspace:*",
     "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs/cli": "workspace:*"
   }
 }
