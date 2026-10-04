@@ -59,3 +59,40 @@ roadmap has them.
 - [VOTOL consumer feedback, gap 2](../08-validation/votol-consumer-feedback-2026-10-02.md)
 - `examples/votol/src/runtime.ts` (the seam shape a real consumer chose)
 - TN-097, TN-099, TN-100 (M5 implementation owners)
+
+## Status note (2026-10-05, contract slice executed)
+
+The contract slice landed in **`@tenunjs/platform`** (new package,
+dependency-free by policy — the seam every host and consumer loads,
+including QuickJS bundles without `@tenunjs/protocol`):
+
+- `CAPABILITY_CONTRACT_VERSION = 1`; each capability carries
+  `contractVersion: 1` so TN-097 manifests can bind to it.
+- Result-shaped failure taxonomy (nine frozen kinds), four-state
+  availability (the degradation vocabulary), `PermissionPrerequisite`
+  tables (BLE's Android API-31 split with the legacy
+  `ACCESS_FINE_LOCATION` tier, iOS usage descriptions, web tiers;
+  storage explicitly permission-free as app-scoped).
+- `ble` (scan-filtered GATT client: scan/connect/write/notify with
+  CCC programming, offline/searching/linked push states; Web Bluetooth
+  maps `requestDevice` onto `scan`), `storage` (key-value, UTF-8
+  string values), `camera` (one-shot barcode scan, eleven formats).
+- QuickJS-safe cancellation: minimal cancel-token contract mirroring
+  the widgets `createAbortSource` semantics, a guarded
+  `fromAbortSignal` adapter, no Web-API construction anywhere.
+- Fail-closed aggregate: `defineHostCapabilities(partial)` composes a
+  host's implementations with unsupported stubs so `HostCapabilities`
+  is total — apps call unconditionally and get structured `unsupported`
+  failures (the `noPodHost` pattern from `examples/votol`, generalized;
+  the declared surface is what TN-145 diffs against).
+- 15 tests: fail-closed defaults, passthrough + implementability
+  fixtures (in-memory storage, cancellable-scan BLE), cancellation with
+  `AbortController` deleted from the realm (the recorded TN-133
+  slice-2 device-failure class), and frozen-vocabulary pins.
+- Workspace policy map + packages README updated; full suite 372 pass.
+
+Not claimed: any host implementation, the votol example's migration
+onto these contracts (that proof belongs to TN-142's push-channel
+slice, which the example migrates onto), and permission PROMPTING
+(TN-099). The contracts are frozen input for M5, not an M5 delivery.
+
