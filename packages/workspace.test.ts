@@ -28,11 +28,13 @@ const expectedPackages = [
   "widgets",
   "navigation",
   "cli",
+  "platform",
 ];
 
 /** TenunJS package dependency policy: what each package may depend on. */
 const allowedDependencies: Record<string, string[]> = {
   "@tenunjs/protocol": [],
+  "@tenunjs/platform": [],
   "@tenunjs/jsx-runtime": ["@tenunjs/protocol"],
   "@tenunjs/core": ["@tenunjs/protocol", "@tenunjs/jsx-runtime"],
   "@tenunjs/widgets": ["@tenunjs/protocol", "@tenunjs/jsx-runtime", "@tenunjs/core"],

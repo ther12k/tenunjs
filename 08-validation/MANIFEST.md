@@ -242,7 +242,7 @@ status: accepted
 | 06-issues/tn-138-raise-anti-replay-floor-on-quarantine.md | e571dc4ebbd4a727131177a128ce1889d44556232a3fe2176326691fb746fdf5 |
 | 06-issues/tn-139-free-committed-scenes-on-eval-failure.md | f214461901e38784264a5f99c49a0f1360c554f4d5bd52adb0624bd8b391aead |
 | 06-issues/tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md | 5602ce4854d261a15b4482b48e21c8a6d3fea4d667db5469c9ca10313d34c0da |
-| 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | 6f5c3fe5eb7382468be129c3f295a4dd35903db737b8a965c4d62dcae05be52d |
+| 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | caf386f27546fbc680fc188e18c2123e06e1cf88c0f6fa5cb0ab218cec14ed61 |
 | 06-issues/tn-142-own-host-to-runtime-push-channel.md | b8e7c4d8850ccf88b112468940935625465631af45692ae26d9ea0585f568f70 |
 | 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | d667682e6177568360e9ffa1b8ea51d53a7ffef673a6b67a31854558ddc668b7 |
 | 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | 8902c2052ac1e32cebd41d2d42b1387839d17b6666522abdd66256a7c50eacd2 |

@@ -183,6 +183,10 @@
         "@tenunjs/protocol": "workspace:*",
       },
     },
+    "packages/platform": {
+      "name": "@tenunjs/platform",
+      "version": "0.1.0",
+    },
     "packages/protocol": {
       "name": "@tenunjs/protocol",
       "version": "0.1.0",
@@ -227,6 +231,8 @@
     "@tenunjs/jsx-runtime": ["@tenunjs/jsx-runtime@workspace:packages/jsx-runtime"],
 
     "@tenunjs/navigation": ["@tenunjs/navigation@workspace:packages/navigation"],
+
+    "@tenunjs/platform": ["@tenunjs/platform@workspace:packages/platform"],
 
     "@tenunjs/protocol": ["@tenunjs/protocol@workspace:packages/protocol"],
 
