@@ -28,7 +28,14 @@
  *    commit-after-TAP path alone cannot see async completion;
  *  - navigation-by-action is not baked in: applications wire it through
  *    `services` (the gallery's home-screen special case moved into the
- *    example, where it belongs).
+ *    example, where it belongs);
+ *  - TN-142: the host→runtime push channel is first-class. Companion
+ *    apps are push-driven — live data and link-state reality arrive
+ *    while the user is idle — so hosts deliver out-of-band payloads
+ *    through push()/pushState()/pushTo() into the SAME action runs taps
+ *    use, instead of each app improvising capture-after-mount wrappers
+ *    over view() contexts (the pattern this replaced lived in
+ *    examples/votol/src/runtime.ts).
  *
  * Rendering goes through layoutScreen with the APPLICATION-OWNED theme;
  * no gallery theming is baked into this module. Hosts consume the scene
@@ -165,6 +172,8 @@ export class ApplicationRuntime {
     | undefined;
   private readonly abort = createAbortSource();
   private readonly sessions = new Map<string, Session>();
+  /** TN-142: latest payload per state channel (latest-wins; see pushState). */
+  private readonly stateChannels = new Map<string, unknown>();
   private current: string;
   private lastTapRuns: Array<() => void> = [];
   private readonly staleListeners = new Set<() => void>();
@@ -220,6 +229,23 @@ export class ApplicationRuntime {
     // scene's committed table must not dispatch against it. render()
     // repopulates the table for the new scene.
     this.lastTapRuns = [];
+    // TN-142: replay every cached state channel the newly active screen
+    // implements — the "no blank hero after navigate" property. Screens
+    // that never subscribed to a channel are skipped; transient pushes
+    // are never replayed. Invalidation fires once after the replay loop
+    // (coalesced), so invalidation-driven hosts repaint a single time.
+    if (this.stateChannels.size > 0) {
+      const session = this.sessions.get(name)!;
+      let delivered = false;
+      for (const [channel, input] of this.stateChannels) {
+        const action = session.actions[channel];
+        if (typeof action === "function") {
+          action(input);
+          delivered = true;
+        }
+      }
+      if (delivered) this.notifyStale();
+    }
   }
 
   /**
@@ -285,6 +311,74 @@ export class ApplicationRuntime {
       return;
     }
     throw new ApplicationRuntimeError("UNKNOWN_ACTION", `unknown dispatch verb "${action}"`);
+  }
+
+  // -------------------------------------------------------------------------
+  // TN-142 — host→runtime push channel
+  // -------------------------------------------------------------------------
+
+  /**
+   * Transient push: deliver an out-of-band payload to the ACTIVE
+   * screen's action named `channel`, if it has one. No buffering: a
+   * channel the active screen doesn't implement is dropped at call time
+   * (broadcast semantics — screens subscribe by declaring the action),
+   * and nothing is replayed later. Use for routed one-shot events
+   * (command results) while the target is on screen.
+   */
+  push(channel: string, input?: unknown): void {
+    this.assertLive();
+    this.deliverTo(this.current, channel, input);
+  }
+
+  /**
+   * State push: like push(), but the payload is cached LATEST-WINS per
+   * channel and replayed onto every screen that implements the channel
+   * when it becomes active (navigate) — so a host may push before a
+   * route is ever mounted and the screen still renders current state,
+   * never a blank. Use for live data reality: snapshots, link state.
+   *
+   * Coalescing/backpressure policy (explicit, frozen): there is no
+   * queue anywhere. Active screens receive every push synchronously;
+   * pushes that arrive while nobody consumes a channel collapse to the
+   * latest one. A screen cannot "fall behind" — it either sees the
+   * latest state or is mid-apply of it. Hosts wanting a coarser cadence
+   * throttle at the source (their poll loop), not here.
+   *
+   * restore() is exempt from replay by design: a snapshot is
+   * authoritative state replacement, not a route change.
+   */
+  pushState(channel: string, input?: unknown): void {
+    this.assertLive();
+    this.stateChannels.set(channel, input);
+    this.deliverTo(this.current, channel, input);
+  }
+
+  /**
+   * Targeted transient push: deliver to a NAMED screen's session —
+   * mounted or not — so a result routed back to its origin screen
+   * lands even if the user navigated away (the session keeps state;
+   * returning shows the outcome). Dropped silently, by contract, when
+   * the screen has never been mounted: a result for a screen the user
+   * never opened has no session to update (this matches the
+   * deliver-if-ever-visited semantics this API replaced). Not cached,
+   * never replayed.
+   */
+  pushTo(screen: string, channel: string, input?: unknown): void {
+    this.assertLive();
+    this.deliverTo(screen, channel, input);
+  }
+
+  /** Shared delivery: session action run + post-apply invalidation. */
+  private deliverTo(target: string, channel: string, input: unknown): void {
+    const session = this.sessions.get(target);
+    if (!session) return;
+    const action = session.actions[channel];
+    if (typeof action !== "function") return;
+    action(input);
+    // A delivered sync push mutated state outside a dispatch the host
+    // commits after — invalidation-driven hosts repaint; hosts that own
+    // their push loop (poll-driven) re-render on their own cadence.
+    this.notifyStale();
   }
 
   exportState(): ApplicationSnapshot {

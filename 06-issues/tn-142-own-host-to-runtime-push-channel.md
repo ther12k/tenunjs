@@ -54,3 +54,41 @@ own via a screen service context.
 
 - [VOTOL consumer feedback, gap 3](../08-validation/votol-consumer-feedback-2026-10-02.md)
 - `examples/votol/src/runtime.ts` (`seam()`, `podSync()`, replay-on-mount)
+
+## Status note (2026-10-05, contract slice executed)
+
+Landed in `@tenunjs/widgets` `ApplicationRuntime` — three host-facing
+methods over one delivery path:
+
+- `push(channel, input)` — transient: delivered to the ACTIVE screen's
+  action named `channel` (screens subscribe by declaring the action);
+  dropped at call time otherwise. Broadcast semantics, no buffering.
+- `pushState(channel, input)` — state reality: same delivery plus a
+  latest-wins cache per channel, replayed onto every screen that
+  implements the channel when it becomes active (`navigate`) — the
+  never-a-blank-hero property `podSync` improvised. `restore()` is
+  exempt by design (a snapshot is authoritative state replacement).
+- `pushTo(screen, channel, input)` — routed results: delivers to a
+  named screen's session (mounted or not) so a command outcome lands
+  even after navigating away; documented silent drop for never-mounted
+  screens (no session to update).
+
+Policy made explicit and frozen: no queue exists anywhere. Active
+screens receive every push synchronously; pushes arriving while nobody
+consumes a channel collapse to the latest. A screen cannot fall behind.
+Delivered sync pushes fire `onStateInvalidation` once (thenable
+settlements fire their own, as before); navigate replays coalesce to a
+single invalidation.
+
+Acceptance proof delivered: `examples/votol/src/runtime.ts` migrated —
+the `actionSeams` capture-after-mount wrapper, the `podSync` replay
+cache, and the manual deliver-on-navigate are deleted; `sync()` /
+`podSync()` / `keylessDone` / `podDone` are now pushState/pushTo calls,
+and all 13 example tests pass UNCHANGED (observations of the rendered
+scene). Ten new runtime contract tests pin delivery, drop, replay,
+latest-wins, coalescing, routing, async settlement, and disposed
+behavior; full suite 382 pass.
+
+The dispatch verb set stays closed (TAP / TENUN_RESTORE / EXPORT) —
+pushes are public runtime methods, not verbs, so the host-handoff
+protocol is untouched.

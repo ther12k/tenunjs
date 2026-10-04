@@ -537,3 +537,236 @@ describe("ApplicationRuntime — fail-closed contract", () => {
     }
   });
 });
+
+describe("ApplicationRuntime — host→runtime push channel (TN-142)", () => {
+  interface LiveState {
+    snapshot: string | null;
+  }
+
+  function liveScreen() {
+    return defineScreen<LiveState, any>({
+      name: "Live",
+      initialState: (): LiveState => ({ snapshot: null }),
+      actions: {
+        sync: defineAction<LiveState, string>({
+          run: ({ input, state }) => {
+            state.snapshot = input ?? "empty";
+          },
+        }),
+      },
+      view: ({ state }) =>
+        jsx(Text, { variant: "body", children: `live ${state.snapshot ?? "unknown"}` }) as never,
+    });
+  }
+
+  function linkScreen() {
+    return defineScreen<{ link: string; sync: string | null }, any>({
+      name: "Link",
+      initialState: () => ({ link: "offline", sync: null }),
+      actions: {
+        link: defineAction<{ link: string }, string>({
+          run: ({ input, state }) => {
+            state.link = input ?? "offline";
+          },
+        }),
+        sync: defineAction<{ sync: string | null }, string>({
+          run: ({ input, state }) => {
+            state.sync = input ?? null;
+          },
+        }),
+      },
+      view: ({ state }) =>
+        jsx(Text, { variant: "body", children: `${state.link} ${state.sync ?? "-"}` }) as never,
+    });
+  }
+
+  function resultScreen() {
+    return defineScreen<{ verdict: string }, any>({
+      name: "Result",
+      initialState: () => ({ verdict: "none" }),
+      actions: {
+        result: defineAction<{ verdict: string }, string>({
+          run: ({ input, state }) => {
+            state.verdict = input ?? "none";
+          },
+        }),
+      },
+      view: ({ state }) => jsx(Text, { variant: "body", children: state.verdict }) as never,
+    });
+  }
+
+  function pushRuntime() {
+    return new ApplicationRuntime({
+      screens: { counter: counterScreen(), live: liveScreen(), link: linkScreen(), result: resultScreen() },
+      initial: "counter",
+      theme,
+    } as never);
+  }
+
+  test("push delivers to the active screen's channel and invalidates once", () => {
+    const runtime = pushRuntime();
+    runtime.navigate("live");
+    runtime.render();
+
+    let repaints = 0;
+    runtime.onStateInvalidation(() => {
+      repaints += 1;
+    });
+
+    runtime.push("sync", "ARMED FON 78.5V");
+    expect(repaints).toBe(1);
+
+    const text = JSON.stringify(runtime.render().scene);
+    expect(text).toContain("ARMED FON 78.5V");
+  });
+
+  test("push drops (no throw, no invalidation) when the active screen lacks the channel", () => {
+    const runtime = pushRuntime();
+    runtime.navigate("counter");
+    runtime.render();
+
+    let repaints = 0;
+    runtime.onStateInvalidation(() => {
+      repaints += 1;
+    });
+
+    runtime.push("sync", "nobody listens here");
+    expect(repaints).toBe(0);
+    expect(() => runtime.push("sync", "again")).not.toThrow();
+  });
+
+  test("pushState caches latest-wins and replays on navigate — never a blank hero", () => {
+    const runtime = pushRuntime();
+    // Host pushes BEFORE the screen is ever mounted (the podSync property).
+    runtime.pushState("sync", "stale payload");
+    runtime.pushState("sync", "latest payload");
+    runtime.pushState("link", "LINKED");
+
+    runtime.navigate("link");
+    const text = JSON.stringify(runtime.render().scene);
+    expect(text).toContain("latest payload"); // latest-wins, not the stale one
+    expect(text).toContain("LINKED"); // every implemented channel replays
+  });
+
+  test("navigate replays coalesce invalidation to one repaint", () => {
+    const runtime = pushRuntime();
+    runtime.pushState("sync", "a");
+    runtime.pushState("link", "b");
+
+    let repaints = 0;
+    runtime.onStateInvalidation(() => {
+      repaints += 1;
+    });
+    runtime.navigate("link");
+    expect(repaints).toBe(1);
+  });
+
+  test("pushState to the active screen applies immediately and updates the cache", () => {
+    const runtime = pushRuntime();
+    runtime.navigate("live");
+    runtime.render();
+
+    runtime.pushState("sync", "first");
+    expect(JSON.stringify(runtime.render().scene)).toContain("first");
+
+    runtime.pushState("sync", "second");
+    expect(JSON.stringify(runtime.render().scene)).toContain("second");
+
+    // the cache carries the latest for a later re-mount
+    runtime.navigate("counter");
+    runtime.navigate("live");
+    expect(JSON.stringify(runtime.render().scene)).toContain("second");
+  });
+
+  test("transient pushes are never replayed on navigate", () => {
+    const runtime = pushRuntime();
+    runtime.navigate("result"); // mount the session so push() can deliver
+    runtime.render();
+    runtime.push("result", "OK arm");
+    expect(JSON.stringify(runtime.render().scene)).toContain("OK arm");
+
+    runtime.navigate("counter");
+    runtime.navigate("result");
+    // state persists via the session, but a NEW transient push arriving
+    // while another screen is active is dropped, not queued:
+    runtime.navigate("counter");
+    runtime.push("result", "missed");
+    runtime.navigate("result");
+    expect(JSON.stringify(runtime.render().scene)).not.toContain("missed");
+  });
+
+  test("pushTo lands on a non-active mounted session and survives navigation", () => {
+    const runtime = pushRuntime();
+    runtime.navigate("result"); // mount once
+    runtime.navigate("counter"); // result NOT active
+
+    runtime.pushTo("result", "result", "✓ disarm");
+    runtime.navigate("result");
+    expect(JSON.stringify(runtime.render().scene)).toContain("✓ disarm");
+  });
+
+  test("pushTo drops silently for a screen that was never mounted", () => {
+    const runtime = pushRuntime();
+    expect(() => runtime.pushTo("result", "result", "no session")).not.toThrow();
+    runtime.navigate("result");
+    expect(JSON.stringify(runtime.render().scene)).toContain("none"); // initialState, not the dropped push
+  });
+
+  test("an async action delivered by push invalidates on settlement", async () => {
+    const runtime = new ApplicationRuntime({
+      screens: {
+        counter: counterScreen(),
+        slow: defineScreen<{ value: string }, any>({
+          name: "Slow",
+          initialState: () => ({ value: "idle" }),
+          actions: {
+            arrive: defineAction<{ value: string }, string>({
+              run: ({ input, state }) =>
+                new Promise<void>((resolve) => {
+                  setTimeout(() => {
+                    state.value = input ?? "done";
+                    resolve();
+                  }, 0);
+                }) as never,
+            }),
+          },
+          view: ({ state }) => jsx(Text, { variant: "body", children: state.value }) as never,
+        }),
+      },
+      initial: "counter",
+      theme,
+    } as never);
+    runtime.navigate("slow");
+    runtime.render();
+
+    let repaints = 0;
+    runtime.onStateInvalidation(() => {
+      repaints += 1;
+    });
+
+    runtime.push("arrive", "arrived");
+    expect(repaints).toBe(1); // the delivered push itself (the run call)
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(repaints).toBe(2); // the thenable settlement fired its own invalidation
+    expect(JSON.stringify(runtime.render().scene)).toContain("arrived");
+  });
+
+  test("push entry points throw RUNTIME_DISPOSED after dispose", () => {
+    const runtime = pushRuntime();
+    runtime.dispose();
+    for (const entry of [
+      () => runtime.push("sync", "x"),
+      () => runtime.pushState("sync", "x"),
+      () => runtime.pushTo("live", "sync", "x"),
+    ]) {
+      let code = "";
+      try {
+        entry();
+      } catch (error) {
+        code = (error as ApplicationRuntimeError).code;
+      }
+      expect(code).toBe("RUNTIME_DISPOSED");
+    }
+  });
+});
