@@ -203,3 +203,26 @@ Validate the framework in a real application and freeze a credible beta surface.
 | [TN-131](tn-131-native-integration-risk-probe.md) | P0 | TN-006, TN-007, TN-008 | Execute native-integration risk probes before engine selection |
 | [TN-132](tn-132-installed-android-run-acceptance.md) | P0 | TN-131 | Run the packaged Android application on an installed emulator or device |
 | [TN-133](tn-133-own-public-application-execution-and-scene-lowering-contract.md) | P0 | TN-020, TN-022 | Own the public application execution and scene-lowering contract |
+
+## Review and consumer follow-ups (2026-10)
+
+Filed from the 2026-09-28 Android host review (findings A1–A7, planning
+finding) and the 2026-10-02 VOTOL consumer feedback record (gaps 1–5).
+Sequencing input for the planning track; no milestone re-ordering is
+decided by filing these.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-134](tn-134-reset-ota-trial-dispatch-signal-on-engine-swap.md) | P1 | TN-132 | Reset the OTA trial dispatch signal on engine swap |
+| [TN-135](tn-135-stop-pending-ota-apply-on-activity-destroy.md) | P1 | TN-132 | Stop a pending OTA apply on Activity destruction |
+| [TN-136](tn-136-bound-bundle-evaluation-with-interrupt-and-memory-limit.md) | P1 | TN-029 | Bound bundle evaluation with an interrupt handler and memory limit |
+| [TN-137](tn-137-treat-thrown-js-action-as-failed-dispatch.md) | P2 | TN-029 | Treat a thrown JS action as a failed dispatch |
+| [TN-138](tn-138-raise-anti-replay-floor-on-quarantine.md) | P2 | TN-132 | Raise, never lower, the anti-replay floor on quarantine |
+| [TN-139](tn-139-free-committed-scenes-on-eval-failure.md) | P2 | TN-029 | Free committed scenes when evaluation fails after commit |
+| [TN-140](tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md) | P2 | TN-042 | Surface a malformed display list instead of silently exiting display-list mode |
+| [TN-141](tn-141-freeze-minimal-capability-seam-contracts.md) | P1 | TN-133 | Freeze the minimal capability-seam contracts (ble, storage, camera) ahead of M5 |
+| [TN-142](tn-142-own-host-to-runtime-push-channel.md) | P1 | TN-133 | Own the host-to-runtime push channel in the execution contract |
+| [TN-143](tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md) | P1 | TN-068 | Decide semantic theme-token slots before the widget layer freezes |
+| [TN-144](tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md) | P1 | TN-023, TN-029 | Run a TSX-compiled example bundle in the Android QuickJS host as the dev-loop exit |
+| [TN-145](tn-145-assert-host-parity-for-application-service-seams.md) | P2 | TN-133 | Assert host parity for application service seams |
+| [TN-146](tn-146-own-browser-shell-integration-ux.md) | P2 | TN-133 | Own the browser-shell integration UX (route rail, hot reload, dev-server routes) |
