@@ -56,3 +56,39 @@ criterion is never exercised.
 
 - [Android host review 2026-09-28, finding A1](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/java/.../TenunSurfaceView.kt`, `MainActivity.kt`
+
+## Status note (2026-10-05, fix executed)
+
+The trial-confirm criterion is extracted into `TrialHealth`
+(`app/src/main/kotlin/id/my/tenun/embedder/TrialHealth.kt`, JVM-testable
+— the SceneHolder precedent: the Activity/SurfaceView cannot be
+instantiated on the JVM). Evidence is session-scoped:
+`onEngineSwapped()` clears both signals; `isHealthy()` requires the
+CURRENT session's own scene commit AND dispatch.
+
+Wiring:
+
+- `TenunSurfaceView.engine` setter resets `dispatchedOnce`, so the
+  first-successful-dispatch hook can fire again for each new engine
+  (the view-lifetime flag was the root of A1).
+- `MainActivity` feeds the real signals: boot scene (onCreate), swap +
+  candidate scene (applyOtaUpdate), hot-reload swaps reset too
+  (applyReload — a pending trial must not confirm on the old engine's
+  evidence), and the surface dispatch hook. `scheduleTrialConfirm` now
+  reads `trialHealth.isHealthy()`.
+
+Test evidence (JVM, `TrialHealthTest`, 4 tests): the A1 regression —
+packaged-session interaction, then swap + candidate scene, assert NOT
+healthy until the candidate itself observes a dispatch — plus
+swap-clears-both-halves, fresh-criterion, and repeated-swaps. Mutation
+evidence recorded: with `onEngineSwapped()` neutered to the old
+no-op-on-swap semantics, 3 of 4 tests FAIL including the A1 regression
+(neutering verified by local run, then restored; gradle
+`testDebugUnitTest` green 4/4, `compileDebugAndroidTestKotlin` green,
+full local `run_android_test.sh` PASS: C engine loop, unit suite,
+assembleDebug, NDK dual-ABI).
+
+Known limit, unchanged from the review record: the full-Activity OTA
+journey (real channel assets, 10 s trial uptime) stays engine-level in
+the androidTest harness — the criterion logic itself is now
+deterministically pinned, which is the layer the bug lived in.
