@@ -20,8 +20,11 @@ for three patterns the other samples don't exercise:
   backend, an offline bridge, or a missing module into honest "unknown"
   surfaces — the companion-app posture for absent hardware.
 - **Push-driven live data.** Traffic the user didn't cause (poll
-  snapshots, BLE link-state flips) enters through `runtime.sync()` and
-  `runtime.podSync()`, not through screen actions.
+  snapshots, BLE link-state flips, command results) enters through the
+  `ApplicationRuntime` push channel (TN-142): `sync()`/`podSync()` are
+  latest-wins state pushes replayed on every mount, results are routed
+  to the owning screen's session — screens subscribe by declaring the
+  action, and the runtime owns all delivery bookkeeping.
 
 It is a TN-021 application project (`tenun.config.ts`, entry
 `src/main.tsx`): covered by the cross-example module-graph gate and
