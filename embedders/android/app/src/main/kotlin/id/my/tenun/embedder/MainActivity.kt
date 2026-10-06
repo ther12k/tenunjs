@@ -44,9 +44,10 @@ class MainActivity : Activity() {
     private var otaManager: OtaManager? = null
 
     // OTA trial-confirm criterion state (see scheduleTrialConfirm).
+    // Session-scoped: a swap (OTA apply, hot reload) clears the evidence
+    // so only the CURRENT engine's own scene + dispatch can confirm.
+    private val trialHealth = TrialHealth()
     private var trialConfirmed = false
-    private var firstSceneCommitted = false
-    private var firstDispatchObserved = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -93,7 +94,7 @@ class MainActivity : Activity() {
         setContentView(surfaceView)
 
         // First scene from boot is on screen (surface attach synced it).
-        firstSceneCommitted = engine?.getLatestScene()?.isNotEmpty() == true
+        if (engine?.getLatestScene()?.isNotEmpty() == true) trialHealth.onSceneCommitted()
 
         if (devServerUrl != null) {
             Log.i(TAG, "dev hot reload enabled against $devServerUrl")
@@ -260,7 +261,10 @@ class MainActivity : Activity() {
                 current?.destroy()
             } catch (ignored: Exception) {
             }
-            firstSceneCommitted = candidate.getLatestScene()?.isNotEmpty() == true
+            // TN-134: prior scene/dispatch evidence belonged to the OLD
+            // engine — a pre-update tap must not confirm this trial.
+            trialHealth.onEngineSwapped()
+            if (candidate.getLatestScene()?.isNotEmpty() == true) trialHealth.onSceneCommitted()
             scheduleTrialConfirm(metadata.sequence)
             Log.i(TAG, "OTA bundle v${metadata.sequence} live (trial)")
             true
@@ -280,7 +284,7 @@ class MainActivity : Activity() {
         trialConfirmed = false
         mainHandler.postDelayed({
             if (trialConfirmed) return@postDelayed
-            if (firstSceneCommitted && firstDispatchObserved) {
+            if (trialHealth.isHealthy()) {
                 if (bundleStore?.confirmTrial(sequence) == true) {
                     trialConfirmed = true
                     Log.i(TAG, "OTA bundle v$sequence CONFIRMED (scene + dispatch + uptime)")
@@ -293,7 +297,7 @@ class MainActivity : Activity() {
     }
 
     private fun onTrialHealthSignal() {
-        firstDispatchObserved = true
+        trialHealth.onDispatchObserved()
     }
 
     private fun readAssetBundle(): ByteArray? {
@@ -388,6 +392,9 @@ class MainActivity : Activity() {
             engine = candidate
             surfaceView?.engine = candidate
             try { current?.destroy() } catch (ignored: Exception) {}
+            // A pending trial must not confirm on the OLD engine's
+            // evidence after a hot-reload swap either.
+            trialHealth.onEngineSwapped()
             Log.i(TAG, "hot reload applied (${bytes.size} bytes)")
         } catch (e: Exception) {
             Log.w(TAG, "hot reload failed; keeping current bundle: ${e.message}")

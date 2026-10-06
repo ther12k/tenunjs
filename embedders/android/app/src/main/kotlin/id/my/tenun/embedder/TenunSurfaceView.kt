@@ -125,6 +125,11 @@ class TenunSurfaceView @JvmOverloads constructor(
     var engine: TenunEngine? = null
         set(value) {
             field = value
+            // TN-134: dispatch evidence is per-engine. Without this reset
+            // the first-successful-dispatch hook fired once per VIEW
+            // lifetime, so a pre-update tap satisfied the OTA trial
+            // criterion for every later engine.
+            dispatchedOnce = false
             // Reflect the engine's already-committed scene (including the
             // JS-provided button label) before the first draw, so the view
             // renders the JavaScript application's initial state.
