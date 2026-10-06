@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-141: Freeze the minimal capability-seam contracts (ble, storage, camera) ahead of M5"
 summary: "Contracts-first re-sequencing input from the VOTOL consumer build: freeze ble/storage/camera seam types (with permissions and degradation states) early even though implementations land in M5."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-141"
 milestone: "M5"
 priority: "P1"

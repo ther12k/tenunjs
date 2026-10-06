@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-144: Run a TSX-compiled example bundle in the Android QuickJS host as the dev-loop exit"
 summary: "verify:android proves the embedder with a hand-authored tenun_app.js scene — not how anyone writes apps. Exit criterion: a TSX-compiled example bundle runs in the host, even with ugly widgets."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-144"
 milestone: "M1"
 priority: "P1"
@@ -54,3 +54,7 @@ widget layer is polished.
 - [VOTOL consumer feedback, gap 1](../08-validation/votol-consumer-feedback-2026-10-02.md)
 - `embedders/android/app/src/main/assets/tenun_app.js` (the hand-authored scene to retire)
 - 04-api/external-consumer-guide.md (the app→host route this completes)
+
+## Status note (2026-10-07, closed)
+
+Closed via PR #224: a TSX-compiled counter bundle boots in the `verify:android` engine loop (real QuickJS, 11 checks + mutation evidence).

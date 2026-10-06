@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-019: Create TypeScript package workspace and strict configuration"
 summary: "Publishable package skeleton with strict type checking and dependency boundaries."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-019"
 milestone: "M1"
 priority: "P0"
@@ -139,3 +139,7 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## Status note (2026-10-07, closed)
+
+Closed: the root `tsconfig.json` (strict, TenunJS JSX transform policy) plus the per-package TS sources and the four-config typecheck chain in `bun run typecheck`.

@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-022: Implement module graph and asset manifest builder"
 summary: "Deterministic application graph with assets, screens, capabilities, hashes, and source maps."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-022"
 milestone: "M1"
 priority: "P0"
@@ -145,3 +145,7 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## Status note (2026-10-07, closed)
+
+Closed via PR #193 (module graph + asset manifest) and closed out in PR #194; continuously exercised by `examples/test-support` graph gates.

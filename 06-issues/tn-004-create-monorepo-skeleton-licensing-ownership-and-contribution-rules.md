@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-004: Create monorepo skeleton, licensing, ownership, and contribution rules"
 summary: "Buildable empty workspace with ownership and legal metadata."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-004"
 milestone: "M0"
 priority: "P0"
@@ -134,3 +134,7 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## Status note (2026-10-07, closed)
+
+Closed by the repository itself: the `packages/*` + `examples/*` workspace skeleton, MIT licensing, CODEOWNERS, and CONTRIBUTING are the deliverable (guarded by the workspace gate `packages/workspace.test.ts` and the manifest gate).
