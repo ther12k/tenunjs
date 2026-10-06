@@ -79,6 +79,11 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
+      # TN-144: the engine loop boots a TSX-compiled bundle, so the
+      # verify:android job needs the bun toolchain that compiles it.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
       - name: Run Android embedder execution loop test
         run: ./embedders/android/run_android_test.sh
 

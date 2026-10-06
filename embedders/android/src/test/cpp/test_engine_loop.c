@@ -31,7 +31,112 @@ static char* read_file(const char* path, size_t* out_len) {
   return buf;
 }
 
+/* TN-144: boot a TSX-compiled example bundle (the counter sample through
+ * the public host-handoff contract) in the REAL vendored QuickJS and
+ * prove the dev-loop exit criteria: first scene commit through the
+ * native tenun_commit binding, plus a dispatch round trip that mutates
+ * application state and re-commits a scene.
+ *
+ * The mutation lever is TENUN_RESTORE with a host-carried snapshot —
+ * the exact ApplicationSnapshot shape __TENUN_EXPORT produces and hosts
+ * persist across engine swaps (hot reload / OTA). The C dispatch surface
+ * returns the committed scene (not the JS return value), so every
+ * assertion rides the scene a real host would render. */
+static int run_tsx_bundle_checks(const char* asset_path) {
+  printf("== TenunJS Android Native Engine Loop Test (TSX bundle, TN-144) ==\n");
+  printf("Loading TSX-compiled application bundle: %s\n", asset_path);
+
+  size_t bundle_len = 0;
+  char* bundle_code = read_file(asset_path, &bundle_len);
+  CHECK(bundle_code != NULL && bundle_len > 0, "Read TSX-compiled counter bundle");
+  if (!bundle_code) return 1;
+
+  tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)bundle_code, bundle_len);
+  free(bundle_code);
+  CHECK(engine != NULL, "TSX-compiled bundle boots in real QuickJS (public host-handoff contract)");
+  if (!engine) return 1;
+
+  /* 1. First scene commit: the bundle self-initialized and handed a
+   * display-list scene to the native tenun_commit binding. */
+  const char* scene0 = tenun_android_engine_get_scene(engine);
+  CHECK(strstr(scene0, "\"tenun\":\"display-list\"") != NULL,
+        "First scene committed through native commit binding (display-list)");
+  CHECK(strstr(scene0, "\"text\":\"Counter\"") != NULL, "Scene carries the counter app chrome (AppBar title)");
+  CHECK(strstr(scene0, "\"text\":\"0\"") != NULL, "Counter initial state rendered (count 0)");
+
+  /* 2. State mutation round trip: dispatch a host-carried snapshot;
+   * the TSX app must mount it, re-render, and re-commit. */
+  const char* snapshot_count9 =
+      "{\"route\":\"counter\",\"states\":{\"counter\":{\"count\":9}},\"stateSchema\":1}";
+  char* scene1 = tenun_android_engine_dispatch(engine, "TENUN_RESTORE", snapshot_count9);
+  CHECK(scene1 != NULL, "TENUN_RESTORE dispatch returned a scene");
+  CHECK(strstr(scene1, "\"text\":\"9\"") != NULL,
+        "Restored state re-rendered and re-committed (count 9 on screen)");
+  CHECK(strstr(scene1, "\"text\":\"Counter\"") != NULL, "Screen chrome intact after restore");
+  free(scene1);
+
+  /* 3. Fail-closed negative: a schema-tampered snapshot must throw inside
+   * the app runtime, WARN on the host log (a failed dispatch silently
+   * freezing the UI is the failure this visibility exists for), leave the
+   * last good scene in place, and keep the engine dispatchable. */
+  const char* snapshot_bad_schema =
+      "{\"route\":\"counter\",\"states\":{\"counter\":{\"count\":4}},\"stateSchema\":2}";
+  {
+    fflush(stderr);
+    int saved_err = dup(fileno(stderr));
+    const char* capture_path = "/tmp/tenun_tsx_tamper_capture.txt";
+    int cap_fd = open(capture_path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    dup2(cap_fd, fileno(stderr));
+    close(cap_fd);
+
+    char* bad_scene = tenun_android_engine_dispatch(engine, "TENUN_RESTORE", snapshot_bad_schema);
+
+    fflush(stderr);
+    dup2(saved_err, fileno(stderr));
+    close(saved_err);
+
+    CHECK(bad_scene != NULL && strstr(bad_scene, "\"text\":\"9\"") != NULL,
+          "Schema-tampered restore leaves the last good scene committed (count stays 9)");
+    free(bad_scene);
+
+    FILE* cap = fopen(capture_path, "r");
+    char line[512];
+    int saw_warn = 0;
+    if (cap) {
+      while (fgets(line, sizeof(line), cap)) {
+        if (strstr(line, "tenun dispatch action=TENUN_RESTORE failed") != NULL) {
+          saw_warn = 1;
+          break;
+        }
+      }
+      fclose(cap);
+    }
+    CHECK(saw_warn, "Tampered restore is fail-visible (WARN on host log)");
+  }
+
+  /* 4. Engine remains dispatchable after the failed restore. */
+  const char* snapshot_count3 =
+      "{\"route\":\"counter\",\"states\":{\"counter\":{\"count\":3}},\"stateSchema\":1}";
+  char* scene2 = tenun_android_engine_dispatch(engine, "TENUN_RESTORE", snapshot_count3);
+  CHECK(scene2 != NULL && strstr(scene2, "\"text\":\"3\"") != NULL,
+        "Engine still applies dispatches after the failed restore (fail-closed, not fatal)");
+  free(scene2);
+
+  tenun_android_engine_destroy(engine);
+  if (failures > 0) {
+    printf("FAILED: %d TSX bundle checks failed\n", failures);
+    return 1;
+  }
+  printf("ALL TSX BUNDLE ENGINE LOOP CHECKS PASS (REAL QUICKJS, TN-144)\n");
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  /* TN-144 mode: drive the TSX-compiled bundle checks and exit. */
+  if (argc > 2 && strcmp(argv[1], "--tsx") == 0) {
+    return run_tsx_bundle_checks(argv[2]);
+  }
+
   const char* asset_path = (argc > 1) ? argv[1] : "embedders/android/app/src/main/assets/tenun_app.js";
   printf("== TenunJS Android Native Engine Loop Test (with QuickJS) ==\n");
   printf("Loading application asset: %s\n", asset_path);

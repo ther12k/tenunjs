@@ -8,6 +8,7 @@
     "jsxImportSource": "@tenunjs/jsx-runtime",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["bun"],
     "paths": {
       "@tenunjs/jsx-runtime": ["../../../../packages/jsx-runtime/src/index.ts"],
