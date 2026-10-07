@@ -47,10 +47,21 @@ class OtaManager(
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val lifecycleLock = Any()
     private val checkInFlight = AtomicBoolean(false)
     private val applyInFlight = AtomicBoolean(false)
     @Volatile private var lastCheckAtMs: Long = 0L
     @Volatile private var devPolling = false
+
+    /**
+     * TN-135: once the host is destroyed, this manager is dead — the
+     * pipeline is lifecycle-bound. Set by [stop] and read at every point
+     * a late leg could still touch the host: check entry, before
+     * staging a trial, and at posted-apply run time. An abandoned leg
+     * never quarantines: host death is not a bundle defect, and a good
+     * release must still be installable by the next launch.
+     */
+    @Volatile private var stopped = false
 
     /** DEV builds only: short-interval perpetual loop. */
     fun startDevPolling(firstDelayMs: Long, intervalMs: Long) {
@@ -65,10 +76,18 @@ class OtaManager(
         }
     }
 
-    /** Stops the dev loop (onDestroy). */
+    /**
+     * Stops the manager (onDestroy): the dev loop, any posted apply, and
+     * every in-flight or later-arriving check leg. After this returns,
+     * [checkNow] is a no-op and no apply can run, even one posted by a
+     * fetch that was mid-download when the host died.
+     */
     fun stop() {
-        devPolling = false
-        mainHandler.removeCallbacksAndMessages(null)
+        synchronized(lifecycleLock) {
+            stopped = true
+            devPolling = false
+            mainHandler.removeCallbacksAndMessages(null)
+        }
     }
 
     /**
@@ -78,6 +97,10 @@ class OtaManager(
      * the throttle for tests and explicit operator checks.
      */
     fun checkNow(force: Boolean = false, onDone: (() -> Unit)? = null) {
+        if (stopped) {
+            onDone?.invoke()
+            return
+        }
         val now = System.currentTimeMillis()
         if (!force && now - lastCheckAtMs < MIN_CHECK_GAP_MS) {
             onDone?.invoke()
@@ -126,31 +149,33 @@ class OtaManager(
             return
         }
 
-        store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
-        store.promoteTrial(metadata.sequence)
-
-        // Apply on the main thread (engine + view live there).
-        mainHandler.post {
-            val applied = if (applyInFlight.compareAndSet(false, true)) {
-                try {
-                    applyBundle(bytes, metadata)
-                } catch (e: Exception) {
-                    Log.w(TAG, "update v${metadata.sequence} apply threw: ${e.message}")
-                    false
-                } finally {
-                    applyInFlight.set(false)
+        synchronized(lifecycleLock) {
+            if (stopped) return
+            store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
+            // Staged downloads are safe to abandon. A trial means boot has
+            // actually started, not merely that an apply was queued.
+            mainHandler.post {
+                synchronized(lifecycleLock) {
+                    if (stopped) return@post
+                    if (!applyInFlight.compareAndSet(false, true)) return@post
+                    try {
+                        if (!store.promoteTrial(metadata.sequence)) return@post
+                        val applied = try {
+                            applyBundle(bytes, metadata)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "update v${metadata.sequence} apply threw: ${e.message}")
+                            false
+                        }
+                        if (applied) {
+                            Log.i(TAG, "update v${metadata.sequence} applied (trial, awaiting confirm)")
+                        } else {
+                            store.quarantine(metadata.sequence)
+                            Log.w(TAG, "update v${metadata.sequence} failed to apply; quarantined")
+                        }
+                    } finally {
+                        applyInFlight.set(false)
+                    }
                 }
-            } else {
-                false
-            }
-            if (applied) {
-                // TRIAL stays unconfirmed until the host's health criterion
-                // passes (first scene + minimum uptime); a process death
-                // before that quarantines this sequence on next start.
-                Log.i(TAG, "update v${metadata.sequence} applied (trial, awaiting confirm)")
-            } else {
-                store.quarantine(metadata.sequence)
-                Log.w(TAG, "update v${metadata.sequence} failed to apply; quarantined")
             }
         }
     }
