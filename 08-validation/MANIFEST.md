@@ -245,7 +245,7 @@ status: accepted
 | 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | caf386f27546fbc680fc188e18c2123e06e1cf88c0f6fa5cb0ab218cec14ed61 |
 | 06-issues/tn-142-own-host-to-runtime-push-channel.md | 5ce33f591db742278c35d22b93a2419eb5b19f73401855d35681caa773ae166a |
 | 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | d667682e6177568360e9ffa1b8ea51d53a7ffef673a6b67a31854558ddc668b7 |
-| 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | 8902c2052ac1e32cebd41d2d42b1387839d17b6666522abdd66256a7c50eacd2 |
+| 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | e953afab9b0542ea446d095c1223f547aa2d0f9a6aa76c36e6d9fa72c1566934 |
 | 06-issues/tn-145-assert-host-parity-for-application-service-seams.md | 971f7d8476d59f68f3f396c24e2710d437b33b292dd25665a61d9b7af47162cb |
 | 06-issues/tn-146-own-browser-shell-integration-ux.md | 3bfd494f851ec13015003f52de20b1faf76ab7c316f567c97363119db51cd786 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |

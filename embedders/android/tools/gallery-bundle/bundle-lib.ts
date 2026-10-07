@@ -14,6 +14,7 @@ import vm from "node:vm";
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "../../../..");
 const entry = path.join(here, "device-entry.ts");
+const counterEntry = path.join(here, "counter-entry.ts");
 const previewEntry = path.join(repoRoot, "examples/gallery-preview/app-entry.ts");
 const previewShellEntry = path.join(repoRoot, "examples/gallery-preview/preview.ts");
 const showcasePreviewEntry = path.join(repoRoot, "examples/flutter-showcase-preview/app-entry.ts");
@@ -33,7 +34,7 @@ export const watchedDirs = [
   path.join(repoRoot, "packages/navigation/src"),
 ];
 
-function latestMtime(dir, best = 0) {
+function latestMtime(dir: string, best = 0): number {
   let result = best;
   let entries;
   try {
@@ -102,7 +103,7 @@ export async function buildBundle(): Promise<BundleArtifact> {
     code = `(function(){\n${code}\n})();`;
   }
 
-  smokeRun(code);
+  smokeRun(code, "gallery_app.js");
 
   return {
     code,
@@ -145,24 +146,61 @@ export async function buildShowcasePreviewArtifacts(): Promise<ShowcasePreviewAr
   return { app: artifact(app), shell: artifact(shell) };
 }
 
-function smokeRun(code: string): void {
+function smokeRun(code: string, filename: string, expected: string[] = []): void {
   const committed: string[] = [];
-  globalThis.tenun_commit = (json) => committed.push(json);
-  delete globalThis.__tenun_last_scene;
-  delete globalThis.__tenun_dispatch_action;
+  const host = globalThis as Record<string, unknown>;
+  host.tenun_commit = (json: string) => committed.push(json);
+  delete host.__tenun_last_scene;
+  delete host.__tenun_dispatch_action;
   try {
-    vm.runInThisContext(code, { filename: "gallery_app.js" });
-    const raw = committed.at(-1) ?? globalThis.__tenun_last_scene ?? "null";
+    vm.runInThisContext(code, { filename });
+    const raw = committed.at(-1) ?? (host.__tenun_last_scene as string | undefined) ?? "null";
     const scene = JSON.parse(raw);
     if (!scene || scene.tenun !== "display-list") {
       throw new Error("smoke run failed: bundle did not commit a display-list scene");
     }
-    if (typeof globalThis.__tenun_dispatch_action !== "function") {
+    if (typeof host.__tenun_dispatch_action !== "function") {
       throw new Error("smoke run failed: __tenun_dispatch_action not installed");
     }
+    for (const needle of expected) {
+      if (!raw.includes(needle)) {
+        throw new Error(`smoke run failed: committed scene lacks ${JSON.stringify(needle)}`);
+      }
+    }
   } finally {
-    delete globalThis.tenun_commit;
-    delete globalThis.__tenun_dispatch_action;
-    delete globalThis.__tenun_last_scene;
+    delete host.tenun_commit;
+    delete host.__tenun_dispatch_action;
+    delete host.__tenun_last_scene;
   }
+}
+
+/**
+ * Builds the TN-144 counter bundle: the real counter sample composition
+ * (defineScreen TSX + theme) through the public host-handoff contract,
+ * as script input to the QuickJS engine loop. Smoke-runs headlessly the
+ * same way the gallery bundle does; the committed scene must carry the
+ * counter's own chrome so a mis-wired entry (wrong screen, missing
+ * theme) fails the build, not the gate.
+ */
+export async function buildCounterBundle(): Promise<BundleArtifact> {
+  const result = await build({
+    entrypoints: [counterEntry],
+    target: "browser",
+    format: "esm",
+    minify: false,
+    external: [],
+  });
+  if (!result.success) {
+    throw new Error(`counter bundle build failed:\n${result.logs.map(String).join("\n")}`);
+  }
+  let code = await result.outputs[0].text();
+  if (/^\s*(import|export)\s/m.test(code)) {
+    code = `(function(){\n${code}\n})();`;
+  }
+  smokeRun(code, "counter_app.js", ['"text":"Counter"', '"text":"0"']);
+  return {
+    code,
+    hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
+    builtAtMtime: latestSourceMtime(),
+  };
 }
