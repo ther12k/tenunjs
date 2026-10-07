@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-020: Implement custom jsx/jsxs/Fragment runtime"
 summary: "React-independent TSX transforms produce validated widget descriptions."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-020"
 milestone: "M1"
 priority: "P0"
@@ -153,3 +153,7 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## Status note (2026-10-07, closed)
+
+Closed: `@tenunjs/jsx-runtime` implements jsx/jsxs/Fragment per ADR-0003; fixture tsconfigs under `packages/jsx-runtime/tests/tsx-fixtures` pin both transform modes.

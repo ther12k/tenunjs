@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-142: Own the host-to-runtime push channel in the execution contract"
 summary: "Companion apps are push-driven (idle-time notifications, reconnection, link-state flips); make host→runtime delivery a first-class runtime surface with coalescing/backpressure instead of per-app actionSeams bookkeeping."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-142"
 milestone: "M3"
 priority: "P1"

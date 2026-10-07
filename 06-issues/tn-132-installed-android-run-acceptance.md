@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-132: Run the packaged Android application on an installed emulator or device"
 summary: "Close the installed-run acceptance for the Android embedder foundation: install the debug APK, operate the application loop, observe JavaScript-only customization, and exercise production Unicode and lifecycle boundaries."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-132"
 milestone: "M1"
 priority: "P0"
@@ -89,3 +89,7 @@ A local emulator attempt on the development host was `BLOCKED_BY_ENVIRONMENT` (`
 - [ ] Real Activity/surface recreation exercised; post-recreation interaction succeeds.
 - [ ] Existing six CI checks remain green and unchanged.
 - [ ] Only defects exposed by actual execution are fixed; no speculative refactors.
+
+## Status note (2026-10-07, closed)
+
+Closed via PRs #174/#175: installed-device acceptance on a KVM-backed Android 11 emulator is the `verify-android-device` CI gate, with the exit-90/exit-1 failure classification.

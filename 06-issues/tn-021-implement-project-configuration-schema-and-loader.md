@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-021: Implement project configuration schema and loader"
 summary: "Typed fail-closed application configuration with diagnostics and defaults."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-021"
 milestone: "M1"
 priority: "P1"
@@ -137,3 +137,7 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## Status note (2026-10-07, closed)
+
+Closed: `@tenunjs/cli` `defineConfig` with documented defaults; every example (`counter`, `gallery`, `votol`, ...) carries a `tenun.config.ts`.

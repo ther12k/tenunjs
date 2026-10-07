@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-133: Own the public application execution and scene-lowering contract"
 summary: "Define the authoritative public contract connecting an independently authored application to a host: entry, execution, virtual-tree-to-scene lowering, host handoff, and package ownership."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-133"
 milestone: "M1"
 priority: "P0"
@@ -239,3 +239,6 @@ golden fixtures and the external-consumer scene digest are unchanged —
 pure components see no difference; only measure/paint divergence in
 impure components is corrected.
 
+## Status note (2026-10-07, closed)
+
+Closed via PRs #212/#213 (runtime host-handoff + preview host extraction), hardened by #214/#216: `ApplicationRuntime` + `installHostHandoff` in `@tenunjs/widgets`.
