@@ -73,13 +73,12 @@ runs on throwaway branches via `workflow_dispatch` (no local device):
 - `checkNow` gate neutered → `checkAfterStopIsANoOpOnTheChannel` FAILS
   (run 37569270028, job 112623998801).
 
-Honest boundaries, not claimed as proven: the posted-apply run-time
-recheck is defense-in-depth whose neutering is not deterministically
-observable (it requires a stop between post and run on the main
-looper); the `onDestroy` wiring line is covered by the manager-level
-stop contract and review, not by an automated test; Activity-level
-destroy/recreate instrumentation is blocked by the asset-baked channel
-(install-time trust anchor — a runtime-port loopback cannot be pointed
-at a real Activity), so UI-level evidence stays in the manual
-phone-test checklist, the boundary `OtaEngineJourneyTest` already
-documents.
+Review repair (2026-10-07): a lifecycle lock serializes stop against
+staging and applying. Trial promotion moved into the live main-thread
+apply, so an abandoned queued download is STAGED, never TRIAL. A
+main-looper-fenced test covers stop after download but before queued
+apply. An ActivityScenario recreation test injects a loopback manager
+using test-side reflection (no production trust-anchor override), holds
+its download across recreation, and proves the old Activity never
+applies and the new Activity boots cleanly. Existing fetch tests now
+await completion latches instead of sleep-based settlement guesses.

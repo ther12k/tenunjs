@@ -47,6 +47,7 @@ class OtaManager(
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val lifecycleLock = Any()
     private val checkInFlight = AtomicBoolean(false)
     private val applyInFlight = AtomicBoolean(false)
     @Volatile private var lastCheckAtMs: Long = 0L
@@ -82,9 +83,11 @@ class OtaManager(
      * fetch that was mid-download when the host died.
      */
     fun stop() {
-        stopped = true
-        devPolling = false
-        mainHandler.removeCallbacksAndMessages(null)
+        synchronized(lifecycleLock) {
+            stopped = true
+            devPolling = false
+            mainHandler.removeCallbacksAndMessages(null)
+        }
     }
 
     /**
@@ -146,45 +149,33 @@ class OtaManager(
             return
         }
 
-        // TN-135: the host can die while this fetch was in flight. Do not
-        // stage or promote a trial a destroyed host can never confirm.
-        if (stopped) {
-            Log.i(TAG, "update v${metadata.sequence} verified after stop; abandoning (host destroyed)")
-            return
-        }
-
-        store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
-        store.promoteTrial(metadata.sequence)
-
-        // Apply on the main thread (engine + view live there).
-        mainHandler.post {
-            // TN-135: stop() can land between this post and its run. The
-            // abandoned apply neither runs against the dead host nor
-            // quarantines — host death is not a bundle defect.
-            if (stopped) {
-                Log.i(TAG, "update v${metadata.sequence} apply abandoned (host destroyed)")
-                return@post
-            }
-            val applied = if (applyInFlight.compareAndSet(false, true)) {
-                try {
-                    applyBundle(bytes, metadata)
-                } catch (e: Exception) {
-                    Log.w(TAG, "update v${metadata.sequence} apply threw: ${e.message}")
-                    false
-                } finally {
-                    applyInFlight.set(false)
+        synchronized(lifecycleLock) {
+            if (stopped) return
+            store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
+            // Staged downloads are safe to abandon. A trial means boot has
+            // actually started, not merely that an apply was queued.
+            mainHandler.post {
+                synchronized(lifecycleLock) {
+                    if (stopped) return@post
+                    if (!applyInFlight.compareAndSet(false, true)) return@post
+                    try {
+                        if (!store.promoteTrial(metadata.sequence)) return@post
+                        val applied = try {
+                            applyBundle(bytes, metadata)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "update v${metadata.sequence} apply threw: ${e.message}")
+                            false
+                        }
+                        if (applied) {
+                            Log.i(TAG, "update v${metadata.sequence} applied (trial, awaiting confirm)")
+                        } else {
+                            store.quarantine(metadata.sequence)
+                            Log.w(TAG, "update v${metadata.sequence} failed to apply; quarantined")
+                        }
+                    } finally {
+                        applyInFlight.set(false)
+                    }
                 }
-            } else {
-                false
-            }
-            if (applied) {
-                // TRIAL stays unconfirmed until the host's health criterion
-                // passes (first scene + minimum uptime); a process death
-                // before that quarantines this sequence on next start.
-                Log.i(TAG, "update v${metadata.sequence} applied (trial, awaiting confirm)")
-            } else {
-                store.quarantine(metadata.sequence)
-                Log.w(TAG, "update v${metadata.sequence} failed to apply; quarantined")
             }
         }
     }

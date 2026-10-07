@@ -1,5 +1,6 @@
 package id.my.tenun.embedder
 
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
@@ -26,13 +27,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * quarantine (host death is not a bundle defect; the release must stay
  * installable by the next launch).
  *
- * Host destruction is simulated by [OtaManager.stop] in the exact order
- * MainActivity.onDestroy performs it (stop before engine teardown). The
- * host here is the manager directly — the same boundary
- * OtaEngineJourneyTest documents; Activity-level destroy/recreate
- * evidence is the manual phone-test checklist (the channel is an
- * asset-baked install-time trust anchor, so a real Activity cannot be
- * pointed at a runtime-port loopback server).
+ * Manager-level gates cover downloads and queued applies. The recreation
+ * case attaches a loopback-backed manager to the real Activity using
+ * test-side reflection, leaving the production asset trust anchor intact.
+
  */
 @RunWith(AndroidJUnit4::class)
 class OtaStopLifecycleTest {
@@ -174,7 +172,6 @@ class OtaStopLifecycleTest {
     private companion object {
         const val MANIFEST = "/update-manifest.json"
         const val BUNDLE = "/update-bundle.js"
-        const val SETTLE_MS = 1500L
     }
 
     @Test
@@ -199,7 +196,8 @@ class OtaStopLifecycleTest {
         }
 
         try {
-            manager.checkNow(force = true)
+            val done = CountDownLatch(1)
+            manager.checkNow(force = true) { done.countDown() }
             // The fetch is now blocked inside the manifest request — the
             // host dies (onDestroy order: stop before engine teardown).
             spinUntil("manifest request arrived at the server") { server.requestsFor(MANIFEST) == 1 }
@@ -207,7 +205,8 @@ class OtaStopLifecycleTest {
             server.openGate()
             // The pipeline continues: manifest verified, bundle fetched…
             spinUntil("bundle request arrived after the gate opened") { server.requestsFor(BUNDLE) == 1 }
-            Thread.sleep(SETTLE_MS) // …and must abandon before staging.
+            assertTrue("check settled", done.await(10, TimeUnit.SECONDS))
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
             assertEquals("no apply against the destroyed host", 0, applies.get())
             assertNull("no trial a dead host can never confirm", store.trialSequence())
@@ -241,13 +240,15 @@ class OtaStopLifecycleTest {
         }
 
         try {
-            manager.checkNow(force = true)
+            val done = CountDownLatch(1)
+            manager.checkNow(force = true) { done.countDown() }
             // Manifest already fetched and verified; the bundle download
             // is blocked — the host dies at this exact moment.
             spinUntil("bundle download blocked at the server") { server.requestsFor(BUNDLE) == 1 }
             manager.stop()
             server.openGate()
-            Thread.sleep(SETTLE_MS) // verified bytes must not stage after stop.
+            assertTrue("check settled", done.await(10, TimeUnit.SECONDS))
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
             assertEquals("no apply against the destroyed host", 0, applies.get())
             assertNull("no trial a dead host can never confirm", store.trialSequence())
@@ -284,8 +285,10 @@ class OtaStopLifecycleTest {
             // force bypasses the throttle; only the stopped gate can keep
             // this off the network. A resume/launch after destroy must be
             // inert.
-            manager.checkNow(force = true)
-            Thread.sleep(SETTLE_MS)
+            val done = CountDownLatch(1)
+            manager.checkNow(force = true) { done.countDown() }
+            assertTrue("check settled", done.await(10, TimeUnit.SECONDS))
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
             assertEquals(
                 "stopped manager must not touch the channel",
@@ -300,4 +303,85 @@ class OtaStopLifecycleTest {
             io.shutdownNow()
         }
     }
+    @Test
+    fun stopAfterDownloadBeforeQueuedApplyLeavesNoTrial() {
+        val server = GatedHttpServer()
+        val store = freshStore()
+        val pair = ecPair()
+        val bytes = "tenun_commit('{}');".toByteArray()
+        server.respond(MANIFEST, manifestFor(pair, 2, bytes, server.port).toByteArray())
+        server.respond(BUNDLE, bytes)
+        val applies = AtomicInteger()
+        val io = Executors.newSingleThreadExecutor()
+        val manager = OtaManager(
+            UpdateChannel("http://127.0.0.1:${server.port}$MANIFEST", "prototype",
+                Base64.getEncoder().encodeToString(pair.public.encoded)),
+            hostIdentity(), store, io
+        ) { _, _ -> applies.incrementAndGet(); true }
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val done = CountDownLatch(1)
+                manager.checkNow(force = true) { done.countDown() }
+                assertTrue("download settled while main looper is occupied", done.await(10, TimeUnit.SECONDS))
+                assertNull("queued apply is not a trial", store.trialSequence())
+                manager.stop()
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            assertEquals(0, applies.get())
+            assertNull(store.trialSequence())
+            assertFalse(store.isQuarantined(2))
+        } finally {
+            manager.stop()
+            server.close()
+            io.shutdownNow()
+        }
+    }
+
+    @Test
+    fun activityRecreationStopsTheOldManagersCompletingDownload() {
+        val server = GatedHttpServer()
+        val store = freshStore()
+        val pair = ecPair()
+        val bytes = "tenun_commit('{}');".toByteArray()
+        server.respond(MANIFEST, manifestFor(pair, 2, bytes, server.port).toByteArray())
+        server.respond(BUNDLE, bytes)
+        server.gatePath(BUNDLE)
+        val applies = AtomicInteger()
+        val done = CountDownLatch(1)
+        val io = Executors.newSingleThreadExecutor()
+        val manager = OtaManager(
+            UpdateChannel("http://127.0.0.1:${server.port}$MANIFEST", "prototype",
+                Base64.getEncoder().encodeToString(pair.public.encoded)),
+            hostIdentity(), store, io
+        ) { _, _ -> applies.incrementAndGet(); true }
+        val managerField = MainActivity::class.java.getDeclaredField("otaManager").apply { isAccessible = true }
+        val engineField = MainActivity::class.java.getDeclaredField("engine").apply { isAccessible = true }
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            scenario.onActivity { activity ->
+                (managerField.get(activity) as? OtaManager)?.stop()
+                managerField.set(activity, manager)
+                manager.checkNow(force = true) { done.countDown() }
+            }
+            spinUntil("bundle request held during recreation") { server.requestsFor(BUNDLE) == 1 }
+            scenario.recreate()
+            server.openGate()
+            assertTrue("old download settled", done.await(10, TimeUnit.SECONDS))
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            assertEquals("old Activity never applies the completed download", 0, applies.get())
+            assertNull(store.trialSequence())
+            assertFalse(store.isQuarantined(2))
+            scenario.onActivity { activity ->
+                val engine = engineField.get(activity) as? TenunEngine
+                assertNotNull("recreated Activity owns a healthy engine", engine)
+                assertTrue(engine!!.getLatestScene().isNotEmpty())
+            }
+        } finally {
+            scenario.close()
+            manager.stop()
+            server.close()
+            io.shutdownNow()
+        }
+    }
+
 }
