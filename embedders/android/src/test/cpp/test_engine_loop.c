@@ -343,7 +343,9 @@ int main(int argc, char** argv) {
      * scene, the failure WARNs, and the host thread returns. */
     const char* tap_loop_js =
         "tenun_commit('{\"v\":1}');"
-        "globalThis.__tenun_dispatch_action = function(a, p) { while (true) { } };";
+        "globalThis.__tenun_dispatch_action = function(a, p) {"
+        " if (a === 'LOOP') { while (true) { } }"
+        " else { tenun_commit('{\"v\":2}'); } };";
     tenun_android_engine* tap_engine =
         tenun_android_engine_create((const uint8_t*)tap_loop_js, strlen(tap_loop_js));
     CHECK(tap_engine != NULL, "tap-loop bundle boots (its init is sane)");
@@ -373,7 +375,38 @@ int main(int argc, char** argv) {
         fclose(cap);
       }
       CHECK(saw_warn, "dispatch-loop failure is fail-visible (WARN on host log)");
+      char* recovered = tenun_android_engine_dispatch(tap_engine, "RECOVER", "{}");
+      CHECK(recovered != NULL && strstr(recovered, "\"v\":2") != NULL,
+            "normal dispatch works after an interrupted handler");
+      free(recovered);
       tenun_android_engine_destroy(tap_engine);
+    }
+
+    const char* getter_js =
+        "tenun_commit('{\"getter\":1}');"
+        "Object.defineProperty(globalThis, '__tenun_dispatch_action', {get:function(){"
+        " if (++globalThis.lookups === 2) { while(true){} }"
+        " return function(){tenun_commit('{\"getter\":2}');}; }});"
+        "globalThis.lookups = 0;";
+    tenun_android_engine* getter_engine =
+        tenun_android_engine_create((const uint8_t*)getter_js, strlen(getter_js));
+    CHECK(getter_engine != NULL, "getter-dispatch bundle boots");
+    if (getter_engine) {
+      tenun_test_time_budget_ms = 100;
+      usleep(200000);
+      char* healthy_getter = tenun_android_engine_dispatch(getter_engine, "GETTER", "{}");
+      CHECK(healthy_getter != NULL && strstr(healthy_getter, "\"getter\":2") != NULL,
+            "handler lookup gets a fresh budget after idle time");
+      free(healthy_getter);
+      char* interrupted_getter = tenun_android_engine_dispatch(getter_engine, "GETTER", "{}");
+      CHECK(interrupted_getter != NULL, "looping handler getter is bounded");
+      free(interrupted_getter);
+      char* recovered_getter = tenun_android_engine_dispatch(getter_engine, "GETTER", "{}");
+      CHECK(recovered_getter != NULL && strstr(recovered_getter, "\"getter\":2") != NULL,
+            "dispatch recovers after an interrupted handler getter");
+      free(recovered_getter);
+      tenun_test_time_budget_ms = 0;
+      tenun_android_engine_destroy(getter_engine);
     }
 
     /* (c) runaway allocation: a single huge string blows the memory

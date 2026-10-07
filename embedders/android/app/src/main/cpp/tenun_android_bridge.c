@@ -285,10 +285,19 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
 
   pthread_mutex_lock(&engine->lock);
 
+  // A property getter can execute JS before the dispatch function is called.
+  engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
   JSValue global = JS_GetGlobalObject(engine->ctx);
   JSValue dispatch_fn = JS_GetPropertyStr(engine->ctx, global, "__tenun_dispatch_action");
 
-  if (JS_IsFunction(engine->ctx, dispatch_fn)) {
+  if (JS_IsException(dispatch_fn)) {
+    JSValue exc = JS_GetException(engine->ctx);
+    const char* err = JS_ToCString(engine->ctx, exc);
+    TENUN_LOG_WARN("tenun dispatch action=%s failed during handler lookup: %s",
+                   action, err ? err : "unknown error");
+    if (err) JS_FreeCString(engine->ctx, err);
+    JS_FreeValue(engine->ctx, exc);
+  } else if (JS_IsFunction(engine->ctx, dispatch_fn)) {
     JSValue args[2];
     args[0] = JS_NewString(engine->ctx, action);
     args[1] = JS_NewString(engine->ctx, payload_json ? payload_json : "{}");
@@ -296,7 +305,6 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
     /* TN-136: each dispatch gets its own time budget — a tap handler
      * that loops forever is interrupted, WARNed, and leaves the last
      * good scene in place instead of freezing the host thread. */
-    engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
     JSValue res = JS_Call(engine->ctx, dispatch_fn, global, 2, args);
     JS_FreeValue(engine->ctx, args[0]);
     JS_FreeValue(engine->ctx, args[1]);

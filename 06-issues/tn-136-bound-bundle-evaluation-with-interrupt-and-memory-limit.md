@@ -82,3 +82,11 @@ is SIGALRM-killed, exit 142; memory limit neutered (effective value
 Boundary: 5 s still blocks the UI thread for up to the budget on a
 pathological dispatch — bounded, not pleasant; per-runway tuning is a
 host-policy question, not a bridge one.
+
+Review repair (2026-10-07): dispatch arms its deadline BEFORE handler
+property lookup, since a getter can run application JS. Lookup exceptions
+are consumed and WARNed. Regression cases prove normal dispatch after
+an interrupted handler, a fresh getter budget after idle time, a bounded
+looping getter, and subsequent recovery. The heap limit covers QuickJS
+allocations, not host-native scene buffers or total process memory; the
+wall-clock interrupt is cooperative and does not preempt native callbacks.
