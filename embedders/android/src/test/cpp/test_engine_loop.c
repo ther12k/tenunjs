@@ -7,6 +7,8 @@
 
 #ifdef TENUN_TEST_INJECTION
 extern tenun_init_stage tenun_test_inject_init_failure;
+extern int64_t tenun_test_time_budget_ms;
+extern int64_t tenun_test_memory_limit_bytes;
 #endif
 
 static int failures = 0;
@@ -296,6 +298,113 @@ int main(int argc, char** argv) {
       free(terminated);
     }
   }
+
+  /* 12. TN-136: bounded evaluation and dispatch (interrupt handler +
+   * memory limit). A pathological bundle must hit the structured
+   * failure paths within the budget instead of hanging the host thread
+   * or exhausting memory. alarm() is the section watchdog: if a bound
+   * is ever neutered and JS runs forever, SIGALRM kills the process so
+   * the gate fails visibly instead of hanging CI. */
+  printf("== 12. TN-136 bounded eval/dispatch (interrupt + memory limit) ==\n");
+  alarm(60);
+#ifdef TENUN_TEST_INJECTION
+  {
+    /* (a) init-time infinite loop: interrupted, fails closed as a
+     * script_eval init failure with the structured diagnostic. */
+    tenun_test_time_budget_ms = 300;
+    fflush(stderr);
+    int saved_err_a = dup(fileno(stderr));
+    int cap_a = open("/tmp/tenun_tn136_capture_a.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    dup2(cap_a, fileno(stderr));
+    close(cap_a);
+    const char* init_loop_js = "tenun_commit('{}'); while (true) { }";
+    tenun_android_engine* loop_engine =
+        tenun_android_engine_create((const uint8_t*)init_loop_js, strlen(init_loop_js));
+    fflush(stderr);
+    dup2(saved_err_a, fileno(stderr));
+    close(saved_err_a);
+    CHECK(loop_engine == NULL, "init-time while(true) bundle fails closed (interrupt budget)");
+    if (loop_engine) tenun_android_engine_destroy(loop_engine);
+    {
+      FILE* cap = fopen("/tmp/tenun_tn136_capture_a.txt", "r");
+      char line[512];
+      int saw_stage = 0;
+      if (cap) {
+        while (fgets(line, sizeof(line), cap)) {
+          if (strstr(line, "TENUN_ENGINE_INIT_FAILED stage=script_eval") == line) { saw_stage = 1; break; }
+        }
+        fclose(cap);
+      }
+      CHECK(saw_stage, "init-loop failure is fail-visible (stage=script_eval diagnostic)");
+    }
+    tenun_test_time_budget_ms = 0;
+
+    /* (b) dispatch-time infinite loop: engine keeps its last good
+     * scene, the failure WARNs, and the host thread returns. */
+    const char* tap_loop_js =
+        "tenun_commit('{\"v\":1}');"
+        "globalThis.__tenun_dispatch_action = function(a, p) { while (true) { } };";
+    tenun_android_engine* tap_engine =
+        tenun_android_engine_create((const uint8_t*)tap_loop_js, strlen(tap_loop_js));
+    CHECK(tap_engine != NULL, "tap-loop bundle boots (its init is sane)");
+    if (tap_engine) {
+      tenun_test_time_budget_ms = 300;
+      fflush(stderr);
+      int saved_err_b = dup(fileno(stderr));
+      int cap_b = open("/tmp/tenun_tn136_capture_b.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+      dup2(cap_b, fileno(stderr));
+      close(cap_b);
+      char* looped_scene = tenun_android_engine_dispatch(tap_engine, "LOOP", "{}");
+      fflush(stderr);
+      dup2(saved_err_b, fileno(stderr));
+      close(saved_err_b);
+      tenun_test_time_budget_ms = 0;
+
+      CHECK(looped_scene != NULL && strstr(looped_scene, "\"v\":1") != NULL,
+            "dispatch-time loop returns the last good scene (bounded, not frozen)");
+      free(looped_scene);
+      FILE* cap = fopen("/tmp/tenun_tn136_capture_b.txt", "r");
+      char line[512];
+      int saw_warn = 0;
+      if (cap) {
+        while (fgets(line, sizeof(line), cap)) {
+          if (strstr(line, "tenun dispatch action=LOOP failed") != NULL) { saw_warn = 1; break; }
+        }
+        fclose(cap);
+      }
+      CHECK(saw_warn, "dispatch-loop failure is fail-visible (WARN on host log)");
+      tenun_android_engine_destroy(tap_engine);
+    }
+
+    /* (c) runaway allocation: a single huge string blows the memory
+     * limit instantly and fails closed as a script_eval failure (no
+     * loop, so this isolates the memory bound from the time bound). */
+    tenun_test_memory_limit_bytes = 4 * 1024 * 1024;
+    const char* alloc_js =
+        "var sink = 'x'.repeat(64 * 1024 * 1024); tenun_commit('{}');";
+    tenun_android_engine* alloc_engine =
+        tenun_android_engine_create((const uint8_t*)alloc_js, strlen(alloc_js));
+    CHECK(alloc_engine == NULL, "runaway allocation fails closed (memory limit)");
+    if (alloc_engine) tenun_android_engine_destroy(alloc_engine);
+    tenun_test_memory_limit_bytes = 0;
+
+    /* (d) overrides restored: a real bundle boots under the production
+     * budgets — proves the resets and that defaults are not too tight
+     * for a minimal app. */
+    const char* ok_js = "tenun_commit('{\"ok\":1}');";
+    tenun_android_engine* ok_engine =
+        tenun_android_engine_create((const uint8_t*)ok_js, strlen(ok_js));
+    CHECK(ok_engine != NULL, "real bundle boots under production budgets (overrides reset)");
+    if (ok_engine) {
+      const char* ok_scene = tenun_android_engine_get_scene(ok_engine);
+      CHECK(strstr(ok_scene, "\"ok\":1") != NULL, "budgets do not disturb a healthy bundle");
+      tenun_android_engine_destroy(ok_engine);
+    }
+  }
+#else
+  printf("SKIPPED: TN-136 bounded-eval cases need TENUN_TEST_INJECTION (NDK builds exclude them)\n");
+#endif
+  alarm(0);
 
   if (failures > 0) {
     printf("FAILED: %d checks failed\n", failures);

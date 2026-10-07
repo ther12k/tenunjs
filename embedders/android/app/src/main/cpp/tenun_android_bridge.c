@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(__ANDROID__) || defined(ANDROID)
@@ -20,7 +21,46 @@
 
 #ifdef TENUN_TEST_INJECTION
 tenun_init_stage tenun_test_inject_init_failure = TENUN_INIT_OK;
+int64_t tenun_test_time_budget_ms = 0;
+int64_t tenun_test_memory_limit_bytes = 0;
 #endif
+
+/* TN-136: bounded JS execution. Every bundle eval and every action
+ * dispatch runs under a wall-clock budget (interrupt handler) and a per-
+ * engine heap budget (JS_SetMemoryLimit), so a hostile or buggy bundle
+ * — while(true){} at init or in a handler, or unbounded allocation —
+ * turns into the existing structured failure paths (stage=script_eval
+ * on boot; WARN + last-good-scene on dispatch) instead of hanging the
+ * host thread or exhausting the process.
+ *
+ * Budgets (documented in TN-136): 5 s per eval and per dispatch —
+ * orders of magnitude above the real bundles' sub-second compile (the
+ * 50 KB TSX-compiled counter bundle boots in well under a second, and
+ * the TN-144 engine-loop leg continuously proves the defaults are not
+ * too tight); 32 MiB heap per engine — 15x+ the largest observed scene
+ * and bundle footprint, far below process-OOM territory. */
+#define TENUN_JS_TIME_BUDGET_MS 5000
+#define TENUN_JS_MEMORY_LIMIT_BYTES (32u * 1024u * 1024u)
+
+static int64_t tenun_now_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int64_t tenun_time_budget_ms(void) {
+#ifdef TENUN_TEST_INJECTION
+  if (tenun_test_time_budget_ms > 0) return tenun_test_time_budget_ms;
+#endif
+  return TENUN_JS_TIME_BUDGET_MS;
+}
+
+static size_t tenun_memory_limit_bytes(void) {
+#ifdef TENUN_TEST_INJECTION
+  if (tenun_test_memory_limit_bytes > 0) return (size_t)tenun_test_memory_limit_bytes;
+#endif
+  return TENUN_JS_MEMORY_LIMIT_BYTES;
+}
 
 /* Init-attempt correlation id (incident #191): lets a native init failure
  * be tied back to the Activity/test attempt that produced it. */
@@ -64,7 +104,20 @@ struct tenun_android_engine {
   JSContext* ctx;
   char* current_scene;
   pthread_mutex_t lock;
+  /* TN-136: wall-clock deadline for the JS run in progress (bundle eval
+   * or one dispatch); read by tenun_interrupt_handler from inside the
+   * interpreter loop. Set immediately before each JS_Eval/JS_Call. */
+  int64_t js_deadline_ms;
 };
+
+/* QuickJS polls this from the interpreter loop; != 0 raises a JS
+ * "interrupted" exception, which the eval/dispatch failure paths then
+ * surface through their existing structured logging. */
+static int tenun_interrupt_handler(JSRuntime* rt, void* opaque) {
+  (void)rt;
+  const tenun_android_engine* engine = (const tenun_android_engine*)opaque;
+  return tenun_now_ms() >= engine->js_deadline_ms;
+}
 
 static JSValue js_tenun_commit(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
   (void)this_val;
@@ -124,6 +177,11 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
     return NULL;
   }
 
+  /* TN-136: bound this runtime's execution time and heap before any
+   * script is evaluated. */
+  JS_SetInterruptHandler(engine->rt, tenun_interrupt_handler, engine);
+  JS_SetMemoryLimit(engine->rt, tenun_memory_limit_bytes());
+
   engine->ctx = JS_NewContext(engine->rt);
   if (!engine->ctx || tenun_injected(TENUN_INIT_CONTEXT_CREATE)) {
     tenun_log_init_failure(attempt, TENUN_INIT_CONTEXT_CREATE);
@@ -156,6 +214,8 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
    * startup state deterministically. */
   int eval_injected = 0;
   JSValue eval_res;
+  /* TN-136: the eval runs under the time budget. */
+  engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
 #ifdef TENUN_TEST_INJECTION
   if (tenun_injected(TENUN_INIT_SCRIPT_EVAL)) {
     eval_injected = 1;
@@ -233,6 +293,10 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
     args[0] = JS_NewString(engine->ctx, action);
     args[1] = JS_NewString(engine->ctx, payload_json ? payload_json : "{}");
 
+    /* TN-136: each dispatch gets its own time budget — a tap handler
+     * that loops forever is interrupted, WARNed, and leaves the last
+     * good scene in place instead of freezing the host thread. */
+    engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
     JSValue res = JS_Call(engine->ctx, dispatch_fn, global, 2, args);
     JS_FreeValue(engine->ctx, args[0]);
     JS_FreeValue(engine->ctx, args[1]);
