@@ -236,7 +236,7 @@ status: accepted
 | 06-issues/tn-132-installed-android-run-acceptance.md | b34e2da36903edbc34271559e1883c48c35ec60e34b6c5bf70e6f8752b22a76e |
 | 06-issues/tn-133-own-public-application-execution-and-scene-lowering-contract.md | 42956c65e100cc4337413320a4f676042db9f7de3512dadb2bdb0ff0f7e0642a |
 | 06-issues/tn-134-reset-ota-trial-dispatch-signal-on-engine-swap.md | c96fe22cd1172b8f0120ca97b9887663e9157e07cd494422954b32a95e701416 |
-| 06-issues/tn-135-stop-pending-ota-apply-on-activity-destroy.md | 2e6c0ba3dbb371bdacbb580b2b39cce5eaac8c8ce84ea0e120d0e7cac1c22657 |
+| 06-issues/tn-135-stop-pending-ota-apply-on-activity-destroy.md | b8fcc68305ffdf92d156b2b0bcb757e709c2c6269a2dcc67c265a54d510549df |
 | 06-issues/tn-136-bound-bundle-evaluation-with-interrupt-and-memory-limit.md | 75c294d1066c02b009c764a3775474dafcfc3aa7217216be917ece5c1cee974d |
 | 06-issues/tn-137-treat-thrown-js-action-as-failed-dispatch.md | 2ef631f917200b7bd69ed23c5f9986fe9d290894dfed4a1af2501e4f921e2cf9 |
 | 06-issues/tn-138-raise-anti-replay-floor-on-quarantine.md | e571dc4ebbd4a727131177a128ce1889d44556232a3fe2176326691fb746fdf5 |

@@ -52,6 +52,16 @@ class OtaManager(
     @Volatile private var lastCheckAtMs: Long = 0L
     @Volatile private var devPolling = false
 
+    /**
+     * TN-135: once the host is destroyed, this manager is dead — the
+     * pipeline is lifecycle-bound. Set by [stop] and read at every point
+     * a late leg could still touch the host: check entry, before
+     * staging a trial, and at posted-apply run time. An abandoned leg
+     * never quarantines: host death is not a bundle defect, and a good
+     * release must still be installable by the next launch.
+     */
+    @Volatile private var stopped = false
+
     /** DEV builds only: short-interval perpetual loop. */
     fun startDevPolling(firstDelayMs: Long, intervalMs: Long) {
         devPolling = true
@@ -65,8 +75,14 @@ class OtaManager(
         }
     }
 
-    /** Stops the dev loop (onDestroy). */
+    /**
+     * Stops the manager (onDestroy): the dev loop, any posted apply, and
+     * every in-flight or later-arriving check leg. After this returns,
+     * [checkNow] is a no-op and no apply can run, even one posted by a
+     * fetch that was mid-download when the host died.
+     */
     fun stop() {
+        stopped = true
         devPolling = false
         mainHandler.removeCallbacksAndMessages(null)
     }
@@ -78,6 +94,10 @@ class OtaManager(
      * the throttle for tests and explicit operator checks.
      */
     fun checkNow(force: Boolean = false, onDone: (() -> Unit)? = null) {
+        if (stopped) {
+            onDone?.invoke()
+            return
+        }
         val now = System.currentTimeMillis()
         if (!force && now - lastCheckAtMs < MIN_CHECK_GAP_MS) {
             onDone?.invoke()
@@ -126,11 +146,25 @@ class OtaManager(
             return
         }
 
+        // TN-135: the host can die while this fetch was in flight. Do not
+        // stage or promote a trial a destroyed host can never confirm.
+        if (stopped) {
+            Log.i(TAG, "update v${metadata.sequence} verified after stop; abandoning (host destroyed)")
+            return
+        }
+
         store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
         store.promoteTrial(metadata.sequence)
 
         // Apply on the main thread (engine + view live there).
         mainHandler.post {
+            // TN-135: stop() can land between this post and its run. The
+            // abandoned apply neither runs against the dead host nor
+            // quarantines — host death is not a bundle defect.
+            if (stopped) {
+                Log.i(TAG, "update v${metadata.sequence} apply abandoned (host destroyed)")
+                return@post
+            }
             val applied = if (applyInFlight.compareAndSet(false, true)) {
                 try {
                     applyBundle(bytes, metadata)
