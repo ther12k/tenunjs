@@ -70,9 +70,9 @@ static int run_tsx_bundle_checks(const char* asset_path) {
       "{\"route\":\"counter\",\"states\":{\"counter\":{\"count\":9}},\"stateSchema\":1}";
   char* scene1 = tenun_android_engine_dispatch(engine, "TENUN_RESTORE", snapshot_count9);
   CHECK(scene1 != NULL, "TENUN_RESTORE dispatch returned a scene");
-  CHECK(strstr(scene1, "\"text\":\"9\"") != NULL,
+  CHECK(scene1 != NULL && strstr(scene1, "\"text\":\"9\"") != NULL,
         "Restored state re-rendered and re-committed (count 9 on screen)");
-  CHECK(strstr(scene1, "\"text\":\"Counter\"") != NULL, "Screen chrome intact after restore");
+  CHECK(scene1 != NULL && strstr(scene1, "\"text\":\"Counter\"") != NULL, "Screen chrome intact after restore");
   free(scene1);
 
   /* 3. Fail-closed negative: a schema-tampered snapshot must throw inside
