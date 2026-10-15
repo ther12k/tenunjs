@@ -29,8 +29,16 @@ TenunJS is a new mobile-native UI framework. Application teams write TypeScript 
 > (`verify-android-device`), with QuickJS executing the application bundle,
 > Unicode/quote text round-tripping through the production JNI path under
 > CheckJNI, real soft-keyboard input, and a JavaScript-only customization
-> observed on screen. Physical devices, screen readers, animation/scrolling,
-> the TSX widget layer, and iOS remain unimplemented or unexercised; see
+> observed on screen. The `verify:android` engine loop also boots a
+> TSX-compiled example bundle (the counter sample through the public
+> host-handoff contract) in the same vendored QuickJS
+> ([TN-144](06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md)),
+> though the packaged APK still boots the hand-authored reference app. A
+> physical Android phone participates in the development loop
+> ([ADR-0023](03-decisions/adr-0023-android-device-unblocks-android-half-evidence.md)),
+> but no governed device evidence has been captured from it yet. Screen
+> readers, animation/scrolling, and iOS remain unimplemented or
+> unexercised; see
 > [TN-132](06-issues/tn-132-installed-android-run-acceptance.md) for the
 > exact evidence boundary.
 

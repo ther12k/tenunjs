@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-135: Stop a pending OTA apply on Activity destruction"
 summary: "A finishing OTA download can boot a candidate into a dead surface after the Activity is destroyed or recreated."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-135"
 milestone: "M1"
 priority: "P1"
@@ -50,3 +50,35 @@ for the next launch.
 
 - [Android host review 2026-09-28, finding A2](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/java/.../OtaManager.kt`, `MainActivity.kt`
+
+## Status note (2026-10-07, closed via PR #226)
+
+`OtaManager.stop()` is now terminal for the whole pipeline, not just the
+dev loop: a `stopped` flag gates check entry (`checkNow` no-ops and
+stays off the channel), the pre-staging point in `performCheck`
+(verified bytes arriving after stop stage no trial), and posted-apply
+run time (a stop landing between post and run abandons without
+applying). Abandonment never quarantines — host death is not a bundle
+defect; the release stays installable by the next launch.
+`MainActivity.onDestroy()` calls `otaManager?.stop()` first, before its
+own handler teardown and engine destroy.
+
+Evidence: `OtaStopLifecycleTest` (instrumentation, runs in
+`verify-android-device`) — three deterministic scenarios over a gated
+loopback server. Baseline green on PR #226 (run 37568753851). Mutation
+runs on throwaway branches via `workflow_dispatch` (no local device):
+
+- pre-stage check neutered → `stopDuringManifestFetch…` AND
+  `stopDuringBundleDownload…` FAIL (run 37569266971, job 112623985047);
+- `checkNow` gate neutered → `checkAfterStopIsANoOpOnTheChannel` FAILS
+  (run 37569270028, job 112623998801).
+
+Review repair (2026-10-07): a lifecycle lock serializes stop against
+staging and applying. Trial promotion moved into the live main-thread
+apply, so an abandoned queued download is STAGED, never TRIAL. A
+main-looper-fenced test covers stop after download but before queued
+apply. An ActivityScenario recreation test injects a loopback manager
+using test-side reflection (no production trust-anchor override), holds
+its download across recreation, and proves the old Activity never
+applies and the new Activity boots cleanly. Existing fetch tests now
+await completion latches instead of sleep-based settlement guesses.

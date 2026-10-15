@@ -424,6 +424,9 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // TN-135: kill the OTA pipeline first — a fetch finishing after
+        // this point must not boot a candidate into a dying surface.
+        otaManager?.stop()
         mainHandler.removeCallbacksAndMessages(null)
         ioExecutor.shutdownNow()
         engine?.destroy()

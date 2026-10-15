@@ -36,6 +36,35 @@ M0 language/runtime/layout decisions
   → M7 real pilot and beta
 ```
 
+## Current sequencing overlay (2026-10, contracts-first)
+
+The 2026-10-02 VOTOL consumer feedback
+([record](../08-validation/votol-consumer-feedback-2026-10-02.md))
+showed the roadmap's engine-difficulty ordering loses real apps before
+the engine work matters: the first companion app fell off the framework
+at the dev-loop and capability seams, not at rendering. The critical
+path above stays the formal spine; this overlay governs what may run
+ahead of it while the M0 selection gates remain blocked (ADR-0022,
+partially unblocked by ADR-0023):
+
+1. **The dev loop must prove the real route** — a TSX-compiled example
+   bundle boots in the Android QuickJS host in CI (TN-144, landed).
+   A gate that proves the embedder with a hand-authored scene proves
+   the wrong thing.
+2. **Contracts before polish** — capability seams (TN-141, landed:
+   `@tenunjs/platform`), the host-to-runtime push channel (TN-142,
+   landed), and semantic theme tokens (TN-143, open) freeze before the
+   widget layer is declared stable; retrofitting seams after apps ship
+   is what the consumer record documents.
+3. **P1 Android correctness alongside** — TN-135 (OTA apply vs Activity
+   destruction) and TN-136 (bounded bundle evaluation) proceed as
+   embedder hardening independent of the M-gates.
+
+Rule of application: overlay items must still declare their issue
+dependencies and land through the normal gate discipline; the overlay
+changes ORDER, not rigor. No overlay item may close an M-gate or
+conclude a selection.
+
 ## Scope discipline
 
 No desktop, web, React compatibility, plugin marketplace, or full Material catalogue work enters the critical path before TN-130. Experimental branches may exist, but they cannot change core contracts without an ADR and gate impact analysis.
