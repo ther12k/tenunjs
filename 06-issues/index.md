@@ -1,7 +1,7 @@
 ---
 okf_version: 0.2
 title: "Implementation Issue Index"
-summary: "All 130 dependency-ordered, agent-sized implementation tasks."
+summary: "All 146 dependency-ordered, agent-sized implementation tasks, with governed lifecycle statuses."
 type: index
 status: accepted
 ---
@@ -9,6 +9,19 @@ status: accepted
 # Implementation issues
 
 Issues are intentionally small enough for one focused worktree/PR. Dependencies are normative.
+
+## Status vocabulary (governed)
+
+The `status:` field in each issue's frontmatter is the single source of
+truth for lifecycle state and is enforced by the manifest gate
+(`verify-manifest.py`):
+
+- `ready` — dependencies satisfied or consciously decoupled; the issue may be picked up.
+- `in-progress` — a branch/PR is open against it.
+- `blocked` — cannot proceed; the blocking condition is named in the body (e.g. ADR-0022 device evidence).
+- `closed` — delivered; the body carries a `## Status note` section linking the evidence (PRs, gates, tests). Closing without that note fails the gate.
+
+The index tables below do not repeat the status; read the issue file.
 
 ## M0 — Architecture and technology gates
 
