@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-134: Reset the OTA trial dispatch signal on engine swap"
 summary: "A pre-update tap satisfies the trial-dispatch criterion, so a broken OTA candidate can be confirmed with zero trial interactions."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-134"
 milestone: "M1"
 priority: "P1"

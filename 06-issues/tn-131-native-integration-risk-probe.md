@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-131: Execute native-integration risk probes before engine selection"
 summary: "Matched headless probes for composition, focus disposal, accessibility exposure, and native-owned behavior during a JavaScript stall."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-131"
 milestone: "M0"
 priority: "P0"
@@ -52,3 +52,7 @@ Out of scope: changing TN-006, selecting the engine language, full IME adapters,
 - [ ] `bun run verify:probe` executes all candidate runners and propagates assertion/compiler failures.
 - [ ] Replay command and exact source/evidence provenance are recorded.
 - [ ] ADR-0005 remains open; results feed TN-009 rather than silently selecting an engine.
+
+## Status note (2026-10-07, closed)
+
+Closed: the headless C++/Rust native-integration probes run in the `verify-probe` CI gate (`spikes/native-integration-probe.*`, `benchmarks/architecture/run-native-probe.sh`).

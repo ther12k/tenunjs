@@ -44,6 +44,12 @@ EXCLUDED = {"08-validation/MANIFEST.md"}
 MANIFEST = Path("08-validation/MANIFEST.md")
 ROW_RE = re.compile(r"^\| (\S+) \| ([0-9a-f]{64}) \|$")
 
+# Issue lifecycle governance (06-issues/index.md "Status vocabulary"):
+# the frontmatter status of every tn-NNN issue must use the vocabulary,
+# and a closed issue must carry an evidence "## Status note" section.
+ISSUE_RE = re.compile(r"^06-issues/tn-\d+-[^/]+\.md$")
+VALID_STATUS = {"ready", "in-progress", "blocked", "closed"}
+
 
 def fail(msg: str) -> None:
     print(f"MANIFEST VALIDATION FAIL: {msg}")
@@ -84,8 +90,31 @@ def parse_rows(text: str):
     return rows, malformed
 
 
+def check_issue_status(root: Path, problems: list) -> None:
+    for path in sorted(governed_paths(root)):
+        if not ISSUE_RE.match(path):
+            continue
+        text = (root / path).read_text()
+        frontmatter = re.match(r"\A---\n(.*?)\n---(?:\n|$)", text, re.S)
+        statuses = re.findall(r"^status:[ \t]*(\S+)[ \t]*$", frontmatter.group(1), re.M) if frontmatter else []
+        m = statuses[0] if len(statuses) == 1 else None
+        if not m:
+            problems.append(f"issue missing 'status:' frontmatter: {path}")
+            continue
+        value = m
+        if value not in VALID_STATUS:
+            problems.append(
+                f"issue status {value!r} not in vocabulary {sorted(VALID_STATUS)}: {path}"
+            )
+        elif value == "closed" and not re.search(r"^## Status note(?:[ \t].*)?$", text[frontmatter.end():], re.M):
+            problems.append(
+                f"closed issue lacks a '## Status note' evidence section: {path}"
+            )
+
+
 def check(root: Path) -> list:
     problems = []
+    check_issue_status(root, problems)
     text = (root / MANIFEST).read_text()
     rows, malformed = parse_rows(text)
     problems += [f"malformed row: {line!r}" for line in malformed]
@@ -143,10 +172,16 @@ def good_manifest(root: Path) -> str:
 
 
 def selftest() -> None:
+    issue_closed_ok = (
+        "---\nstatus: closed\n---\n\n# issue\n\n"
+        "## Status note (test, closed)\n\nevidence.\n"
+    )
     base_files = {
         "00-project/a.md": "alpha\n",
         "00-project/b.md": "beta\n",
         "01-requirements/c.md": "gamma\n",
+        "06-issues/tn-900-ready.md": "---\nstatus: ready\n---\n\nbody\n",
+        "06-issues/tn-901-closed.md": issue_closed_ok,
         "README.md": "root\n",
     }
     mutations = {
@@ -178,6 +213,28 @@ def selftest() -> None:
                 + ["| 00-project/aa.md | " + hashlib.sha256(b"aa\n").hexdigest() + " |"]
             ) + "\n"
         )),
+        # status mutations rewrite the file AND regenerate a clean
+        # manifest, so detection can only come from the status check
+        "invalid issue status": lambda root, man: (
+            build_tree(root, {"06-issues/tn-900-ready.md": "---\nstatus: done\n---\n\nbody\n"}),
+            man.write_text(good_manifest(root)),
+        ),
+        "body status without frontmatter": lambda root, man: (
+            build_tree(root, {"06-issues/tn-900-ready.md": "---\ntitle: issue\n---\n\nstatus: ready\n"}),
+            man.write_text(good_manifest(root)),
+        ),
+        "duplicate status fields": lambda root, man: (
+            build_tree(root, {"06-issues/tn-900-ready.md": "---\nstatus: ready\nstatus: closed\n---\n"}),
+            man.write_text(good_manifest(root)),
+        ),
+        "inline status note": lambda root, man: (
+            build_tree(root, {"06-issues/tn-901-closed.md": "---\nstatus: closed\n---\n\nbody mentions ## Status note\n"}),
+            man.write_text(good_manifest(root)),
+        ),
+        "closed without note": lambda root, man: (
+            build_tree(root, {"06-issues/tn-901-closed.md": "---\nstatus: closed\n---\n\nbody\n"}),
+            man.write_text(good_manifest(root)),
+        ),
     }
 
     for name, mutate in mutations.items():
