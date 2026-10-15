@@ -57,4 +57,26 @@ widget layer is polished.
 
 ## Status note (2026-10-07, closed)
 
-Closed via PR #224: a TSX-compiled counter bundle boots in the `verify:android` engine loop (real QuickJS, 11 checks + mutation evidence).
+Closed via PR #224: a TSX-compiled counter bundle boots in the
+`verify:android` engine loop (real QuickJS, 11 checks + mutation evidence).
+
+Executed as a `verify:android` engine-loop leg. The bundle compiler now
+packages the counter sample (`examples/counter` defineScreen TSX + theme)
+through the public host-handoff contract
+(`tools/gallery-bundle/counter-entry.ts` + `build-counter.mjs`, with a
+headless build smoke that fails the build on a mis-wired entry), and
+`test_engine_loop --tsx` boots that bundle in the real vendored QuickJS
+through the same C bridge a consumer host uses. Eleven checks: first
+scene commit via the native `tenun_commit` binding, a TENUN_RESTORE
+round trip with a host-carried snapshot (scene re-commits with the
+restored state), a schema-tampered restore that must fail visible (WARN
+on the host log) and non-fatally (engine still dispatches), plus the
+boot assertions. Mutation evidence: bumping
+`APPLICATION_STATE_SCHEMA` fails 4 of the 11 checks and exits 1.
+
+Scope boundary kept: the packaged APK still boots the notes reference
+app (`tenun_app.js`) because the TN-132 device-acceptance UI drives
+that app; swapping the packaged default is a separate decision. The
+tool tsconfig also entered the CI typecheck chain (its entries were
+previously editor-only), and `bun install --frozen-lockfile` +
+`setup-bun` back the new gate step.
