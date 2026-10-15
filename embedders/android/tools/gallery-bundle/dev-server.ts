@@ -119,7 +119,7 @@ Bun.serve({
     // OTA channel artifacts (published by publish-update.mjs). 404 when
     // none are published — the app treats that as "no update available".
     const otaDir = path.join(repoRoot, "examples/gallery-preview/.out/ota");
-    const otaFile = (name) => path.join(otaDir, name);
+    const otaFile = (name: string) => path.join(otaDir, name);
     if (pathname === "/update-manifest.json") {
       if (!fs.existsSync(otaFile("update-manifest.json"))) return new Response("no update published\n", { status: 404 });
       return new Response(fs.readFileSync(otaFile("update-manifest.json")), {

@@ -25,6 +25,17 @@ cc -std=c11 -O2 -D_GNU_SOURCE -DTENUN_TEST_INJECTION -DCONFIG_VERSION=\"2024-01-
 echo "== 2. Running Android engine execution loop test with real tenun_app.js =="
 "$WORK_DIR/test_engine_loop" "$SCRIPT_DIR/app/src/main/assets/tenun_app.js"
 
+# 2b. TN-144: compile the counter sample (TSX) through the bundle
+# compiler and boot it in the SAME real QuickJS engine loop — the gate
+# that keeps the TSX->QuickJS dev-loop route continuously proven.
+command -v bun >/dev/null 2>&1 || {
+  echo "FAIL: bun is required to build the TN-144 TSX bundle (verify:android)"
+  exit 1
+}
+(cd "$REPO_ROOT" && bun install --frozen-lockfile)
+(cd "$REPO_ROOT" && bun "$SCRIPT_DIR/tools/gallery-bundle/build-counter.mjs" "$WORK_DIR/tsx_counter_app.js")
+"$WORK_DIR/test_engine_loop" --tsx "$WORK_DIR/tsx_counter_app.js"
+
 ANDROID_SDK="${ANDROID_HOME:-/home/ther12k/Android/Sdk}"
 NDK_DIR=$(find "$ANDROID_SDK/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1 || true)
 
