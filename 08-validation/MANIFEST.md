@@ -249,6 +249,8 @@ status: accepted
 | 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | 6b191617fffe14fc708c006db4d3d9e2b13cf976bda033fcb9abf30796bc91ea |
 | 06-issues/tn-145-assert-host-parity-for-application-service-seams.md | 971f7d8476d59f68f3f396c24e2710d437b33b292dd25665a61d9b7af47162cb |
 | 06-issues/tn-146-own-browser-shell-integration-ux.md | 3bfd494f851ec13015003f52de20b1faf76ab7c316f567c97363119db51cd786 |
+| 06-issues/tn-147-freeze-launcher-capability-seam-contract.md | 1e54953fc01be9fa08c52097a847beb4bf3f49331746cbf00adc9053d8ad317c |
+| 06-issues/tn-148-carry-long-press-gesture-through-display-list.md | c5e3e4c49b2bf0d3aa58035ff94544e603992ca5bb63c0299435e55cd28475b7 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

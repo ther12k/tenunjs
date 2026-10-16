@@ -277,10 +277,12 @@ export class ApplicationRuntime {
 
   /**
    * Host-verb dispatch. The verb set is closed (the display-list contract
-   * puts lowercase "tap" in scene regions and hosts echo it verbatim, so
-   * comparison is case-insensitive):
+   * puts lowercase "tap"/"long-press" in scene regions and hosts echo it
+   * verbatim, so comparison is case-insensitive):
    *
    *  - "TAP" { id } — run the tap-run the CURRENT render assigned.
+   *  - "LONG-PRESS" { id } — same run table; hosts fire it on hold and
+   *    must not also dispatch "TAP" for that press (TN-148).
    *  - "TENUN_RESTORE" — restore a snapshot (see restore).
    *  - "__TENUN_EXPORT" — no-op here; hosts pull state via exportState().
    *
@@ -294,7 +296,7 @@ export class ApplicationRuntime {
       this.restore(payload as Partial<ApplicationSnapshot>);
       return;
     }
-    if (normalized === "TAP") {
+    if (normalized === "TAP" || normalized === "LONG-PRESS") {
       const id =
         typeof payload === "number"
           ? payload
