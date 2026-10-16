@@ -42,6 +42,15 @@ long tenun_android_next_init_attempt(void);
  * in shipped artifacts.
  */
 extern tenun_init_stage tenun_test_inject_init_failure;
+
+/*
+ * TEST-ONLY budget overrides (TN-136): 0 = production defaults. Host
+ * test builds set small values so bounded-failure cases (infinite loop,
+ * runaway allocation) run in milliseconds instead of the full budgets.
+ * Same compilation guard as the init-failure injection above.
+ */
+extern int64_t tenun_test_time_budget_ms;
+extern int64_t tenun_test_memory_limit_bytes;
 #endif
 
 /* Public Native Engine C API */
