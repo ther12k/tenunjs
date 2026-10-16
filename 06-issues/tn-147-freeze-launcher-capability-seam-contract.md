@@ -72,7 +72,7 @@ resolves against — the contract does not promise pixels.
 
 ## Status note (2026-10-16, closed)
 
-Contract landed in `@tenunjs/platform`: `launcher.ts` freezes
+Closed via PR #228: contract landed in `@tenunjs/platform`: `launcher.ts` freezes
 `LauncherCapability` (listApps/launch, RESULT-shaped, cancel-safe) with
 `LAUNCHER_PERMISSIONS` declaring the broad Android visibility grant;
 `host.ts` grows the TOTAL `launcher` member and `unsupportedLauncher`
