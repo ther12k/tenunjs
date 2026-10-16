@@ -165,7 +165,14 @@ export function Expanded(props: ExpandedProps): WidgetNode {
 export const GestureDetectorKind = Symbol.for("tenun.widgets.gesture-detector");
 
 export interface GestureDetectorProps {
-  onTap: () => void;
+  /** Runs when the host dispatches the region's "tap" (release in-region). */
+  onTap?: () => void;
+  /**
+   * Runs when the host dispatches the region's "long-press" (hold past
+   * the host threshold; a fired long-press suppresses that press's
+   * tap). TN-148.
+   */
+  onLongPress?: () => void;
   child?: WidgetChild;
   children?: WidgetChild;
 }
@@ -173,7 +180,9 @@ export interface GestureDetectorProps {
 /**
  * Flutter's GestureDetector — makes any widget tappable. The tap region
  * covers the wrapped frame and registers after the child's regions, so it
- * wins the hosts' topmost-wins hit test.
+ * wins the hosts' topmost-wins hit test. `onLongPress` adds a second
+ * region with the same frame and gesture "long-press"; hosts choose
+ * which to dispatch by gesture, not hit-test order.
  */
 export function GestureDetector(props: GestureDetectorProps): WidgetNode {
   return virtual(GestureDetectorKind, props);

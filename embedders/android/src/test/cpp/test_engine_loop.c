@@ -124,6 +124,33 @@ static int run_tsx_bundle_checks(const char* asset_path) {
         "Engine still applies dispatches after the failed restore (fail-closed, not fatal)");
   free(scene2);
 
+  /* 5. TN-148 long-press round trip: the counter's value card carries a
+   * "long-press" region (hold to reset). Extract its run id from the
+   * committed scene — exactly what the Android host's touch timer does —
+   * dispatch the lowercase verb hosts echo, and assert the bound reset
+   * ran and re-committed through the same shared run table. */
+  {
+    const char* scene_now = tenun_android_engine_get_scene(engine);
+    const char* hold = scene_now != NULL ? strstr(scene_now, "\"action\":\"long-press\"") : NULL;
+    CHECK(hold != NULL, "Committed scene carries a long-press region (GestureDetector onLongPress)");
+    int hold_id = -1;
+    if (hold != NULL) {
+      const char* payload = strstr(hold, "\"payload\":{\"id\":");
+      if (payload != NULL) hold_id = (int)strtol(payload + strlen("\"payload\":{\"id\":"), NULL, 10);
+    }
+    CHECK(hold_id >= 0, "Long-press region names a run id in the shared gesture table");
+    if (hold_id >= 0) {
+      char hold_payload[64];
+      snprintf(hold_payload, sizeof(hold_payload), "{\"id\":%d}", hold_id);
+      char* scene3 = tenun_android_engine_dispatch(engine, "long-press", hold_payload);
+      CHECK(scene3 != NULL && strstr(scene3, "\"text\":\"0\"") != NULL,
+            "Long-press dispatch ran the bound reset and re-committed (count 0)");
+      CHECK(scene3 != NULL && strstr(scene3, "\"text\":\"Counter\"") != NULL,
+            "Screen chrome intact after the long-press dispatch");
+      free(scene3);
+    }
+  }
+
   tenun_android_engine_destroy(engine);
   if (failures > 0) {
     printf("FAILED: %d TSX bundle checks failed\n", failures);

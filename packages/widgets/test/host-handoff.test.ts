@@ -82,6 +82,17 @@ describe("installHostHandoff — host protocol", () => {
     expect(committed[1]!).toContain("count 1");
   });
 
+  test("LONG-PRESS runs the run table and commits — same host-visible semantics as TAP (TN-148)", () => {
+    const committed: string[] = [];
+    const handoff = installHostHandoff({ app: counterApp(), commit: (j: string) => committed.push(j) });
+    const id = tapIdOf(committed[0]!);
+
+    const response = JSON.parse(handoff.dispatch("long-press", JSON.stringify({ id })));
+    expect(response.route).toBe("counter");
+    expect(committed.length).toBe(2);
+    expect(committed[1]!).toContain("count 1");
+  });
+
   test("__TENUN_EXPORT returns the snapshot JSON; __TENUN_STATE_SCHEMA the schema", () => {
     const handoff = installHostHandoff({ app: counterApp() });
     const schema = JSON.parse(handoff.dispatch("__TENUN_STATE_SCHEMA", ""));
