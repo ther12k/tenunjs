@@ -4,6 +4,7 @@ import {
   CAMERA_PERMISSIONS,
   STORAGE_PERMISSIONS,
   BLE_PERMISSIONS,
+  LAUNCHER_PERMISSIONS,
   createCancelSource,
   defineHostCapabilities,
   fromAbortSignal,
@@ -11,6 +12,7 @@ import {
   type CapabilityAvailability,
   type CapabilityFailureKind,
   type HostCapabilities,
+  type LauncherCapability,
   type StorageCapability,
 } from "../src/index";
 
@@ -80,6 +82,34 @@ function cancellableScanBle(): BleCapability {
   };
 }
 
+/**
+ * Fixture: a real launcher capability typed against the contract — the
+ * app-drawer shape TN-147 freezes (list launchable apps, start one).
+ */
+function fakeLauncher(): LauncherCapability & { launched: string[] } {
+  const launched: string[] = [];
+  return {
+    launched,
+    contractVersion: 1,
+    availability: () => ({ status: "supported" }),
+    permissionPrerequisites: () => LAUNCHER_PERMISSIONS,
+    listApps() {
+      return Promise.resolve({
+        ok: true,
+        value: [
+          { appId: "com.example.notes", label: "Notes", iconGlyph: "📝" },
+          { appId: "dev.ther12k.tenun", label: "Tenun", iconGlyph: null },
+        ],
+      });
+    },
+    async launch(appId) {
+      if (appId === "") return { ok: false, failure: { kind: "invalid-argument" } };
+      launched.push(appId);
+      return { ok: true, value: undefined };
+    },
+  };
+}
+
 describe("TN-141 fail-closed host defaults", () => {
   const host: HostCapabilities = defineHostCapabilities({}, "test host: nothing bound");
 
@@ -87,6 +117,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.ble).toBeDefined();
     expect(host.storage).toBeDefined();
     expect(host.camera).toBeDefined();
+    expect(host.launcher).toBeDefined();
   });
 
   test("every storage operation returns a structured unsupported failure", async () => {
@@ -112,6 +143,18 @@ describe("TN-141 fail-closed host defaults", () => {
     const shot = await host.camera.scanBarcode(["qr"]);
     expect(shot.ok).toBe(false);
     if (!shot.ok) expect(shot.failure.kind).toBe("unsupported");
+  });
+
+  test("TN-147 launcher operations fail the same way — never a throw, never ok", async () => {
+    const apps = await host.launcher.listApps();
+    expect(apps.ok).toBe(false);
+    if (!apps.ok) expect(apps.failure.kind).toBe("unsupported");
+
+    const started = await host.launcher.launch("com.example.notes");
+    expect(started.ok).toBe(false);
+    if (!started.ok) expect(started.failure.kind).toBe("unsupported");
+
+    expect(host.launcher.permissionPrerequisites()).toBe(LAUNCHER_PERMISSIONS);
   });
 
   test("availability reports the degradation state with the host's reason", () => {
@@ -301,5 +344,65 @@ describe("TN-141 frozen vocabulary (contract freeze evidence)", () => {
       { platform: "web", permissions: [] },
     ]);
     expect(STORAGE_PERMISSIONS).toEqual([]);
+  });
+
+  test("TN-147 launcher declares the broad Android visibility grant; ios/web none", () => {
+    expect(LAUNCHER_PERMISSIONS).toEqual([
+      { platform: "android", permissions: ["android.permission.QUERY_ALL_PACKAGES"] },
+      { platform: "ios", permissions: [] },
+      { platform: "web", permissions: [] },
+    ]);
+  });
+});
+
+describe("TN-147 launcher seam", () => {
+  test("an implemented launcher passes through the aggregate untouched", async () => {
+    const launcher = fakeLauncher();
+    const host = defineHostCapabilities({ launcher });
+    expect(host.launcher).toBe(launcher);
+
+    const apps = await host.launcher.listApps();
+    expect(apps.ok).toBe(true);
+    if (apps.ok) {
+      expect(apps.value.map((app) => app.label)).toEqual(["Notes", "Tenun"]);
+      expect(apps.value[1]!.iconGlyph).toBeNull();
+    }
+
+    const started = await host.launcher.launch("com.example.notes");
+    expect(started.ok).toBe(true);
+    expect(launcher.launched).toEqual(["com.example.notes"]);
+  });
+
+  test("an implementing host may enforce contract validation (empty appId)", async () => {
+    const result = await fakeLauncher().launch("");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.kind).toBe("invalid-argument");
+  });
+
+  test("an in-flight listApps honors the cancel signal and resolves cancelled", async () => {
+    // Mirrors cancellableScanBle: stays pending until the signal fires,
+    // proving a host can honor cancellation without any Web API.
+    const launcher: LauncherCapability = {
+      contractVersion: 1,
+      availability: () => ({ status: "supported" }),
+      permissionPrerequisites: () => LAUNCHER_PERMISSIONS,
+      listApps(options) {
+        return new Promise((resolve) => {
+          const off = options?.signal?.addAbortListener(() => {
+            resolve({ ok: false, failure: { kind: "cancelled" } });
+          });
+          void off;
+        });
+      },
+      async launch() {
+        return { ok: false, failure: { kind: "unavailable", reason: "fixture" } };
+      },
+    };
+    const signal = createCancelSource();
+    const pending = launcher.listApps({ signal });
+    signal.cancel("drawer closed");
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.kind).toBe("cancelled");
   });
 });
