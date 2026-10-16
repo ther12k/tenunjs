@@ -12,11 +12,12 @@
  *  - `dispatch(action, payloadJson)` is the synchronous host→app entry:
  *    "__TENUN_EXPORT" returns the state snapshot JSON (hot reload / OTA
  *    carry), "__TENUN_STATE_SCHEMA" returns the schema version, "TAP"
- *    runs the current scene's tap table and COMMITS the new scene (the
- *    commit after TAP is what repaints the phone), "TENUN_RESTORE"
- *    restores a snapshot and commits. Verb comparison is
- *    case-insensitive because display-list regions carry lowercase
- *    "tap" and hosts echo it verbatim.
+ *    and "LONG-PRESS" run the current scene's gesture table and COMMIT
+ *    the new scene (the commit after dispatch is what repaints the
+ *    phone; a fired long-press suppresses that press's tap — hosts own
+ *    that rule), "TENUN_RESTORE" restores a snapshot and commits. Verb
+ *    comparison is case-insensitive because display-list regions carry
+ *    lowercase "tap"/"long-press" and hosts echo them verbatim.
  *  - When the application exposes onStateInvalidation (async action
  *    settlement), the handoff commits a fresh scene out-of-band too —
  *    state that changes without a dispatch still reaches the host.
@@ -97,7 +98,7 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       return JSON.stringify({ stateSchema: app.stateSchema() });
     }
     app.dispatch(normalized, payload);
-    if (normalized === "TAP" || normalized === "TENUN_RESTORE") commit();
+    if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE") commit();
     return JSON.stringify({ route: app.route() });
   };
 

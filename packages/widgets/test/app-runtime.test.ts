@@ -13,6 +13,7 @@ import {
   APPLICATION_STATE_SCHEMA,
   Button,
   Column,
+  GestureDetector,
   Text,
 } from "../src/index";
 
@@ -101,6 +102,34 @@ describe("ApplicationRuntime — execution contract", () => {
     expect(JSON.stringify(runtime.render().scene)).toContain("count 1");
     runtime.dispatch("tap", id); // hosts echo lowercase; raw number payload
     expect(JSON.stringify(runtime.render().scene)).toContain("count 2");
+  });
+
+  test("LONG-PRESS dispatch runs the bound run from the same table (hosts echo lowercase)", () => {
+    const holdScreen = defineScreen<CounterState, any>({
+      name: "Hold",
+      initialState: (): CounterState => ({ count: 0 }),
+      actions: {
+        increment: defineAction<CounterState, number>({
+          run: ({ state, input }) => {
+            state.count += input ?? 1;
+          },
+        }),
+      },
+      view: ({ state, actions }) =>
+        jsxs(Column, {
+          padding: "lg",
+          children: [
+            jsx(Text, { variant: "title", children: `count ${state.count}` }),
+            jsx(GestureDetector, { onLongPress: () => actions.increment(1), children: "hold me" }),
+          ],
+        }) as never,
+    });
+    const runtime = makeRuntime({}, { counter: holdScreen });
+    const { scene } = runtime.render();
+    expect(scene.taps).toHaveLength(1);
+    expect(scene.taps[0]!.action).toBe("long-press");
+    runtime.dispatch("long-press", { id: scene.taps[0]!.payload.id });
+    expect(JSON.stringify(runtime.render().scene)).toContain("count 1");
   });
 
   test("exportState snapshots route and all mounted session states", () => {
@@ -372,6 +401,14 @@ describe("ApplicationRuntime — fail-closed contract", () => {
 
   test("malformed or foreign tap payloads throw TAP_TARGET_UNKNOWN", () => {
     const runtime = makeRuntime();
+    for (const verb of ["TAP", "long-press"]) {
+      try {
+        runtime.dispatch(verb, 99);
+        throw new Error(`expected TAP_TARGET_UNKNOWN for ${verb}`);
+      } catch (error) {
+        expect((error as ApplicationRuntimeError).code).toBe("TAP_TARGET_UNKNOWN");
+      }
+    }
     for (const payload of [{}, { id: "three" }, 99, -1, 1.5]) {
       try {
         runtime.dispatch("TAP", payload);

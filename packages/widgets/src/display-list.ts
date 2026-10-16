@@ -162,12 +162,20 @@ export interface GradientOp extends FixedPosition {
 
 export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp;
 
+/**
+ * Hit region gesture kinds a host can dispatch back. "long-press" is
+ * the TN-148 gesture: hosts fire it on a hold over the region (Android
+ * ~500 ms, scroll/move cancels) and must NOT also dispatch "tap" for
+ * the same press. Both gestures share the tap-run table.
+ */
+export type TapRegionAction = "tap" | "long-press";
+
 export interface SerializedTap extends FixedPosition {
   x: number;
   y: number;
   w: number;
   h: number;
-  action: string;
+  action: TapRegionAction;
   payload: { id: number };
 }
 
@@ -682,6 +690,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
             region.w,
             region.h,
             run,
+            "tap",
             fixed,
             anchor,
             anchorSize
@@ -737,8 +746,14 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
   }
   if (kind === GestureDetectorKind) {
     const h = placeStack(ctx, node, x, y, w, 0, 0);
+    // Two regions, same frame: hosts pick by gesture (tap on release,
+    // long-press on hold), so neither wins the topmost-wins hit test
+    // over the other — the host filters by the region's action.
     if (typeof props.onTap === "function") {
       addTap(ctx, x, y, w, h, props.onTap as () => void);
+    }
+    if (typeof props.onLongPress === "function") {
+      addTap(ctx, x, y, w, h, props.onLongPress as () => void, "long-press");
     }
     return h;
   }
@@ -1271,6 +1286,7 @@ function addTap(
   w: number,
   h: number,
   run: () => void,
+  action: TapRegionAction = "tap",
   fixed = false,
   anchor?: FixedAnchor,
   anchorSize?: number
@@ -1282,7 +1298,7 @@ function addTap(
     y,
     w,
     h,
-    action: "tap",
+    action,
     payload: { id },
     ...(fixed ? { fixed: true } : {}),
     ...(fixed && anchor ? { anchor } : {}),
