@@ -81,8 +81,18 @@ class DisplayListSceneTest {
 
     @Test
     fun testMalformedJsonReturnsNull() {
+        // Garbage JSON cannot be classified as anything — null stays.
         assertNull(DisplayListScene.parse("{not json"))
-        assertNull(DisplayListScene.parse("""{"tenun":"display-list"}"""))
+        // TN-140 changed this shape: a scene that DECLARES itself a display
+        // list but carries no ops is incompatibility (thrown), not a quiet
+        // null into the legacy fallback. Pinned in
+        // testMalformedDisplayListSurfacesAsContractViolation_tn140.
+        try {
+            DisplayListScene.parse("""{"tenun":"display-list"}""")
+            fail("marker without ops must be a contract violation (TN-140)")
+        } catch (e: SceneContractException) {
+            assertTrue(e.message!!.contains("missing ops"))
+        }
     }
 
     @Test
@@ -187,4 +197,42 @@ class DisplayListSceneTest {
         assertFalse(tap.fixed)
         assertNull(tap.anchor)
     }
+
+    @Test
+    fun testMalformedDisplayListSurfacesAsContractViolation_tn140() {
+        // TN-140: a scene that DECLARES itself a display list must never
+        // quietly parse as "not a display list" (which made the host exit
+        // DL mode and render the legacy notes screen, hiding the break).
+
+        // (a) missing ops entirely
+        val missingOps = """{ "tenun": "display-list", "version": 1, "taps": [] }"""
+        try {
+            DisplayListScene.parse(missingOps)
+            fail("missing ops must be a contract violation")
+        } catch (e: SceneContractException) {
+            assertTrue(e.message!!.contains("missing ops"))
+        }
+
+        // (b) ops present but not an array (parse error mid-structure)
+        val badOps = """{ "tenun": "display-list", "version": 1, "ops": "nope" }"""
+        try {
+            DisplayListScene.parse(badOps)
+            fail("non-array ops must be a contract violation")
+        } catch (e: SceneContractException) {
+            assertTrue(e.message!!.contains("malformed display-list"))
+        }
+
+        // (c) an ops entry that is not an object
+        val badEntry = """{ "tenun": "display-list", "version": 1, "ops": [42] }"""
+        try {
+            DisplayListScene.parse(badEntry)
+            fail("non-object ops entry must be a contract violation")
+        } catch (e: SceneContractException) {
+            assertTrue(e.message!!.contains("malformed display-list"))
+        }
+
+        // The legacy tree keeps its null path (TN-132 stays authoritative).
+        assertNull(DisplayListScene.parse("""{ "root": { "type": "column", "children": [] } }"""))
+    }
 }
+

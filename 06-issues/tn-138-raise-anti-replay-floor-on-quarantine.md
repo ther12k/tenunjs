@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-138: Raise, never lower, the anti-replay floor on quarantine"
 summary: "After the confirmed bundle is quarantined, acceptedSequence() returns -1 and an older still-valid signed bundle passes the sequence gate."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-138"
 milestone: "M1"
 priority: "P2"
@@ -46,3 +46,16 @@ violating the monotonic anti-rollback floor quarantine is meant to raise.
 
 - [Android host review 2026-09-28, finding A5](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/java/.../UpdateStore.kt`, `OtaManager.kt`
+
+## Status note (2026-10-25, closed)
+
+Closed via PR #232: `quarantine()` of the currently-CONFIRMED sequence
+writes a durable `floor` into quarantine.json; `acceptedSequence()`
+returns max(confirmed chain, floor), so quarantining confirmed v5 keeps
+the gate at 5 — an older still-signed v4 is refused while rollback
+itself is unchanged (`activeBundleBytes` null → packaged boots).
+Never-accepted quarantines raise no floor (the quarantined list already
+blocks those sequences). JVM tests pin: floor-after-confirmed-quarantine,
+floor survival across store recreation, and the no-floor case; the old
+`-1` assertion in the rollback test was the pre-fix bug's expectation
+and is updated with the reason.

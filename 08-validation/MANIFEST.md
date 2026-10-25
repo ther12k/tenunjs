@@ -239,10 +239,10 @@ status: accepted
 | 06-issues/tn-134-reset-ota-trial-dispatch-signal-on-engine-swap.md | 07fb8c153a3f74e72502dbf0fe497544699b3ee566699c1345526a9651c10ae8 |
 | 06-issues/tn-135-stop-pending-ota-apply-on-activity-destroy.md | 374097a52d6c81d6292dceb064497a01eeec0c71e4448bf2462103fbe0367099 |
 | 06-issues/tn-136-bound-bundle-evaluation-with-interrupt-and-memory-limit.md | 07d1e2a6dae0801922610fd7b7bfcddda6356444f7ae370fe2733c7dad1e0dec |
-| 06-issues/tn-137-treat-thrown-js-action-as-failed-dispatch.md | 2ef631f917200b7bd69ed23c5f9986fe9d290894dfed4a1af2501e4f921e2cf9 |
-| 06-issues/tn-138-raise-anti-replay-floor-on-quarantine.md | e571dc4ebbd4a727131177a128ce1889d44556232a3fe2176326691fb746fdf5 |
-| 06-issues/tn-139-free-committed-scenes-on-eval-failure.md | f214461901e38784264a5f99c49a0f1360c554f4d5bd52adb0624bd8b391aead |
-| 06-issues/tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md | 5602ce4854d261a15b4482b48e21c8a6d3fea4d667db5469c9ca10313d34c0da |
+| 06-issues/tn-137-treat-thrown-js-action-as-failed-dispatch.md | 40560dd1aaa66e6889a1d9efdc4399e0c304a72e7d82aef234952896872f9809 |
+| 06-issues/tn-138-raise-anti-replay-floor-on-quarantine.md | 59fe44a2c2b98496e5854abd4d3068bf138e9a18f2e4c7bf06d65029d4002639 |
+| 06-issues/tn-139-free-committed-scenes-on-eval-failure.md | 98f9a5535d93eacfeafa2a7fabdf37257b6ef63aa81b1ae4767673040af9d5e8 |
+| 06-issues/tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md | 25cdf2a3db9c4caee10ae3b625b4cf14571f015eb4b4efca126338764caa097d |
 | 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | c7100ab6a6091a8f59e801cf3d3cd4810cfed9851dcd4a80c4ce0cd8458708e6 |
 | 06-issues/tn-142-own-host-to-runtime-push-channel.md | 2f2cfaf0ea30c21ef0339575f030179bf383a93845665976fd32cc4693845ab7 |
 | 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | d667682e6177568360e9ffa1b8ea51d53a7ffef673a6b67a31854558ddc668b7 |

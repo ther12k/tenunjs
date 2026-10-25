@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-139: Free committed scenes when evaluation fails after commit"
 summary: "A bundle that commits scenes and then throws leaks each committed scene on every attempted boot."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-139"
 milestone: "M1"
 priority: "P2"
@@ -47,3 +47,14 @@ on every attempted boot.
 
 - [Android host review 2026-09-28, finding A6](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/cpp/tenun_android_bridge.c`
+
+## Status note (2026-10-25, closed)
+
+Closed via PR #232: the eval-failure teardown in
+`tenun_android_engine_create` frees `current_scene` before releasing the
+context (a commit-then-throw bundle's scenes no longer leak per boot
+attempt). Engine-loop section 15 pins that the commit-then-throw bundle
+fails closed on repeated boots. Honest boundary: the harness has no
+allocation counters, so the free itself is by-inspection (single
+strdup/free pairing); a counters-instrumented build remains future
+hardening if leak evidence is ever needed.

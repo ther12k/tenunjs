@@ -513,7 +513,12 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         if (hit == null) return false
         val eng = engine ?: return false
-        eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")
+        // TN-137: the result channel distinguishes a FAILED handler (null —
+        // it threw) from a successful dispatch; a thrown action must not
+        // fire the OTA trial's dispatch criterion, and there is nothing to
+        // sync (the engine kept its last committed scene).
+        val handlerResult = eng.dispatchActionResult(hit.action, hit.payloadJson ?: "{}")
+        if (handlerResult == null) return true
         // The committed scene arrives via tenun_commit;
         // the dispatch return value is engine state.
         syncFromScene(eng.getLatestScene())

@@ -710,6 +710,16 @@ int main(int argc, char** argv) {
       CHECK(non_string == NULL, "a non-string handler return yields NULL (no fabricated result)");
       free(non_string);
 
+      /* TN-137: a THROWN handler is a failed dispatch — NULL on the
+       * result channel (what the surface's trial-criterion hook keys
+       * on) with the last committed scene kept. */
+      char* threw = tenun_android_engine_dispatch_result(result_engine, "THROWS", "{}");
+      CHECK(threw == NULL, "TN-137: a thrown handler yields NULL (failed dispatch is distinguishable)");
+      free(threw);
+      const char* scene_after_throw = tenun_android_engine_get_scene(result_engine);
+      CHECK(scene_after_throw != NULL && strstr(scene_after_throw, "display-list") != NULL,
+            "TN-137: the engine keeps its last committed scene after a thrown handler");
+
       char* legacy_scene = tenun_android_engine_dispatch(result_engine, "__TENUN_EXPORT", "{}");
       CHECK(legacy_scene != NULL && strstr(legacy_scene, "display-list") != NULL,
             "legacy dispatch still returns the committed scene (touch paths unchanged)");
@@ -727,6 +737,24 @@ int main(int argc, char** argv) {
         tenun_android_engine_destroy(bare);
       }
       tenun_android_engine_destroy(result_engine);
+    }
+  }
+
+  /* 15. TN-139: a bundle that commits scenes and then throws fails
+   * closed, and the eval-failure teardown frees what it committed (the
+   * free itself is by-inspection — this harness has no allocation
+   * counters; the bounded-behavior claim rides repeated boots). */
+  printf("== 15. TN-139 commit-then-throw fails closed on every retry ==\n");
+  {
+    const char* leak_js =
+      "tenun_commit('{\"leaked\":1}');"
+      "tenun_commit('{\"leaked\":2}');"
+      "throw new Error('boot-boom');";
+    for (int i = 0; i < 3; i++) {
+      tenun_android_engine* broken =
+          tenun_android_engine_create((const uint8_t*)leak_js, strlen(leak_js));
+      CHECK(broken == NULL, "commit-then-throw bundle fails closed");
+      if (broken) tenun_android_engine_destroy(broken);
     }
   }
 

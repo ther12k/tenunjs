@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-137: Treat a thrown JS action as a failed dispatch"
 summary: "A JS_Call exception is logged but returns the previous scene as though dispatch succeeded, so a throwing trial bundle passes the dispatch criterion."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-137"
 milestone: "M1"
 priority: "P2"
@@ -45,3 +45,14 @@ dispatch criterion and be confirmed after the uptime delay.
 
 - [Android host review 2026-09-28, finding A4](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/cpp/tenun_android_bridge.c`
+
+## Status note (2026-10-25, closed)
+
+Closed via PR #232 on top of TN-150's result channel: the surface's
+region dispatch now calls `dispatchActionResult`, and a NULL result (the
+handler threw) skips both the scene sync and `onFirstSuccessfulDispatch`
+— a throwing trial bundle can no longer satisfy the dispatch criterion.
+Engine-loop legs pin THROWS → NULL with the last committed scene kept.
+The full Activity-level trial journey (throwing TAP through the real
+confirm path) remains the androidTest OTA suite's to exercise on its
+next device run — recorded as the honest boundary.
