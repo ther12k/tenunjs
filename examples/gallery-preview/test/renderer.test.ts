@@ -146,6 +146,37 @@ describe("scene contract validation (browser twin of the Android parser)", () =>
   });
 });
 
+describe("TN-152 gesture-filtered hit-testing (dual regions, same frame)", () => {
+  const region = (action: "tap" | "long-press", id: number): SerializedTap =>
+    ({ x: 0, y: 0, w: 720, h: 96, action, payload: { id } });
+  const dual: SerializedTap[] = [region("tap", 1), region("long-press", 2)];
+
+  test("a short click resolves the tap region, not the later long-press region", () => {
+    // Unfiltered, the reverse scan picks the long-press region — which is
+    // exactly how a browser click used to run the hold handler.
+    const index = hitTestTaps(dual, 360, 48, 553, 0, "tap");
+    expect(dual[index!]!.action).toBe("tap");
+    expect(dual[index!]!.payload.id).toBe(1);
+  });
+
+  test("a hold resolves the long-press region over the same frame", () => {
+    const index = hitTestTaps(dual, 360, 48, 553, 0, "long-press");
+    expect(dual[index!]!.action).toBe("long-press");
+    expect(dual[index!]!.payload.id).toBe(2);
+  });
+
+  test("an omitted filter keeps the legacy topmost-wins scan", () => {
+    const index = hitTestTaps(dual, 360, 48, 553, 0);
+    expect(dual[index!]!.action).toBe("long-press");
+  });
+
+  test("a hold-only widget is invisible to tap filtering", () => {
+    const holdOnly = [region("long-press", 5)];
+    expect(hitTestTaps(holdOnly, 360, 48, 553, 0, "tap")).toBeNull();
+    expect(hitTestTaps(holdOnly, 360, 48, 553, 0, "long-press")).toBe(0);
+  });
+});
+
 describe("scene contract validation rejects malformed shapes as violations, not crashes", () => {
   test("a JSON-parsed non-scene yields a violation string", () => {
     expect(sceneContractError(null as never)).toContain("not an object");
@@ -157,5 +188,18 @@ describe("scene contract validation rejects malformed shapes as violations, not 
     ).toContain("scene.ops");
     // Sanity: the well-formed shape still passes.
     expect(sceneContractError(scene())).toBeNull();
+  });
+
+  test("TN-152: a scene without a taps array is rejected up front, not crashed on later hit-testing", () => {
+    const noTaps = scene();
+    delete (noTaps as Partial<DisplayListScene>).taps;
+    expect(sceneContractError(noTaps as never)).toContain("scene.taps");
+  });
+
+  test("TN-152: a null ops entry is a violation string, not a validation TypeError", () => {
+    // Built by spreading the valid fixture: the local helper shadowing in
+    // this describe block makes the parameterized scene() unreachable.
+    const withNull = { ...scene(), ops: [null] } as never;
+    expect(sceneContractError(withNull)).toContain("ops[0]");
   });
 });

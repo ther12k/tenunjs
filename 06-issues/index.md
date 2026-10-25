@@ -239,3 +239,20 @@ decided by filing these.
 | [TN-144](tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md) | P1 | TN-023, TN-029 | Run a TSX-compiled example bundle in the Android QuickJS host as the dev-loop exit |
 | [TN-145](tn-145-assert-host-parity-for-application-service-seams.md) | P2 | TN-133 | Assert host parity for application service seams |
 | [TN-146](tn-146-own-browser-shell-integration-ux.md) | P2 | TN-133 | Own the browser-shell integration UX (route rail, hot reload, dev-server routes) |
+
+## Host correctness follow-ups (2026-10-25)
+
+Filed from the 2026-10-25 framework review; each finding was verified
+by reproduction before filing and closed by the same wave's fix PR.
+TN-147–TN-149 are backfilled here — their PRs (#228–#230) added the
+files and manifest rows but missed this index.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-147](tn-147-freeze-launcher-capability-seam-contract.md) | P1 | TN-133 | Freeze the launcher capability seam contract |
+| [TN-148](tn-148-carry-long-press-gesture-through-display-list.md) | P1 | TN-133 | Carry the long-press gesture through the display-list contract |
+| [TN-149](tn-149-ship-launcher-sample-over-frozen-seams.md) | P1 | TN-147, TN-148 | Ship the launcher sample over the frozen seams |
+| [TN-150](tn-150-return-the-dispatch-handlers-result-across-jni.md) | P1 | TN-029 | Return the dispatch handler's result across the JNI boundary (state carry) |
+| [TN-151](tn-151-drain-quickjs-pending-jobs-at-native-entry-points.md) | P1 | TN-029, TN-144 | Drain QuickJS pending jobs at every native entry point |
+| [TN-152](tn-152-carry-long-press-through-browser-hosts.md) | P1 | TN-133, TN-148 | Carry the long-press gesture through the browser hosts (filtered hit tests, hold timers) |
+| [TN-153](tn-153-run-controller-load-on-fresh-mounts.md) | P1 | TN-133 | Run the controller load hook on fresh mounts; launcher boot and failure surface |

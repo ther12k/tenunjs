@@ -225,8 +225,11 @@ class MainActivity : Activity() {
      */
     private fun applyOtaUpdate(bytes: ByteArray, metadata: UpdateProtocol.ReleaseMetadata): Boolean {
         val current = engine
+        // TN-150: state carry reads the handler's REPLY (dispatchActionResult),
+        // not the committed scene the legacy dispatch returns — the scene
+        // never carries stateSchema, so restore silently never happened.
         val exported = try {
-            current?.dispatchAction("__TENUN_EXPORT", "{}")
+            current?.dispatchActionResult("__TENUN_EXPORT", "{}")
         } catch (e: Exception) {
             null
         }
@@ -242,7 +245,7 @@ class MainActivity : Activity() {
         }
 
         val newStateSchema = try {
-            val response = candidate.dispatchAction("__TENUN_STATE_SCHEMA", "{}")
+            val response = candidate.dispatchActionResult("__TENUN_STATE_SCHEMA", "{}") ?: ""
             org.json.JSONObject(response).optLong("stateSchema", -1L)
         } catch (e: Exception) {
             -1L
@@ -362,8 +365,9 @@ class MainActivity : Activity() {
      */
     private fun applyReload(bytes: ByteArray) {
         val current = engine
+        // TN-150: handler replies, not the committed scene (see applyOtaUpdate).
         val exported = try {
-            current?.dispatchAction("__TENUN_EXPORT", "{}")
+            current?.dispatchActionResult("__TENUN_EXPORT", "{}")
         } catch (e: Exception) {
             null
         }
@@ -379,7 +383,7 @@ class MainActivity : Activity() {
         }
 
         val newStateSchema = try {
-            val response = candidate.dispatchAction("__TENUN_STATE_SCHEMA", "{}")
+            val response = candidate.dispatchActionResult("__TENUN_STATE_SCHEMA", "{}") ?: ""
             org.json.JSONObject(response).optLong("stateSchema", -1L)
         } catch (e: Exception) {
             -1L

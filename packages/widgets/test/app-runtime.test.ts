@@ -5,7 +5,7 @@
  * the runtime functions (no JSX transform dependency here).
  */
 import { describe, expect, test } from "bun:test";
-import { defineAction, defineScreen, type ScreenActionContext } from "@tenunjs/core";
+import { defineAction, defineController, defineScreen, type ScreenActionContext } from "@tenunjs/core";
 import { jsx, jsxs } from "@tenunjs/jsx-runtime";
 import {
   ApplicationRuntime,
@@ -805,5 +805,84 @@ describe("ApplicationRuntime — host→runtime push channel (TN-142)", () => {
       }
       expect(code).toBe("RUNTIME_DISPOSED");
     }
+  });
+});
+
+describe("ApplicationRuntime — controller load hook (TN-153)", () => {
+  type LoadBehavior = "sync" | "async" | "reject";
+
+  function loadScreen(events: string[], behavior: LoadBehavior) {
+    return defineScreen({
+      controller: defineController({
+        name: "Loady",
+        initialState: () => ({ n: 0 }),
+        load: ({ state }) => {
+          events.push("load");
+          if (behavior === "async") {
+            return Promise.resolve().then(() => {
+              state.n = 42;
+            });
+          }
+          if (behavior === "reject") {
+            return Promise.reject(new Error("load-boom"));
+          }
+          state.n = 7;
+        },
+        actions: {},
+      }),
+      view: ({ state }) => jsx(Text, { variant: "body", children: `n ${state.n}` }) as never,
+    });
+  }
+
+  test("a fresh mount runs the controller's load before the first render is consumed", () => {
+    const events: string[] = [];
+    const runtime = makeRuntime({}, { loady: loadScreen(events, "sync") });
+    runtime.navigate("loady");
+    expect(events).toEqual(["load"]);
+    expect(JSON.stringify(runtime.render().scene)).toContain("n 7");
+  });
+
+  test("an async load settles out-of-band and fires invalidation", async () => {
+    const events: string[] = [];
+    const runtime = makeRuntime({}, { loady: loadScreen(events, "async") });
+    runtime.navigate("loady");
+    expect(JSON.stringify(runtime.render().scene)).toContain("n 0");
+    const stale: number[] = [];
+    runtime.onStateInvalidation(() => stale.push(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stale.length).toBe(1);
+    expect(JSON.stringify(runtime.render().scene)).toContain("n 42");
+  });
+
+  test("a rejecting load routes to onAsyncActionError under the action name 'load'", async () => {
+    const failures: Array<{ screen: string; action: string; error: unknown }> = [];
+    const runtime = makeRuntime(
+      { onAsyncActionError: (info: { screen: string; action: string; error: unknown }) => failures.push(info) },
+      { loady: loadScreen([], "reject") },
+    );
+    runtime.navigate("loady");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(failures.length).toBe(1);
+    expect(failures[0]!.screen).toBe("loady");
+    expect(failures[0]!.action).toBe("load");
+    expect((failures[0]!.error as Error).message).toBe("load-boom");
+  });
+
+  test("a restore remount does not re-run load — the snapshot is authoritative", async () => {
+    const events: string[] = [];
+    const runtime = makeRuntime({}, { loady: loadScreen(events, "sync") });
+    runtime.navigate("loady");
+    expect(events).toEqual(["load"]);
+
+    // The target boots `other`, so `loady` can only mount via restore.
+    const target = makeRuntime({}, { loady: loadScreen(events, "sync") });
+    target.navigate("other");
+    target.restore(
+      { route: "loady", states: { loady: { n: 99 } }, stateSchema: 1 } as never,
+      { ignoreUnknownScreens: true },
+    );
+    expect(target.route()).toBe("loady");
+    expect(events).toEqual(["load"]); // no second load for the restore mount
+    expect(JSON.stringify(target.render().scene)).toContain("n 99");
   });
 });

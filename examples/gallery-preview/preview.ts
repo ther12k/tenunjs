@@ -46,31 +46,77 @@ function makeRouteButtons(): void {
   }
 }
 
+// TN-152 gesture parity: filtered hit tests (a short click resolves
+// "tap" regions only), a hold timer for "long-press", and dispatch by
+// the region's PAYLOAD ID — never the array index, which diverges from
+// the id on non-home routes where the back-bar region is prepended.
+const LONG_PRESS_TIMEOUT_MS = 500;
+const HOLD_SLOP_PX = 8;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let holdFired = false;
+let downX = 0;
+let downY = 0;
+
+function cancelHoldTimer(): void {
+  if (holdTimer !== null) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+}
+
 previewCanvas.addEventListener("pointerdown", (event) => {
   previewCanvas.setPointerCapture(event.pointerId);
   pointerY = event.clientY;
   dragging = false;
+  holdFired = false;
+  downX = event.clientX;
+  downY = event.clientY;
+  cancelHoldTimer();
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    if (dragging) return;
+    const scene = runtime.render().scene;
+    const index = renderer.hitTest(scene, downX, downY, scrollY, "long-press");
+    if (index !== null) {
+      holdFired = true;
+      runtime.dispatch("LONG-PRESS", scene.taps[index]!.payload.id);
+      scrollY = 0;
+      paint();
+    }
+  }, LONG_PRESS_TIMEOUT_MS);
 });
 previewCanvas.addEventListener("pointermove", (event) => {
   if (!previewCanvas.hasPointerCapture(event.pointerId)) return;
   const delta = pointerY - event.clientY;
   if (Math.abs(delta) > 1) dragging = true;
+  if (
+    holdTimer !== null &&
+    (Math.abs(event.clientX - downX) > HOLD_SLOP_PX || Math.abs(event.clientY - downY) > HOLD_SLOP_PX)
+  ) {
+    cancelHoldTimer();
+  }
   pointerY = event.clientY;
   const scene = runtime.render().scene;
   scrollY = Math.max(0, Math.min(renderer.maxScroll(scene), scrollY + delta / (previewCanvas.clientWidth / scene.designWidth)));
   paint();
 });
 previewCanvas.addEventListener("pointerup", (event) => {
-  if (!dragging) {
+  cancelHoldTimer();
+  if (!dragging && !holdFired) {
     const scene = runtime.render().scene;
-    const index = renderer.hitTest(scene, event.clientX, event.clientY, scrollY);
+    const index = renderer.hitTest(scene, event.clientX, event.clientY, scrollY, "tap");
     if (index !== null) {
-      runtime.dispatch("TAP", index);
+      runtime.dispatch("TAP", scene.taps[index]!.payload.id);
       scrollY = 0;
       paint();
     }
   }
+  holdFired = false;
   previewCanvas.releasePointerCapture(event.pointerId);
+});
+previewCanvas.addEventListener("pointercancel", () => {
+  cancelHoldTimer();
+  holdFired = false;
 });
 window.addEventListener("resize", () => paint());
 window.addEventListener("keydown", (event) => {
