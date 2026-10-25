@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.util.AttributeSet
 import android.util.Log
@@ -153,10 +155,20 @@ class TenunSurfaceView @JvmOverloads constructor(
     private var dlScale = 1f
     private var scrollY = 0f
     private var maxScroll = 0f
+    private var touchDownX = 0f
     private var touchDownY = 0f
     private var touchLastY = 0f
     private var isScrolling = false
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+    // TN-148 long-press: hold past ViewConfiguration's timeout over a
+    // "long-press" region dispatches it; scroll-slop, release, or cancel
+    // ends the wait, and a fired long-press suppresses that press's tap
+    // (the standard host rule; the scene contract relies on it).
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var longPressRunnable: Runnable? = null
+    private var longPressFired = false
+    private val longPressTimeoutMs = ViewConfiguration.getLongPressTimeout().toLong()
 
     /**
      * OTA confirm-criterion hook: invoked once after the first successful
@@ -413,22 +425,28 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     /**
      * Display-list touch handling: drag to scroll (in design units), tap
-     * to dispatch the hit region's action back into the engine. The
-     * committed scene after the dispatch is what gets drawn.
+     * to dispatch the hit region's action back into the engine, and a
+     * hold past the long-press timeout to dispatch a "long-press"
+     * region (TN-148 — a fired long-press suppresses that press's tap).
+     * The committed scene after the dispatch is what gets drawn.
      */
     private fun onDisplayListTouch(event: MotionEvent): Boolean {
-        val dl = sceneHolder.current ?: return false
+        sceneHolder.current ?: return false
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                touchDownX = event.x
                 touchDownY = event.y
                 touchLastY = event.y
                 isScrolling = false
+                longPressFired = false
+                scheduleLongPress(event.x, event.y)
             }
             MotionEvent.ACTION_MOVE -> {
                 val dy = touchLastY - event.y
                 touchLastY = event.y
                 if (!isScrolling && Math.abs(event.y - touchDownY) > touchSlop) {
                     isScrolling = true
+                    cancelLongPressTimer()
                 }
                 if (isScrolling) {
                     scrollY = (scrollY + dy / dlScale).coerceIn(0f, maxScroll)
@@ -436,33 +454,67 @@ class TenunSurfaceView @JvmOverloads constructor(
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (!isScrolling) {
-                    val designX = event.x / dlScale
-                    val viewportY = event.y / dlScale
-                    val visibleHeight = height / dlScale
-                    // Topmost painted region wins: ops paint in order, so
-                    // the LAST containing tap is the one the user sees —
-                    // required for overlays (modal drawer scrim over
-                    // content). Fixed overlays use viewport coordinates;
-                    // ordinary content is translated by the current scroll.
-                    val hit = dl.taps.lastOrNull {
-                        it.contains(designX, viewportY, visibleHeight, scrollY)
-                    }
-                    if (hit != null) {
-                        engine?.let { eng ->
-                            eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")
-                            // The committed scene arrives via tenun_commit;
-                            // the dispatch return value is engine state.
-                            syncFromScene(eng.getLatestScene())
-                            redraw()
-                            if (!dispatchedOnce) {
-                                dispatchedOnce = true
-                                onFirstSuccessfulDispatch?.invoke()
-                            }
-                        }
-                    }
+                cancelLongPressTimer()
+                if (!isScrolling && !longPressFired) {
+                    dispatchRegionHit(event.x, event.y, action = "tap")
                 }
+                longPressFired = false
             }
+            MotionEvent.ACTION_CANCEL -> {
+                cancelLongPressTimer()
+                longPressFired = false
+            }
+        }
+        return true
+    }
+
+    private fun scheduleLongPress(downX: Float, downY: Float) {
+        cancelLongPressTimer()
+        val runnable = Runnable {
+            longPressRunnable = null
+            // The wait ends silently if the press became a scroll; a
+            // long-press that fires suppresses this press's tap.
+            if (!isScrolling && dispatchRegionHit(downX, downY, action = "long-press")) {
+                longPressFired = true
+            }
+        }
+        longPressRunnable = runnable
+        mainHandler.postDelayed(runnable, longPressTimeoutMs)
+    }
+
+    private fun cancelLongPressTimer() {
+        longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+        longPressRunnable = null
+    }
+
+    /**
+     * Hit-tests the DOWN/UP point against the CURRENT committed scene
+     * and dispatches the topmost region carrying [action]. Returns
+     * whether a region was found and dispatched.
+     */
+    private fun dispatchRegionHit(x: Float, y: Float, action: String): Boolean {
+        val dl = sceneHolder.current ?: return false
+        val designX = x / dlScale
+        val viewportY = y / dlScale
+        val visibleHeight = height / dlScale
+        // Topmost painted region wins: ops paint in order, so
+        // the LAST containing region is the one the user sees —
+        // required for overlays (modal drawer scrim over
+        // content). Fixed overlays use viewport coordinates;
+        // ordinary content is translated by the current scroll.
+        val hit = dl.taps.lastOrNull {
+            it.action == action && it.contains(designX, viewportY, visibleHeight, scrollY)
+        }
+        if (hit == null) return false
+        val eng = engine ?: return false
+        eng.dispatchAction(hit.action, hit.payloadJson ?: "{}")
+        // The committed scene arrives via tenun_commit;
+        // the dispatch return value is engine state.
+        syncFromScene(eng.getLatestScene())
+        redraw()
+        if (!dispatchedOnce) {
+            dispatchedOnce = true
+            onFirstSuccessfulDispatch?.invoke()
         }
         return true
     }

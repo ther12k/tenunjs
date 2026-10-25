@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Column,
+  GestureDetector,
   Row,
   Scaffold,
   Text,
@@ -47,17 +48,20 @@ export const CounterScreen = defineScreen({
           align="center"
           justify="center"
         >
-          <Card
-            padding="lg"
-            radius="lg"
-            background="surfaceRaised"
-            semantics={{
-              role: "group",
-              label: "Current counter value",
-            }}
-          >
-            <Text variant="display">{state.count}</Text>
-          </Card>
+          {/* TN-148 gesture affordance: hold the value card to reset. */}
+          <GestureDetector onLongPress={actions.reset}>
+            <Card
+              padding="lg"
+              radius="lg"
+              background="surfaceRaised"
+              semantics={{
+                role: "group",
+                label: "Current counter value",
+              }}
+            >
+              <Text variant="display">{state.count}</Text>
+            </Card>
+          </GestureDetector>
 
           <Row gap="md">
             <Button

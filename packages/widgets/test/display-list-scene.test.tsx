@@ -22,6 +22,7 @@ import {
   Canvas,
   Card,
   Column,
+  GestureDetector,
   layoutScreen,
   Scaffold,
   Text,
@@ -156,5 +157,55 @@ describe("function components resolve once per render (measure and place share o
     const texts = scene.ops.filter((op) => op.op === "text").map((op) => (op as { text: string }).text);
     expect(texts).toContain("invocation 1");
     expect(texts.some((t) => t === "invocation 2")).toBe(false);
+  });
+});
+
+describe("TN-148 long-press regions", () => {
+  const heldTree = jsxs(Column, {
+    padding: "lg",
+    children: jsx(
+      GestureDetector,
+      {
+        onTap: () => {},
+        onLongPress: () => {},
+        children: jsx(Text, { children: "icon" }),
+      }
+    ),
+  });
+
+  test("a GestureDetector with both handlers emits two regions, same frame, gestures tap and long-press", () => {
+    const { scene, tapRuns } = layoutScreen(theme as never, heldTree as never, 720);
+    expect(scene.taps).toHaveLength(2);
+    const [tap, hold] = scene.taps;
+    expect(tap!.action).toBe("tap");
+    expect(hold!.action).toBe("long-press");
+    expect(hold!.x).toBe(tap!.x);
+    expect(hold!.y).toBe(tap!.y);
+    expect(hold!.w).toBe(tap!.w);
+    expect(hold!.h).toBe(tap!.h);
+    // Same run table, index-aligned: payload.id is the tapRuns index.
+    expect(tap!.payload.id).toBeLessThan(tapRuns.length);
+    expect(hold!.payload.id).toBeLessThan(tapRuns.length);
+    expect(tap!.payload.id).not.toBe(hold!.payload.id);
+  });
+
+  test("tap-only widgets are unchanged — exactly one region, action tap (golden trees keep their digests)", () => {
+    const tree = jsxs(Column, {
+      padding: "lg",
+      children: jsx(GestureDetector, { onTap: () => {}, children: jsx(Text, { children: "plain" }) }),
+    });
+    const { scene } = layoutScreen(theme as never, tree as never, 720);
+    expect(scene.taps).toHaveLength(1);
+    expect(scene.taps[0]!.action).toBe("tap");
+  });
+
+  test("onLongPress alone registers only the long-press region (onTap stays optional)", () => {
+    const tree = jsxs(Column, {
+      padding: "lg",
+      children: jsx(GestureDetector, { onLongPress: () => {}, children: jsx(Text, { children: "hold" }) }),
+    });
+    const { scene } = layoutScreen(theme as never, tree as never, 720);
+    expect(scene.taps).toHaveLength(1);
+    expect(scene.taps[0]!.action).toBe("long-press");
   });
 });
