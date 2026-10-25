@@ -2,9 +2,10 @@
  * @tenunjs/platform — platform capability seam contracts (TN-141).
  *
  * The contracts-first slice requested by the VOTOL consumer feedback:
- * freeze what an application binds to (ble / storage / camera — method
- * shapes, event shapes, failure taxonomy, permissions, degradation
- * states, cancellation) BEFORE the M5 implementations exist, because
+ * freeze what an application binds to (ble / storage / camera, plus the
+ * TN-147 launcher seam — method shapes, event shapes, failure taxonomy,
+ * permissions, degradation states, cancellation) BEFORE the M5
+ * implementations exist, because
  * seams written against a stable contract survive while apps written
  * against half-built internals get rewritten.
  *
@@ -47,10 +48,18 @@ export { STORAGE_PERMISSIONS } from "./storage";
 export type { StorageCapability } from "./storage";
 export { CAMERA_PERMISSIONS } from "./camera";
 export type { BarcodeFormat, BarcodeScan, CameraCapability } from "./camera";
+export { LAUNCHER_PERMISSIONS } from "./launcher";
+export type {
+  LauncherAppEntry,
+  LauncherListOptions,
+  LauncherLaunchOptions,
+  LauncherCapability,
+} from "./launcher";
 export {
   defineHostCapabilities,
   unsupportedBle,
   unsupportedStorage,
   unsupportedCamera,
+  unsupportedLauncher,
 } from "./host";
 export type { HostCapabilities, PartialHostCapabilities } from "./host";

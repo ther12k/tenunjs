@@ -17,11 +17,14 @@ import type { StorageCapability } from "./storage";
 import { STORAGE_PERMISSIONS } from "./storage";
 import type { CameraCapability } from "./camera";
 import { CAMERA_PERMISSIONS } from "./camera";
+import type { LauncherCapability } from "./launcher";
+import { LAUNCHER_PERMISSIONS } from "./launcher";
 
 export interface HostCapabilities {
   readonly ble: BleCapability;
   readonly storage: StorageCapability;
   readonly camera: CameraCapability;
+  readonly launcher: LauncherCapability;
 }
 
 /** What a host actually implements; gaps become unsupported stubs. */
@@ -60,6 +63,16 @@ export function unsupportedCamera(reason?: string): CameraCapability {
   };
 }
 
+export function unsupportedLauncher(reason?: string): LauncherCapability {
+  return {
+    contractVersion: 1,
+    availability: () => ({ status: "unsupported", reason }),
+    permissionPrerequisites: () => LAUNCHER_PERMISSIONS,
+    listApps: () => fail(unsupportedFailure("launcher", reason)),
+    launch: () => fail(unsupportedFailure("launcher", reason)),
+  };
+}
+
 /**
  * Composes a host's implemented capabilities with unsupported stubs for
  * the rest. Hosts build this once at boot and hand it to the
@@ -73,5 +86,6 @@ export function defineHostCapabilities(
     ble: implemented.ble ?? unsupportedBle(unsupportedReason),
     storage: implemented.storage ?? unsupportedStorage(unsupportedReason),
     camera: implemented.camera ?? unsupportedCamera(unsupportedReason),
+    launcher: implemented.launcher ?? unsupportedLauncher(unsupportedReason),
   };
 }
