@@ -94,7 +94,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 896f9d71e35e2806fe8bb79567f5ab3cb6409bbf263869f3c208fce0f369eb88 |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 615dac007de9cd9b6c42720ca72a2062d5df42d71989baf6628efe9cbdd9e616 |
+| 06-issues/index.md | 543ec55e81ef1c66efe310e395316116fcda66472d73c31588e29c31b515ebef |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -252,6 +252,10 @@ status: accepted
 | 06-issues/tn-147-freeze-launcher-capability-seam-contract.md | 1e54953fc01be9fa08c52097a847beb4bf3f49331746cbf00adc9053d8ad317c |
 | 06-issues/tn-148-carry-long-press-gesture-through-display-list.md | c5e3e4c49b2bf0d3aa58035ff94544e603992ca5bb63c0299435e55cd28475b7 |
 | 06-issues/tn-149-ship-launcher-sample-over-frozen-seams.md | f1631d3484865eb1472b3819e0d0ef78d9c207665c977d8a9187f41895174dad |
+| 06-issues/tn-150-return-the-dispatch-handlers-result-across-jni.md | dc8f44d9a86106c7ab63ad849d81c61f60e949fa0888be16aea5b4339d6a2d5a |
+| 06-issues/tn-151-drain-quickjs-pending-jobs-at-native-entry-points.md | 16c4edccfe8efe2597afd98b15da60dbedbe0aa63d28e1acfcfb32ce2d9c271c |
+| 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
+| 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

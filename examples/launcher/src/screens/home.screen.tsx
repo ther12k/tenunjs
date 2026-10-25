@@ -1,7 +1,7 @@
 import {
   defineAction,
+  defineController,
   defineScreen,
-  type ScreenActionContext,
 } from "@tenunjs/core";
 import type { LauncherAppEntry, LauncherCapability } from "@tenunjs/platform";
 
@@ -68,7 +68,7 @@ async function loadAppsInto(
   }
 }
 
-export const HomeScreen = defineScreen({
+const controller = defineController({
   name: "LauncherHome",
 
   initialState: (): LauncherHomeState => ({
@@ -79,8 +79,18 @@ export const HomeScreen = defineScreen({
     lastLaunched: null,
   }),
 
+  /**
+   * TN-153 mount-time enumeration: the runtime invokes this on fresh
+   * mounts, so the drawer loads itself wherever the screen is hosted —
+   * no host-side kick action. The loadApps action stays as the Retry
+   * affordance after a failure.
+   */
+  load: async ({ state, services }) => {
+    await loadAppsInto(state, services as LauncherServices);
+  },
+
   actions: {
-    /** Mount-time enumeration; safe to re-run as a refresh. */
+    /** Re-run of the mount-time load; the failure surface's Retry. */
     loadApps: defineAction<LauncherHomeState, void>({
       run: async ({ state, services }) => {
         await loadAppsInto(state, services as LauncherServices);
@@ -119,6 +129,10 @@ export const HomeScreen = defineScreen({
       },
     }),
   },
+});
+
+export const HomeScreen = defineScreen({
+  controller,
 
   view({ state, actions }) {
     return (
@@ -134,14 +148,17 @@ export const HomeScreen = defineScreen({
             </Card>
           ) : null}
 
-          {state.status === "failed" ? (
+          {/* TN-153: the banner keys on failureKind, not status — a failed
+              LAUNCH (grid still ready) must surface too, and a successful
+              retry/launch clears it. */}
+          {state.failureKind !== null ? (
             <Card padding="md" radius="md" background="surfaceRaised">
               <Column gap="sm">
-                <Text variant="title">Apps unavailable</Text>
+                <Text variant="title">{state.status === "failed" ? "Apps unavailable" : "Launch failed"}</Text>
                 <Text variant="body">
                   {state.failureKind === "denied"
                     ? "App-list permission was refused. Grant it in system settings and reopen the drawer."
-                    : `This host cannot list apps (${state.failureKind ?? "unknown"}).`}
+                    : `App action failed (${state.failureKind}).`}
                 </Text>
                 <Button onPress={() => actions.loadApps()}>Retry</Button>
               </Column>

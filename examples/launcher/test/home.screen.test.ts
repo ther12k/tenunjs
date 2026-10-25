@@ -6,7 +6,7 @@ import {
   type LauncherAppEntry,
   type LauncherCapability,
 } from "@tenunjs/platform";
-import { layoutScreen } from "@tenunjs/widgets";
+import { ApplicationRuntime, layoutScreen } from "@tenunjs/widgets";
 import { HomeScreen, type LauncherHomeState } from "../src/screens/home.screen";
 import { appTheme } from "../src/theme";
 
@@ -114,6 +114,13 @@ describe("HomeScreen — launch and options", () => {
     expect(home.state.lastLaunched).toBeNull();
     expect(home.state.failureKind).toBe("unavailable");
     expect(home.state.apps).toHaveLength(3);
+    // TN-153: a launch failure is VISIBLE — the banner keys on
+    // failureKind, not on enumeration status, so the ready grid keeps
+    // rendering beneath the failure card.
+    const rendered = JSON.stringify(home.render());
+    expect(rendered).toContain("Launch failed");
+    expect(rendered).toContain("unavailable");
+    expect(rendered).toContain("Camera");
   });
 
   test("long-press-shaped action opens and closes the options panel", async () => {
@@ -128,6 +135,76 @@ describe("HomeScreen — launch and options", () => {
     await home.press("closeOptions");
     expect(home.state.optionsFor).toBeNull();
     expect(JSON.stringify(home.render())).not.toContain('["dev.ther12k.notes"]');
+  });
+});
+
+describe("HomeScreen — boot (TN-153: the runtime runs the controller load)", () => {
+  function bootRuntime(services: Record<string, unknown>) {
+    return new ApplicationRuntime({
+      screens: { home: HomeScreen as never },
+      initial: "home",
+      theme: appTheme as never,
+      services,
+    });
+  }
+
+  test("the drawer loads itself at boot — no host-side kick action", async () => {
+    const runtime = bootRuntime({ launcher: fakeLauncher() });
+    expect(JSON.stringify(runtime.render().scene)).toContain("Loading apps…");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = runtime.exportState().states.home as LauncherHomeState;
+    expect(state.status).toBe("ready");
+    expect(state.apps).toHaveLength(3);
+    const texts = JSON.stringify(runtime.render().scene.ops.filter((op) => op.op === "text"));
+    expect(texts).toContain("Camera");
+  });
+
+  test("a host without the capability reaches its degradation surface on its own", async () => {
+    const runtime = bootRuntime({});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = runtime.exportState().states.home as LauncherHomeState;
+    expect(state.status).toBe("failed");
+    expect(state.failureKind).toBe("unsupported");
+  });
+
+  test("a restore remount does not re-run load — the snapshot is authoritative", async () => {
+    let listCalls = 0;
+    const counting: LauncherCapability = {
+      contractVersion: 1,
+      availability: () => ({ status: "supported" }),
+      permissionPrerequisites: () => LAUNCHER_PERMISSIONS,
+      async listApps() {
+        listCalls++;
+        return { ok: true, value: FIXTURE_APPS };
+      },
+      async launch() {
+        return { ok: true, value: undefined };
+      },
+    };
+    // The target boots a BLANK screen, so the only way `home` ever mounts
+    // there is the restore — isolating the restore-remount load policy.
+    const blank = {
+      initialState: () => ({}),
+      actions: {},
+      view: () => null,
+    } as never;
+    const source = bootRuntime({ launcher: counting });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(listCalls).toBe(1); // source's fresh mount ran load
+
+    const target = new ApplicationRuntime({
+      screens: { home: HomeScreen as never, blank },
+      initial: "blank",
+      theme: appTheme as never,
+      services: { launcher: counting },
+    });
+    target.restore(source.exportState() as never, { ignoreUnknownScreens: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(listCalls).toBe(1); // the restore remount did NOT re-enumerate
+    const state = target.exportState().states.home as LauncherHomeState;
+    expect(target.route()).toBe("home");
+    expect(state.status).toBe("ready");
+    expect(state.apps).toHaveLength(3);
   });
 });
 

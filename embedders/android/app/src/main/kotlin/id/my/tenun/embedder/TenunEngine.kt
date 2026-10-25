@@ -17,6 +17,19 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
         return nativeDispatchAction(nativeHandle, action, payloadJson)
     }
 
+    /**
+     * TN-150: the JS handler's RETURN VALUE for [action] — the data
+     * channel for __TENUN_EXPORT (state snapshots) and
+     * __TENUN_STATE_SCHEMA replies. Null when no handler exists, it
+     * threw, or it returned a non-string; callers take their no-carry
+     * path. [dispatchAction] instead returns the committed scene.
+     */
+    @Synchronized
+    fun dispatchActionResult(action: String, payloadJson: String = "{}"): String? {
+        check(nativeHandle != 0L) { "Engine already destroyed" }
+        return nativeDispatchActionResult(nativeHandle, action, payloadJson)
+    }
+
     @Synchronized
     fun getLatestScene(): String {
         check(nativeHandle != 0L) { "Engine already destroyed" }
@@ -75,6 +88,7 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
 
     private external fun nativeInit(bundleBytes: ByteArray?): Long
     private external fun nativeDispatchAction(handle: Long, action: String, payloadJson: String): String
+    private external fun nativeDispatchActionResult(handle: Long, action: String, payloadJson: String): String?
     private external fun nativeGetLatestScene(handle: Long): String
     private external fun nativeDestroy(handle: Long)
 }

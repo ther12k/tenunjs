@@ -151,6 +151,25 @@ static int run_tsx_bundle_checks(const char* asset_path) {
     }
   }
 
+  /* 6. TN-150: the REAL host-handoff bundle's data channel. The
+   * __TENUN_EXPORT handler reply (state snapshot JSON) and the
+   * __TENUN_STATE_SCHEMA reply must cross this boundary — the legacy
+   * scene-returning dispatch API cannot carry them, which is why OTA
+   * state carry silently degraded to clean restarts. */
+  {
+    char* exported = tenun_android_engine_dispatch_result(engine, "__TENUN_EXPORT", "{}");
+    CHECK(exported != NULL && strstr(exported, "\"states\"") != NULL,
+          "__TENUN_EXPORT reply carries per-screen states (not the scene)");
+    CHECK(exported != NULL && strstr(exported, "\"stateSchema\":1") != NULL,
+          "__TENUN_EXPORT reply carries the state schema");
+    free(exported);
+
+    char* schema = tenun_android_engine_dispatch_result(engine, "__TENUN_STATE_SCHEMA", "{}");
+    CHECK(schema != NULL && strstr(schema, "\"stateSchema\"") != NULL,
+          "__TENUN_STATE_SCHEMA reply carries the schema number");
+    free(schema);
+  }
+
   tenun_android_engine_destroy(engine);
   if (failures > 0) {
     printf("FAILED: %d TSX bundle checks failed\n", failures);
@@ -570,6 +589,146 @@ int main(int argc, char** argv) {
   printf("SKIPPED: TN-136 bounded-eval cases need TENUN_TEST_INJECTION (NDK builds exclude them)\n");
 #endif
   alarm(0);
+
+  /* 13. TN-151: pending-job drain. Without a drain at every native entry
+   * point, a resolved promise's continuation NEVER runs on this host
+   * (nothing pumps QuickJS's job queue), so async actions cannot settle.
+   * These legs prove boot-time and dispatch-time continuations run, and
+   * that a rejecting job is WARNed without killing the engine. */
+  printf("== 13. TN-151 pending-job drain (promise continuations) ==\n");
+  {
+    const char* boot_promise_js =
+      "tenun_commit('{\"phase\":\"before-await\"}');"
+      "Promise.resolve().then(function(){"
+      "  tenun_commit('{\"phase\":\"after-await\"}');"
+      "});"
+      "globalThis.__tenun_dispatch_action = function(){ return '{}'; };";
+    tenun_android_engine* boot_engine =
+        tenun_android_engine_create((const uint8_t*)boot_promise_js, strlen(boot_promise_js));
+    CHECK(boot_engine != NULL, "boot-promise bundle initializes");
+    if (boot_engine) {
+      const char* boot_scene = tenun_android_engine_get_scene(boot_engine);
+      CHECK(strstr(boot_scene, "after-await") != NULL,
+            "boot-time promise continuation ran inside engine_create (drain after eval)");
+      tenun_android_engine_destroy(boot_engine);
+    }
+
+    const char* dispatch_promise_js =
+      "tenun_commit('{\"phase\":\"idle\"}');"
+      "globalThis.__tenun_dispatch_action = function(a, p) {"
+      "  if (a === 'KICK') {"
+      "    Promise.resolve().then(function(){"
+      "      tenun_commit('{\"phase\":\"settled\"}');"
+      "    });"
+      "    return '{\"queued\":true}';"
+      "  }"
+      "  return '{}';"
+      "};";
+    tenun_android_engine* kick_engine =
+        tenun_android_engine_create((const uint8_t*)dispatch_promise_js, strlen(dispatch_promise_js));
+    CHECK(kick_engine != NULL, "dispatch-promise bundle initializes");
+    if (kick_engine) {
+      char* kick_scene = tenun_android_engine_dispatch(kick_engine, "KICK", "{}");
+      CHECK(kick_scene != NULL && strstr(kick_scene, "settled") != NULL,
+            "dispatch-time promise continuation ran and its commit is in the returned scene");
+      free(kick_scene);
+      tenun_android_engine_destroy(kick_engine);
+    }
+
+    fflush(stderr);
+    int saved_err_c = dup(fileno(stderr));
+    int cap_c = open("/tmp/tenun_tn151_capture.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    dup2(cap_c, fileno(stderr));
+    close(cap_c);
+    const char* reject_promise_js =
+      "tenun_commit('{\"phase\":\"ok\"}');"
+      "globalThis.__tenun_dispatch_action = function(a, p) {"
+      "  if (a === 'BOOM') {"
+      "    Promise.resolve().then(function(){ throw new Error('job-boom'); });"
+      "    return '{}';"
+      "  }"
+      "  tenun_commit('{\"phase\":\"recovered\"}');"
+      "  return '{}';"
+      "};";
+    tenun_android_engine* reject_engine =
+        tenun_android_engine_create((const uint8_t*)reject_promise_js, strlen(reject_promise_js));
+    CHECK(reject_engine != NULL, "rejecting-job bundle initializes");
+    if (reject_engine) {
+      char* boom_scene = tenun_android_engine_dispatch(reject_engine, "BOOM", "{}");
+      free(boom_scene);
+      char* recovered = tenun_android_engine_dispatch(reject_engine, "RECOVER", "{}");
+      CHECK(recovered != NULL && strstr(recovered, "recovered") != NULL,
+            "engine stays usable after a rejecting job (drain stops, engine lives)");
+      free(recovered);
+      tenun_android_engine_destroy(reject_engine);
+    }
+    fflush(stderr);
+    dup2(saved_err_c, fileno(stderr));
+    close(saved_err_c);
+    FILE* cap = fopen("/tmp/tenun_tn151_capture.txt", "r");
+    char line[512];
+    int saw_job_warn = 0;
+    if (cap) {
+      while (fgets(line, sizeof(line), cap)) {
+        if (strstr(line, "tenun unhandled promise rejection: Error: job-boom") != NULL) { saw_job_warn = 1; break; }
+      }
+      fclose(cap);
+    }
+    CHECK(saw_job_warn, "rejecting job is fail-visible (unhandled-rejection WARN on host log)");
+  }
+
+  /* 14. TN-150: dispatch-result data channel. The legacy dispatch API
+   * returns the committed SCENE, which made __TENUN_EXPORT unusable
+   * across this boundary (the host could never read the state
+   * snapshot). dispatch_result returns the handler's string reply. */
+  printf("== 14. TN-150 dispatch-result channel (handler return values) ==\n");
+  {
+    const char* result_js =
+      "tenun_commit('{\"tenun\":\"display-list\",\"version\":1,\"ops\":[],\"taps\":[]}');"
+      "globalThis.__tenun_dispatch_action = function(a, p) {"
+      "  if (a === '__TENUN_EXPORT') { return '{\"route\":\"home\",\"states\":{\"home\":{\"n\":7}},\"stateSchema\":1}'; }"
+      "  if (a === '__TENUN_STATE_SCHEMA') { return '{\"stateSchema\":1}'; }"
+      "  if (a === 'NOT_A_STRING') { return 42; }"
+      "  if (a === 'THROWS') { throw new Error('handler-boom'); }"
+      "  return '{}';"
+      "};";
+    tenun_android_engine* result_engine =
+        tenun_android_engine_create((const uint8_t*)result_js, strlen(result_js));
+    CHECK(result_engine != NULL, "dispatch-result bundle initializes");
+    if (result_engine) {
+      char* exported = tenun_android_engine_dispatch_result(result_engine, "__TENUN_EXPORT", "{}");
+      CHECK(exported != NULL && strstr(exported, "\"states\"") != NULL && strstr(exported, "\"stateSchema\":1") != NULL,
+            "__TENUN_EXPORT result carries the state snapshot, not the scene");
+      free(exported);
+
+      char* schema = tenun_android_engine_dispatch_result(result_engine, "__TENUN_STATE_SCHEMA", "{}");
+      CHECK(schema != NULL && strstr(schema, "\"stateSchema\"") != NULL,
+            "__TENUN_STATE_SCHEMA result carries the schema reply");
+      free(schema);
+
+      char* non_string = tenun_android_engine_dispatch_result(result_engine, "NOT_A_STRING", "{}");
+      CHECK(non_string == NULL, "a non-string handler return yields NULL (no fabricated result)");
+      free(non_string);
+
+      char* legacy_scene = tenun_android_engine_dispatch(result_engine, "__TENUN_EXPORT", "{}");
+      CHECK(legacy_scene != NULL && strstr(legacy_scene, "display-list") != NULL,
+            "legacy dispatch still returns the committed scene (touch paths unchanged)");
+      free(legacy_scene);
+
+      const char* no_handler_js =
+        "tenun_commit('{\"tenun\":\"display-list\",\"version\":1,\"ops\":[],\"taps\":[]}');";
+      tenun_android_engine* bare =
+          tenun_android_engine_create((const uint8_t*)no_handler_js, strlen(no_handler_js));
+      CHECK(bare != NULL, "handler-less bundle initializes");
+      if (bare) {
+        char* none = tenun_android_engine_dispatch_result(bare, "ANY", "{}");
+        CHECK(none == NULL, "no __tenun_dispatch_action installed yields NULL (callers take the no-carry path)");
+        free(none);
+        tenun_android_engine_destroy(bare);
+      }
+      tenun_android_engine_destroy(result_engine);
+    }
+  }
 
   if (failures > 0) {
     printf("FAILED: %d checks failed\n", failures);

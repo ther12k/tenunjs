@@ -19,7 +19,10 @@ function toCss(color: string): string {
 export interface PreviewRenderer {
   render(scene: DisplayListScene, scrollY: number): void;
   resize(): void;
-  hitTest(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number): number | null;
+  /** [action] filters the hit to one gesture's regions (TN-152): a
+   *  short click must resolve "tap" regions and a hold "long-press"
+   *  regions — never whichever same-frame region registered last. */
+  hitTest(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number, action?: "tap" | "long-press"): number | null;
   maxScroll(scene: DisplayListScene): number;
 }
 
@@ -61,11 +64,18 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   if (!Array.isArray(scene.ops)) {
     return "scene.ops is missing or not an array";
   }
+  if (!Array.isArray(scene.taps)) {
+    return "scene.taps is missing or not an array";
+  }
   if (scene.version > CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION) {
     return `scene version ${scene.version} exceeds renderer support (${CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION})`;
   }
   for (let index = 0; index < scene.ops.length; index++) {
-    const kind: string = (scene.ops[index] as { op: string }).op;
+    const op = scene.ops[index] as { op?: string } | null;
+    if (!op || typeof op !== "object") {
+      return `ops[${index}] is not an object`;
+    }
+    const kind: string = op.op as string;
     if (!KNOWN_OP_KINDS.has(kind)) {
       return `unknown op kind "${kind}" at ops[${index}]`;
     }
@@ -91,10 +101,17 @@ export function hitTestTaps(
   designX: number,
   viewportY: number,
   visibleHeight: number,
-  scrollY: number
+  scrollY: number,
+  action?: SerializedTap["action"]
 ): number | null {
   for (let index = taps.length - 1; index >= 0; index--) {
     const tap = taps[index]!;
+    // TN-152 gesture filter: a GestureDetector with both handlers emits
+    // two regions with the SAME frame (tap first, long-press second), so
+    // an unfiltered reverse scan always picks the long-press region and
+    // a short click would run the hold handler. Hosts pass the gesture
+    // they are dispatching; omitted keeps the legacy unfiltered scan.
+    if (action !== undefined && tap.action !== action) continue;
     const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y - scrollY;
     if (tap.x <= designX && designX <= tap.x + tap.w && y <= viewportY && viewportY <= y + tap.h) {
       return index;
@@ -194,7 +211,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     ctx.restore();
   }
 
-  hitTest(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number): number | null {
+  hitTest(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number, action?: "tap" | "long-press"): number | null {
     // A scene this renderer rejected is not painted AND not hittable: its
     // hit regions must never dispatch (no new action targets go live).
     if (sceneContractError(scene) !== null) return null;
@@ -205,7 +222,8 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
       (clientX - rect.left) / scale,
       (clientY - rect.top) / scale,
       rect.height / scale,
-      scrollY
+      scrollY,
+      action
     );
   }
 

@@ -444,7 +444,13 @@ class TenunSurfaceView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 val dy = touchLastY - event.y
                 touchLastY = event.y
-                if (!isScrolling && Math.abs(event.y - touchDownY) > touchSlop) {
+                // Slop is axis-agnostic: a horizontal drag past slop also
+                // ends the long-press wait (the hold timer hit-tests the
+                // DOWN point — a finger that wandered sideways must not
+                // still trigger it).
+                if (!isScrolling &&
+                    (Math.abs(event.y - touchDownY) > touchSlop || Math.abs(event.x - touchDownX) > touchSlop)
+                ) {
                     isScrolling = true
                     cancelLongPressTimer()
                 }

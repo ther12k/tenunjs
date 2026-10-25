@@ -29,6 +29,10 @@
  *  - navigation-by-action is not baked in: applications wire it through
  *    `services` (the gallery's home-screen special case moved into the
  *    example, where it belongs);
+ *  - TN-153: a split screen's controller `load` hook runs on fresh
+ *    mounts (constructor and first navigate) — bootstrap data loads are
+ *    a runtime concern, not something each host should have to kick;
+ *    restore remounts are exempt (the snapshot is authoritative);
  *  - TN-142: the host→runtime push channel is first-class. Companion
  *    apps are push-driven — live data and link-state reality arrive
  *    while the user is idle — so hosts deliver out-of-band payloads
@@ -535,6 +539,38 @@ export class ApplicationRuntime {
           );
         }
       };
+    }
+    // TN-153: the controller's optional load() hook runs on FRESH mounts
+    // (constructor and first navigate) — never on restore remounts, where
+    // the snapshot is authoritative state and re-loading would overwrite
+    // what was just restored. An async load settles out-of-band:
+    // settlement fires onStateInvalidation exactly like an async action,
+    // so invalidation-driven hosts repaint when the data lands (the
+    // Android host settles it through the native job drain, TN-151).
+    if (restoredState === undefined) {
+      const load = (controller as { load?: (ctx: unknown) => unknown }).load;
+      if (typeof load === "function") {
+        const loaded = load({
+          state,
+          services: this.services,
+          signal: this.abort.signal,
+        });
+        if (isThenable(loaded)) {
+          loaded.then(
+            () => {
+              this.notifyStale();
+            },
+            (error: unknown) => {
+              this.notifyStale();
+              if (this.onAsyncActionError) {
+                this.onAsyncActionError({ screen: name, action: "load", error });
+              } else {
+                throw error;
+              }
+            },
+          );
+        }
+      }
     }
     return { name, state, actions };
   }

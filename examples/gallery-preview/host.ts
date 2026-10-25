@@ -71,15 +71,54 @@ function paint(): void {
   paint();
 };
 
+// TN-152 gesture parity with the Android host: a hold past the timeout
+// dispatches the "long-press" region under the DOWN point; movement past
+// slop, release, or cancel ends the wait; a fired hold suppresses that
+// press's tap (the host rule the scene contract documents).
+const LONG_PRESS_TIMEOUT_MS = 500;
+const HOLD_SLOP_PX = 8;
+let pointerY = 0;
+let dragging = false;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let holdFired = false;
+let downX = 0;
+let downY = 0;
+
+function cancelHoldTimer(): void {
+  if (holdTimer !== null) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+}
+
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
   pointerY = event.clientY;
   dragging = false;
+  holdFired = false;
+  downX = event.clientX;
+  downY = event.clientY;
+  cancelHoldTimer();
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    if (!scene || dragging) return;
+    const index = renderer.hitTest(scene, downX, downY, scrollY, "long-press");
+    if (index !== null) {
+      holdFired = true;
+      dispatch("long-press", JSON.stringify({ id: scene.taps[index]!.payload.id }));
+    }
+  }, LONG_PRESS_TIMEOUT_MS);
 });
 canvas.addEventListener("pointermove", (event) => {
   if (!canvas.hasPointerCapture(event.pointerId) || !scene) return;
   const delta = pointerY - event.clientY;
   if (Math.abs(delta) > 1) dragging = true;
+  if (
+    holdTimer !== null &&
+    (Math.abs(event.clientX - downX) > HOLD_SLOP_PX || Math.abs(event.clientY - downY) > HOLD_SLOP_PX)
+  ) {
+    cancelHoldTimer();
+  }
   pointerY = event.clientY;
   scrollY = Math.max(
     0,
@@ -88,18 +127,21 @@ canvas.addEventListener("pointermove", (event) => {
   paint();
 });
 canvas.addEventListener("pointerup", (event) => {
-  if (!dragging && scene) {
-    const index = renderer.hitTest(scene, event.clientX, event.clientY, scrollY);
+  cancelHoldTimer();
+  if (!dragging && !holdFired && scene) {
+    const index = renderer.hitTest(scene, event.clientX, event.clientY, scrollY, "tap");
     if (index !== null) {
       dispatch("tap", JSON.stringify({ id: scene.taps[index]!.payload.id }));
     }
   }
+  holdFired = false;
   canvas.releasePointerCapture(event.pointerId);
 });
+canvas.addEventListener("pointercancel", () => {
+  cancelHoldTimer();
+  holdFired = false;
+});
 window.addEventListener("resize", () => paint());
-
-let pointerY = 0;
-let dragging = false;
 
 function dispatch(action: string, payloadJson: string): string {
   const fn = (window as unknown as Record<string, unknown>)["__tenun_dispatch_action"];

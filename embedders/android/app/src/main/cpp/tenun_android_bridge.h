@@ -56,6 +56,12 @@ extern int64_t tenun_test_memory_limit_bytes;
 /* Public Native Engine C API */
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len);
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json);
+/* TN-150: the JS handler's STRING return value for this action, or NULL
+ * when no handler exists, it threw (WARNed on the host log), or it
+ * returned a non-string. This is the data channel hosts use for
+ * __TENUN_EXPORT / __TENUN_STATE_SCHEMA; dispatch() above instead
+ * returns the committed scene. Caller frees a non-NULL result. */
+char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const char* action, const char* payload_json);
 const char* tenun_android_engine_get_scene(const tenun_android_engine* engine);
 void tenun_android_engine_destroy(tenun_android_engine* engine);
 
@@ -64,6 +70,9 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     JNIEnv *env, jobject thiz, jbyteArray bundleBytes);
 
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchAction(
+    JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson);
+
+JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchActionResult(
     JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson);
 
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestScene(

@@ -42,6 +42,12 @@ int64_t tenun_test_memory_limit_bytes = 0;
 #define TENUN_JS_TIME_BUDGET_MS 5000
 #define TENUN_JS_MEMORY_LIMIT_BYTES (32u * 1024u * 1024u)
 
+/* TN-151: pending-job drain bound. Every job already runs under the
+ * interrupt deadline above; this caps the COUNT of chained jobs one
+ * eval/dispatch entry may execute, so a bundle that keeps scheduling
+ * jobs cannot hold the host thread indefinitely. */
+#define TENUN_JS_MAX_JOBS_PER_ENTRY 1000
+
 static int64_t tenun_now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -119,6 +125,53 @@ static int tenun_interrupt_handler(JSRuntime* rt, void* opaque) {
   return tenun_now_ms() >= engine->js_deadline_ms;
 }
 
+/* TN-151: drain QuickJS pending jobs (promise continuations) at every
+ * native entry point that ran JS — bundle eval and each dispatch — so
+ * async actions and capability calls can settle inside the entry that
+ * scheduled them. Without this, `Promise.resolve().then(fn)` NEVER runs
+ * fn on this host: nothing else pumps the job queue. Each job gets its
+ * own time budget (the interrupt handler bounds it), the count is
+ * capped, and a job that throws is fetched, WARNed, and stops the drain
+ * (fail-visible; the last committed scene stays and the engine remains
+ * usable). */
+static void tenun_drain_pending_jobs(tenun_android_engine* engine) {
+  int executed = 0;
+  while (executed < TENUN_JS_MAX_JOBS_PER_ENTRY && JS_IsJobPending(engine->rt)) {
+    engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
+    /* This QuickJS revision reports the job's context through pctx. */
+    JSContext* job_ctx = NULL;
+    int err = JS_ExecutePendingJob(engine->rt, &job_ctx);
+    if (err < 0) {
+      JSValue exc = JS_GetException(job_ctx ? job_ctx : engine->ctx);
+      const char* err_str = JS_ToCString(job_ctx ? job_ctx : engine->ctx, exc);
+      TENUN_LOG_WARN("tenun pending job failed: %s", err_str ? err_str : "unknown error");
+      if (err_str) JS_FreeCString(job_ctx ? job_ctx : engine->ctx, err_str);
+      JS_FreeValue(job_ctx ? job_ctx : engine->ctx, exc);
+      break;
+    }
+    if (err == 0) break; /* no job actually ran */
+    executed++;
+  }
+}
+
+/* TN-151: unhandled promise rejections must be fail-visible. An
+ * exception thrown inside a .then callback does NOT fail the job — it
+ * rejects the derived promise, and bare QuickJS drops unhandled
+ * rejections silently unless the host installs this tracker. Async
+ * action failures would vanish; instead they WARN like every other
+ * host-side failure. (is_handled=TRUE arrives later if the app attaches
+ * a handler after the fact — not a failure.) */
+static void tenun_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,
+                                            JSValueConst reason, bool is_handled,
+                                            void *opaque) {
+  (void)promise;
+  (void)opaque;
+  if (is_handled) return;
+  const char *reason_str = JS_ToCString(ctx, reason);
+  TENUN_LOG_WARN("tenun unhandled promise rejection: %s", reason_str ? reason_str : "unknown error");
+  if (reason_str) JS_FreeCString(ctx, reason_str);
+}
+
 static JSValue js_tenun_commit(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
   (void)this_val;
   tenun_android_engine* engine = (tenun_android_engine*)JS_GetContextOpaque(ctx);
@@ -181,6 +234,8 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
    * script is evaluated. */
   JS_SetInterruptHandler(engine->rt, tenun_interrupt_handler, engine);
   JS_SetMemoryLimit(engine->rt, tenun_memory_limit_bytes());
+  /* TN-151: surface unhandled promise rejections (see tracker). */
+  JS_SetHostPromiseRejectionTracker(engine->rt, tenun_promise_rejection_tracker, engine);
 
   engine->ctx = JS_NewContext(engine->rt);
   if (!engine->ctx || tenun_injected(TENUN_INIT_CONTEXT_CREATE)) {
@@ -277,13 +332,22 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   }
   JS_FreeValue(engine->ctx, eval_res);
 
+  /* TN-151: boot-time promise continuations settle before create()
+   * returns, so a bundle whose initial scene depends on an async load
+   * (e.g. a capability call) commits during boot, not never. */
+  tenun_drain_pending_jobs(engine);
+
   return engine;
 }
 
-char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json) {
-  if (!engine || !engine->ctx || !action) return NULL;
-
-  pthread_mutex_lock(&engine->lock);
+/* Runs one host→JS dispatch under the CALLER-HELD engine lock: arms the
+ * deadline, resolves __tenun_dispatch_action (a property getter may run
+ * JS first), calls it, and returns a strdup'd copy of the handler's
+ * STRING return value — or NULL when no handler exists, the handler
+ * threw (already WARNed here), or it returned a non-string. The caller
+ * owns the returned bytes. */
+static char* tenun_run_dispatch_handler(tenun_android_engine* engine, const char* action, const char* payload_json) {
+  char* result = NULL;
 
   // A property getter can execute JS before the dispatch function is called.
   engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
@@ -311,24 +375,65 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
 
     if (JS_IsException(res)) {
       JSValue exc = JS_GetException(engine->ctx);
-      const char *err = JS_ToCString(engine->ctx, exc);
+      const char* err = JS_ToCString(engine->ctx, exc);
       /* WARN to logcat on Android: a failed dispatch silently freezes the
        * UI (scene never re-commits), so the failure must be visible. */
       TENUN_LOG_WARN("tenun dispatch action=%s failed: %s",
                      action ? action : "(null)", err ? err : "unknown error");
       if (err) JS_FreeCString(engine->ctx, err);
       JS_FreeValue(engine->ctx, exc);
+    } else if (JS_IsString(res)) {
+      const char* str = JS_ToCString(engine->ctx, res);
+      if (str) {
+        result = strdup(str);
+        JS_FreeCString(engine->ctx, str);
+      }
     }
     JS_FreeValue(engine->ctx, res);
   }
 
   JS_FreeValue(engine->ctx, dispatch_fn);
   JS_FreeValue(engine->ctx, global);
+  return result;
+}
+
+char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json) {
+  if (!engine || !engine->ctx || !action) return NULL;
+
+  pthread_mutex_lock(&engine->lock);
+
+  free(tenun_run_dispatch_handler(engine, action, payload_json));
+  /* TN-151: continuations the handler scheduled (async actions) settle
+   * inside this entry point; commits they make are visible in the scene
+   * returned below. */
+  tenun_drain_pending_jobs(engine);
 
   char* scene_copy = engine->current_scene ? strdup(engine->current_scene) : strdup("{}");
   pthread_mutex_unlock(&engine->lock);
 
   return scene_copy;
+}
+
+char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const char* action, const char* payload_json) {
+  if (!engine || !engine->ctx || !action) return NULL;
+
+  pthread_mutex_lock(&engine->lock);
+
+  /* TN-150: the handler's return value is the host's data channel
+   * (__TENUN_EXPORT state snapshots, __TENUN_STATE_SCHEMA replies).
+   * The legacy dispatch API above returns the committed SCENE instead,
+   * which made those verbs unusable across this boundary — hosts could
+   * never read the snapshot, so state carry across bundle swaps
+   * silently degraded to a clean restart. NULL = no handler, a thrown
+   * handler (WARNed), or a non-string return: callers treat it as "no
+   * result" and fall back to their no-carry path. */
+  char* result = tenun_run_dispatch_handler(engine, action, payload_json);
+  if (result != NULL) {
+    tenun_drain_pending_jobs(engine);
+  }
+  pthread_mutex_unlock(&engine->lock);
+
+  return result;
 }
 
 const char* tenun_android_engine_get_scene(const tenun_android_engine* engine) {
@@ -535,6 +640,29 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchAc
 
   jstring result = tenun_jni_new_string(env, updated_scene ? updated_scene : "{}");
   if (updated_scene) free(updated_scene);
+
+  return result;
+}
+
+/* TN-150: returns the JS handler's return value (or a NULL jstring when
+ * there is none), NOT the committed scene — the data channel hosts use
+ * for __TENUN_EXPORT / __TENUN_STATE_SCHEMA. */
+JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchActionResult(
+    JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson) {
+  (void)thiz;
+  tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
+  if (!engine) return NULL;
+
+  char* act_str = tenun_jni_get_string(env, action);
+  char* pay_str = tenun_jni_get_string(env, payloadJson);
+
+  char* handler_result = tenun_android_engine_dispatch_result(engine, act_str, pay_str);
+
+  if (act_str) free(act_str);
+  if (pay_str) free(pay_str);
+
+  jstring result = handler_result ? tenun_jni_new_string(env, handler_result) : NULL;
+  if (handler_result) free(handler_result);
 
   return result;
 }
