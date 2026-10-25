@@ -137,10 +137,19 @@ data class DisplayListScene(
         const val SUPPORTED_SCENE_VERSION = 1
 
         fun parse(sceneJson: String): DisplayListScene? {
+            // TN-140: once the scene DECLARES itself a display list, every
+            // structural failure is a contract violation (thrown) — never a
+            // quiet null, which made the host exit display-list mode and
+            // fall back to the legacy notes screen, hiding the break. Null
+            // stays reserved for scenes that are not display lists at all.
+            var isDisplayList = false
             return try {
                 val root = JSONObject(sceneJson)
-                if (root.optString("tenun") != "display-list") return null
-                if (!root.has("ops")) return null
+                isDisplayList = root.optString("tenun") == "display-list"
+                if (!isDisplayList) return null
+                if (!root.has("ops")) {
+                    throw SceneContractException("display-list scene is missing ops")
+                }
                 val version = root.optInt("version", 1)
                 if (version > SUPPORTED_SCENE_VERSION) {
                     throw SceneContractException(
@@ -266,6 +275,13 @@ data class DisplayListScene(
                 // into the not-a-display-list null path.
                 throw e
             } catch (e: Exception) {
+                if (isDisplayList) {
+                    // TN-140: a scene that declared itself a display list
+                    // but failed mid-parse is incompatibility, not legacy.
+                    throw SceneContractException(
+                        "malformed display-list scene: ${e.message ?: e.javaClass.simpleName}"
+                    )
+                }
                 null
             }
         }

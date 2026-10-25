@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-140: Surface a malformed display list instead of silently exiting display-list mode"
 summary: "Missing ops and parse errors return null, the holder clears, and the surface falls back to stale legacy controls — incompatibility is never surfaced."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-140"
 milestone: "M2"
 priority: "P2"
@@ -46,3 +46,16 @@ edge was hardened in #218 — the Android side kept the silent fallback.)
 
 - [Android host review 2026-09-28, finding A7](../08-validation/android-host-review-2026-09-28.md)
 - `embedders/android/app/src/main/java/.../DisplayListScene.kt`, `TenunSurfaceView.kt`
+
+## Status note (2026-10-25, closed)
+
+Closed via PR #232: `DisplayListScene.parse` treats every structural
+failure of a scene that DECLARES `tenun:"display-list"` as
+`SceneContractException` — missing ops, non-array ops, non-object op
+entries — so `SceneHolder` takes its REJECTED path (last committed scene
+kept, or the explicit incompatible-bundle panel on first commit) instead
+of silently exiting display-list mode. Null stays reserved for non-DL
+shapes (the legacy notes path, TN-132, is unchanged). JVM tests pin all
+three malformed shapes plus the legacy null path; the pre-existing
+`testMalformedJsonReturnsNull` expectation was the pre-fix bug's and is
+updated with the reason.

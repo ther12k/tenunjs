@@ -42,20 +42,31 @@ class UpdateStore(private val root: File) {
      * The sequence of the confirmed bundle, or -1 when none. The pointer
      * counts only while its backing files exist — quarantining a confirmed
      * sequence therefore rolls the host back to the packaged bundle.
+     *
+     * TN-138: quarantining a CONFIRMED sequence additionally raises a
+     * durable floor (see [quarantine]) so this value never regresses below
+     * a previously-accepted sequence — otherwise the deleted backing files
+     * would drop the anti-replay gate and an older still-signed release
+     * could re-enter through OtaManager's sequence check.
      */
     fun acceptedSequence(): Long {
         synchronized(lock) {
-            val sequence = parseLongOrNull(readFile(activeFile())) ?: return -1L
-            if (sequence < 0) return -1L
-            val meta = metaOf(sequence) ?: return -1L
-            if (meta.state != "confirmed") return -1L
-            if (!bundleFile(sequence).exists()) return -1L
-            return sequence
+            return maxOf(confirmedSequenceLocked(), quarantineFloor())
         }
     }
 
     /** Alias matching the previous API name: confirmed version, or -1. */
     fun installedVersion(): Long = acceptedSequence()
+
+    /** The confirmed-sequence pointer chain alone, ignoring the floor. */
+    private fun confirmedSequenceLocked(): Long {
+        val sequence = parseLongOrNull(readFile(activeFile())) ?: return -1L
+        if (sequence < 0) return -1L
+        val meta = metaOf(sequence) ?: return -1L
+        if (meta.state != "confirmed") return -1L
+        if (!bundleFile(sequence).exists()) return -1L
+        return sequence
+    }
 
     fun activeBundleBytes(): ByteArray? {
         synchronized(lock) {
@@ -127,15 +138,19 @@ class UpdateStore(private val root: File) {
 
     /**
      * Records a failed release: its sequence is never retried, and its
-     * stored bytes are deleted.
+     * stored bytes are deleted. Quarantining the CONFIRMED sequence also
+     * raises the durable anti-replay floor to it (TN-138); a never-accepted
+     * sequence raises no floor — the quarantined list itself blocks it.
      */
     fun quarantine(sequence: Long) {
         synchronized(lock) {
+            val wasAccepted = sequence == confirmedSequenceLocked()
             val quarantined = quarantined().toMutableSet()
             quarantined.add(sequence)
+            val floor = if (wasAccepted) maxOf(quarantineFloor(), sequence) else quarantineFloor()
             val array = JSONArray()
             quarantined.sorted().forEach { array.put(it) }
-            atomicWrite(quarantineFile(), JSONObject().put("quarantined", array).toString().toByteArray())
+            atomicWrite(quarantineFile(), JSONObject().put("quarantined", array).put("floor", floor).toString().toByteArray())
             versionDir(sequence).deleteRecursively()
         }
     }
@@ -178,6 +193,21 @@ class UpdateStore(private val root: File) {
             result
         } catch (e: Exception) {
             emptySet() // corrupt quarantine state fails open for storage but is repaired on next write
+        }
+    }
+
+    /**
+     * TN-138: the durable anti-replay floor — the highest CONFIRMED
+     * sequence ever quarantined. -1 when no confirmed release has been
+     * quarantined (the empty-store contract keeps its -1 meaning). Old
+     * quarantine files without a floor field read as -1.
+     */
+    private fun quarantineFloor(): Long {
+        return try {
+            val raw = readFile(quarantineFile()) ?: return -1L
+            JSONObject(raw).optLong("floor", -1L)
+        } catch (e: Exception) {
+            -1L
         }
     }
 

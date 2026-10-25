@@ -103,9 +103,11 @@ class UpdateStoreTest {
     @Test
     fun testQuarantinedConfirmedSequenceThenRollbackSemantics() {
         // A confirmed bundle later found broken: quarantining its sequence
-        // removes the active pointer's backing files, so accepted falls
-        // back to none (the host boots packaged) and the sequence is never
-        // retried.
+        // removes the active pointer's backing files, so the host boots the
+        // packaged bundle (activeBundleBytes null) and the sequence is never
+        // retried. TN-138: the quarantine RAISED the anti-replay floor to
+        // the quarantined sequence, so an older still-signed release cannot
+        // re-enter through the sequence gate either.
         val store = newStore()
         store.stageBundle(4, ByteArray(2), 1)
         store.promoteTrial(4)
@@ -114,8 +116,40 @@ class UpdateStoreTest {
 
         store.quarantine(4)
         assertTrue(store.isQuarantined(4))
+        assertEquals(4L, store.acceptedSequence()) // TN-138 floor: never regresses below
+        assertNull(store.activeBundleBytes()) // rollback intact: packaged bundle boots
+        // The floor is what OtaManager's sequence gate consumes
+        // (isNewer = sequence > acceptedSequence, covered in
+        // UpdateProtocolTest): an older signed v3 is not newer than 4.
+    }
+
+    @Test
+    fun testQuarantineFloorSurvivesStoreRecreation() {
+        // TN-138 scenario end-to-end: confirm v5, quarantine it, and the
+        // NEXT process still refuses an older signed v4 at the gate.
+        val root = tmp.newFolder()
+        val first = UpdateStore(root)
+        first.stageBundle(5, ByteArray(2), 1)
+        first.promoteTrial(5)
+        first.confirmTrial(5)
+        first.quarantine(5)
+
+        val second = UpdateStore(root)
+        assertEquals(5L, second.acceptedSequence())
+        // Old signed v4 is not newer than the floor; a genuine v6 is.
+        assertTrue(4L <= second.acceptedSequence())
+        assertTrue(6L > second.acceptedSequence())
+    }
+
+    @Test
+    fun testNeverAcceptedQuarantineRaisesNoFloor() {
+        // Quarantining a staged (never-confirmed) sequence must NOT raise
+        // the floor — that is not a previously-accepted value, and the
+        // quarantined list already blocks that exact sequence forever.
+        val store = newStore()
+        store.stageBundle(3, ByteArray(2), 1)
+        store.quarantine(3)
         assertEquals(-1L, store.acceptedSequence())
-        assertNull(store.activeBundleBytes())
     }
 
     @Test

@@ -324,6 +324,14 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
     }
     JS_FreeValue(engine->ctx, eval_res);
 
+    /* TN-139: a bundle may commit scenes before it throws; the scene
+     * strdup is engine-owned and must not leak on this failure path
+     * (a broken release's boot can be retried indefinitely). */
+    if (engine->current_scene) {
+      free(engine->current_scene);
+      engine->current_scene = NULL;
+    }
+
     JS_FreeContext(engine->ctx);
     JS_FreeRuntime(engine->rt);
     pthread_mutex_destroy(&engine->lock);
