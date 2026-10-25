@@ -1,0 +1,19 @@
+{
+  "name": "@tenunjs-examples/launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tenun Launcher — the app-drawer sample: glyph grid over the launcher capability seam, hold-to-open app options (TN-147/TN-148 proof)",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/navigation": "workspace:*",
+    "@tenunjs/platform": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs-examples/test-support": "workspace:*",
+    "@tenunjs/cli": "workspace:*"
+  }
+}

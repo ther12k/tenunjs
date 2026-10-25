@@ -93,6 +93,21 @@
         "@tenunjs/navigation": "workspace:*",
       },
     },
+    "examples/launcher": {
+      "name": "@tenunjs-examples/launcher",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/platform": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "examples/navigation-demo": {
       "name": "@tenunjs-examples/navigation-demo",
       "version": "0.1.0",
@@ -213,6 +228,8 @@
     "@tenunjs-examples/gallery": ["@tenunjs-examples/gallery@workspace:examples/gallery"],
 
     "@tenunjs-examples/gallery-preview": ["@tenunjs-examples/gallery-preview@workspace:examples/gallery-preview"],
+
+    "@tenunjs-examples/launcher": ["@tenunjs-examples/launcher@workspace:examples/launcher"],
 
     "@tenunjs-examples/navigation-demo": ["@tenunjs-examples/navigation-demo@workspace:examples/navigation-demo"],
 
