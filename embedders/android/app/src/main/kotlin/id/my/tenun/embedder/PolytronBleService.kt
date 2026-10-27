@@ -85,14 +85,20 @@ class PolytronBleService(
         return bm?.adapter != null
     }
 
+    private var connectSession = 0
+
     fun connect() {
         userStop = false
         retries = 0
+        connectSession++
         mainHandler.post { startScan() }
     }
 
     fun disconnect() {
         userStop = true
+        connectSession++
+        mainHandler.removeCallbacksAndMessages(null)
+        stopScan()
         mainHandler.post { closeGatt() }
         notifyLink(false, null)
     }
@@ -101,7 +107,10 @@ class PolytronBleService(
         if (cmd.isEmpty()) return false
         synchronized(queue) {
             if (cmd == "STOP") {
-                // Emergency stop always gets through: prioritize at the front
+                // Emergency stop always gets through: purge all pending writes
+                // so a previously queued start command (WASH, SPIN, PROG, etc.)
+                // cannot execute after STOP and restart the machine!
+                queue.clear()
                 queue.addFirst(cmd)
             } else {
                 if (queue.size >= 8) return false
@@ -209,6 +218,7 @@ class PolytronBleService(
                     notifyLink(false, null)
                 } else if (retries < 3) {
                     retries++
+                    val currentSession = connectSession
                     val delay = 2000L * retries
                     val stale = g
                     mainHandler.postDelayed({
@@ -216,7 +226,9 @@ class PolytronBleService(
                             stale.close()
                         } catch (ignored: Exception) {
                         }
-                        connectTarget()
+                        if (!userStop && connectSession == currentSession) {
+                            connectTarget()
+                        }
                     }, delay)
                 } else {
                     closeGatt()
