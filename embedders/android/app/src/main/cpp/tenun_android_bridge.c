@@ -226,7 +226,8 @@ static JSValue js_tenun_host_call(JSContext *ctx, JSValueConst this_val, int arg
   return JS_NULL;
 }
 
-tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len) {
+tenun_android_engine* tenun_android_engine_create_with_handler(
+    const uint8_t* bundle, size_t bundle_len, tenun_host_call_fn handler, void* opaque) {
   const long attempt = atomic_fetch_add(&tenun_init_attempts, 1) + 1;
 
   if (!bundle || bundle_len == 0) {
@@ -259,6 +260,8 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   }
 
   pthread_mutex_init(&engine->lock, NULL);
+  engine->host_call_handler = handler;
+  engine->host_call_opaque = opaque ? opaque : engine;
 
   engine->rt = JS_NewRuntime();
   if (!engine->rt || tenun_injected(TENUN_INIT_RUNTIME_CREATE)) {
@@ -389,6 +392,10 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   tenun_drain_pending_jobs(engine);
 
   return engine;
+}
+
+tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len) {
+  return tenun_android_engine_create_with_handler(bundle, bundle_len, NULL, NULL);
 }
 
 /* Runs one host→JS dispatch under the CALLER-HELD engine lock: arms the
@@ -639,8 +646,12 @@ static char* tenun_jni_get_string(JNIEnv *env, jstring jstr) {
 
 /* JNI Bindings */
 
+#if defined(__ANDROID__) || defined(ANDROID)
+static char* tenun_jni_host_call_dispatcher(void* opaque, const char* service, const char* method, const char* payload_json);
+#endif
+
 JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
-    JNIEnv *env, jobject thiz, jbyteArray bundleBytes) {
+    JNIEnv *env, jobject thiz, jbyteArray bundleBytes, jobject handler) {
   (void)thiz;
   if (bundleBytes == NULL) {
     TENUN_LOG_WARN("TENUN_ENGINE_INIT_FAILED stage=%s attempt=%ld result=null",
@@ -681,7 +692,17 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     memcpy(bundle_copy, bytes, (size_t)len);
     bundle_copy[len] = '\0';
     (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
+#if defined(__ANDROID__) || defined(ANDROID)
+    tenun_host_call_fn h_fn = handler ? tenun_jni_host_call_dispatcher : NULL;
+    engine = tenun_android_engine_create_with_handler(bundle_copy, (size_t)len, h_fn, NULL);
+    if (engine && handler) {
+      (*env)->GetJavaVM(env, &engine->jvm);
+      engine->j_host_handler = (*env)->NewGlobalRef(env, handler);
+      engine->host_call_opaque = engine;
+    }
+#else
     engine = tenun_android_engine_create(bundle_copy, (size_t)len);
+#endif
     free(bundle_copy);
   } else {
     (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
@@ -790,6 +811,10 @@ static char* tenun_jni_host_call_dispatcher(void* opaque, const char* service, c
   jstring j_payload = tenun_jni_new_string(env, payload_json ? payload_json : "{}");
 
   jstring j_res = (jstring)(*env)->CallObjectMethod(env, engine->j_host_handler, mid, j_svc, j_method, j_payload);
+  if ((*env)->ExceptionCheck(env)) {
+    (*env)->ExceptionClear(env);
+    j_res = NULL;
+  }
 
   char* result_str = NULL;
   if (j_res) {

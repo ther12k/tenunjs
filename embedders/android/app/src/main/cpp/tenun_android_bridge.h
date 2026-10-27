@@ -61,6 +61,8 @@ typedef char* (*tenun_host_call_fn)(void* opaque, const char* service, const cha
 
 /* Public Native Engine C API */
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len);
+tenun_android_engine* tenun_android_engine_create_with_handler(
+    const uint8_t* bundle, size_t bundle_len, tenun_host_call_fn handler, void* opaque);
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json);
 /* TN-150: the JS handler's STRING return value for this action, or NULL
  * when no handler exists, it threw (WARNed on the host log), or it
@@ -74,7 +76,7 @@ void tenun_android_engine_destroy(tenun_android_engine* engine);
 
 /* JNI exports */
 JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
-    JNIEnv *env, jobject thiz, jbyteArray bundleBytes);
+    JNIEnv *env, jobject thiz, jbyteArray bundleBytes, jobject handler);
 
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchAction(
     JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson);

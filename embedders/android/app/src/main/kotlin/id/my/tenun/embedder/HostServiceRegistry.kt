@@ -25,7 +25,11 @@ class HostServiceRegistry : HostServiceHandler {
     }
 
     override fun onHostCall(service: String, method: String, payloadJson: String): String? {
-        val s = services[service] ?: return null
-        return s.invoke(method, payloadJson)
+        return try {
+            val s = services[service] ?: return null
+            s.invoke(method, payloadJson)
+        } catch (e: Throwable) {
+            null
+        }
     }
 }

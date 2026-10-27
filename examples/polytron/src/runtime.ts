@@ -203,7 +203,7 @@ export class WasherRuntime {
     // in-flight command and routes to whoever sent it.
     const reply: WashReply = parseReply(line) ?? { ok: true, busy: false, msg: line };
     const front = this.pendingCmds.shift();
-    if (front?.timer) clearTimeout(front.timer);
+    if (front?.timer && typeof clearTimeout === "function") clearTimeout(front.timer);
     this.app.pushTo(front?.screen ?? this.app.route(), "result", reply);
     this.log(line);
   }
@@ -231,11 +231,13 @@ export class WasherRuntime {
       const i = this.pendingCmds.indexOf(entry);
       if (i < 0) return; // already settled by its reply
       this.pendingCmds.splice(i, 1);
-      if (entry.timer) clearTimeout(entry.timer);
+      if (entry.timer && typeof clearTimeout === "function") clearTimeout(entry.timer);
       this.app.pushTo(entry.screen, "result", { ok: false, busy: false, msg: why });
       this.log(`ERR ${why} (${entry.cmd})`);
     };
-    entry.timer = setTimeout(() => fail("tanpa jawaban dari mesin"), REPLY_TIMEOUT_MS);
+    if (typeof setTimeout === "function") {
+      entry.timer = setTimeout(() => fail("tanpa jawaban dari mesin"), REPLY_TIMEOUT_MS);
+    }
     this.pendingCmds.push(entry);
     void this.services.ble.write(cmd).then(
       (ok) => {
@@ -249,7 +251,7 @@ export class WasherRuntime {
    *  owning screen un-sticks instead of showing "mengirim…" forever. */
   private failAllPending(why: string): void {
     for (const entry of this.pendingCmds.splice(0)) {
-      if (entry.timer) clearTimeout(entry.timer);
+      if (entry.timer && typeof clearTimeout === "function") clearTimeout(entry.timer);
       this.app.pushTo(entry.screen, "result", { ok: false, busy: false, msg: why });
       this.log(`ERR ${why} (${entry.cmd})`);
     }
@@ -259,7 +261,7 @@ export class WasherRuntime {
    *  them, so no timer outlives the scene graph. */
   dispose(): void {
     for (const entry of this.pendingCmds.splice(0)) {
-      if (entry.timer) clearTimeout(entry.timer);
+      if (entry.timer && typeof clearTimeout === "function") clearTimeout(entry.timer);
     }
   }
 

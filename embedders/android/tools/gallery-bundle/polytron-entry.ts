@@ -8,6 +8,22 @@ import { WasherRuntime, type BleSeam } from "../../../../examples/polytron/src/r
 
 const host = globalThis as Record<string, unknown>;
 
+// QuickJS minimal timer shim for command timeout guards
+if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
+  let timerId = 1;
+  const timers = new Map<number, () => void>();
+  (host as { setTimeout: (fn: () => void, ms?: number) => number }).setTimeout = (
+    fn: () => void
+  ) => {
+    const id = timerId++;
+    timers.set(id, fn);
+    return id;
+  };
+  (host as { clearTimeout: (id: number) => void }).clearTimeout = (id: number) => {
+    timers.delete(id);
+  };
+}
+
 const nativeBleBridge: BleSeam = {
   supported: () => {
     if (typeof host.tenun_host_call === "function") {
@@ -66,9 +82,22 @@ const clockNow = (): string | null => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
+const editProgram = async (slot: number, current: string): Promise<string | null> => {
+  if (typeof host.tenun_host_call === "function") {
+    const res = (host.tenun_host_call as (s: string, m: string, p: string) => string | null)(
+      "system",
+      "editProgram",
+      JSON.stringify({ slot, current })
+    );
+    if (res && res !== "null") return res;
+  }
+  return null;
+};
+
 const app = new WasherRuntime({
   ble: nativeBleBridge,
   clockNow,
+  editProgram,
   designWidth: 390,
 });
 
@@ -183,6 +212,53 @@ const appWithNavBar = {
       });
     });
 
+    // 3. Native on-screen connect banner when offline on mobile
+    const homeState = app.exportState().states.home as { link?: { connected?: boolean } } | undefined;
+    const isConnected = homeState?.link?.connected === true;
+    if (!isConnected && currentRoute === "home") {
+      scene.ops.push({
+        op: "rect",
+        x: 16,
+        y: BAR_H + 8,
+        w: w - 32,
+        h: 36,
+        r: 10,
+        color: "#163430",
+        fixed: true,
+        anchor: "bottom",
+        anchorSize: BAR_H + 48,
+      });
+      scene.ops.push({
+        op: "text",
+        x: w / 2,
+        y: BAR_H + 31,
+        text: "⚡ SAMBUNGKAN KE MESIN CUCI",
+        size: 11.5,
+        weight: 700,
+        color: "#39D2C0",
+        align: "center",
+        width: 0,
+        fixed: true,
+        anchor: "bottom",
+        anchorSize: BAR_H + 48,
+      });
+      const connectTapId = res.tapRuns.length;
+      scene.taps.push({
+        x: 16,
+        y: BAR_H + 8,
+        w: w - 32,
+        h: 36,
+        action: "tap",
+        fixed: true,
+        anchor: "bottom",
+        anchorSize: BAR_H + 48,
+        payload: { id: connectTapId },
+      });
+      res.tapRuns.push(() => {
+        void nativeBleBridge.connect();
+      });
+    }
+
     return res;
   },
 };
@@ -220,6 +296,9 @@ host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string 
       payload = {};
     }
     app.linkPush(payload);
+    if (payload.connected) {
+      void nativeBleBridge.write("GET:ALL");
+    }
     return JSON.stringify({ route: app.route() });
   }
   return handoff.dispatch(action, payloadJson);

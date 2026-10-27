@@ -103,6 +103,14 @@ export const HomeScreen = defineScreen({
         (state as unknown as HomeState).err = null;
       },
     }),
+    connect: defineAction<HomeState, void>({
+      run({ state, services }) {
+        const s = state as unknown as HomeState;
+        s.link = { ...s.link, connecting: true };
+        const svc = services as { ble?: { connect(): Promise<boolean> } };
+        void svc.ble?.connect();
+      },
+    }),
     disconnect: defineAction<HomeState, void>({
       run({ services }) {
         const svc = services as { ble?: { disconnect(): void } };

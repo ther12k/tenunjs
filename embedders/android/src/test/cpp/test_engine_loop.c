@@ -218,19 +218,50 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   CHECK(strstr(scene0, "\"text\":\"Beranda\"") != NULL, "Scene carries Beranda bottom tab");
   CHECK(strstr(scene0, "\"text\":\"Program\"") != NULL, "Scene carries Program bottom tab");
 
-  /* 2. Host Capability Bridge: write command to BLE GATT */
+  /* 2. Host Capability Bridge: connect link and write command to BLE GATT */
   struct HostCallCapture capture;
   memset(&capture, 0, sizeof(capture));
   tenun_android_engine_set_host_call_handler(engine, test_tn154_host_call_handler, &capture);
 
   char* reply_link = tenun_android_engine_dispatch(engine, "BLE_LINK", "{\"connected\":true,\"name\":\"Polytron Wash\"}");
   CHECK(reply_link != NULL, "BLE_LINK dispatch accepted");
+  CHECK(capture.count == 1, "BLE_LINK automatically triggered initial GET:ALL command");
+  CHECK(strcmp(capture.service, "ble") == 0, "Initial command routed to ble service");
+  CHECK(strstr(capture.payload, "GET:ALL") != NULL, "Initial command was GET:ALL");
   free(reply_link);
 
-  /* 3. Inbound BLE notifications from washer */
-  char* scene_st = tenun_android_engine_dispatch(engine, "BLE_LINE", "ST:CUCI|0|1|10|290|1|120|65");
+  /* 2b. Native TAP dispatch on STOP flows through WasherRuntime.send() to BLE write */
+  {
+    const char* scene_now = tenun_android_engine_get_scene(engine);
+    int stop_tap_id = -1;
+    /* Find STOP region inside the taps array (w: 358) */
+    const char* taps_start = strstr(scene_now, "\"taps\":");
+    if (taps_start) {
+      const char* stop_tap = strstr(taps_start, "\"w\":358");
+      if (stop_tap) {
+        const char* p_id = strstr(stop_tap, "\"payload\":{\"id\":");
+        if (p_id) {
+          stop_tap_id = (int)strtol(p_id + 16, NULL, 10);
+        }
+      }
+    }
+    CHECK(stop_tap_id >= 0, "Found STOP bar tap region in scene taps");
+    if (stop_tap_id >= 0) {
+      char payload_buf[32];
+      snprintf(payload_buf, sizeof(payload_buf), "{\"id\":%d}", stop_tap_id);
+      int prev_count = capture.count;
+      char* tap_res = tenun_android_engine_dispatch(engine, "TAP", payload_buf);
+      CHECK(capture.count > prev_count, "Native TAP on STOP dispatched through WasherRuntime.send()");
+      CHECK(strstr(capture.payload, "STOP") != NULL, "Native BLE write received STOP command");
+      free(tap_res);
+    }
+  }
+
+  /* 3. Inbound BLE notifications from washer (telemetry status strip) */
+  char* scene_st = tenun_android_engine_dispatch(engine, "BLE_LINE", "ST:BILAS|0|1|10|290|1|120|65");
   CHECK(scene_st != NULL, "BLE_LINE dispatch returned scene");
-  CHECK(strstr(scene_st, "CUCI") != NULL, "Scene reflects live washer status CUCI");
+  CHECK(strstr(scene_st, "BILAS · LANGKAH") != NULL, "Scene reflects live washer telemetry status BILAS");
+  CHECK(strstr(scene_st, "SISA 4:50") != NULL, "Scene reflects remaining duration 4:50 from telemetry");
   free(scene_st);
 
   /* 4. Tab navigation to Programs */
@@ -867,7 +898,7 @@ int main(int argc, char** argv) {
       CHECK(capture.count == 1, "host service callback was invoked exactly once");
       CHECK(strcmp(capture.service, "ble") == 0, "service argument 'ble' matches");
       CHECK(strcmp(capture.method, "write") == 0, "method argument 'write' matches");
-      CHECK(strstr(capture.payload, "STOP") != NULL, "payload argument contains 'STOP'");
+      printf("ACTUAL_PAYLOAD: '%s'\n", capture.payload); CHECK(strstr(capture.payload, "STOP") != NULL, "payload argument contains 'STOP'");
       CHECK(strstr(scene, "written") != NULL, "JS received native return string and committed it to scene");
       free(scene);
 
