@@ -94,7 +94,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 896f9d71e35e2806fe8bb79567f5ab3cb6409bbf263869f3c208fce0f369eb88 |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 543ec55e81ef1c66efe310e395316116fcda66472d73c31588e29c31b515ebef |
+| 06-issues/index.md | ae1a4bbe56eea292f1d0bbc09e112cbaba36f62b846af0a6f425423e59a6ea0a |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -256,6 +256,7 @@ status: accepted
 | 06-issues/tn-151-drain-quickjs-pending-jobs-at-native-entry-points.md | 16c4edccfe8efe2597afd98b15da60dbedbe0aa63d28e1acfcfb32ce2d9c271c |
 | 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
+| 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

@@ -1,0 +1,17 @@
+{
+  "name": "@tenunjs-examples/polytron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polytron Wash companion app (status, functions, programs, tuning) — TenunJS example talking BLE GATT directly to the polytronwash v4 washer controller",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs-examples/ui-kit": "workspace:*",
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs/cli": "workspace:*"
+  }
+}

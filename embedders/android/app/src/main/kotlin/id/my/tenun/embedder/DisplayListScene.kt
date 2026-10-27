@@ -65,6 +65,8 @@ data class DisplayListScene(
         val size: Float,
         val weight: Int,
         val color: String,
+        val width: Float? = null,
+        val align: String? = null,
         /** Viewport-fixed operation metadata. */
         val fixed: Boolean = false,
         val anchor: String? = null,
@@ -227,6 +229,8 @@ data class DisplayListScene(
                                     size = op.optDouble("size", 16.0).toFloat(),
                                     weight = op.optInt("weight", 400),
                                     color = op.optString("color", "#FFFFFF"),
+                                    width = if (op.has("width")) op.optDouble("width").toFloat() else null,
+                                    align = if (op.has("align")) op.getString("align") else null,
                                     fixed = op.optBoolean("fixed", false),
                                     anchor = if (op.has("anchor")) op.getString("anchor") else null,
                                     anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null

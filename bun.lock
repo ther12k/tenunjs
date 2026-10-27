@@ -122,6 +122,19 @@
         "@tenunjs/cli": "workspace:*",
       },
     },
+    "examples/polytron": {
+      "name": "@tenunjs-examples/polytron",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "examples/test-support": {
       "name": "@tenunjs-examples/test-support",
       "version": "0.1.0",
@@ -232,6 +245,8 @@
     "@tenunjs-examples/launcher": ["@tenunjs-examples/launcher@workspace:examples/launcher"],
 
     "@tenunjs-examples/navigation-demo": ["@tenunjs-examples/navigation-demo@workspace:examples/navigation-demo"],
+
+    "@tenunjs-examples/polytron": ["@tenunjs-examples/polytron@workspace:examples/polytron"],
 
     "@tenunjs-examples/test-support": ["@tenunjs-examples/test-support@workspace:examples/test-support"],
 

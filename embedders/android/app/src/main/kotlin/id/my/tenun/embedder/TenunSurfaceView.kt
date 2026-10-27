@@ -663,7 +663,12 @@ class TenunSurfaceView @JvmOverloads constructor(
                 } else {
                     android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.NORMAL)
                 }
-                canvas.drawText(t.text, t.x, t.y + dy, textPaint)
+                var drawX = t.x
+                if (t.width != null && t.align == "center") {
+                    val measured = textPaint.measureText(t.text)
+                    drawX = t.x + Math.max(0f, (t.width - measured) / 2f)
+                }
+                canvas.drawText(t.text, drawX, t.y + dy, textPaint)
             }
         }
     }

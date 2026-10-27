@@ -36,6 +36,11 @@ command -v bun >/dev/null 2>&1 || {
 (cd "$REPO_ROOT" && bun "$SCRIPT_DIR/tools/gallery-bundle/build-counter.mjs" "$WORK_DIR/tsx_counter_app.js")
 "$WORK_DIR/test_engine_loop" --tsx "$WORK_DIR/tsx_counter_app.js"
 
+# 2c. TN-154: compile the Polytron Wash companion bundle and boot it
+# in the SAME native QuickJS engine loop with the JNI Host Service Bridge.
+(cd "$REPO_ROOT" && bun "$SCRIPT_DIR/tools/gallery-bundle/build-polytron.mjs" "$WORK_DIR/polytron_app.js")
+"$WORK_DIR/test_engine_loop" --polytron "$WORK_DIR/polytron_app.js"
+
 ANDROID_SDK="${ANDROID_HOME:-/home/ther12k/Android/Sdk}"
 NDK_DIR=$(find "$ANDROID_SDK/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1 || true)
 

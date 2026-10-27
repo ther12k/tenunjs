@@ -22,7 +22,7 @@ class DisplayListSceneTest {
           "ops": [
             { "op": "rect", "x": 0, "y": 0, "w": 720, "h": 96, "r": 0, "color": "#101014" },
             { "op": "outline", "x": 24, "y": 120, "w": 200, "h": 56, "r": 14, "color": "#4C8DFF", "width": 3 },
-            { "op": "text", "x": 40, "y": 60, "text": "Tenun Gallery", "size": 30, "weight": 700, "color": "#F2F2F7" },
+            { "op": "text", "x": 40, "y": 60, "text": "Tenun Gallery", "size": 30, "weight": 700, "color": "#F2F2F7", "width": 640, "align": "center" },
             { "op": "rect", "x": 0, "y": 0, "w": 720, "h": 320, "r": 28, "color": "#232330", "fixed": true, "anchor": "bottom", "anchorSize": 320 }
           ],
           "taps": [
@@ -50,6 +50,8 @@ class DisplayListSceneTest {
         val text = scene.ops[2] as DisplayListScene.Op.TextOp
         assertEquals("Tenun Gallery", text.text.text)
         assertEquals(700, text.text.weight)
+        assertEquals(640f, text.text.width)
+        assertEquals("center", text.text.align)
 
         assertEquals(2, scene.taps.size)
         val tap = scene.taps[0]
