@@ -275,6 +275,11 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   CHECK(scene_home != NULL && strstr(scene_home, "FUNGSI MESIN") != NULL, "Navigated back to Home");
   free(scene_home);
 
+  /* 6. Verify native timer dispatch drains scheduled timeouts */
+  char* scene_timer = tenun_android_engine_dispatch(engine, "TIMER", "{}");
+  CHECK(scene_timer != NULL, "TIMER dispatch accepted and returned scene");
+  free(scene_timer);
+
   tenun_android_engine_destroy(engine);
   if (failures > 0) {
     printf("FAILED: %d Polytron bundle checks failed\n", failures);

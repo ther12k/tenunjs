@@ -1,6 +1,8 @@
 package id.my.tenun.embedder
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -15,6 +17,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
@@ -85,14 +89,20 @@ class PolytronBleService(
         return bm?.adapter != null
     }
 
+    private var connectSession = 0
+
     fun connect() {
         userStop = false
         retries = 0
+        connectSession++
         mainHandler.post { startScan() }
     }
 
     fun disconnect() {
         userStop = true
+        connectSession++
+        mainHandler.removeCallbacksAndMessages(null)
+        stopScan()
         mainHandler.post { closeGatt() }
         notifyLink(false, null)
     }
@@ -101,7 +111,10 @@ class PolytronBleService(
         if (cmd.isEmpty()) return false
         synchronized(queue) {
             if (cmd == "STOP") {
-                // Emergency stop always gets through: prioritize at the front
+                // Emergency stop always gets through: purge all pending writes
+                // so a previously queued start command (WASH, SPIN, PROG, etc.)
+                // cannot execute after STOP and restart the machine!
+                queue.clear()
                 queue.addFirst(cmd)
             } else {
                 if (queue.size >= 8) return false
@@ -130,8 +143,32 @@ class PolytronBleService(
         }
     }
 
+    private fun checkAndRequestPermissions(): Boolean {
+        val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+        } else {
+            listOf(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+
+        if (needed.isNotEmpty()) {
+            (context as? Activity)?.requestPermissions(needed.toTypedArray(), 101)
+            return false
+        }
+        return true
+    }
+
     @SuppressLint("MissingPermission")
     private fun startScan() {
+        if (!checkAndRequestPermissions()) {
+            notifyLine("ERR scan gagal — cek izin lokasi/bluetooth")
+            notifyLink(false, null)
+            return
+        }
         val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = bm?.adapter
         if (adapter == null || !adapter.isEnabled) {
@@ -209,6 +246,7 @@ class PolytronBleService(
                     notifyLink(false, null)
                 } else if (retries < 3) {
                     retries++
+                    val currentSession = connectSession
                     val delay = 2000L * retries
                     val stale = g
                     mainHandler.postDelayed({
@@ -216,7 +254,9 @@ class PolytronBleService(
                             stale.close()
                         } catch (ignored: Exception) {
                         }
-                        connectTarget()
+                        if (!userStop && connectSession == currentSession) {
+                            connectTarget()
+                        }
                     }, delay)
                 } else {
                     closeGatt()

@@ -226,8 +226,14 @@ static JSValue js_tenun_host_call(JSContext *ctx, JSValueConst this_val, int arg
   return JS_NULL;
 }
 
-tenun_android_engine* tenun_android_engine_create_with_handler(
+#if defined(__ANDROID__) || defined(ANDROID)
+static tenun_android_engine* tenun_android_engine_create_internal(
+    const uint8_t* bundle, size_t bundle_len, tenun_host_call_fn handler, void* opaque,
+    JavaVM* jvm, jobject j_host_handler) {
+#else
+static tenun_android_engine* tenun_android_engine_create_internal(
     const uint8_t* bundle, size_t bundle_len, tenun_host_call_fn handler, void* opaque) {
+#endif
   const long attempt = atomic_fetch_add(&tenun_init_attempts, 1) + 1;
 
   if (!bundle || bundle_len == 0) {
@@ -262,6 +268,10 @@ tenun_android_engine* tenun_android_engine_create_with_handler(
   pthread_mutex_init(&engine->lock, NULL);
   engine->host_call_handler = handler;
   engine->host_call_opaque = opaque ? opaque : engine;
+#if defined(__ANDROID__) || defined(ANDROID)
+  engine->jvm = jvm;
+  engine->j_host_handler = j_host_handler;
+#endif
 
   engine->rt = JS_NewRuntime();
   if (!engine->rt || tenun_injected(TENUN_INIT_RUNTIME_CREATE)) {
@@ -392,6 +402,15 @@ tenun_android_engine* tenun_android_engine_create_with_handler(
   tenun_drain_pending_jobs(engine);
 
   return engine;
+}
+
+tenun_android_engine* tenun_android_engine_create_with_handler(
+    const uint8_t* bundle, size_t bundle_len, tenun_host_call_fn handler, void* opaque) {
+#if defined(__ANDROID__) || defined(ANDROID)
+  return tenun_android_engine_create_internal(bundle, bundle_len, handler, opaque, NULL, NULL);
+#else
+  return tenun_android_engine_create_internal(bundle, bundle_len, handler, opaque);
+#endif
 }
 
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len) {
@@ -694,11 +713,15 @@ JNIEXPORT jlong JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeInit(
     (*env)->ReleaseByteArrayElements(env, bundleBytes, bytes, JNI_ABORT);
 #if defined(__ANDROID__) || defined(ANDROID)
     tenun_host_call_fn h_fn = handler ? tenun_jni_host_call_dispatcher : NULL;
-    engine = tenun_android_engine_create_with_handler(bundle_copy, (size_t)len, h_fn, NULL);
-    if (engine && handler) {
-      (*env)->GetJavaVM(env, &engine->jvm);
-      engine->j_host_handler = (*env)->NewGlobalRef(env, handler);
-      engine->host_call_opaque = engine;
+    JavaVM* jvm = NULL;
+    jobject g_handler = NULL;
+    if (handler) {
+      (*env)->GetJavaVM(env, &jvm);
+      g_handler = (*env)->NewGlobalRef(env, handler);
+    }
+    engine = tenun_android_engine_create_internal(bundle_copy, (size_t)len, h_fn, NULL, jvm, g_handler);
+    if (!engine && g_handler) {
+      (*env)->DeleteGlobalRef(env, g_handler);
     }
 #else
     engine = tenun_android_engine_create(bundle_copy, (size_t)len);

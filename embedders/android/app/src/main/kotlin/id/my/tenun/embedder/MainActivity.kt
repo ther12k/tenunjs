@@ -97,18 +97,6 @@ class MainActivity : Activity() {
             return
         }
 
-        // Request BLE runtime permissions on Android 12+ (API 31+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val permissions = arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
-            val needed = permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (needed.isNotEmpty()) {
-                requestPermissions(needed.toTypedArray(), 101)
-            }
-        }
-
         surfaceView = TenunSurfaceView(this).apply {
             engine = this@MainActivity.engine
             onFirstSuccessfulDispatch = { onTrialHealthSignal() }
@@ -261,6 +249,27 @@ class MainActivity : Activity() {
                         "clockNow" -> {
                             val c = Calendar.getInstance()
                             String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+                        }
+                        "scheduleTimer" -> {
+                            try {
+                                val delay = org.json.JSONObject(payloadJson).optLong("delayMs", 0L)
+                                mainHandler.postDelayed({
+                                    this@MainActivity.engine?.let { eng ->
+                                        eng.dispatchAction("TIMER", "{}")
+                                        surfaceView?.syncFromScene(eng.getLatestScene())
+                                        surfaceView?.redraw()
+                                    }
+                                }, Math.max(10L, delay))
+                                "true"
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        "editProgram" -> {
+                            mainHandler.post {
+                                showEditProgramDialog(payloadJson)
+                            }
+                            "true"
                         }
                         else -> null
                     }
@@ -480,6 +489,33 @@ class MainActivity : Activity() {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun showEditProgramDialog(payloadJson: String) {
+        val (slot, current) = try {
+            val obj = org.json.JSONObject(payloadJson)
+            obj.optInt("slot", 0) to obj.optString("current", "")
+        } catch (e: Exception) {
+            0 to ""
+        }
+        val slotKeys = arrayOf("PROG0", "PROG1", "PROG2")
+        val slotKey = slotKeys.getOrNull(slot) ?: "PROG0"
+        val inputView = android.widget.EditText(this).apply {
+            setText(current)
+            setSelection(text.length)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Atur Langkah Program $slotKey")
+            .setMessage("Format token: WASH:600, DRAIN:30, SPIN:300")
+            .setView(inputView)
+            .setPositiveButton("Simpan") { _, _ ->
+                val next = inputView.text.toString().trim()
+                val cmd = "SET $slotKey $next"
+                bleService?.write(cmd)
+                // Inbound SET reply from washer will automatically update ProgramsState values
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     override fun onDestroy() {
