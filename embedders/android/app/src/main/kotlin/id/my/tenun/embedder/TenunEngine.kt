@@ -11,10 +11,13 @@ fun interface HostServiceHandler {
 /**
  * TenunEngine owns the native engine handle, JNI invocation, and transaction dispatching.
  */
-class TenunEngine(bundleBytes: ByteArray? = null) {
+class TenunEngine(
+    bundleBytes: ByteArray? = null,
+    hostHandler: HostServiceHandler? = null
+) {
     private var nativeHandle: Long = 0L
 
-    var hostServiceHandler: HostServiceHandler? = null
+    var hostServiceHandler: HostServiceHandler? = hostHandler
         @Synchronized set(value) {
             field = value
             if (nativeHandle != 0L) {
@@ -23,7 +26,7 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
         }
 
     init {
-        nativeHandle = nativeInit(bundleBytes)
+        nativeHandle = nativeInit(bundleBytes, hostHandler)
         check(nativeHandle != 0L) { "Failed to initialize Tenun native engine" }
     }
 
@@ -103,7 +106,7 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
         }
     }
 
-    private external fun nativeInit(bundleBytes: ByteArray?): Long
+    private external fun nativeInit(bundleBytes: ByteArray?, handler: HostServiceHandler?): Long
     private external fun nativeDispatchAction(handle: Long, action: String, payloadJson: String): String
     private external fun nativeDispatchActionResult(handle: Long, action: String, payloadJson: String): String?
     private external fun nativeSetHostCallHandler(handle: Long, handler: HostServiceHandler?)

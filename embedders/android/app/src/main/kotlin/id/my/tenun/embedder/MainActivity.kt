@@ -80,6 +80,9 @@ class MainActivity : Activity() {
             bundleStore?.quarantine(interruptedTrial)
         }
 
+        // TN-154: Prepare host service registry BEFORE boot so capabilities
+        // (e.g. ble.supported()) resolve during bundle evaluation.
+        ensureHostServices()
         engine = bootEngine()
 
         // Startup state: Starting → Ready | Failed. A null engine is a
@@ -93,9 +96,6 @@ class MainActivity : Activity() {
             renderStartupFailure()
             return
         }
-
-        // TN-154: Connect host capabilities to the boot engine
-        setupHostServices(engine!!)
 
         // Request BLE runtime permissions on Android 12+ (API 31+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -220,7 +220,7 @@ class MainActivity : Activity() {
             if (stored != null) {
                 try {
                     Log.i(TAG, "booting confirmed OTA bundle v${store.installedVersion()}")
-                    return TenunEngine(stored).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
+                    return TenunEngine(stored, hostRegistry).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
                 } catch (e: Exception) {
                     Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
                     // Confirmed-but-broken is treated like a failed trial.
@@ -229,7 +229,7 @@ class MainActivity : Activity() {
             }
         }
         return try {
-            TenunEngine(assetBundleBytes).also { lastBootCorrelation = "packaged" }
+            TenunEngine(assetBundleBytes, hostRegistry).also { lastBootCorrelation = "packaged" }
         } catch (e: Exception) {
             // The structured native attribution lines (stage/attempt) are
             // in logcat under TenunEngine; the panel keeps only the boot
@@ -243,7 +243,7 @@ class MainActivity : Activity() {
     /**
      * TN-154: Connects native Host Capability Bridge (BLE, System) to an active engine.
      */
-    private fun setupHostServices(targetEngine: TenunEngine) {
+    private fun ensureHostServices() {
         if (bleService == null) {
             bleService = PolytronBleService(this) { action, payloadJson ->
                 mainHandler.post {
@@ -267,7 +267,6 @@ class MainActivity : Activity() {
                 }
             })
         }
-        targetEngine.hostServiceHandler = hostRegistry
     }
 
     /**
@@ -291,7 +290,7 @@ class MainActivity : Activity() {
         } ?: -1L
 
         val candidate = try {
-            TenunEngine(bytes)
+            TenunEngine(bytes, hostRegistry)
         } catch (e: Exception) {
             Log.w(TAG, "OTA bundle v${metadata.sequence} failed to initialize: ${e.message}")
             return false // old engine never touched
@@ -311,7 +310,6 @@ class MainActivity : Activity() {
                 Log.i(TAG, "state schema ${oldStateSchema} -> ${newStateSchema}: restarting with clean state")
             }
             // Atomic host swap, THEN destroy the old engine.
-            setupHostServices(candidate)
             engine = candidate
             surfaceView?.engine = candidate
             try {
@@ -434,7 +432,7 @@ class MainActivity : Activity() {
         } ?: -1L
 
         val candidate = try {
-            TenunEngine(bytes)
+            TenunEngine(bytes, hostRegistry)
         } catch (e: Exception) {
             Log.w(TAG, "hot reload bundle failed to initialize; keeping current: ${e.message}")
             return
@@ -451,7 +449,6 @@ class MainActivity : Activity() {
             if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema) && exported != null && exported.length > 2) {
                 candidate.dispatchAction("TENUN_RESTORE", exported)
             }
-            setupHostServices(candidate)
             engine = candidate
             surfaceView?.engine = candidate
             try { current?.destroy() } catch (ignored: Exception) {}

@@ -100,8 +100,13 @@ class PolytronBleService(
     fun write(cmd: String): Boolean {
         if (cmd.isEmpty()) return false
         synchronized(queue) {
-            if (queue.size >= 8) return false
-            queue.addLast(cmd)
+            if (cmd == "STOP") {
+                // Emergency stop always gets through: prioritize at the front
+                queue.addFirst(cmd)
+            } else {
+                if (queue.size >= 8) return false
+                queue.addLast(cmd)
+            }
         }
         mainHandler.post { drain() }
         return true
@@ -109,10 +114,21 @@ class PolytronBleService(
 
     fun shutdown() {
         userStop = true
+        mainHandler.removeCallbacksAndMessages(null)
+        stopScan()
         closeGatt()
     }
 
     /* ------------------------------- scanning ------------------------------- */
+
+    @SuppressLint("MissingPermission")
+    private fun stopScan() {
+        try {
+            val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            bm?.adapter?.bluetoothLeScanner?.stopScan(scanCb)
+        } catch (ignored: Exception) {
+        }
+    }
 
     @SuppressLint("MissingPermission")
     private fun startScan() {
@@ -237,14 +253,27 @@ class PolytronBleService(
             val cccd = statCh?.getDescriptor(CCCD)
             if (cccd != null) {
                 cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                g.writeDescriptor(cccd)
+                val started = g.writeDescriptor(cccd)
+                if (!started) {
+                    notifyLine("ERR gagal aktifkan notifikasi")
+                    closeGatt()
+                    notifyLink(false, null)
+                }
             } else {
                 onReady()
             }
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
-            if (d.uuid == CCCD) onReady()
+            if (d.uuid == CCCD) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    onReady()
+                } else {
+                    notifyLine("ERR status notifikasi $status")
+                    closeGatt()
+                    notifyLink(false, null)
+                }
+            }
         }
 
         @Deprecated("Deprecated in Java")
@@ -282,10 +311,16 @@ class PolytronBleService(
         writing = true
         try {
             cmdCh?.value = cmd.toByteArray(StandardCharsets.UTF_8)
-            cmdCh?.let { gatt?.writeCharacteristic(it) }
+            val ok = if (cmdCh != null) gatt?.writeCharacteristic(cmdCh) ?: false else false
+            if (!ok) {
+                writing = false
+                notifyLine("ERR kirim gagal — cek sambungan")
+                mainHandler.postDelayed({ drain() }, WRITE_GAP_MS)
+            }
         } catch (e: Exception) {
             writing = false
             notifyLine("ERR kirim gagal — cek sambungan")
+            mainHandler.postDelayed({ drain() }, WRITE_GAP_MS)
         }
     }
 

@@ -30,4 +30,18 @@ class HostServiceRegistryTest {
         val unregistered = registry.onHostCall("ble", "write", "{}")
         assertNull(unregistered)
     }
+
+    @Test
+    fun testHostServiceCatchesExceptionsSafely() {
+        val registry = HostServiceRegistry()
+        registry.register("failing", object : NativeService {
+            override fun invoke(method: String, payloadJson: String): String {
+                throw SecurityException("simulated permission denial")
+            }
+        })
+
+        // Must catch cleanly and return null instead of letting exception escape to JNI
+        val result = registry.onHostCall("failing", "any", "{}")
+        assertNull(result)
+    }
 }
