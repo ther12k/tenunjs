@@ -114,6 +114,13 @@ struct tenun_android_engine {
    * or one dispatch); read by tenun_interrupt_handler from inside the
    * interpreter loop. Set immediately before each JS_Eval/JS_Call. */
   int64_t js_deadline_ms;
+  /* TN-154: Host Service Bridge handler and context */
+  tenun_host_call_fn host_call_handler;
+  void* host_call_opaque;
+#if defined(__ANDROID__) || defined(ANDROID)
+  JavaVM* jvm;
+  jobject j_host_handler;
+#endif
 };
 
 /* QuickJS polls this from the interpreter loop; != 0 raises a JS
@@ -188,6 +195,37 @@ static JSValue js_tenun_commit(JSContext *ctx, JSValueConst this_val, int argc, 
   return JS_UNDEFINED;
 }
 
+/* TN-154: Host Service Bridge - allows JavaScript to invoke native host capabilities.
+ * Signature in JS: tenun_host_call(service, method, payloadJson) -> string or null */
+static JSValue js_tenun_host_call(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+  (void)this_val;
+  tenun_android_engine* engine = (tenun_android_engine*)JS_GetContextOpaque(ctx);
+  if (!engine || argc < 2) return JS_NULL;
+
+  const char* service = JS_ToCString(ctx, argv[0]);
+  const char* method = JS_ToCString(ctx, argv[1]);
+  const char* payload = argc > 2 ? JS_ToCString(ctx, argv[2]) : NULL;
+
+  char* result_str = NULL;
+  if (engine->host_call_handler) {
+    result_str = engine->host_call_handler(engine->host_call_opaque,
+                                           service ? service : "",
+                                           method ? method : "",
+                                           payload ? payload : "{}");
+  }
+
+  if (service) JS_FreeCString(ctx, service);
+  if (method) JS_FreeCString(ctx, method);
+  if (payload) JS_FreeCString(ctx, payload);
+
+  if (result_str) {
+    JSValue ret = JS_NewString(ctx, result_str);
+    free(result_str);
+    return ret;
+  }
+  return JS_NULL;
+}
+
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len) {
   const long attempt = atomic_fetch_add(&tenun_init_attempts, 1) + 1;
 
@@ -260,6 +298,11 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   JSValue global = JS_GetGlobalObject(engine->ctx);
   JSValue commit_fn = JS_NewCFunction(engine->ctx, js_tenun_commit, "tenun_commit", 1);
   JS_SetPropertyStr(engine->ctx, global, "tenun_commit", commit_fn);
+
+  // TN-154: Register host service call function: tenun_host_call(service, method, payloadJson)
+  JSValue host_call_fn = JS_NewCFunction(engine->ctx, js_tenun_host_call, "tenun_host_call", 3);
+  JS_SetPropertyStr(engine->ctx, global, "tenun_host_call", host_call_fn);
+
   JS_FreeValue(engine->ctx, global);
 
   // Evaluate the real JavaScript application bundle
@@ -449,10 +492,27 @@ const char* tenun_android_engine_get_scene(const tenun_android_engine* engine) {
   return engine->current_scene ? engine->current_scene : "{}";
 }
 
+void tenun_android_engine_set_host_call_handler(tenun_android_engine* engine, tenun_host_call_fn handler, void* opaque) {
+  if (!engine) return;
+  pthread_mutex_lock(&engine->lock);
+  engine->host_call_handler = handler;
+  engine->host_call_opaque = opaque;
+  pthread_mutex_unlock(&engine->lock);
+}
+
 void tenun_android_engine_destroy(tenun_android_engine* engine) {
   if (!engine) return;
 
   pthread_mutex_lock(&engine->lock);
+#if defined(__ANDROID__) || defined(ANDROID)
+  if (engine->j_host_handler && engine->jvm) {
+    JNIEnv *env = NULL;
+    if ((*engine->jvm)->GetEnv(engine->jvm, (void**)&env, JNI_VERSION_1_6) == JNI_OK && env) {
+      (*env)->DeleteGlobalRef(env, engine->j_host_handler);
+    }
+    engine->j_host_handler = NULL;
+  }
+#endif
   if (engine->current_scene) {
     free(engine->current_scene);
     engine->current_scene = NULL;
@@ -698,6 +758,84 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
     tenun_android_engine_destroy(engine);
   }
 }
+
+#if defined(__ANDROID__) || defined(ANDROID)
+static char* tenun_jni_host_call_dispatcher(void* opaque, const char* service, const char* method, const char* payload_json) {
+  tenun_android_engine* engine = (tenun_android_engine*)opaque;
+  if (!engine || !engine->jvm || !engine->j_host_handler) return NULL;
+
+  JNIEnv *env = NULL;
+  jint env_res = (*engine->jvm)->GetEnv(engine->jvm, (void**)&env, JNI_VERSION_1_6);
+  int attached = 0;
+  if (env_res == JNI_EDETACHED) {
+    if ((*engine->jvm)->AttachCurrentThread(engine->jvm, &env, NULL) == 0) {
+      attached = 1;
+    } else {
+      return NULL;
+    }
+  } else if (env_res != JNI_OK || !env) {
+    return NULL;
+  }
+
+  jclass handler_class = (*env)->GetObjectClass(env, engine->j_host_handler);
+  jmethodID mid = (*env)->GetMethodID(env, handler_class, "onHostCall", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+  if (!mid) {
+    (*env)->DeleteLocalRef(env, handler_class);
+    if (attached) (*engine->jvm)->DetachCurrentThread(engine->jvm);
+    return NULL;
+  }
+
+  jstring j_svc = tenun_jni_new_string(env, service ? service : "");
+  jstring j_method = tenun_jni_new_string(env, method ? method : "");
+  jstring j_payload = tenun_jni_new_string(env, payload_json ? payload_json : "{}");
+
+  jstring j_res = (jstring)(*env)->CallObjectMethod(env, engine->j_host_handler, mid, j_svc, j_method, j_payload);
+
+  char* result_str = NULL;
+  if (j_res) {
+    result_str = tenun_jni_get_string(env, j_res);
+    (*env)->DeleteLocalRef(env, j_res);
+  }
+
+  (*env)->DeleteLocalRef(env, j_svc);
+  (*env)->DeleteLocalRef(env, j_method);
+  (*env)->DeleteLocalRef(env, j_payload);
+  (*env)->DeleteLocalRef(env, handler_class);
+
+  if (attached) (*engine->jvm)->DetachCurrentThread(engine->jvm);
+  return result_str;
+}
+
+JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetHostCallHandler(
+    JNIEnv *env, jobject thiz, jlong handle, jobject handler) {
+  (void)thiz;
+  tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
+  if (!engine) return;
+  pthread_mutex_lock(&engine->lock);
+  if (engine->j_host_handler) {
+    (*env)->DeleteGlobalRef(env, engine->j_host_handler);
+    engine->j_host_handler = NULL;
+  }
+  if (handler) {
+    (*env)->GetJavaVM(env, &engine->jvm);
+    engine->j_host_handler = (*env)->NewGlobalRef(env, handler);
+    engine->host_call_handler = tenun_jni_host_call_dispatcher;
+    engine->host_call_opaque = engine;
+  } else {
+    engine->host_call_handler = NULL;
+    engine->host_call_opaque = NULL;
+  }
+  pthread_mutex_unlock(&engine->lock);
+}
+#else
+JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetHostCallHandler(
+    JNIEnv *env, jobject thiz, jlong handle, jobject handler) {
+  (void)env;
+  (void)thiz;
+  (void)handle;
+  (void)handler;
+}
+#endif
 
 #ifdef TENUN_TEST_INJECTION
 /* Test-only init-failure injection hook. Compiled ONLY when Gradle passes

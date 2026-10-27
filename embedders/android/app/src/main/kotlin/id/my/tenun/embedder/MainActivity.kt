@@ -1,6 +1,9 @@
 package id.my.tenun.embedder
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -8,6 +11,7 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Calendar
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -42,6 +46,10 @@ class MainActivity : Activity() {
 
     private var bundleStore: BundleStore? = null
     private var otaManager: OtaManager? = null
+
+    // TN-154: Host Service Bridge registry and native BLE service
+    private val hostRegistry = HostServiceRegistry()
+    private var bleService: PolytronBleService? = null
 
     // OTA trial-confirm criterion state (see scheduleTrialConfirm).
     // Session-scoped: a swap (OTA apply, hot reload) clears the evidence
@@ -84,6 +92,21 @@ class MainActivity : Activity() {
         if (engine == null) {
             renderStartupFailure()
             return
+        }
+
+        // TN-154: Connect host capabilities to the boot engine
+        setupHostServices(engine!!)
+
+        // Request BLE runtime permissions on Android 12+ (API 31+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val permissions = arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+            val needed = permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            if (needed.isNotEmpty()) {
+                requestPermissions(needed.toTypedArray(), 101)
+            }
         }
 
         surfaceView = TenunSurfaceView(this).apply {
@@ -218,6 +241,36 @@ class MainActivity : Activity() {
     }
 
     /**
+     * TN-154: Connects native Host Capability Bridge (BLE, System) to an active engine.
+     */
+    private fun setupHostServices(targetEngine: TenunEngine) {
+        if (bleService == null) {
+            bleService = PolytronBleService(this) { action, payloadJson ->
+                mainHandler.post {
+                    this.engine?.let { eng ->
+                        eng.dispatchAction(action, payloadJson)
+                        surfaceView?.syncFromScene(eng.getLatestScene())
+                        surfaceView?.redraw()
+                    }
+                }
+            }
+            hostRegistry.register("ble", bleService!!)
+            hostRegistry.register("system", object : NativeService {
+                override fun invoke(method: String, payloadJson: String): String? {
+                    return when (method) {
+                        "clockNow" -> {
+                            val c = Calendar.getInstance()
+                            String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+                        }
+                        else -> null
+                    }
+                }
+            })
+        }
+        targetEngine.hostServiceHandler = hostRegistry
+    }
+
+    /**
      * OTA apply with PARALLEL boot: the old engine keeps running while the
      * candidate initializes; the host swaps (and destroys the old engine)
      * only after the candidate boots. State carries across only when both
@@ -258,6 +311,7 @@ class MainActivity : Activity() {
                 Log.i(TAG, "state schema ${oldStateSchema} -> ${newStateSchema}: restarting with clean state")
             }
             // Atomic host swap, THEN destroy the old engine.
+            setupHostServices(candidate)
             engine = candidate
             surfaceView?.engine = candidate
             try {
@@ -305,12 +359,16 @@ class MainActivity : Activity() {
 
     private fun readAssetBundle(): ByteArray? {
         return try {
-            assets.open("gallery_app.js").use { it.readBytes() }
-        } catch (e: Exception) {
+            assets.open("polytron_app.js").use { it.readBytes() }
+        } catch (e0: Exception) {
             try {
-                assets.open("tenun_app.js").use { it.readBytes() }
-            } catch (e2: Exception) {
-                null
+                assets.open("gallery_app.js").use { it.readBytes() }
+            } catch (e: Exception) {
+                try {
+                    assets.open("tenun_app.js").use { it.readBytes() }
+                } catch (e2: Exception) {
+                    null
+                }
             }
         }
     }
@@ -393,6 +451,7 @@ class MainActivity : Activity() {
             if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema) && exported != null && exported.length > 2) {
                 candidate.dispatchAction("TENUN_RESTORE", exported)
             }
+            setupHostServices(candidate)
             engine = candidate
             surfaceView?.engine = candidate
             try { current?.destroy() } catch (ignored: Exception) {}
@@ -428,6 +487,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        bleService?.shutdown()
+        bleService = null
         // TN-135: kill the OTA pipeline first — a fetch finishing after
         // this point must not boot a candidate into a dying surface.
         otaManager?.stop()

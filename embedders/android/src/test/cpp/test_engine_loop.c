@@ -179,10 +179,88 @@ static int run_tsx_bundle_checks(const char* asset_path) {
   return 0;
 }
 
+struct HostCallCapture {
+  char service[32];
+  char method[32];
+  char payload[64];
+  int count;
+};
+
+static char* test_tn154_host_call_handler(void* opaque, const char* svc, const char* method, const char* payload) {
+  struct HostCallCapture* cap = (struct HostCallCapture*)opaque;
+  if (!cap) return NULL;
+  cap->count++;
+  strncpy(cap->service, svc ? svc : "", sizeof(cap->service) - 1);
+  strncpy(cap->method, method ? method : "", sizeof(cap->method) - 1);
+  strncpy(cap->payload, payload ? payload : "", sizeof(cap->payload) - 1);
+  return strdup("{\"written\":true}");
+}
+
+static int run_polytron_bundle_checks(const char* asset_path) {
+  printf("== TenunJS Android Native Engine Loop Test (Polytron Wash, TN-154) ==\n");
+  printf("Loading Polytron application bundle: %s\n", asset_path);
+
+  size_t bundle_len = 0;
+  char* bundle_code = read_file(asset_path, &bundle_len);
+  CHECK(bundle_code != NULL && bundle_len > 0, "Read Polytron application bundle");
+  if (!bundle_code) return 1;
+
+  tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)bundle_code, bundle_len);
+  free(bundle_code);
+  CHECK(engine != NULL, "Polytron bundle boots in real QuickJS (host-handoff + JNI bridge)");
+  if (!engine) return 1;
+
+  /* 1. First scene commit: display list committed with Polytron UI chrome */
+  const char* scene0 = tenun_android_engine_get_scene(engine);
+  CHECK(strstr(scene0, "\"tenun\":\"display-list\"") != NULL, "First scene committed through native commit (display-list)");
+  CHECK(strstr(scene0, "\"text\":\"FUNGSI MESIN\"") != NULL, "Scene carries Polytron functions header");
+  CHECK(strstr(scene0, "\"text\":\"STOP\"") != NULL, "Scene carries STOP bar");
+  CHECK(strstr(scene0, "\"text\":\"Beranda\"") != NULL, "Scene carries Beranda bottom tab");
+  CHECK(strstr(scene0, "\"text\":\"Program\"") != NULL, "Scene carries Program bottom tab");
+
+  /* 2. Host Capability Bridge: write command to BLE GATT */
+  struct HostCallCapture capture;
+  memset(&capture, 0, sizeof(capture));
+  tenun_android_engine_set_host_call_handler(engine, test_tn154_host_call_handler, &capture);
+
+  char* reply_link = tenun_android_engine_dispatch(engine, "BLE_LINK", "{\"connected\":true,\"name\":\"Polytron Wash\"}");
+  CHECK(reply_link != NULL, "BLE_LINK dispatch accepted");
+  free(reply_link);
+
+  /* 3. Inbound BLE notifications from washer */
+  char* scene_st = tenun_android_engine_dispatch(engine, "BLE_LINE", "ST:CUCI|0|1|10|290|1|120|65");
+  CHECK(scene_st != NULL, "BLE_LINE dispatch returned scene");
+  CHECK(strstr(scene_st, "CUCI") != NULL, "Scene reflects live washer status CUCI");
+  free(scene_st);
+
+  /* 4. Tab navigation to Programs */
+  char* scene_nav = tenun_android_engine_dispatch(engine, "NAVIGATE", "{\"route\":\"programs\"}");
+  CHECK(scene_nav != NULL, "NAVIGATE dispatch returned scene");
+  CHECK(strstr(scene_nav, "CEPAT") != NULL || strstr(scene_nav, "NORMAL") != NULL, "Navigated to Programs tab");
+  free(scene_nav);
+
+  /* 5. Return to Home */
+  char* scene_home = tenun_android_engine_dispatch(engine, "NAVIGATE", "{\"route\":\"home\"}");
+  CHECK(scene_home != NULL && strstr(scene_home, "FUNGSI MESIN") != NULL, "Navigated back to Home");
+  free(scene_home);
+
+  tenun_android_engine_destroy(engine);
+  if (failures > 0) {
+    printf("FAILED: %d Polytron bundle checks failed\n", failures);
+    return 1;
+  }
+  printf("ALL POLYTRON BUNDLE ENGINE LOOP CHECKS PASS (REAL QUICKJS, TN-154)\n");
+  return 0;
+}
+
 int main(int argc, char** argv) {
   /* TN-144 mode: drive the TSX-compiled bundle checks and exit. */
   if (argc > 2 && strcmp(argv[1], "--tsx") == 0) {
     return run_tsx_bundle_checks(argv[2]);
+  }
+  /* TN-154 mode: drive the Polytron application bundle checks and exit. */
+  if (argc > 2 && strcmp(argv[1], "--polytron") == 0) {
+    return run_polytron_bundle_checks(argv[2]);
   }
 
   const char* asset_path = (argc > 1) ? argv[1] : "embedders/android/app/src/main/assets/tenun_app.js";
@@ -755,6 +833,52 @@ int main(int argc, char** argv) {
           tenun_android_engine_create((const uint8_t*)leak_js, strlen(leak_js));
       CHECK(broken == NULL, "commit-then-throw bundle fails closed");
       if (broken) tenun_android_engine_destroy(broken);
+    }
+  }
+
+  /* 16. TN-154: Host Service Bridge (tenun_host_call). Allows JS
+   * runtime to synchronously call host capabilities (e.g. BLE GATT write/connect).
+   * Verifies C handler invocation, argument passing, return values to JS,
+   * and fail-safe null behavior when no handler is set. */
+  printf("== 16. TN-154 Host Service Bridge (tenun_host_call) ==\n");
+  {
+    static const char* test_service_js =
+      "tenun_commit('{\"status\":\"init\"}');"
+      "globalThis.__tenun_dispatch_action = function(action, payloadJson) {"
+      "  if (action === 'CALL_HOST') {"
+      "    var res = globalThis.tenun_host_call('ble', 'write', '{\"cmd\":\"STOP\"}');"
+      "    tenun_commit(JSON.stringify({status:'called', res:res}));"
+      "    return '{\"ok\":true}';"
+      "  }"
+      "  return '{}';"
+      "};";
+
+    tenun_android_engine* host_eng =
+        tenun_android_engine_create((const uint8_t*)test_service_js, strlen(test_service_js));
+    CHECK(host_eng != NULL, "host-service bundle initializes");
+    if (host_eng) {
+      /* (a) When handler is set, verify invocation and return value */
+      struct HostCallCapture capture;
+      memset(&capture, 0, sizeof(capture));
+
+      tenun_android_engine_set_host_call_handler(host_eng, test_tn154_host_call_handler, &capture);
+      char* scene = tenun_android_engine_dispatch(host_eng, "CALL_HOST", "{}");
+      CHECK(scene != NULL, "dispatch with host call returned scene");
+      CHECK(capture.count == 1, "host service callback was invoked exactly once");
+      CHECK(strcmp(capture.service, "ble") == 0, "service argument 'ble' matches");
+      CHECK(strcmp(capture.method, "write") == 0, "method argument 'write' matches");
+      CHECK(strstr(capture.payload, "STOP") != NULL, "payload argument contains 'STOP'");
+      CHECK(strstr(scene, "written") != NULL, "JS received native return string and committed it to scene");
+      free(scene);
+
+      /* (b) When handler is cleared, tenun_host_call returns null safely */
+      tenun_android_engine_set_host_call_handler(host_eng, NULL, NULL);
+      char* scene_null = tenun_android_engine_dispatch(host_eng, "CALL_HOST", "{}");
+      CHECK(scene_null != NULL, "dispatch without host handler returns scene without crash");
+      CHECK(strstr(scene_null, "\"res\":null") != NULL, "tenun_host_call returned null to JS when handler is NULL");
+      free(scene_null);
+
+      tenun_android_engine_destroy(host_eng);
     }
   }
 

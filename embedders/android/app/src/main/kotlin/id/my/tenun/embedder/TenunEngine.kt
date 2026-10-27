@@ -1,10 +1,26 @@
 package id.my.tenun.embedder
 
 /**
+ * TN-154: Host Service Bridge interface for synchronous capability invocations from JS:
+ *   globalThis.tenun_host_call(service, method, payloadJson)
+ */
+fun interface HostServiceHandler {
+    fun onHostCall(service: String, method: String, payloadJson: String): String?
+}
+
+/**
  * TenunEngine owns the native engine handle, JNI invocation, and transaction dispatching.
  */
 class TenunEngine(bundleBytes: ByteArray? = null) {
     private var nativeHandle: Long = 0L
+
+    var hostServiceHandler: HostServiceHandler? = null
+        @Synchronized set(value) {
+            field = value
+            if (nativeHandle != 0L) {
+                nativeSetHostCallHandler(nativeHandle, value)
+            }
+        }
 
     init {
         nativeHandle = nativeInit(bundleBytes)
@@ -39,6 +55,7 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
     @Synchronized
     fun destroy() {
         if (nativeHandle != 0L) {
+            nativeSetHostCallHandler(nativeHandle, null)
             nativeDestroy(nativeHandle)
             nativeHandle = 0L
         }
@@ -89,6 +106,7 @@ class TenunEngine(bundleBytes: ByteArray? = null) {
     private external fun nativeInit(bundleBytes: ByteArray?): Long
     private external fun nativeDispatchAction(handle: Long, action: String, payloadJson: String): String
     private external fun nativeDispatchActionResult(handle: Long, action: String, payloadJson: String): String?
+    private external fun nativeSetHostCallHandler(handle: Long, handler: HostServiceHandler?)
     private external fun nativeGetLatestScene(handle: Long): String
     private external fun nativeDestroy(handle: Long)
 }

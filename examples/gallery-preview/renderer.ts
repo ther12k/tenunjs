@@ -238,7 +238,16 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
       case "text": {
         ctx.fillStyle = toCss(op.color);
         ctx.font = `${op.weight >= 600 ? "700" : "400"} ${op.size}px sans-serif`;
-        ctx.fillText(op.text, op.x, op.y);
+        // Honor the scene's own alignment contract: align/width describe
+        // a centering box, so the drawn x is the box's centered start —
+        // drawing at op.x left-aligned every centered label (STOP, card
+        // labels, pill text).
+        let x = op.x;
+        if (op.width !== undefined && op.align === "center") {
+          const measured = ctx.measureText(op.text).width;
+          x = op.x + Math.max(0, (op.width - measured) / 2);
+        }
+        ctx.fillText(op.text, x, op.y);
         return;
       }
       case "circle": {

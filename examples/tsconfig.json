@@ -22,5 +22,5 @@
     "noEmit": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["gallery-preview", "flutter-showcase-preview", "votol"]
+  "exclude": ["gallery-preview", "flutter-showcase-preview", "votol", "polytron"]
 }

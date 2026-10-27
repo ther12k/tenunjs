@@ -53,6 +53,12 @@ extern int64_t tenun_test_time_budget_ms;
 extern int64_t tenun_test_memory_limit_bytes;
 #endif
 
+/* TN-154: Host Service Bridge function pointer type.
+ * Allows JavaScript runtime to invoke host platform services synchronously:
+ *   globalThis.tenun_host_call(service, method, payloadJson) -> string result or NULL
+ * The handler allocates the returned string with strdup / malloc; engine takes ownership. */
+typedef char* (*tenun_host_call_fn)(void* opaque, const char* service, const char* method, const char* payload_json);
+
 /* Public Native Engine C API */
 tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t bundle_len);
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json);
@@ -62,6 +68,7 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
  * __TENUN_EXPORT / __TENUN_STATE_SCHEMA; dispatch() above instead
  * returns the committed scene. Caller frees a non-NULL result. */
 char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const char* action, const char* payload_json);
+void tenun_android_engine_set_host_call_handler(tenun_android_engine* engine, tenun_host_call_fn handler, void* opaque);
 const char* tenun_android_engine_get_scene(const tenun_android_engine* engine);
 void tenun_android_engine_destroy(tenun_android_engine* engine);
 
@@ -74,6 +81,9 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchAc
 
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDispatchActionResult(
     JNIEnv *env, jobject thiz, jlong handle, jstring action, jstring payloadJson);
+
+JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetHostCallHandler(
+    JNIEnv *env, jobject thiz, jlong handle, jobject handler);
 
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestScene(
     JNIEnv *env, jobject thiz, jlong handle);

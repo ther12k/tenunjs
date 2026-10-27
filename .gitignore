@@ -15,3 +15,6 @@ review-artifacts/
 spikes/runtime/hermes-candidate/build/
 examples/gallery-preview/host.js
 consumers/tasks-app/vendor/*.tgz
+*.apk
+*.idsig
+*.aab

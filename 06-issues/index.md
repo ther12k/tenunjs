@@ -256,3 +256,4 @@ files and manifest rows but missed this index.
 | [TN-151](tn-151-drain-quickjs-pending-jobs-at-native-entry-points.md) | P1 | TN-029, TN-144 | Drain QuickJS pending jobs at every native entry point |
 | [TN-152](tn-152-carry-long-press-through-browser-hosts.md) | P1 | TN-133, TN-148 | Carry the long-press gesture through the browser hosts (filtered hit tests, hold timers) |
 | [TN-153](tn-153-run-controller-load-on-fresh-mounts.md) | P1 | TN-133 | Run the controller load hook on fresh mounts; launcher boot and failure surface |
+| [TN-154](tn-154-native-polytron-wash-milestone-validation-app.md) | P0 | TN-132, TN-141, TN-150, TN-151 | Native Polytron Wash milestone validation app on Android (100% native execution) |

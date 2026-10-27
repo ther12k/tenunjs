@@ -15,6 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "../../../..");
 const entry = path.join(here, "device-entry.ts");
 const counterEntry = path.join(here, "counter-entry.ts");
+const polytronEntry = path.join(here, "polytron-entry.ts");
 const previewEntry = path.join(repoRoot, "examples/gallery-preview/app-entry.ts");
 const previewShellEntry = path.join(repoRoot, "examples/gallery-preview/preview.ts");
 const showcasePreviewEntry = path.join(repoRoot, "examples/flutter-showcase-preview/app-entry.ts");
@@ -24,6 +25,7 @@ const showcasePreviewShellEntry = path.join(repoRoot, "examples/flutter-showcase
 export const watchedDirs = [
   path.join(here),
   path.join(repoRoot, "examples/gallery/src"),
+  path.join(repoRoot, "examples/polytron/src"),
   path.join(repoRoot, "examples/flutter-showcase/src"),
   path.join(repoRoot, "examples/flutter-showcase-preview"),
   path.join(repoRoot, "examples/ui-kit/src"),
@@ -198,6 +200,34 @@ export async function buildCounterBundle(): Promise<BundleArtifact> {
     code = `(function(){\n${code}\n})();`;
   }
   smokeRun(code, "counter_app.js", ['"text":"Counter"', '"text":"0"']);
+  return {
+    code,
+    hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
+    builtAtMtime: latestSourceMtime(),
+  };
+}
+
+/**
+ * Builds the TN-154 native Polytron bundle: the WasherRuntime composition
+ * (screens + native BLE & system host calls + bottom navigation tabs) through
+ * the public host-handoff contract, as script input to the QuickJS engine.
+ */
+export async function buildPolytronBundle(): Promise<BundleArtifact> {
+  const result = await build({
+    entrypoints: [polytronEntry],
+    target: "browser",
+    format: "esm",
+    minify: false,
+    external: [],
+  });
+  if (!result.success) {
+    throw new Error(`polytron bundle build failed:\n${result.logs.map(String).join("\n")}`);
+  }
+  let code = await result.outputs[0].text();
+  if (/^\s*(import|export)\s/m.test(code)) {
+    code = `(function(){\n${code}\n})();`;
+  }
+  smokeRun(code, "polytron_app.js", ['"text":"FUNGSI MESIN"', '"text":"STOP"']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
