@@ -1,6 +1,8 @@
 package id.my.tenun.embedder
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -15,6 +17,8 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
@@ -139,8 +143,32 @@ class PolytronBleService(
         }
     }
 
+    private fun checkAndRequestPermissions(): Boolean {
+        val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+        } else {
+            listOf(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+
+        if (needed.isNotEmpty()) {
+            (context as? Activity)?.requestPermissions(needed.toTypedArray(), 101)
+            return false
+        }
+        return true
+    }
+
     @SuppressLint("MissingPermission")
     private fun startScan() {
+        if (!checkAndRequestPermissions()) {
+            notifyLine("ERR scan gagal — cek izin lokasi/bluetooth")
+            notifyLink(false, null)
+            return
+        }
         val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = bm?.adapter
         if (adapter == null || !adapter.isEnabled) {

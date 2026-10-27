@@ -97,24 +97,6 @@ class MainActivity : Activity() {
             return
         }
 
-        // Request BLE runtime permissions:
-        // Android 12+ (API 31+): BLUETOOTH_SCAN and BLUETOOTH_CONNECT
-        // Android 8-11 (API 26-30): ACCESS_FINE_LOCATION (required for BLE scanning)
-        val neededPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
-        } else {
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-
-        if (neededPermissions.isNotEmpty()) {
-            requestPermissions(neededPermissions.toTypedArray(), 101)
-        }
-
         surfaceView = TenunSurfaceView(this).apply {
             engine = this@MainActivity.engine
             onFirstSuccessfulDispatch = { onTrialHealthSignal() }
