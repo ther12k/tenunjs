@@ -261,7 +261,7 @@ status: accepted
 | 06-issues/tn-155-framework-feel-milestone-app.md | e007a098524d4d5a0af048aaed9fea133875a5df76918e0235b66c79d425ab22 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
-| 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 7062f57804963c586161cf8bf01dfa2be14b6da3c17ed94ca49167724ad6d6e3 |
+| 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
