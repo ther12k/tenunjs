@@ -83,10 +83,6 @@ class MainActivity : Activity() {
         // TN-154: Prepare host service registry BEFORE boot so capabilities
         // (e.g. ble.supported()) resolve during bundle evaluation.
         ensureHostServices()
-        // Ask for BLE permissions up front: on a fresh install none are
-        // granted, and some OEM permission monitors silently drop dialogs
-        // requested from a mid-interaction connect() flow.
-        bleService?.requestPermissionsIfMissing()
         engine = bootEngine()
 
         // Startup state: Starting → Ready | Failed. A null engine is a

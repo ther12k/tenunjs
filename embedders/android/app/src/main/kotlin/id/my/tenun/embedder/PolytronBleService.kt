@@ -244,21 +244,6 @@ class PolytronBleService(
         listOf(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
-    /**
-     * Ask at launch (before the user ever taps connect): some OEM permission
-     * monitors silently drop dialogs fired mid-interaction, and a fresh
-     * install has none of these granted. No auto-scan follows this request —
-     * only a parked connect() resumes on grant.
-     */
-    fun requestPermissionsIfMissing() {
-        val needed = neededPermissions()
-            .filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        if (needed.isEmpty()) return
-        val act = context as? Activity ?: return
-        connectAwaitingPermission = false
-        act.requestPermissions(needed.toTypedArray(), REQ_PERMS)
-    }
-
     /** The Activity forwards the dialog result here. The hint flag is not
      *  trusted: permissions are re-read so a partially-granted dialog (one
      *  of two allowed) is classified by what is actually still missing. */
