@@ -68,6 +68,75 @@ This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**. TenunJS i
 7. [Issue index](06-issues/index.md)
 8. [Agent execution protocol](07-agent/agent-execution-protocol.md)
 
+## Driving development with an AI agent
+
+Paste the prompt below into any coding agent to get protocol-correct work out
+of the box. It is a compressed form of the [agent execution
+protocol](07-agent/agent-execution-protocol.md); the chosen issue file and
+that protocol remain authoritative when they disagree with this summary.
+
+```text
+You are implementing ONE task in TenunJS (github.com/ther12k/tenunjs): a TSX
+mobile UI framework that renders NATIVELY — no React, no DOM, no WebView.
+Application code is TypeScript/TSX (custom JSX runtime) executing on embedded
+QuickJS; the Android embedder (embedders/android) paints a display-list scene
+on a SurfaceView and injects native services (BLE, system) through the JNI
+Host Service Bridge.
+
+WORKING AGREEMENT
+1. Pick exactly ONE task: an issue file in 06-issues/ with `status: ready`,
+   or a defect the user names. The issue file is the authoritative scope —
+   read it fully, including dependencies and the required outcome.
+   One issue = one branch = one PR.
+2. Branch from fresh `main` as feat/tn-<id>-<slug> or fix/tn-<id>-<slug>,
+   in a dedicated git worktree.
+3. Run the narrow baseline tests BEFORE editing; record pre-existing failures.
+4. Implement the smallest complete vertical slice. Architecture invariants:
+   - packages/* are strictly acyclic; TypeScript strict; zero React/DOM/web
+     assumptions (ADR-0003).
+   - Bundles are QuickJS-safe: no Web APIs at eval time (no fetch,
+     AbortController, localStorage); async/timers arrive via host services.
+   - App logic = typed actions + state + display-list scene (the
+     packages/widgets host-handoff contract). The native side only paints
+     and dispatches.
+   - Fail closed and fail visible: a broken bundle or dispatch is never
+     silently replaced by a fallback.
+   - Never expose engine internals (C++/Rust/QuickJS/Skia types) through
+     application APIs.
+5. Tests travel with the change: bun test for TS, JVM tests for Kotlin-pure
+   logic, src/test/cpp/test_engine_loop.c for the native bridge, bundle-level
+   checks for example apps. Never weaken a test to make a patch pass.
+6. Verification gates before pushing (all must pass):
+   - bun run verify:ts
+   - ./embedders/android/run_android_test.sh       (needs the Android SDK)
+   - python3 .github/scripts/verify-manifest.py    (MANDATORY when any
+     governed Markdown 00-*/…/08-* or README.md changed: recompute that
+     file's SHA-256 row in 08-validation/MANIFEST.md from the actual bytes —
+     never hand-write a hash)
+   - cargo test in spikes/runtime/quickjs-candidate (if you touched it)
+7. Push, open a PR, and require ALL CI jobs green (.github/workflows/ci.yml).
+   After merge: delete the branch; if the task closes the issue, add a dated
+   Status note to the issue file and recompute its manifest row in a small
+   follow-up docs PR (verify-manifest enforces both).
+
+HARD PROHIBITIONS
+- No unrelated issues, refactors, or formatting churn in one PR.
+- No emulator evidence reported as physical-device evidence.
+- No claim of future work as current completion. Match the honesty of the
+  project status block above: state what is executed, what is prototype,
+  and what is unimplemented.
+- If blocked, return BLOCKED with the exact missing dependency, a minimal
+  reproduction, and why no local workaround preserves the invariant.
+
+READ DEEPER ONLY WHERE YOUR TASK CROSSES
+- 07-agent/agent-execution-protocol.md      full protocol + hard prohibitions
+- 07-agent/single-issue-prompt.md           per-issue prompt template
+- packages/README.md                        package topology and contracts
+- 02-architecture/system-overview.md        runtime architecture
+- embedders/android/README.md               embedder, hot reload, OTA
+- 06-issues/index.md                        the task queue
+```
+
 ## Bundle shape
 
 ```text
