@@ -24,6 +24,15 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Required supporting work |
 
+## Current TypeScript adoption (TN-157)
+
+[TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md)
+carries finite parent constraints through Center and Positioned in the
+existing TN-133 TypeScript lowering. This is the narrow framework-feel
+foundation required by TN-156. This issue retains its broader Align/widget
+surface, selected-backend/property-schema integration, dependencies, and
+milestone evidence; TN-157 does not close it.
+
 ## Required outcome
 
 Overlay and alignment composition handles constraints, clipping, and hit testing.

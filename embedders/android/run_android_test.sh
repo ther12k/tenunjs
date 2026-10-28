@@ -41,6 +41,18 @@ command -v bun >/dev/null 2>&1 || {
 (cd "$REPO_ROOT" && bun "$SCRIPT_DIR/tools/gallery-bundle/build-polytron.mjs" "$WORK_DIR/polytron_app.js")
 "$WORK_DIR/test_engine_loop" --polytron "$WORK_DIR/polytron_app.js"
 
+# 2d. TN-157: the milestone's SAME bundle executes through a browser-protocol
+# script driver and the real native QuickJS bridge. Compare complete committed
+# scene structure after an identical action sequence. This is execution and
+# scene parity evidence, not a device rendering/IME or host-resize claim.
+(cd "$REPO_ROOT" && bun examples/framework-feel/scripts/build-host.ts "$WORK_DIR/framework_feel_app.js")
+(cd "$REPO_ROOT" && bun examples/framework-feel/scripts/check-host-parity.ts prepare \
+  "$WORK_DIR/framework_feel_app.js" "$WORK_DIR/framework_feel_actions.tsv" "$WORK_DIR/framework_feel_browser.jsonl")
+"$WORK_DIR/test_engine_loop" --framework-feel "$WORK_DIR/framework_feel_app.js" \
+  "$WORK_DIR/framework_feel_actions.tsv" "$WORK_DIR/framework_feel_native.jsonl"
+(cd "$REPO_ROOT" && bun examples/framework-feel/scripts/check-host-parity.ts compare \
+  "$WORK_DIR/framework_feel_browser.jsonl" "$WORK_DIR/framework_feel_native.jsonl")
+
 ANDROID_SDK="${ANDROID_HOME:-/home/ther12k/Android/Sdk}"
 NDK_DIR=$(find "$ANDROID_SDK/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1 || true)
 

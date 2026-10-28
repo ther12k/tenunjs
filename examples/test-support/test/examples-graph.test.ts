@@ -42,6 +42,7 @@ describe("examples are valid application projects", () => {
       "calculator",
       "counter",
       "flutter-showcase",
+      "framework-feel",
       "gallery",
       "launcher",
       "navigation-demo",

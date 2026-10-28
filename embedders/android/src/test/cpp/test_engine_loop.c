@@ -289,7 +289,73 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   return 0;
 }
 
+/* TN-157: replay the browser-protocol driver's action sequence against the
+ * exact same compiled app in real QuickJS. The subsequent structural
+ * comparator owns scene assertions; this driver must reject failed dispatch
+ * instead of treating the bridge's last-good-scene fallback as success. */
+static int run_framework_feel_checks(const char* asset_path,
+                                    const char* commands_path,
+                                    const char* scenes_path) {
+  printf("== Framework-feel shared-bundle execution (TN-157) ==\n");
+  size_t bundle_len = 0;
+  char* code = read_file(asset_path, &bundle_len);
+  CHECK(code != NULL && bundle_len > 0, "Read compiled Day Plan TSX bundle");
+  if (!code || bundle_len == 0) { free(code); return 1; }
+  tenun_android_engine* engine = tenun_android_engine_create((const uint8_t*)code, bundle_len);
+  free(code);
+  CHECK(engine != NULL, "Day Plan boots in real QuickJS");
+  if (!engine) return 1;
+
+  FILE* commands = fopen(commands_path, "r");
+  FILE* scenes = fopen(scenes_path, "w");
+  CHECK(commands != NULL && scenes != NULL, "Open shared actions and native scene transcript");
+  if (!commands || !scenes) {
+    if (commands) fclose(commands);
+    if (scenes) fclose(scenes);
+    tenun_android_engine_destroy(engine);
+    return 1;
+  }
+  const char* initial = tenun_android_engine_get_scene(engine);
+  CHECK(initial != NULL && strstr(initial, "\"text\":\"Day Plan\"") != NULL,
+        "Initial ordinary-widget scene commits through the native binding");
+  if (initial) fprintf(scenes, "%s\n", initial);
+
+  char* line = NULL;
+  size_t capacity = 0;
+  ssize_t length;
+  size_t dispatched = 0;
+  while ((length = getline(&line, &capacity, commands)) >= 0) {
+    if (length > 0 && line[length - 1] == '\n') line[--length] = '\0';
+    char* separator = strchr(line, '\t');
+    CHECK(separator != NULL && separator != line && separator[1] != '\0',
+          "Action transcript entry has a verb and JSON payload");
+    if (!separator || separator == line || separator[1] == '\0') break;
+    *separator = '\0';
+    char* result = tenun_android_engine_dispatch_result(engine, line, separator + 1);
+    CHECK(result != NULL, "Scripted action succeeds through the real dispatch-result boundary");
+    if (!result) break;
+    free(result);
+    const char* scene = tenun_android_engine_get_scene(engine);
+    CHECK(scene != NULL, "Action leaves a committed native scene");
+    if (!scene) break;
+    fprintf(scenes, "%s\n", scene);
+    dispatched++;
+  }
+  free(line);
+  CHECK(dispatched > 0 && !ferror(commands), "Shared action sequence was consumed");
+  CHECK(!ferror(scenes), "Native scene transcript writes succeeded");
+  fclose(commands);
+  CHECK(fclose(scenes) == 0, "Native scene transcript was flushed");
+  tenun_android_engine_destroy(engine);
+  if (failures) return 1;
+  printf("FRAMEWORK-FEEL QUICKJS PASS (%zu actions; structural comparison follows)\n", dispatched);
+  return 0;
+}
+
 int main(int argc, char** argv) {
+  if (argc == 5 && strcmp(argv[1], "--framework-feel") == 0) {
+    return run_framework_feel_checks(argv[2], argv[3], argv[4]);
+  }
   /* TN-144 mode: drive the TSX-compiled bundle checks and exit. */
   if (argc > 2 && strcmp(argv[1], "--tsx") == 0) {
     return run_tsx_bundle_checks(argv[2]);

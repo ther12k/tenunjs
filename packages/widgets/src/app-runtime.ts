@@ -52,8 +52,8 @@
  */
 
 import type { ScreenDefinition } from "@tenunjs/core";
-import { layoutScreen } from "./display-list";
-import type { DisplayListScene } from "./display-list";
+import { LayoutError, layoutScreen, validateLayoutViewport } from "./display-list";
+import type { DisplayListScene, LayoutViewport } from "./display-list";
 import type { ThemeConfig } from "./index";
 
 /** Snapshot contract version. Bump only with a deliberate migration design:
@@ -82,8 +82,10 @@ export interface ApplicationRuntimeOptions {
   readonly theme: ThemeConfig;
   /** Merged into every action context (e.g. a navigate callback). */
   readonly services?: ApplicationServices;
-  /** Design width for the emitted scene; defaults to layoutScreen's. */
+  /** Legacy design width with unbounded root height; mutually exclusive with viewport. */
   readonly designWidth?: number;
+  /** Finite root constraints in design units; copied before the first screen mounts. */
+  readonly viewport?: LayoutViewport;
   /** Sink for async action rejections (they cannot cross the sync bridge). */
   readonly onAsyncActionError?: (info: {
     screen: string;
@@ -171,6 +173,7 @@ export class ApplicationRuntime {
   private readonly theme: ThemeConfig;
   private readonly services: ApplicationServices;
   private readonly designWidth: number | undefined;
+  private viewport: Readonly<LayoutViewport> | undefined;
   private readonly onAsyncActionError:
     | ((info: { screen: string; action: string; error: unknown }) => void)
     | undefined;
@@ -196,10 +199,15 @@ export class ApplicationRuntime {
         `initial route "${options.initial}" is not a registered screen`
       );
     }
+    if (options.viewport !== undefined && options.designWidth !== undefined) {
+      throw new LayoutError("INVALID_VIEWPORT", "ApplicationRuntime requires either viewport or designWidth, not both");
+    }
+    const viewport = options.viewport === undefined ? undefined : validateLayoutViewport(options.viewport);
     this.screens = options.screens;
     this.theme = options.theme;
     this.services = { ...(options.services ?? {}) };
     this.designWidth = options.designWidth;
+    this.viewport = viewport;
     this.onAsyncActionError = options.onAsyncActionError;
     this.current = options.initial;
     this.sessions.set(options.initial, this.mount(options.initial));
@@ -220,6 +228,23 @@ export class ApplicationRuntime {
   /** The schema constant snapshots carry; hosts compare both sides. */
   stateSchema(): number {
     return APPLICATION_STATE_SCHEMA;
+  }
+
+  /**
+   * Updates finite surface constraints without remounting screens or changing
+   * application state. Viewport belongs to the surface, so snapshots never
+   * carry it. Hosts must explicitly supply metrics; no new dispatch verb is
+   * introduced here. Identical dimensions do not invalidate a committed scene.
+   */
+  setViewport(viewport: LayoutViewport): void {
+    this.assertLive();
+    const next = validateLayoutViewport(viewport);
+    if (this.viewport?.width === next.width && this.viewport.height === next.height) return;
+    this.viewport = next;
+    // Coordinates from the previous layout cannot target the new surface.
+    // A subscribed handoff rebuilds this table synchronously on invalidation.
+    this.lastTapRuns = [];
+    this.notifyStale();
   }
 
   navigate(name: string): void {
@@ -274,7 +299,7 @@ export class ApplicationRuntime {
         `screen "${session.name}" produced a null view`
       );
     }
-    const { scene, tapRuns } = layoutScreen(this.theme, tree, this.designWidth);
+    const { scene, tapRuns } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth);
     this.lastTapRuns = tapRuns;
     return { scene, tapRuns };
   }
@@ -464,7 +489,8 @@ export class ApplicationRuntime {
    * without a synchronous dispatch the host could commit after. Hosts use
    * this to repaint; the commit-after-TAP path alone cannot see async
    * completion (the review probe pinned a settled action leaving the
-   * committed scene stale). Returns an unsubscribe function. Listeners
+   * committed scene stale). A changed setViewport() also uses this signal
+   * so subscribed hosts can commit the new layout. Returns an unsubscribe function. Listeners
    * registered on a disposed runtime simply never fire.
    */
   onStateInvalidation(listener: () => void): () => void {
@@ -476,7 +502,7 @@ export class ApplicationRuntime {
 
   /**
    * Terminal teardown: aborts every action signal. Mutating and
-   * rendering entry points (navigate, render, dispatch, exportState,
+   * rendering entry points (navigate, setViewport, render, dispatch, exportState,
    * restore) throw RUNTIME_DISPOSED afterwards — a host must never
    * drive a disposed runtime. Identity reads (route, routes,
    * stateSchema, disposed) survive for post-mortem logging.

@@ -262,15 +262,12 @@ describe("structural widgets — layout", () => {
     expect(icon.y).toBeCloseTo(8 + 24 + 40 * 0.36, 5);
   });
 
-  test("Expanded outside a Row is a transparent wrapper (documented placement rule)", () => {
-    // The scene is content-height, so Column flex has no free space to
-    // share; misplaced Expanded degrades to a full-width stack, never a
-    // crash or a zero-size hole.
-    const { scene } = render(
+  test("Expanded in an unbounded Column fails visibly under the frozen TN-156 contract", () => {
+    // TN-157 adopts the contract that supersedes the transparent prototype
+    // fallback. A SizedBox/Container height or finite viewport supplies a bound.
+    expect(() => render(
       Column({ children: [Expanded({ children: Text({ children: ["misplaced"] }) })] })
-    );
-    expect(scene.contentHeight).toBe(24);
-    expect(texts(scene)[0]!.x).toBe(0);
+    )).toThrow(/TENUN_LAYOUT_ERROR.*bounded column main axis/);
   });
 
   test("Wrap gives an oversized child its own line and stays defined", () => {
@@ -317,9 +314,10 @@ describe("structural widgets — layout", () => {
     expect(rects(scene).length).toBe(0);
   });
 
-  test("Column align=stretch degrades to start (documented: no cross-axis forcing)", () => {
-    const start = render(Column({ children: [Text({ children: ["hi"] })] }));
-    const stretch = render(Column({ align: "stretch", children: [Text({ children: ["hi"] })] }));
-    expect(texts(stretch.scene)[0]!.x).toBe(texts(start.scene)[0]!.x);
+  test("Column align=stretch forces its child's width", () => {
+    const start = render(Column({ children: [Container({ width: 80, height: 20, color: "#FF0000" })] }));
+    const stretch = render(Column({ align: "stretch", children: [Container({ width: 80, height: 20, color: "#FF0000" })] }));
+    expect(rects(start.scene)[0]!.w).toBe(80);
+    expect(rects(stretch.scene)[0]!.w).toBe(720);
   });
 });

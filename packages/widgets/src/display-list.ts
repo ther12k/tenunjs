@@ -21,9 +21,9 @@
  * Its paint closure runs at layout time and emits plain data ops, so the
  * committed scene stays JSON-serializable.
  *
- * Layout is deliberately simple (single-direction stacks, approximate text
- * metrics, word wrap, no clipping/multi-pass) — prototype-grade, not a
- * widget-host implementation.
+ * Layout executes in TypeScript with bounded/unbounded constraints in both
+ * axes. Text metrics remain approximate; independent scrolling and clipping
+ * are separate contracts, not implied by bounded widget layout.
  */
 
 import type { WidgetChild, WidgetNode } from "@tenunjs/jsx-runtime";
@@ -39,6 +39,34 @@ import {
   WrapKind,
 } from "./structural";
 import type { ThemeConfig } from "./index";
+
+/** A finite surface expressed in the same design units as widget geometry. */
+export interface LayoutViewport {
+  readonly width: number;
+  readonly height: number;
+}
+
+export type LayoutErrorCode = "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX";
+
+export class LayoutError extends Error {
+  constructor(readonly code: LayoutErrorCode, message: string) {
+    super(`[TENUN_LAYOUT_ERROR] ${message}`);
+    this.name = "LayoutError";
+  }
+}
+
+/** Validate before storing a viewport; callers cannot mutate the saved dimensions. */
+export function validateLayoutViewport(viewport: LayoutViewport): Readonly<LayoutViewport> {
+  if (!viewport || typeof viewport !== "object") {
+    throw new LayoutError("INVALID_VIEWPORT", "Viewport width and height must be positive finite numbers");
+  }
+  const width = viewport.width;
+  const height = viewport.height;
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+    throw new LayoutError("INVALID_VIEWPORT", "Viewport width and height must be positive finite numbers");
+  }
+  return Object.freeze({ width, height });
+}
 
 /**
  * Role set the theme-scope narrows colors with (TN-133 extraction: the
@@ -483,188 +511,352 @@ function resolveNode(ctx: InternalContext, kid: AnyNode): AnyNode {
 interface Frame {
   w: number;
   h: number;
+  // Final sizes do not reveal whether the incoming axis was unbounded or
+  // tight. Keep that provenance per measurement, never in a node-only cache.
+  bounds?: Constraints;
+}
+
+interface Constraints {
+  minW: number;
+  maxW: number;
+  minH: number;
+  maxH: number;
+}
+
+interface ChildPlacement {
+  kid: AnyNode;
+  frame: Frame;
+  x: number;
+  y: number;
+}
+
+interface NodeLayout {
+  frame: Frame;
+  children: ChildPlacement[];
+}
+
+function nonnegative(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new LayoutError("INVALID_CONSTRAINT", `${name} must be a finite nonnegative number`);
+  }
+  return value;
+}
+
+function dimension(props: Record<string, unknown>, name: string): number | undefined {
+  return typeof props[name] === "number" ? nonnegative(props[name], name) : undefined;
+}
+
+function offset(props: Record<string, unknown>, name: string): number | undefined {
+  const value = props[name];
+  if (typeof value !== "number") return undefined;
+  if (!Number.isFinite(value)) throw new LayoutError("INVALID_CONSTRAINT", `${name} must be finite`);
+  return value;
 }
 
 function gapOf(props: Record<string, unknown>): number {
-  return spacing(props.gap, 0);
+  return nonnegative(spacing(props.gap, 0), "gap");
 }
 
 function paddingOf(props: Record<string, unknown>, fallback: number): number {
-  return spacing(props.padding, fallback);
+  return nonnegative(spacing(props.padding, fallback), "padding");
 }
 
-function measure(ctx: InternalContext, node: AnyNode, maxWidth: number): Frame {
-  const { kind, props } = node;
-  if (typeof kind === "function") {
-    return measure(ctx, resolveOnce(ctx, node), maxWidth);
-  }
-  if (kind === Canvas) {
-    return { w: Math.min(typeof props.width === "number" ? props.width : maxWidth, maxWidth), h: Number(props.height ?? 0) };
-  }
-  // ThemeScope changes only color resolution, never geometry.
-  if (kind === ThemeScope) {
-    return measureStack(ctx, node, maxWidth, 0, 0);
-  }
-  if (kind === SizedBoxKind) {
-    const width = typeof props.width === "number" ? props.width : undefined;
-    const tight = width !== undefined ? Math.min(width, maxWidth) : maxWidth;
-    let contentW = 0;
-    let contentH = 0;
-    for (const kid of childNodes(node)) {
-      const frame = measure(ctx, kid, tight);
-      contentW = Math.max(contentW, frame.w);
-      contentH = Math.max(contentH, frame.h);
+function loose(maxW: number, maxH = Infinity): Constraints {
+  return { minW: 0, maxW, minH: 0, maxH };
+}
+
+function tight(frame: Frame): Constraints {
+  return { minW: frame.w, maxW: frame.w, minH: frame.h, maxH: frame.h };
+}
+
+function constrain(frame: Frame, bounds: Constraints): Frame {
+  return {
+    w: Math.min(Math.max(nonnegative(frame.w, "measured width"), bounds.minW), bounds.maxW),
+    h: Math.min(Math.max(nonnegative(frame.h, "measured height"), bounds.minH), bounds.maxH),
+  };
+}
+
+function inset(bounds: Constraints, pad: number): Constraints {
+  return {
+    minW: Math.max(0, bounds.minW - pad * 2),
+    maxW: Math.max(0, bounds.maxW - pad * 2),
+    minH: Math.max(0, bounds.minH - pad * 2),
+    maxH: Math.max(0, bounds.maxH - pad * 2),
+  };
+}
+
+function withDimensions(bounds: Constraints, props: Record<string, unknown>): Constraints {
+  const width = dimension(props, "width");
+  const height = dimension(props, "height");
+  const w = width === undefined ? undefined : Math.min(Math.max(width, bounds.minW), bounds.maxW);
+  const h = height === undefined ? undefined : Math.min(Math.max(height, bounds.minH), bounds.maxH);
+  return {
+    minW: w ?? bounds.minW, maxW: w ?? bounds.maxW,
+    minH: h ?? bounds.minH, maxH: h ?? bounds.maxH,
+  };
+}
+
+/** A decorating wrapper passes its inner constraints to its single child. */
+function decorationLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints, pad = 0, gap = 0): NodeLayout {
+  const inner = inset(bounds, pad);
+  const kids = childNodes(node);
+  const frames = kids.map((kid) => measure(ctx, kid, kids.length === 1 ? inner : loose(inner.maxW)));
+  let y = pad;
+  const children = kids.map((kid, index) => {
+    const frame = frames[index]!;
+    const child = { kid, frame, x: pad, y };
+    y += frame.h + (index < kids.length - 1 ? gap : 0);
+    return child;
+  });
+  return {
+    frame: constrain({ w: pad * 2 + Math.max(...frames.map((frame) => frame.w), 0), h: y + pad }, bounds),
+    children,
+  };
+}
+
+/** Shared flex measurement/placement: both passes use the same assigned boxes. */
+function flexLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints, axis: "row" | "column"): NodeLayout {
+  const horizontal = axis === "row";
+  const pad = paddingOf(node.props, 0);
+  const gap = gapOf(node.props);
+  const inner = inset(bounds, pad);
+  const mainMax = horizontal ? inner.maxW : inner.maxH;
+  const crossMax = horizontal ? inner.maxH : inner.maxW;
+  const align = crossAlignOf(node.props, horizontal ? "center" : "start");
+  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
+  const flexes = kids.map((kid) => {
+    if (kid.kind !== ExpandedKind) return 0;
+    const value = kid.props.flex ?? 1;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new LayoutError("INVALID_CONSTRAINT", "Expanded flex must be a positive finite number");
     }
-    return {
-      w: width !== undefined ? tight : Math.min(contentW, maxWidth),
-      h: typeof props.height === "number" ? props.height : contentH,
+    return value;
+  });
+  const flexSum = flexes.reduce((sum, value) => sum + value, 0);
+  if (flexSum > 0 && !Number.isFinite(mainMax)) {
+    throw new LayoutError("UNBOUNDED_FLEX", `Expanded requires a bounded ${axis} main axis`);
+  }
+  if (!Number.isFinite(flexSum)) {
+    throw new LayoutError("INVALID_CONSTRAINT", "Combined flex must be finite");
+  }
+  const crossTight = align === "stretch" && Number.isFinite(crossMax);
+  const childBounds = (share?: number): Constraints => horizontal
+    ? { minW: share ?? 0, maxW: share ?? mainMax,
+        minH: crossTight ? crossMax : 0, maxH: crossMax }
+    : { minW: crossTight ? crossMax : 0, maxW: crossMax,
+        minH: share ?? 0, maxH: share ?? Infinity };
+  const frames = kids.map((kid, index) => flexes[index]! > 0
+    ? { w: 0, h: 0 }
+    : measure(ctx, kid, childBounds()));
+  const gaps = nonnegative(gap * Math.max(kids.length - 1, 0), "combined gaps");
+
+  // Preserve the prototype's documented wrapping/shrink behavior for a Row
+  // without Expanded. Bounded vertical flex never shrinks intrinsic content.
+  if (horizontal && flexSum === 0) {
+    const available = Math.max(mainMax - gaps, 0);
+    const natural = frames.reduce((sum, frame) => sum + frame.w, 0);
+    let excess = natural - available;
+    if (excess > 0) {
+      const shrinkable = kids.map((kid, index) => ({ kid, index }))
+        .filter(({ kid }) => kid.kind === "text" || kid.kind === "column" || kid.kind === "row");
+      const total = shrinkable.reduce((sum, entry) => sum + frames[entry.index]!.w, 0);
+      for (const entry of shrinkable) {
+        const previous = frames[entry.index]!;
+        const share = total > 0 ? previous.w / total : 1 / shrinkable.length;
+        const reduced = Math.max(previous.w - excess * share, Math.min(96, previous.w));
+        const taken = previous.w - reduced;
+        if (taken > 0) {
+          frames[entry.index] = measure(ctx, entry.kid, { ...childBounds(), maxW: reduced });
+          excess -= taken;
+        }
+        if (excess <= 0) break;
+      }
+    }
+  }
+
+  const fixedMain = nonnegative(frames.reduce((sum, frame) => sum + (horizontal ? frame.w : frame.h), 0), "combined child size");
+  const free = Number.isFinite(mainMax) ? Math.max(mainMax - gaps - fixedMain, 0) : 0;
+  flexes.forEach((flex, index) => {
+    if (flex > 0) frames[index] = measure(ctx, kids[index]!, childBounds(free * (flex / flexSum)));
+  });
+  // An intrinsically sized Row discovers its cross extent first. Stretch
+  // then deliberately remeasures children with that height, within layout;
+  // paint must not reinterpret every natural Row child as a tight one.
+  if (horizontal && align === "stretch" && !Number.isFinite(crossMax)) {
+    const height = Math.max(...frames.map((frame) => frame.h), 0);
+    frames.forEach((frame, index) => {
+      if (!frame.bounds) throw new LayoutError("INVALID_CONSTRAINT", "Missing measured child constraints");
+      frames[index] = measure(ctx, kids[index]!, { ...frame.bounds, minH: height, maxH: height });
+    });
+  }
+  const naturalMain = nonnegative(frames.reduce((sum, frame) => sum + (horizontal ? frame.w : frame.h), 0) + gaps, "combined child size");
+  const naturalCross = Math.max(...frames.map((frame) => horizontal ? frame.h : frame.w), 0);
+  const main = Number.isFinite(mainMax) ? mainMax : naturalMain;
+  const frame = constrain(horizontal
+    ? { w: main + pad * 2, h: naturalCross + pad * 2 }
+    : { w: naturalCross + pad * 2, h: main + pad * 2 }, bounds);
+  const availableMain = Math.max((horizontal ? frame.w : frame.h) - pad * 2, 0);
+  const availableCross = Math.max((horizontal ? frame.h : frame.w) - pad * 2, 0);
+  const slack = Math.max(availableMain - naturalMain, 0);
+  const justify = node.props.justify ?? "start";
+  const between = justify === "between" && kids.length > 1 ? slack / (kids.length - 1) : 0;
+  const around = justify === "around" && kids.length > 0 ? slack / kids.length : 0;
+  let cursor = pad + (justify === "end" ? slack : justify === "center" ? slack / 2 : around / 2);
+  const children = kids.map((kid, index) => {
+    const child = frames[index]!;
+    const cross = horizontal ? child.h : child.w;
+    const crossOffset = pad + (align === "end" ? availableCross - cross : align === "center" ? (availableCross - cross) / 2 : 0);
+    const placement = { kid, frame: child, x: horizontal ? cursor : crossOffset, y: horizontal ? crossOffset : cursor };
+    cursor += (horizontal ? child.w : child.h) + gap + between + around;
+    return placement;
+  });
+  return { frame, children };
+}
+
+function stackLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints): NodeLayout {
+  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
+  const baseIndex = kids.findIndex((kid) => kid.kind !== PositionedKind);
+  const base = kids[baseIndex];
+  const baseFrame = base ? measure(ctx, base, loose(bounds.maxW, bounds.maxH)) : undefined;
+  const frame = constrain(baseFrame ?? { w: 0, h: 0 }, bounds);
+  const rawAlign = typeof node.props.alignment === "string" ? node.props.alignment : "topLeft";
+  const alignment = STACK_ALIGNMENT[rawAlign] ?? STACK_ALIGNMENT.topLeft!;
+  const children: ChildPlacement[] = [];
+  for (const [index, kid] of kids.entries()) {
+    if (kid.kind !== PositionedKind) {
+      // The sizing child keeps its original incoming constraints. Measuring
+      // it again against the discovered frame would turn natural height into
+      // a bounded axis and alter descendants (for example a centered Row).
+      const child = index === baseIndex && baseFrame
+        ? baseFrame
+        : measure(ctx, kid, loose(frame.w, frame.h));
+      children.push({ kid, frame: child, x: (frame.w - child.w) * alignment.ax, y: (frame.h - child.h) * alignment.ay });
+      continue;
+    }
+    const left = offset(kid.props, "left");
+    const right = offset(kid.props, "right");
+    const top = offset(kid.props, "top");
+    const bottom = offset(kid.props, "bottom");
+    const width = left !== undefined && right !== undefined ? Math.max(frame.w - left - right, 0) : undefined;
+    const height = top !== undefined && bottom !== undefined ? Math.max(frame.h - top - bottom, 0) : undefined;
+    const childBounds: Constraints = {
+      minW: width ?? 0, maxW: width ?? frame.w,
+      minH: height ?? 0, maxH: height ?? frame.h,
     };
+    for (const nested of childNodes(kid)) {
+      const child = measure(ctx, nested, childBounds);
+      children.push({
+        kid: nested, frame: child,
+        x: left ?? (right === undefined ? 0 : frame.w - right - child.w),
+        y: top ?? (bottom === undefined ? 0 : frame.h - bottom - child.h),
+      });
+    }
+  }
+  return { frame, children };
+}
+
+function scaffoldLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints): NodeLayout {
+  const kids = widgetChildren(node).map((kid) => resolveNode(ctx, kid));
+  const appBar = kids.find((kid) => kid.kind === "app-bar");
+  const bodies = kids.filter((kid) => kid !== appBar);
+  const barFrame = appBar ? measure(ctx, appBar, { ...loose(bounds.maxW), minW: bounds.maxW }) : { w: 0, h: 0 };
+  const available = Number.isFinite(bounds.maxH) ? Math.max(bounds.maxH - barFrame.h, 0) : Infinity;
+  const children: ChildPlacement[] = appBar ? [{ kid: appBar, frame: barFrame, x: 0, y: 0 }] : [];
+  let y = barFrame.h;
+  for (const kid of bodies) {
+    const child = measure(ctx, kid, {
+      minW: bounds.maxW, maxW: bounds.maxW,
+      minH: bodies.length === 1 && Number.isFinite(available) ? available : 0,
+      maxH: bodies.length === 1 ? available : Infinity,
+    });
+    children.push({ kid, frame: child, x: 0, y });
+    y += child.h;
+  }
+  return { frame: constrain({ w: bounds.maxW, h: y }, bounds), children };
+}
+
+function measure(ctx: InternalContext, node: AnyNode, boundsOrWidth: Constraints | number): Frame {
+  const bounds = typeof boundsOrWidth === "number" ? loose(boundsOrWidth) : boundsOrWidth;
+  return { ...measureNode(ctx, node, bounds), bounds };
+}
+
+function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): Frame {
+  const { kind, props } = node;
+  if (typeof kind === "function") return measure(ctx, resolveOnce(ctx, node), bounds);
+  if (kind === Canvas) {
+    return constrain({ w: dimension(props, "width") ?? bounds.maxW, h: dimension(props, "height") ?? 0 }, bounds);
+  }
+  if (kind === ThemeScope) return decorationLayout(ctx, node, bounds).frame;
+  if (kind === SizedBoxKind) {
+    const own = withDimensions(bounds, props);
+    const frames = childNodes(node).map((kid) => measure(ctx, kid, own));
+    return constrain({ w: Math.max(...frames.map((frame) => frame.w), 0), h: Math.max(...frames.map((frame) => frame.h), 0) }, own);
   }
   if (kind === CenterKind) {
-    let contentH = 0;
-    for (const kid of childNodes(node)) contentH = Math.max(contentH, measure(ctx, kid, maxWidth).h);
-    return { w: maxWidth, h: contentH };
+    const frames = childNodes(node).map((kid) => measure(ctx, kid, loose(bounds.maxW, bounds.maxH)));
+    return constrain({
+      w: Number.isFinite(bounds.maxW) ? bounds.maxW : Math.max(...frames.map((frame) => frame.w), 0),
+      h: Number.isFinite(bounds.maxH) ? bounds.maxH : Math.max(...frames.map((frame) => frame.h), 0),
+    }, bounds);
   }
-  if (kind === StackKind) {
-    // Positioned children never size the stack (Flutter semantics).
-    let w = 0;
-    let h = 0;
-    for (const kid of childNodes(node).map((kid) => resolveNode(ctx, kid))) {
-      if (kid.kind === PositionedKind) continue;
-      const frame = measure(ctx, kid, maxWidth);
-      w = Math.max(w, frame.w);
-      h = Math.max(h, frame.h);
-    }
-    return { w: Math.min(w, maxWidth), h };
-  }
+  if (kind === StackKind) return stackLayout(ctx, node, bounds).frame;
   if (kind === WrapKind) {
-    const flow = layoutWrapChildren(ctx, node, maxWidth);
-    return { w: Math.min(flow.width, maxWidth), h: flow.height };
+    const flow = layoutWrapChildren(ctx, node, bounds.maxW);
+    return constrain({ w: flow.width, h: flow.height }, bounds);
   }
   if (kind === ContainerKind) {
-    const pad = paddingOf(props, 0);
-    const width = typeof props.width === "number" ? props.width : undefined;
-    const height = typeof props.height === "number" ? props.height : undefined;
-    if (width !== undefined && height !== undefined) {
-      return { w: Math.min(width, maxWidth), h: height };
-    }
-    // Flutter sizing: fixed size wins; with children the container hugs
-    // them; a childless container fills the available space.
-    if (childNodes(node).length === 0 && width === undefined) {
-      return { w: maxWidth, h: height ?? 0 };
-    }
-    const inner = measureStack(ctx, node, Math.max((width ?? maxWidth) - pad * 2, 1), pad, 0);
-    return {
-      w: width !== undefined ? Math.min(width, maxWidth) : inner.w,
-      h: height ?? inner.h,
-    };
+    const own = withDimensions(bounds, props);
+    if (childNodes(node).length === 0) return constrain({ w: own.maxW, h: own.minH }, own);
+    return decorationLayout(ctx, node, own, paddingOf(props, 0)).frame;
   }
   if (kind === IconKind) {
-    const size = typeof props.size === "number" ? props.size : 24;
-    return {
-      w: textWidth(typeof props.glyph === "string" ? props.glyph : "", size),
-      h: Math.round(size * 1.2),
-    };
+    const size = dimension(props, "size") ?? 24;
+    return constrain({ w: textWidth(typeof props.glyph === "string" ? props.glyph : "", size), h: Math.round(size * 1.2) }, bounds);
   }
-  // Positioned/Expanded outside their parent widget are transparent
-  // wrappers; GestureDetector measures what it wraps.
-  if (kind === PositionedKind || kind === ExpandedKind || kind === GestureDetectorKind) {
-    return measureStack(ctx, node, maxWidth, 0, 0);
-  }
-  // Fragments are the one other virtual kind (Symbol.for("tenun.fragment")):
-  // a bare stack of children, no box of their own.
-  if (typeof kind === "symbol") {
-    return measureStack(ctx, node, maxWidth, 0, 0);
+  if (kind === PositionedKind || kind === ExpandedKind || kind === GestureDetectorKind || typeof kind === "symbol") {
+    return decorationLayout(ctx, node, bounds).frame;
   }
   switch (kind) {
     case "text": {
       const ty = typography(props.variant);
-      const lines = wrapText(textContent(node), ty.size, Math.max(maxWidth, 1));
+      const lines = wrapText(textContent(node), ty.size, Math.max(bounds.maxW, 1));
       const widest = Math.max(...lines.map((line) => textWidth(line, ty.size)));
-      return { w: Math.min(widest, maxWidth), h: lines.length * ty.lineHeight };
+      return constrain({ w: Math.min(widest, bounds.maxW), h: lines.length * ty.lineHeight }, bounds);
     }
     case "button": {
-      const ty = TYPOGRAPHY.body!;
       const label = textContent(node) || "Button";
-      return { w: Math.min(maxWidth, Math.max(96, textWidth(label, ty.size) + 48)), h: 64 };
+      return constrain({ w: Math.max(96, textWidth(label, TYPOGRAPHY.body!.size) + 48), h: 64 }, bounds);
     }
-    case "card": {
-      const pad = paddingOf(props, 16);
-      return measureStack(ctx, node, Math.max(maxWidth - pad * 2, 1), pad, spacing("sm", 8));
-    }
-    case "column": {
-      const pad = paddingOf(props, 0);
-      return measureStack(ctx, node, Math.max(maxWidth - pad * 2, 1), pad, gapOf(props));
-    }
-    case "row": {
-      const pad = paddingOf(props, 0);
-      const inner = Math.max(maxWidth - pad * 2, 1);
-      const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
-      // Expanded children re-measure at their flex share, which can change
-      // their wrapped height — resolve frames the same way place does.
-      if (kids.some((kid) => kid.kind === ExpandedKind)) {
-        return { w: maxWidth, h: pad * 2 + layoutRowChildren(ctx, node, inner).rowHeight };
-      }
-      let h = 0;
-      for (const kid of kids) h = Math.max(h, measure(ctx, kid, inner).h);
-      return { w: maxWidth, h: pad * 2 + h };
-    }
-    case "app-bar":
-      return { w: maxWidth, h: 96 };
-    case "spacer":
-      return { w: 0, h: spacing(props.size, 16) };
-    case "scaffold": {
-      // Children arrive as function components (Scaffold/AppBar usage);
-      // resolve before matching by host kind.
-      const kids = widgetChildren(node).map((kid) =>
-        typeof kid.kind === "function" ? resolveOnce(ctx, kid) : kid
-      );
-      const appBar = kids.find((kid) => kid.kind === "app-bar");
-      const body = kids.find((kid) => kid.kind !== "app-bar");
-      const appBarH = appBar ? measure(ctx, appBar, maxWidth).h : 0;
-      const bodyH = body ? measure(ctx, body, maxWidth).h : 0;
-      return { w: maxWidth, h: appBarH + bodyH };
-    }
-    default:
-      return { w: 0, h: 0 };
+    case "card": return decorationLayout(ctx, node, bounds, paddingOf(props, 16), spacing("sm", 8)).frame;
+    case "column": return flexLayout(ctx, node, bounds, "column").frame;
+    case "row": return flexLayout(ctx, node, bounds, "row").frame;
+    case "app-bar": return constrain({ w: bounds.maxW, h: 96 }, bounds);
+    case "spacer": return constrain({ w: 0, h: nonnegative(spacing(props.size, 16), "spacer size") }, bounds);
+    case "scaffold": return scaffoldLayout(ctx, node, bounds).frame;
+    default: return constrain({ w: 0, h: 0 }, bounds);
   }
 }
 
-/** Measures a node whose children stack vertically (card/column/fragment). */
-function measureStack(
-  ctx: InternalContext,
-  node: AnyNode,
-  innerWidth: number,
-  pad: number,
-  gap: number
-): Frame {
-  const kids = childNodes(node);
-  let h = pad * 2;
-  let widest = 0;
-  for (let i = 0; i < kids.length; i++) {
-    const frame = measure(ctx, kids[i]!, innerWidth);
-    h += frame.h + (i > 0 ? gap : 0);
-    widest = Math.max(widest, frame.w);
-  }
-  return { w: Math.min(pad * 2 + widest, Math.max(pad * 2 + innerWidth, 0)), h };
+function placeChildren(ctx: InternalContext, layout: NodeLayout, x: number, y: number): void {
+  for (const child of layout.children) place(ctx, child.kid, x + child.x, y + child.y, child.frame);
 }
 
 /**
- * Places [node] at (x, y) with width [w] and emits its ops. Returns the
- * consumed height.
+ * Paints a measured node using its final size and original incoming bounds.
+ * Reusing those bounds preserves natural layout versus tight allocation.
  */
-function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
+function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame: Frame): number {
   const { kind, props } = node;
+  const { w, h, bounds } = frame;
+  if (!bounds) throw new LayoutError("INVALID_CONSTRAINT", "Placement requires the measured constraints");
 
   if (typeof kind === "function") {
-    return place(ctx, resolveOnce(ctx, node), x, y, w);
+    return place(ctx, resolveOnce(ctx, node), x, y, frame);
   }
   if (kind === Canvas) {
     const fixedCanvas = props.fixed === true;
-    const width = fixedCanvas
-      ? ctx.designWidth
-      : Math.min(typeof props.width === "number" ? props.width : w, w);
-    const height = Number(props.height ?? 0);
+    const width = fixedCanvas ? ctx.designWidth : w;
+    const height = h;
     const paint = props.paint as CanvasProps["paint"] | undefined;
     if (typeof paint === "function") {
       paint(
@@ -708,50 +900,35 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       palette: merged,
       theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
     };
-    return placeStack(scoped, node, x, y, w, 0, 0);
+    placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
+    return h;
   }
   if (kind === SizedBoxKind) {
-    const tight = Math.min(typeof props.width === "number" ? props.width : w, w);
-    let maxH = 0;
     for (const kid of childNodes(node)) {
-      const frame = measure(ctx, kid, tight);
-      maxH = Math.max(maxH, place(ctx, kid, x, y, frame.w));
-    }
-    return typeof props.height === "number" ? props.height : maxH;
-  }
-  if (kind === CenterKind) {
-    const kids = childNodes(node);
-    const frames = kids.map((kid) => measure(ctx, kid, w));
-    const contentH = Math.max(...frames.map((frame) => frame.h), 0);
-    kids.forEach((kid, index) => {
-      const frame = frames[index]!;
-      place(ctx, kid, x + Math.max((w - frame.w) / 2, 0), y + Math.max((contentH - frame.h) / 2, 0), frame.w);
-    });
-    return contentH;
-  }
-  if (kind === StackKind) {
-    return placeStackWidget(ctx, node, x, y, w);
-  }
-  if (kind === ExpandedKind) {
-    // Tight width: the row assigned this frame, so children stretch to it
-    // instead of re-measuring at their intrinsic width.
-    let h = 0;
-    for (const kid of childNodes(node)) {
-      h = Math.max(h, place(ctx, kid, x, y, w));
+      const child = measure(ctx, kid, withDimensions(bounds, props));
+      place(ctx, kid, x, y, child);
     }
     return h;
   }
-  if (kind === PositionedKind) {
-    return placeStack(ctx, node, x, y, w, 0, 0);
+  if (kind === CenterKind) {
+    for (const kid of childNodes(node)) {
+      const child = measure(ctx, kid, loose(bounds.maxW, bounds.maxH));
+      place(ctx, kid, x + (w - child.w) / 2, y + (h - child.h) / 2, child);
+    }
+    return h;
+  }
+  if (kind === StackKind) {
+    placeChildren(ctx, stackLayout(ctx, node, bounds), x, y);
+    return h;
+  }
+  if (kind === ExpandedKind || kind === PositionedKind) {
+    placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+    return h;
   }
   if (kind === GestureDetectorKind) {
-    const h = placeStack(ctx, node, x, y, w, 0, 0);
-    // Two regions, same frame: hosts pick by gesture (tap on release,
-    // long-press on hold), so neither wins the topmost-wins hit test
-    // over the other — the host filters by the region's action.
-    if (typeof props.onTap === "function") {
-      addTap(ctx, x, y, w, h, props.onTap as () => void);
-    }
+    placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+    // Gesture geometry is the assigned box, including tight flex dimensions.
+    if (typeof props.onTap === "function") addTap(ctx, x, y, w, h, props.onTap as () => void);
     if (typeof props.onLongPress === "function") {
       addTap(ctx, x, y, w, h, props.onLongPress as () => void, "long-press");
     }
@@ -759,27 +936,23 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
   }
   if (kind === ContainerKind) {
     const pad = paddingOf(props, 0);
-    const tight = Math.min(typeof props.width === "number" ? props.width : w, w);
-    const height = typeof props.height === "number" ? props.height : undefined;
-    const h = height ?? measureStack(ctx, node, Math.max(tight - pad * 2, 1), pad, 0).h;
-    const radius = typeof props.radius === "number" ? props.radius : 0;
+    const radius = dimension(props, "radius") ?? 0;
     const fill = roleColor(ctx, props.color);
     if (fill !== undefined) {
       const shadow = typeof props.shadow === "number" ? props.shadow : undefined;
-      ctx.ops.push({ op: "rect", x, y, w: tight, h, r: radius, color: fill, ...(shadow ? { shadow } : {}) });
+      ctx.ops.push({ op: "rect", x, y, w, h, r: radius, color: fill, ...(shadow ? { shadow } : {}) });
     }
     const stroke = roleColor(ctx, props.borderColor);
     if (stroke !== undefined) {
-      const width = typeof props.borderWidth === "number" ? props.borderWidth : 3;
-      ctx.ops.push({ op: "outline", x, y, w: tight, h, r: radius, color: stroke, width });
+      const width = dimension(props, "borderWidth") ?? 3;
+      ctx.ops.push({ op: "outline", x, y, w, h, r: radius, color: stroke, width });
     }
-    const stacked = placeStack(ctx, node, x, y, tight, pad, 0);
-    return height !== undefined ? height : stacked;
+    placeChildren(ctx, decorationLayout(ctx, node, withDimensions(bounds, props), pad), x, y);
+    return h;
   }
   if (kind === IconKind) {
-    const size = typeof props.size === "number" ? props.size : 24;
+    const size = dimension(props, "size") ?? 24;
     const glyph = typeof props.glyph === "string" ? props.glyph : "";
-    const h = Math.round(size * 1.2);
     ctx.ops.push({
       op: "text",
       x: x + (w - textWidth(glyph, size)) / 2,
@@ -792,20 +965,21 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
     return h;
   }
   if (kind === WrapKind) {
-    const flow = layoutWrapChildren(ctx, node, w);
+    const flow = layoutWrapChildren(ctx, node, bounds.maxW);
     let cursorY = y;
     for (const line of flow.lines) {
       let cursorX = x;
       for (const entry of line.entries) {
-        place(ctx, entry.kid, cursorX, cursorY, entry.frame.w);
+        place(ctx, entry.kid, cursorX, cursorY, entry.frame);
         cursorX += entry.frame.w + flow.spacing;
       }
       cursorY += line.height + flow.runSpacing;
     }
-    return flow.height;
+    return h;
   }
   if (typeof kind === "symbol") {
-    return placeStack(ctx, node, x, y, w, 0, 0);
+    placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+    return h;
   }
 
   switch (kind) {
@@ -827,7 +1001,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
           color: roleColor(ctx, props.color) ?? ctx.theme.colors?.text ?? "#F2F2F7",
         });
       });
-      return lines.length * ty.lineHeight;
+      return h;
     }
     case "button": {
       const ty = TYPOGRAPHY.body!;
@@ -836,7 +1010,6 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
       const palette = ctx.theme.colors ?? {};
       const accent = palette.accent ?? "#4C8DFF";
       const danger = palette.danger ?? "#FF5A5F";
-      const h = 64;
       const r = 32;
       const onPrimary = ctx.palette.onPrimary;
       const container = palette.primaryContainer ?? "#223354";
@@ -884,29 +1057,23 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
     }
     case "card": {
       const pad = paddingOf(props, 16);
-      const inner = Math.max(w - pad * 2, 1);
-      const h = measureStack(ctx, node, inner, pad, spacing("sm", 8)).h;
       const elevated = props.background === "surface" || props.elevation === true;
       ctx.ops.push({
-        op: "rect",
-        x,
-        y,
-        w,
-        h,
+        op: "rect", x, y, w, h,
         r: radius(props.radius, 14),
         color: roleColor(ctx, props.background) ?? ctx.theme.colors?.surfaceRaised ?? "#1C1C24",
         ...(elevated ? { shadow: 12 } : {}),
       });
-      return placeStack(ctx, node, x, y, w, pad, spacing("sm", 8));
+      placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing("sm", 8)), x, y);
+      return h;
     }
-    case "column": {
-      const pad = paddingOf(props, 0);
-      return placeStack(ctx, node, x, y, w, pad, gapOf(props), crossAlignOf(props, "start"));
+    case "column":
+    case "row": {
+      placeChildren(ctx, flexLayout(ctx, node, bounds, kind), x, y);
+      return h;
     }
-    case "row":
-      return placeRow(ctx, node, x, y, w);
     case "app-bar": {
-      ctx.ops.push({ op: "rect", x, y, w, h: 96, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
+      ctx.ops.push({ op: "rect", x, y, w, h, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
       // Optional leading burger — the M3 modal-drawer affordance.
       const hasMenu = typeof props.onMenu === "function";
       const titleX = hasMenu ? 100 : 40;
@@ -935,19 +1102,14 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, w: num
         color: ctx.theme.colors?.outlineVariant ?? "#26262F",
         width: 2,
       });
-      return 96;
+      return h;
     }
     case "spacer":
-      return spacing(props.size, 16);
+      return h;
     case "scaffold": {
-      const frame = measure(ctx, node, w);
-      ctx.ops.push({ op: "rect", x, y, w, h: frame.h, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
-      const kids = widgetChildren(node);
-      let consumed = 0;
-      for (const kid of kids) {
-        consumed += place(ctx, kid, x, y + consumed, w);
-      }
-      return consumed;
+      ctx.ops.push({ op: "rect", x, y, w, h, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
+      placeChildren(ctx, scaffoldLayout(ctx, node, bounds), x, y);
+      return h;
     }
     default:
       return 0;
@@ -1027,48 +1189,6 @@ const STACK_ALIGNMENT: Record<string, { ax: number; ay: number }> = {
   bottomRight: { ax: 1, ay: 1 },
 };
 
-/**
- * Places a Stack: children in declaration order (later paints on top, and
- * its taps register later so the hosts' topmost-wins hit test matches the
- * paint order). The frame height comes from non-positioned children;
- * Positioned children place by offset, stretching across an axis when both
- * sides are given.
- */
-function placeStackWidget(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
-  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
-  let frameH = 0;
-  for (const kid of kids) {
-    if (kid.kind === PositionedKind) continue;
-    frameH = Math.max(frameH, measure(ctx, kid, w).h);
-  }
-  const rawAlign = typeof node.props.alignment === "string" ? node.props.alignment : "topLeft";
-  const align = STACK_ALIGNMENT[rawAlign] ?? STACK_ALIGNMENT.topLeft!;
-  for (const kid of kids) {
-    if (kid.kind === PositionedKind) {
-      const { props } = kid;
-      const left = typeof props.left === "number" ? props.left : undefined;
-      const right = typeof props.right === "number" ? props.right : undefined;
-      const top = typeof props.top === "number" ? props.top : undefined;
-      const bottom = typeof props.bottom === "number" ? props.bottom : undefined;
-      const inner = childNodes(kid);
-      // left+right stretches the child across the frame width.
-      const tightW = left !== undefined && right !== undefined ? Math.max(w - left - right, 0) : undefined;
-      const frames = inner.map((child) => measure(ctx, child, tightW ?? w));
-      const useW = tightW ?? Math.max(...frames.map((frame) => frame.w), 0);
-      const firstH = frames[0]?.h ?? 0;
-      const cx = left !== undefined ? x + left : right !== undefined ? x + w - right - useW : x;
-      const cy = top !== undefined ? y + top : bottom !== undefined ? y + frameH - bottom - firstH : y;
-      inner.forEach((child, index) => {
-        place(ctx, child, cx, cy, index === 0 ? useW : frames[index]!.w);
-      });
-    } else {
-      const frame = measure(ctx, kid, w);
-      place(ctx, kid, x + (w - frame.w) * align.ax, y + (frameH - frame.h) * align.ay, frame.w);
-    }
-  }
-  return frameH;
-}
-
 interface WrapEntry {
   kid: AnyNode;
   frame: Frame;
@@ -1129,154 +1249,6 @@ function crossAlignOf(props: Record<string, unknown>, fallback: CrossAlign): Cro
   return fallback;
 }
 
-/**
- * Places a vertically stacking box (column/card/fragment). [align] is the
- * cross-axis placement of children; "start" keeps the original
- * left-packed behavior, so callers that never pass `align` render exactly
- * as before.
- */
-function placeStack(
-  ctx: InternalContext,
-  node: AnyNode,
-  x: number,
-  y: number,
-  w: number,
-  pad: number,
-  gap: number,
-  align: CrossAlign = "start"
-): number {
-  const innerX = x + pad;
-  const innerW = Math.max(w - pad * 2, 1);
-  let cursor = y + pad;
-  const kids = childNodes(node);
-  for (let i = 0; i < kids.length; i++) {
-    const kid = kids[i]!;
-    const frame = measure(ctx, kid, innerW);
-    const kidW = align === "stretch" ? innerW : frame.w;
-    const kidX =
-      align === "center"
-        ? innerX + Math.max((innerW - frame.w) / 2, 0)
-        : align === "end"
-          ? innerX + Math.max(innerW - frame.w, 0)
-          : innerX;
-    cursor += place(ctx, kid, kidX, cursor, kidW) + (i < kids.length - 1 ? gap : 0);
-  }
-  return cursor + pad - y;
-}
-
-interface RowLayout {
-  kids: AnyNode[];
-  frames: Frame[];
-  rowHeight: number;
-}
-
-/**
- * Resolves a row's children into final frames, shared by measure and place
- * so an Expanded child can never measure at one width and place at another.
- *
- * Without Expanded children this is the legacy pass, including the implicit
- * text-shrink heuristic, so existing scenes stay byte-identical. With
- * Expanded children, fixed children keep their natural width and expanded
- * children share the free width proportionally to flex.
- */
-function layoutRowChildren(ctx: InternalContext, node: AnyNode, innerW: number): RowLayout {
-  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
-  const gap = gapOf(node.props);
-  const frames = kids.map((kid) => measure(ctx, kid, innerW));
-
-  if (!kids.some((kid) => kid.kind === ExpandedKind)) {
-    // Flex shrink pass: when the natural widths overflow the row, text (and
-    // text-stacking) children give back width and re-wrap — the prototype
-    // stand-in for Flutter's Flexible behavior when no Expanded is present.
-    const gapsTotal = kids.length > 1 ? gap * (kids.length - 1) : 0;
-    const available = Math.max(innerW - gapsTotal, 1);
-    let naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
-    if (naturalW > available) {
-      const SHRINK_MIN = 96;
-      const shrinkable = kids
-        .map((kid, index) => ({ kid, index, kind: kid.kind }))
-        .filter(({ kind }) => kind === "text" || kind === "column" || kind === "row");
-      let excess = naturalW - available;
-      if (shrinkable.length > 0) {
-        const shrinkTotal = shrinkable.reduce((sum, entry) => sum + frames[entry.index]!.w, 0);
-        for (const entry of shrinkable) {
-          const frame = frames[entry.index]!;
-          const share = shrinkTotal > 0 ? frame.w / shrinkTotal : 1 / shrinkable.length;
-          const reduced = Math.max(frame.w - excess * share, Math.min(SHRINK_MIN, frame.w));
-          const taken = frame.w - reduced;
-          if (taken > 0) {
-            frames[entry.index] = measure(ctx, entry.kid, reduced);
-            excess -= taken;
-          }
-          if (excess <= 0) break;
-        }
-      }
-    }
-    return { kids, frames, rowHeight: frames.reduce((max, frame) => Math.max(max, frame.h), 0) };
-  }
-
-  // Expanded pass: fixed children keep natural width; expanded children
-  // re-measure at their flex share of the free space.
-  const gapsTotal = kids.length > 1 ? gap * (kids.length - 1) : 0;
-  let fixedW = 0;
-  let flexSum = 0;
-  const flexes = kids.map((kid) => {
-    if (kid.kind !== ExpandedKind) return 0;
-    const raw = kid.props.flex;
-    return typeof raw === "number" && raw > 0 ? raw : 1;
-  });
-  flexes.forEach((flex, index) => {
-    if (flex > 0) flexSum += flex;
-    else fixedW += frames[index]!.w;
-  });
-  const free = Math.max(innerW - gapsTotal - fixedW, 0);
-  const unit = flexSum > 0 ? free / flexSum : 0;
-  flexes.forEach((flex, index) => {
-    if (flex > 0) {
-      // Tight constraints: the flex share IS the child's width (Flutter's
-      // Expanded), so intrinsic measurers (buttons, text) stretch at place
-      // time instead of packing at their natural width.
-      const share = Math.max(unit * flex, 1);
-      frames[index] = { w: share, h: measure(ctx, kids[index]!, share).h };
-    }
-  });
-  return { kids, frames, rowHeight: frames.reduce((max, frame) => Math.max(max, frame.h), 0) };
-}
-
-function placeRow(ctx: InternalContext, node: AnyNode, x: number, y: number, w: number): number {
-  const pad = paddingOf(node.props, 0);
-  const innerX = x + pad;
-  const innerW = Math.max(w - pad * 2, 1);
-  const justify = typeof node.props.justify === "string" ? node.props.justify : "start";
-  const gap = gapOf(node.props);
-  // CrossAxisAlignment: center is the historical (and Flutter) row default;
-  // stretch degrades to start — the engine has no cross-axis size forcing.
-  const align = crossAlignOf(node.props, "center");
-
-  const { kids, frames, rowHeight } = layoutRowChildren(ctx, node, innerW);
-  const naturalW = frames.reduce((sum, frame) => sum + frame.w, 0);
-  const between = justify === "between" && kids.length > 1;
-  const slack = Math.max(innerW - naturalW - (between ? 0 : gap * (kids.length - 1)), 0);
-  const extra = between ? slack / Math.max(kids.length - 1, 1) : 0;
-  // MainAxisAlignment.end / center: shift the packed run instead of
-  // spreading it (between already consumes the slack above).
-  const lead = !between && justify === "end" ? slack : !between && justify === "center" ? slack / 2 : 0;
-
-  let cursor = innerX + lead;
-  kids.forEach((kid, index) => {
-    const frame = frames[index]!;
-    const childY =
-      align === "start" || align === "stretch"
-        ? y + pad
-        : align === "end"
-          ? y + pad + rowHeight - frame.h
-          : y + pad + (rowHeight - frame.h) / 2;
-    place(ctx, kid, cursor, childY, frame.w);
-    cursor += frame.w + (index < kids.length - 1 ? (between ? extra : gap) : 0);
-  });
-  return pad * 2 + rowHeight;
-}
-
 /** ---------- context / entry ---------- */
 
 function addTap(
@@ -1307,15 +1279,20 @@ function addTap(
 }
 
 /**
- * Lays out a full screen tree at design width and returns the committed
- * display-list scene plus the live tap callback table (index-aligned with
- * `scene.taps`).
+ * Lays out a tree at an unbounded-height design width, or in a finite viewport.
+ * Explicitly sized ancestors can bound subtrees in either mode. Returns the
+ * existing host scene and live callbacks (index-aligned with `scene.taps`).
  */
 export function layoutScreen(
   theme: ThemeConfig,
   tree: WidgetNode,
-  designWidth: number = DESIGN_WIDTH
+  viewportOrWidth: number | LayoutViewport = DESIGN_WIDTH
 ): { scene: DisplayListScene; tapRuns: Array<() => void> } {
+  const viewport = typeof viewportOrWidth === "number" ? undefined : validateLayoutViewport(viewportOrWidth);
+  const designWidth = typeof viewportOrWidth === "number" ? viewportOrWidth : viewport!.width;
+  if (!Number.isFinite(designWidth) || designWidth <= 0) {
+    throw new LayoutError("INVALID_VIEWPORT", "Design width must be a positive finite number");
+  }
   const ctx: InternalContext = {
     theme,
     designWidth,
@@ -1336,8 +1313,14 @@ export function layoutScreen(
       };
     },
   };
-  const frame = measure(ctx, asNode(tree), designWidth);
-  place(ctx, asNode(tree), 0, 0, designWidth);
+  const root = resolveNode(ctx, asNode(tree));
+  const explicitRootWidth = root.kind === SizedBoxKind ||
+    ((root.kind === ContainerKind || root.kind === Canvas) && typeof root.props.width === "number");
+  const bounds: Constraints = viewport
+    ? tight({ w: viewport.width, h: viewport.height })
+    : { minW: explicitRootWidth ? 0 : designWidth, maxW: designWidth, minH: 0, maxH: Infinity };
+  const frame = measure(ctx, root, bounds);
+  place(ctx, root, 0, 0, frame);
   const scene = ctx.finish();
   scene.contentHeight = frame.h;
   return { scene, tapRuns: ctx.tapRuns };

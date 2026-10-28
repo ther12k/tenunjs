@@ -113,14 +113,30 @@ adapter must fix this or be rejected at the M0 selection gate.
 - Layout output is a serializable display-list scene; the commit format
   is the framework's, not the backend's.
 
-### Prototype boundaries this contract supersedes
+### TypeScript adoption and remaining prototype boundaries
 
-The current TypeScript lowering implements a Flexbox-class subset:
-content-height Columns (no bounded-main-axis `Expanded`), no cross-axis
-size forcing (`align="stretch"` degrades to start), and whole-scene
-scrolling instead of independent scroll regions. These are prototype
-boundaries **violating** this frozen contract, not long-term differences;
-TN-155's milestone app exercises their replacements.
+[TN-157](../06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md)
+adopts finite constraints in the current framework lowering. A
+`LayoutViewport` supplies tight root width/height; explicit SizedBox and
+Container dimensions also bound descendants. Row/Column Expanded, padding,
+justify-center, cross-axis stretch, Center, and opposing Positioned edges
+use assigned boxes for both painting and hit regions. Expanded in an
+unbounded flex axis is a visible `UNBOUNDED_FLEX` error. Numeric-width
+`layoutScreen` calls retain unbounded root height for content-sized scenes.
+
+`ApplicationRuntime.setViewport()` copies and validates new surface bounds,
+preserves route/controller state, and invalidates the scene and tap table.
+The Day Plan application exercises this explicit runtime API. Current
+browser/Android surface resize callbacks still repaint/scale the old scene;
+automatic viewport delivery and its logical-unit/capability contract remain
+a TN-155 follow-on. Runtime conformance tests do not prove host resizing.
+
+Independent scroll regions, clipping, full text shaping/intrinsics, and the
+broader widget/backend integration remain unfinished. Current whole-scene
+scrolling does not satisfy the frozen scroll-region rule. These remain
+prototype boundaries to replace, not long-term differences from the
+contract. TN-157's TypeScript fixtures supplement the backend corpus; they
+do not select a backend or close the broader TN-070/TN-071/TN-072 tracks.
 
 ## Where layout executes (frozen decision)
 

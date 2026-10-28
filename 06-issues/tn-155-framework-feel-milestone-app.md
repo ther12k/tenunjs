@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-155: Framework-feel milestone app — the end-to-end Flutter-inspired experience"
 summary: "One small TSX application that demonstrates the promised framework experience end to end: nested layout, editable text, independent scrolling, route transition with animation, direct Skia drawing, and the same code on every available embedder."
 type: issue
-status: ready
+status: in-progress
 issue_id: "TN-155"
 milestone: "M4"
 priority: "P0"
@@ -20,7 +20,7 @@ depends_on:
 |---|---|
 | Milestone | M4 — Core widgets, text input, scrolling, and animation (umbrella; pulls M2 rendering and M3 navigation slices) |
 | Priority | P0 |
-| Dependencies | TN-143 (semantic theme tokens, open), TN-156 (public layout semantics contract) |
+| Dependencies | TN-143 (semantic color decision, closed), TN-156 (public layout semantics contract, closed) |
 | Suggested size | Umbrella milestone — slice into agent-sized issues as each capability lands |
 | Gate impact | Establishes the foundation for the README's positioning promise; prioritized over expanding the gallery |
 
@@ -35,6 +35,26 @@ experience* end to end — the thing a Flutter developer would recognize as
 
 TN-154 proved the platform substrate (native execution, services, touch).
 This issue proves the framework layer on top of it.
+
+## Implementation slices (2026-10-28)
+
+Both declared contract dependencies are closed. Capability implementation
+still lands in focused slices; this umbrella stays open until the full
+application journey and host evidence below are complete.
+
+| Slice | Owner and acceptance boundary |
+| --- | --- |
+| Bounded framework layout and Day Plan foundation | [TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md): ordinary two-screen TSX app, explicit runtime viewport inputs, custom drawing, shared-bundle execution. |
+| Host viewport delivery | TN-155 follow-on: compatible input negotiation, logical units, initial dimensions and resize updates in browser and Android. Scaling a previous scene does not count as re-layout. |
+| Ordinary semantic widget themes | TN-068, retaining its dependencies and ADR-0024 responsibilities. |
+| Editable widget and IME path | TN-076/TN-078/TN-079, with focus ownership from TN-081. |
+| Independent list viewport | TN-083/TN-084, with gesture arbitration from TN-082. |
+| Host-evaluated route transition and animation | TN-048/TN-086/TN-087, with route lifecycle from TN-063. The JS-stall test requires scheduling separation, not only a timer on the existing UI thread. |
+| Final parity journey and README recording | TN-155 closure: complete all seven requirements on the available hosts, then capture the real application. |
+
+TN-157 adopts the frozen semantics in the already executable TypeScript
+lowering. It does not close the broader TN-070/TN-071/TN-072 widget tracks
+or substitute its headless execution checks for device evidence.
 
 ## Required outcome
 

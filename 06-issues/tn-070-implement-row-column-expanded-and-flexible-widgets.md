@@ -24,6 +24,15 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+## Current TypeScript adoption (TN-157)
+
+[TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md)
+adopts TN-156's bounded Row/Column/Expanded semantics in the already public
+TN-133 TypeScript lowering for the framework-feel app. That slice uses the
+existing executable path and does not select or assume TN-040's native
+adapter. This issue retains Flexible, the broader widget/property-schema
+contract, its dependencies, and the full milestone evidence requirements.
+
 ## Required outcome
 
 Flutter-inspired flex composition maps predictably to the selected layout backend.

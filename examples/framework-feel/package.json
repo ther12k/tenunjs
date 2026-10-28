@@ -1,0 +1,18 @@
+{
+  "name": "@tenunjs-examples/framework-feel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Day Plan — the incremental TN-155 framework-feel application",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/widgets": "workspace:*",
+    "@tenunjs-examples/ui-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs-examples/test-support": "workspace:*",
+    "@tenunjs/cli": "workspace:*"
+  }
+}

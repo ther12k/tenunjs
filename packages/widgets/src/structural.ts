@@ -76,9 +76,8 @@ export interface CenterProps {
 }
 
 /**
- * Flutter's Center — claims the available width and centers the child
- * horizontally. Inside a Stack, pair with the stack's alignment for both
- * axes.
+ * Flutter's Center — claims bounded available space and centers its child
+ * in both axes. An unbounded axis keeps the child's intrinsic extent.
  */
 export function Center(props: CenterProps): WidgetNode {
   return virtual(CenterKind, props);
@@ -109,7 +108,7 @@ export interface StackProps {
 /**
  * Flutter's Stack — children paint in declaration order (later children on
  * top, matching the hosts' topmost-region-wins tap resolution). The frame is
- * the largest non-positioned child; `Positioned` children place by offset
+ * the first non-positioned child, constrained by its parent; `Positioned` children place by offset
  * and do not size the stack. The classic "canvas" pattern: an invisible
  * `SizedBox` as the first child sizes the stack, everything else positions
  * over it.
@@ -145,16 +144,16 @@ export function Positioned(props: PositionedProps): WidgetNode {
 export const ExpandedKind = Symbol.for("tenun.widgets.expanded");
 
 export interface ExpandedProps {
-  /** Flex share of the free main-axis space (default 1). */
+  /** Positive finite share of the free main-axis space (default 1). */
   flex?: number;
   child?: WidgetChild;
   children?: WidgetChild;
 }
 
 /**
- * Flutter's Expanded — the child takes a flex share of the Row's free width.
- * (Columns are content-height in the scrolling scene, so Column flex waits
- * for bounded-height containers.)
+ * Flutter's Expanded — claims a tight share of a Row's free width or a
+ * bounded Column's free height. An unbounded main axis fails visibly;
+ * use a finite viewport or an explicitly sized ancestor for vertical flex.
  */
 export function Expanded(props: ExpandedProps): WidgetNode {
   return virtual(ExpandedKind, props);

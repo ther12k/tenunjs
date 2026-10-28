@@ -66,6 +66,20 @@
         "@tenunjs/navigation": "workspace:*",
       },
     },
+    "examples/framework-feel": {
+      "name": "@tenunjs-examples/framework-feel",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "examples/gallery": {
       "name": "@tenunjs-examples/gallery",
       "version": "0.1.0",
@@ -245,6 +259,8 @@
     "@tenunjs-examples/flutter-showcase": ["@tenunjs-examples/flutter-showcase@workspace:examples/flutter-showcase"],
 
     "@tenunjs-examples/flutter-showcase-preview": ["@tenunjs-examples/flutter-showcase-preview@workspace:examples/flutter-showcase-preview"],
+
+    "@tenunjs-examples/framework-feel": ["@tenunjs-examples/framework-feel@workspace:examples/framework-feel"],
 
     "@tenunjs-examples/gallery": ["@tenunjs-examples/gallery@workspace:examples/gallery"],
 
