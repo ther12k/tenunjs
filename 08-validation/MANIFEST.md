@@ -35,7 +35,7 @@ status: accepted
 | 02-architecture/jsx-and-reconciliation.md | 4b08aba69dd46a84c40a860bc4935bc6854a03be6ee3b24efbf21abed33f698e |
 | 02-architecture/language-strategy.md | c1fb06533952d01aa6a56d1bc05378a0012120e2ed63ca6023befa7b09d0b8e9 |
 | 02-architecture/layout-adapter-contract.md | e6728124355e631e5925a82505886c6058cfc8b06c8c020cc7115cfd2acccec1 |
-| 02-architecture/layout.md | 3f8d922145bf9e70b33f3a85e598b46cbe49e21b8b3549c44ccba944bbb60530 |
+| 02-architecture/layout.md | d8942070164bd0baac4c7a9574b7880427267787faf5963b0f0affe1bc0c834d |
 | 02-architecture/mutation-protocol.md | c12d583b154e53c805869b144d531a32b53d7cabfa46058b0e3477481c86c51f |
 | 02-architecture/native-engine.md | a1908607a4686b9fab4acb643de1f89f185aab6c0469ff8e628952e27e269194 |
 | 02-architecture/native-modules-platform-views.md | fcea868e3bf44d9627ce03c36d2fb765a585733d22a35dc03a5ee9b7c3ed0c00 |
@@ -258,7 +258,7 @@ status: accepted
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
 | 06-issues/tn-155-framework-feel-milestone-app.md | 06aae6ac82be4ab751f790fd5f7351e619ec1c42ae58b3196972a6851d54c74e |
-| 06-issues/tn-156-freeze-public-layout-semantics-contract.md | a30baa4942d8804b371a2b1b7ea25b07d337401aca661d7b513ca45b0f978a8c |
+| 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
