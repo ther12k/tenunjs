@@ -270,3 +270,4 @@ of that experience become the priority over gallery expansion.
 | [TN-155](tn-155-framework-feel-milestone-app.md) | P0 | TN-143, TN-156 | Framework-feel milestone app — the end-to-end Flutter-inspired experience |
 | [TN-156](tn-156-freeze-public-layout-semantics-contract.md) | P1 | — | Freeze the public layout semantics contract |
 | [TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md) | P0 | TN-133, TN-156 | Adopt bounded TypeScript layout and the framework-feel app foundation |
+| [TN-158](tn-158-deliver-host-viewport-with-negotiation.md) | P1 | TN-157 | Deliver host viewport automatically with negotiation |

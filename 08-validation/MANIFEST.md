@@ -85,7 +85,7 @@ status: accepted
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
-| 04-api/widgets-and-styling.md | 61a2fcc8b2fee80b239f6d37afd22c4131ad61e29d9e9c6c1f82da9d5fb7e15c |
+| 04-api/widgets-and-styling.md | 50d54fadd141aad18c35ed13db96a34bd2ff7210634005309660e14450ad8dd7 |
 | 05-delivery/definition-of-done.md | 17adc84f6703efedcde2aaecaf79c1f9946cb6a3c603e70949cde46f584fefe3 |
 | 05-delivery/dependency-graph.md | af2323a75df499ec9d1c58c9c6ea5d3e7a114b8f8fbfed29216ff8130a94c777 |
 | 05-delivery/github-setup.md | 9988283c92ed14677e71efcec3de569f37c90eeac7ea69ab52eea55f6f3fc437 |
@@ -95,7 +95,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | f7940530cf4a5a8658a48fa1b6a65ca8a2d7d1e9cdbbd20af825b1d6426c54dc |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | df5c522db1e74731563c1c06a35df82db0dc001830b1a4f812a7d4602bbf25ae |
+| 06-issues/index.md | b4b3472fc34b39095889128c6979eae97b009e876f7860a0615a94050871e261 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -261,6 +261,7 @@ status: accepted
 | 06-issues/tn-155-framework-feel-milestone-app.md | e007a098524d4d5a0af048aaed9fea133875a5df76918e0235b66c79d425ab22 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
+| 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 7062f57804963c586161cf8bf01dfa2be14b6da3c17ed94ca49167724ad6d6e3 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

@@ -132,10 +132,14 @@ class TenunSurfaceView @JvmOverloads constructor(
             // lifetime, so a pre-update tap satisfied the OTA trial
             // criterion for every later engine.
             dispatchedOnce = false
+            // TN-158: a swapped engine re-negotiates viewport delivery —
+            // support is a property of the bundle, not the view.
+            viewportDriven = false
             // Reflect the engine's already-committed scene (including the
             // JS-provided button label) before the first draw, so the view
             // renders the JavaScript application's initial state.
             value?.getLatestScene()?.let { syncFromScene(it) }
+            if (isSurfaceValid) maybeDeliverViewport(width, height)
             redraw()
         }
 
@@ -179,6 +183,46 @@ class TenunSurfaceView @JvmOverloads constructor(
     private var dispatchedOnce = false
 
     private var isSurfaceValid = false
+
+    // TN-158 viewport delivery: true once the running bundle has adopted
+    // host bounds via a successful VIEWPORT dispatch. Bundles without that
+    // support answer NULL across JNI (UNKNOWN_ACTION or a non-string
+    // result) and keep the committed scene's own design-width scaling —
+    // they are not asked again until the engine is swapped.
+    private var viewportDriven = false
+
+    /**
+     * Delivers the surface size in LOGICAL units (pixels / density) to
+     * bundles whose handoff implements the VIEWPORT verb. Logical units
+     * are the scene's own coordinate space afterwards: the re-laid-out
+     * scene's designWidth equals the delivered width, so dlScale converges
+     * to the display density and hit-testing stays consistent.
+     */
+    private fun maybeDeliverViewport(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        val eng = engine ?: return
+        if (!dispatchViewport(eng, widthPx, heightPx)) return
+        if (!viewportDriven) {
+            viewportDriven = true
+            // Coordinates from the previous (design-width-scaled) layout
+            // are meaningless under the adopted bounds.
+            scrollY = 0f
+        }
+        syncFromScene(eng.getLatestScene())
+    }
+
+    private fun dispatchViewport(eng: TenunEngine, widthPx: Int, heightPx: Int): Boolean {
+        val density = resources.displayMetrics.density
+        if (density <= 0f) return false
+        val logicalW = maxOf(1, (widthPx / density).toInt())
+        val logicalH = maxOf(1, (heightPx / density).toInt())
+        return try {
+            eng.dispatchActionResult("VIEWPORT", "{\"width\":$logicalW,\"height\":$logicalH}") != null
+        } catch (e: Exception) {
+            Log.w(TAG, "viewport delivery failed: ${e.message}")
+            false
+        }
+    }
 
     // Layout bounds
     val titleRect = RectF(40f, 100f, 680f, 180f)
@@ -232,6 +276,7 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         isSurfaceValid = true
+        maybeDeliverViewport(width, height)
         redraw()
     }
 

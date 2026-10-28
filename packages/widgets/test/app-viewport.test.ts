@@ -193,3 +193,55 @@ describe("TN-157 application viewport", () => {
     expect(runtime.render().scene.taps[0]).toMatchObject({ x: 0, y: 40, w: 500, h: 200 });
   });
 });
+
+describe("host VIEWPORT dispatch (TN-158)", () => {
+  test("a VIEWPORT dispatch through the handoff re-lays out and commits the resized scene", () => {
+    const runtime = new ApplicationRuntime(options({ viewport: { width: 320, height: 480 } }));
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app: runtime, commit: (json) => commits.push(json) });
+    expect(commits).toHaveLength(1);
+
+    const result = JSON.parse(handoff.dispatch("VIEWPORT", JSON.stringify({ width: 480, height: 640 })));
+    expect(result).toEqual({ route: "counter" });
+    expect(commits).toHaveLength(2);
+    expect(JSON.parse(commits[1]!)).toMatchObject({ designWidth: 480, contentHeight: 640 });
+
+    // The negotiation is repeatable: a further host resize re-lays out again.
+    handoff.dispatch("viewport", JSON.stringify({ width: 200, height: 100 }));
+    expect(JSON.parse(commits[2]!)).toMatchObject({ designWidth: 200, contentHeight: 100 });
+  });
+
+  test("an identical VIEWPORT dispatch is a no-op — no extra commit", () => {
+    const runtime = new ApplicationRuntime(options({ viewport: { width: 320, height: 480 } }));
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app: runtime, commit: (json) => commits.push(json) });
+    handoff.dispatch("VIEWPORT", JSON.stringify({ width: 320, height: 480 }));
+    expect(commits).toHaveLength(1);
+  });
+
+  test("a bundle without setViewport fails visibly with UNKNOWN_ACTION — the host's negotiation signal", () => {
+    const runtime = new ApplicationRuntime(options({ viewport: { width: 320, height: 480 } }));
+    const wrapped = {
+      render: () => runtime.render(),
+      dispatch: (action: string, payload?: unknown) => runtime.dispatch(action, payload),
+      exportState: () => runtime.exportState(),
+      stateSchema: () => runtime.stateSchema(),
+      route: () => runtime.route(),
+      onStateInvalidation: (l: () => void) => runtime.onStateInvalidation(l),
+      // setViewport deliberately omitted: chrome-owning wrappers that have
+      // not adopted host bounds yet.
+    };
+    const handoff = installHostHandoff({ app: wrapped, commit: () => undefined });
+    expectRuntimeError(
+      () => handoff.dispatch("VIEWPORT", JSON.stringify({ width: 480, height: 640 })),
+      "UNKNOWN_ACTION",
+    );
+  });
+
+  test("a malformed VIEWPORT payload fails as INVALID_VIEWPORT, never a silent ignore", () => {
+    const runtime = new ApplicationRuntime(options({ viewport: { width: 320, height: 480 } }));
+    const handoff = installHostHandoff({ app: runtime, commit: () => undefined });
+    expect(() => handoff.dispatch("VIEWPORT", '{"width": "wide"}')).toThrow(LayoutError);
+    expect(() => handoff.dispatch("VIEWPORT", "not json at all")).toThrow(LayoutError);
+  });
+});

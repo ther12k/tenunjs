@@ -35,7 +35,7 @@
  * here.
  */
 
-import type { DisplayListScene } from "./display-list";
+import type { DisplayListScene, LayoutViewport } from "./display-list";
 
 /** Anything the handoff can drive: ApplicationRuntime, or a wrapper that
  *  composes one with application chrome and still honors the contract. */
@@ -45,6 +45,16 @@ export interface HandoffApplication {
   exportState(): unknown;
   stateSchema(): number;
   route(): string;
+  /**
+   * Optional viewport adoption: when present, the host's "VIEWPORT"
+   * dispatch re-lays the application out under the given logical bounds
+   * (see dispatch below). ApplicationRuntime provides it; wrappers that
+   * own their chrome delegate it after adjusting their own frame — or
+   * omit it, in which case VIEWPORT falls through to dispatch() and
+   * surfaces as UNKNOWN_ACTION (hosts treat that as "bundle does not
+   * negotiate viewports" and keep scaling the committed scene instead).
+   */
+  setViewport?(viewport: LayoutViewport): void;
   /**
    * Optional out-of-band repaint signal: when application state can
    * change without a synchronous dispatch (async action settlement),
@@ -96,6 +106,23 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
     }
     if (normalized === "__TENUN_STATE_SCHEMA") {
       return JSON.stringify({ stateSchema: app.stateSchema() });
+    }
+    if (normalized === "VIEWPORT") {
+      // Host viewport negotiation (TN-158): a bundle that adopts host
+      // bounds re-lays out under them; the resized scene commits through
+      // the invalidation subscription (same channel setViewport uses
+      // directly). A bundle WITHOUT setViewport falls through to
+      // dispatch(), which raises UNKNOWN_ACTION — hosts read that (or a
+      // NULL dispatch result across JNI) as "keep scaling the committed
+      // scene" and stop delivering viewports. A malformed payload
+      // degrades to {} above and fails visibly inside the runtime as
+      // INVALID_VIEWPORT rather than being silently ignored.
+      if (typeof app.setViewport === "function") {
+        app.setViewport(payload as LayoutViewport);
+      } else {
+        app.dispatch(normalized, payload);
+      }
+      return JSON.stringify({ route: app.route() });
     }
     app.dispatch(normalized, payload);
     if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE") commit();
