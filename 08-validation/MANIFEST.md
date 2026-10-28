@@ -246,7 +246,7 @@ status: accepted
 | 06-issues/tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md | 25cdf2a3db9c4caee10ae3b625b4cf14571f015eb4b4efca126338764caa097d |
 | 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | c7100ab6a6091a8f59e801cf3d3cd4810cfed9851dcd4a80c4ce0cd8458708e6 |
 | 06-issues/tn-142-own-host-to-runtime-push-channel.md | 2f2cfaf0ea30c21ef0339575f030179bf383a93845665976fd32cc4693845ab7 |
-| 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | 9b95ba47ce334004bbb6da2037545d1d941cf6adcf90edbeb6554a0c2924407e |
+| 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | f83a35c1d67f1c5c602c75899d15c192428c01b764813d31cf9d3bdc6fab4310 |
 | 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | 6b191617fffe14fc708c006db4d3d9e2b13cf976bda033fcb9abf30796bc91ea |
 | 06-issues/tn-145-assert-host-parity-for-application-service-seams.md | 971f7d8476d59f68f3f396c24e2710d437b33b292dd25665a61d9b7af47162cb |
 | 06-issues/tn-146-own-browser-shell-integration-ux.md | 3bfd494f851ec13015003f52de20b1faf76ab7c316f567c97363119db51cd786 |

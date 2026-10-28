@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-143: Decide semantic theme-token slots before the widget layer freezes"
 summary: "Runtime light/dark with a persisted choice touched every color; native got it free via resource aliases, the web replica hand-plumbed ~40 CSS variables. Define the token indirection now."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-143"
 milestone: "M4"
 priority: "P1"
@@ -106,3 +106,13 @@ native-probe/replay, emulator/device, and hosted CI results are not claimed
 by this local evidence. The example proves the color-resolution and
 preference contract; ordinary TSX widget integration and inherited themes
 remain TN-068, and actual device persistence requires host evidence.
+
+## Status note (2026-10-28, closed)
+
+Published as PR #240 (merge e790ce4) after independent re-verification
+in the publishing session (474/0 tests, typecheck, manifest) and a full
+green CI run — including the Rust, ABI, Android SDK, and
+installed-device gates the preparing session could not execute locally.
+All eight jobs passed on both the PR and main. TN-068 remains open for
+ordinary TSX widget integration, inherited theme scopes, and runtime
+invalidation under ADR-0024's sequencing exception.
