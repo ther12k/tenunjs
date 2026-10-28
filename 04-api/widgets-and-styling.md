@@ -205,6 +205,42 @@ hosts repaint/scale a scene when their surface changes size; explicit
 runtime-size tests do not certify that host-resize behavior. No new host
 dispatch verb or scene-wire version is introduced here.
 
+## Automatic host viewport delivery (TN-158)
+
+The host handoff answers a `"VIEWPORT"` dispatch when the application it
+drives adopts host bounds:
+
+```ts
+// Host side (browser host, Android SurfaceView, or any embedder):
+dispatch("VIEWPORT", JSON.stringify({ width, height }));
+
+// Bundle side: installHostHandoff routes the verb to app.setViewport
+// when the application exposes it (ApplicationRuntime does).
+```
+
+Semantics:
+
+- **Units are logical.** The browser host delivers canvas CSS pixels; the
+  Android `SurfaceView` delivers density-independent pixels. After
+  adoption the committed scene's `designWidth` equals the delivered
+  width, so the host's design-to-pixel scale converges to 1 (browser) or
+  the display density (Android), and hit-testing stays consistent.
+- **The resized scene commits through the existing invalidation
+  channel** — the same one a direct `setViewport()` call uses. State and
+  route are preserved; the old tap table is invalidated; identical
+  dimensions are a no-op that commits nothing.
+- **Negotiation is one probe.** A bundle whose handoff application has
+  no `setViewport` (wrapper apps, legacy bundles, the reference notes
+  app) answers `UNKNOWN_ACTION`. Hosts read that — or a `NULL` result
+  across the Android JNI boundary — as "this bundle does not negotiate
+  viewports", stop delivering, and keep scaling the committed scene
+  under its own `designWidth`. The Android view re-probes after an
+  engine swap (OTA apply, hot reload) because support belongs to the
+  bundle, not the view.
+- **Malformed payloads fail visibly.** A non-JSON or invalid-dimension
+  payload degrades to the handoff's `{}` and surfaces inside the runtime
+  as `INVALID_VIEWPORT` — never a silent ignore.
+
 ## Host compatibility contract
 
 Three version identities exist and none implies the others:

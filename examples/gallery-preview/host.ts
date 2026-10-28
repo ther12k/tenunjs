@@ -141,7 +141,50 @@ canvas.addEventListener("pointercancel", () => {
   cancelHoldTimer();
   holdFired = false;
 });
-window.addEventListener("resize", () => paint());
+
+// TN-158 host viewport delivery: bundles that adopt host bounds receive the
+// canvas's logical size (CSS pixels — the renderer's own unit once the
+// scene's designWidth equals the delivered width) on boot and on resize.
+// Negotiation: a bundle without viewport support answers VIEWPORT with
+// UNKNOWN_ACTION. That is a capability statement, not a failure — the host
+// records it once and keeps scaling the committed scene like before.
+let viewportNegotiated = false;
+let viewportSupported = false;
+
+function deliverViewport(): boolean {
+  const fn = (window as unknown as Record<string, unknown>)["__tenun_dispatch_action"];
+  if (typeof fn !== "function") return false;
+  const payload = JSON.stringify({ width: canvas.clientWidth, height: canvas.clientHeight });
+  try {
+    (fn as (a: string, p: string) => string)("VIEWPORT", payload);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "UNKNOWN_ACTION") {
+      viewportNegotiated = true;
+      viewportSupported = false;
+      return false;
+    }
+    fail(`host: viewport delivery failed: ${(error as Error).message}`);
+    return false;
+  }
+  viewportNegotiated = true;
+  viewportSupported = true;
+  return true;
+}
+
+/** Probe once after boot: supported bundles adopt the canvas size immediately;
+ *  unsupported bundles answer once with UNKNOWN_ACTION and are never asked
+ *  again. Later resizes only reach bundles that adopted host bounds. */
+function negotiateViewport(): void {
+  if (viewportNegotiated) return;
+  if (!deliverViewport()) return;
+  scrollY = 0; // the adopted bounds produce a fresh layout
+}
+
+window.addEventListener("resize", () => {
+  if (viewportSupported) deliverViewport();
+  paint();
+});
 
 function dispatch(action: string, payloadJson: string): string {
   const fn = (window as unknown as Record<string, unknown>)["__tenun_dispatch_action"];
@@ -187,6 +230,7 @@ if (!bundleUrl) {
     // committed: tenun_commit may already have rejected it fail-visibly,
     // and that diagnostic must survive boot completion.
     noteLoaded();
+    negotiateViewport();
   } catch (error) {
     fail(`host: bundle failed to load or boot: ${(error as Error).message}`);
   }

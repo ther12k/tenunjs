@@ -14,7 +14,7 @@ custom progress visual. Later slices will complete the milestone journey.
 | Two screens and retained action state | Implemented through `ApplicationRuntime`; complete a task, inspect progress, show details, return, and revisit. Navigation is immediate. |
 | Custom drawing | One `CanvasBox` draws the progress ring and its numeric annotation. Ordinary interface elements remain widgets. |
 | Shared host entry | One IIFE bundle uses the public commit/dispatch contract for both the generic browser host and QuickJS. |
-| Automatic browser/Android viewport delivery | Pending. The initial host entry uses explicit 720×1000 bounds; current host resize scales that scene. Direct runtime tests do not claim host resize conformance. |
+| Automatic browser/Android viewport delivery | Implemented (TN-158): the generic browser host delivers canvas CSS-pixel bounds on boot and resize; the Android `SurfaceView` delivers density-independent logical bounds on surface changes and engine swaps. Both negotiate once — a bundle whose handoff has no `setViewport` answers `UNKNOWN_ACTION` and keeps its own design-width scaling. |
 | Editable text and Android IME through widgets | Pending the native edit-session and widget integration. |
 | Independent scroll viewport | Pending. The three-task checklist currently uses a fixed layout. |
 | Host-evaluated animation and route transitions | Pending. The ring changes with state and navigation switches immediately. |
@@ -68,8 +68,9 @@ Open:
 
 Press **Complete task**, **View progress**, **Show details**, and **Back to
 today**. A second visit retains the details state and shows the updated
-completion count. The generic shell currently scales the initial bounded
-scene to its canvas; automatic viewport negotiation remains a later slice.
+completion count. The generic shell negotiates viewport support on boot: this bundle adopts
+the canvas's CSS-pixel bounds (and re-lays out on window resize), while
+older bundles keep the scaled-scene behavior.
 
 The same generated script is suitable for the native QuickJS engine-loop
 gate. Scene-data parity proves the shared application path; it does not

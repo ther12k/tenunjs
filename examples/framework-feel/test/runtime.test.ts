@@ -96,3 +96,59 @@ describe("Day Plan bounded runtime foundation", () => {
     app.dispose();
   });
 });
+
+describe("Day Plan host viewport delivery (TN-158)", () => {
+  // Topmost-wins tap lookup (the host rule): later-registered regions such
+  // as buttons paint over container regions that also contain the label.
+  function topmostTapForText(scene: DisplayListScene, text: string): SerializedTap {
+    const label = scene.ops.find((op) => op.op === "text" && op.text === text);
+    if (!label || label.op !== "text") throw new Error(`Missing label: ${text}`);
+    const hit = [...scene.taps].reverse().find((region) =>
+      typeof region.payload?.id === "number" &&
+      label.x >= region.x && label.x <= region.x + region.w &&
+      label.y >= region.y && label.y <= region.y + region.h);
+    if (!hit) throw new Error(`Missing live tap for: ${text}`);
+    return hit;
+  }
+
+  test("a VIEWPORT dispatch through the host handoff re-lays out, keeps state, and rebuilds live taps", () => {
+    const app = createFrameworkFeelRuntime();
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    expect(commits).toHaveLength(1);
+
+    // Mid-journey resize: the host adopts the app after the user already acted.
+    const initial = JSON.parse(commits[0]!) as DisplayListScene;
+    handoff.dispatch("TAP", JSON.stringify(tapForText(initial, "Complete task").payload));
+    expect(JSON.parse(commits[1]!)).toMatchObject({});
+
+    const result = handoff.dispatch("VIEWPORT", JSON.stringify({ width: 360, height: 640 }));
+    expect(JSON.parse(result)).toEqual({ route: "today" });
+    const resized = JSON.parse(commits.at(-1)!) as DisplayListScene;
+    expect(resized.designWidth).toBe(360);
+    expect(resized.contentHeight).toBe(640);
+    expect(JSON.stringify(resized)).toContain('"text":"1 / 3"');
+
+    // Taps survive the resize against the NEW geometry and keep working.
+    handoff.dispatch("TAP", JSON.stringify(topmostTapForText(resized, "View progress").payload));
+    const progressScene = JSON.parse(commits.at(-1)!) as DisplayListScene;
+    expect(JSON.stringify(progressScene)).toContain("Progress");
+
+    // A second host resize mid-journey re-lays out again without losing the route.
+    handoff.dispatch("VIEWPORT", JSON.stringify({ width: 800, height: 600 }));
+    const wide = JSON.parse(commits.at(-1)!) as DisplayListScene;
+    expect(wide.designWidth).toBe(800);
+    expect(JSON.parse(handoff.dispatch("__TENUN_EXPORT", "{}")).route).toBe("progress");
+    app.dispose();
+  });
+
+  test("state export carries no viewport — surface geometry is host-owned", () => {
+    const app = createFrameworkFeelRuntime();
+    const handoff = installHostHandoff({ app, commit: () => undefined });
+    handoff.dispatch("VIEWPORT", JSON.stringify({ width: 250, height: 400 }));
+    const snapshot = JSON.parse(handoff.dispatch("__TENUN_EXPORT", "{}"));
+    expect(snapshot.states).toBeDefined();
+    expect(JSON.stringify(snapshot)).not.toContain('"viewport"');
+    app.dispose();
+  });
+});
