@@ -18,8 +18,8 @@ android {
         applicationId = "id.my.tenun.embedder"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionCode = 7
+        versionName = "0.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

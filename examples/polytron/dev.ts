@@ -38,6 +38,42 @@ async function build(): Promise<string | null> {
   return lastBundle;
 }
 
+/**
+ * Native-app hot update (APK 0.1.5+): the embedder polls /hash every 2.5 s
+ * while on this Wi-Fi and fetches /polytron_app.js on change — app content
+ * updates WITHOUT reinstalling the APK (native/Kotlin changes still need a
+ * new APK). Rebuilds the native asset from source, throttled so the poll
+ * cadence costs nothing when nothing changed.
+ */
+const repoRoot = path.resolve(here, "..", "..");
+const nativeAssetPath = path.join(repoRoot, "embeddings-placeholder").replace(
+  "embeddings-placeholder",
+  path.join("embedders", "android", "app", "src", "main", "assets", "polytron_app.js"),
+);
+let lastAssetBuild = 0;
+let lastAssetHash: string | null = null;
+
+async function refreshNativeAsset(): Promise<{ bytes: Buffer; hash: string } | null> {
+  const now = Date.now();
+  if (now - lastAssetBuild > 3000) {
+    lastAssetBuild = now;
+    const proc = Bun.spawnSync([process.execPath, path.join(repoRoot, "embedders", "android", "tools", "gallery-bundle", "build-polytron-apk-asset.mjs")], {
+      cwd: repoRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) {
+      console.error("polytron asset build failed:", new TextDecoder().decode(proc.stderr).slice(0, 400));
+      // fall through: serve the last good asset if one exists
+    }
+  }
+  if (!fs.existsSync(nativeAssetPath)) return null;
+  const bytes = fs.readFileSync(nativeAssetPath);
+  const hash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  lastAssetHash = hash;
+  return { bytes, hash };
+}
+
 await build(); // fail-soft: serve the shell with an error status if the build broke
 
 const certFile = path.join(here, "dev-cert.pem");
@@ -71,6 +107,18 @@ Bun.serve({
           "Content-Disposition": 'attachment; filename="polytron-wash.apk"',
           "Content-Length": String(bytes.length),
         },
+      });
+    }
+    if (pathname === "/hash") {
+      const asset = await refreshNativeAsset();
+      if (asset == null) return new Response("no polytron asset\n", { status: 404 });
+      return new Response(asset.hash + "\n", { headers: { "Content-Type": "text/plain" } });
+    }
+    if (pathname === "/polytron_app.js") {
+      const asset = await refreshNativeAsset();
+      if (asset == null) return new Response("no polytron asset\n", { status: 404 });
+      return new Response(asset.bytes, {
+        headers: { "Content-Type": "application/javascript", "Content-Length": String(asset.bytes.length) },
       });
     }
     return new Response("not found\n", { status: 404 });

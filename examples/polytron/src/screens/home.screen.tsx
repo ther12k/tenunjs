@@ -4,7 +4,6 @@ import { SnackBar } from "@tenunjs-examples/ui-kit";
 import {
   ActivityList,
   FunctionGrid,
-  ListRow,
   StatusStrip,
   StopBar,
   fmtAgo,
@@ -29,6 +28,11 @@ import { modeColor } from "../theme";
 export interface HomeState {
   link: BleLinkState;
   status: WashStatus | null;
+  /** Receive time (ms) of the last ST: — null while no status. */
+  statusAt: number | null;
+  /** True after a drop left the machine possibly mid-cycle (BLE loss
+   *  never stops the washer) until a fresh non-running ST: clears it. */
+  mayrun: boolean;
   rows: LogRow[];
   usage: Record<string, number>;
   pending: string | null;
@@ -60,6 +64,8 @@ export const HomeScreen = defineScreen({
   initialState: (): HomeState => ({
     link: { supported: false, connecting: false, connected: false, name: null },
     status: null,
+    statusAt: null,
+    mayrun: false,
     rows: [],
     usage: {},
     pending: null,
@@ -76,6 +82,24 @@ export const HomeScreen = defineScreen({
     status: defineAction<HomeState, WashStatus | null>({
       run({ input, state }) {
         (state as unknown as HomeState).status = input;
+      },
+    }),
+    statusAt: defineAction<HomeState, number | null>({
+      run({ input, state }) {
+        (state as unknown as HomeState).statusAt = input;
+      },
+    }),
+    mayrun: defineAction<HomeState, boolean>({
+      run({ input, state }) {
+        (state as unknown as HomeState).mayrun = input;
+      },
+    }),
+    /** Heartbeat repaint channel — no state of its own; the delivery
+     *  itself re-renders so age/staleness labels keep advancing while
+     *  connected even when the radio goes silent. */
+    tick: defineAction<HomeState, number>({
+      run() {
+        /* invalidation-only by design */
       },
     }),
     log: defineAction<HomeState, LogRow>({
@@ -101,6 +125,11 @@ export const HomeScreen = defineScreen({
     clearErr: defineAction<HomeState, void>({
       run({ state }) {
         (state as unknown as HomeState).err = null;
+      },
+    }),
+    clearMayrun: defineAction<HomeState, void>({
+      run({ state }) {
+        (state as unknown as HomeState).mayrun = false;
       },
     }),
     connect: defineAction<HomeState, void>({
@@ -140,22 +169,31 @@ export const HomeScreen = defineScreen({
     // its own honest state: NEVER "ready" before the machine has spoken.
     const offline = !s.link.connected;
     const waiting = !offline && st === null;
+    // Frozen telemetry: still connected, but the machine stopped talking
+    // (ST: normally arrives 1 Hz). The picture below may be minutes old —
+    // show that and refuse NEW starts until data flows again.
+    const staleFor = offline || waiting || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
+    const stale = !offline && !waiting && staleFor > 15;
     const running = st?.running === true;
     const done = st !== null && !running && st.prog.startsWith("DONE");
     const total = (st?.elapsedS ?? 0) + (st?.remainS ?? 0);
     const pct = offline || waiting ? null : done ? 1 : running && total > 0 ? Math.min(1, st!.elapsedS / total) : null;
-    const accent = offline || waiting ? "#9DB2C7" : running ? modeColor(st!.mode) : done ? "#00FF80" : "#00B7FD";
+    const accent = offline || waiting ? "#9DB2C7" : stale ? "#FCB518" : running ? modeColor(st!.mode) : done ? "#00FF80" : "#00B7FD";
     const status = offline
       ? "OFFLINE"
       : waiting
         ? "MENUNGGU STATUS…"
-        : running
-          ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
-          : done
-            ? `SELESAI — ${st.prog.replace(/^DONE /, "")}`
-            : "SIAP MENCUCI";
+        : stale
+          ? `${st!.mode} · DATA BEKU`
+          : running
+            ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
+            : done
+              ? `SELESAI — ${st.prog.replace(/^DONE /, "")}`
+              : "SIAP MENCUCI";
     const right = running
-      ? `SISA ${fmtClock(st!.remainS ?? 0)}`
+      ? stale
+        ? `BEKU ${staleFor}s`
+        : `SISA ${fmtClock(st!.remainS ?? 0)}`
       : waiting
         ? "—"
         : st?.waterPct != null
@@ -163,23 +201,25 @@ export const HomeScreen = defineScreen({
           : offline
             ? "—"
             : "SIAP";
-    // Offline, the header pill already explains the situation — the strip
-    // reports state ("OFFLINE") without repeating the connect instruction.
+    // Offline, the connection strip already explains the situation — the
+    // strip reports state ("OFFLINE") without repeating the connect instruction.
     const caption = offline
       ? undefined
       : waiting
         ? "menunggu status pertama dari mesin"
-        : running
-          ? `berlalu ${fmtClock(st!.elapsedS ?? 0)} · ${st.prog}`
-          : done
-            ? "siklus selesai"
-            : "pilih fungsi di bawah · program ada di tab Programs";
+        : stale
+          ? `data mesin tidak diperbarui · terakhir ${staleFor} dtk lalu`
+          : running
+            ? `berlalu ${fmtClock(st!.elapsedS ?? 0)} · ${st.prog}`
+            : done
+              ? "siklus selesai"
+              : "pilih fungsi di bawah · program ada di tab Programs";
 
     const activeCmd = running ? st!.mode : null;
     const functionCards: FunctionDef[] = FUNCTIONS.map((f) => ({
       ...f,
       sub: fmtAgo(s.usage[f.cmd], now),
-      disabled: offline,
+      disabled: offline || stale,
       pending: s.pending === f.cmd,
       active: activeCmd === f.cmd,
       onPress: () => actions.start(f.cmd),
@@ -188,7 +228,22 @@ export const HomeScreen = defineScreen({
     return (
       <Scaffold>
         <Column padding="md" gap="lg">
-          <StatusStrip status={status} accent={accent} pct={pct} right={right} caption={caption} />
+          <StatusStrip
+            status={status}
+            accent={accent}
+            pct={pct}
+            right={right}
+            caption={caption}
+            spin={waiting || running}
+          />
+
+          {s.mayrun ? (
+            <SnackBar
+              message="Mesin MUNGKIN masih berjalan — pakai tombol fisik"
+              actionLabel="OK"
+              onAction={() => actions.clearMayrun()}
+            />
+          ) : null}
 
           <Column gap="sm">
             <Text variant="label">FUNGSI MESIN</Text>
@@ -215,14 +270,6 @@ export const HomeScreen = defineScreen({
               now={now}
             />
           </Column>
-
-          {offline ? null : (
-            <ListRow
-              label="Sambungan Bluetooth"
-              sub="putuskan dari mesin"
-              pill={{ label: "PUTUSKAN", onPress: () => actions.disconnect() }}
-            />
-          )}
         </Column>
       </Scaffold>
     );

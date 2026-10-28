@@ -838,6 +838,9 @@ export interface SnackBarProps {
 /**
  * M3 snack bar: an elevated inverse-surface pill with the message and an
  * optional action. Rendering and dismissal belong to the screen state.
+ * Two wrapped lines are drawn (ellipsis on overflow) — painting only the
+ * first line silently discarded the actionable half of long errors like
+ * "ERR bluetooth mati — nyalakan Bluetooth".
  */
 export function SnackBar(props: SnackBarProps): WidgetNode {
   const h = 88;
@@ -849,9 +852,19 @@ export function SnackBar(props: SnackBarProps): WidgetNode {
       put({ op: "rect", x: 0, y: 0, w: origin.w, h, r: 16, color: C.inverseSurface });
       const actionW = props.actionLabel ? textWidth(props.actionLabel, 17) + 48 : 0;
       const messageW = origin.w - actionW - 64;
-      const lines = wrapText(props.message, 16, messageW);
-      const first = lines[0] ?? props.message;
-      put({ op: "text", x: 32, y: h / 2 + 16 * 0.36, text: first, size: 16, weight: 400, color: C.onSurface });
+      const wrapped = wrapText(props.message, 16, messageW);
+      const lines = wrapped.slice(0, 3);
+      if (wrapped.length > 3) lines[2] = `${lines[2] ?? ""}…`;
+      if (lines.length === 1) {
+        put({ op: "text", x: 32, y: h / 2 + 16 * 0.36, text: lines[0], size: 16, weight: 400, color: C.onSurface });
+      } else if (lines.length === 2) {
+        put({ op: "text", x: 32, y: 34, text: lines[0], size: 16, weight: 400, color: C.onSurface });
+        put({ op: "text", x: 32, y: 56, text: lines[1], size: 16, weight: 400, color: C.onSurface });
+      } else {
+        put({ op: "text", x: 32, y: 24, text: lines[0], size: 16, weight: 400, color: C.onSurface });
+        put({ op: "text", x: 32, y: 44, text: lines[1], size: 16, weight: 400, color: C.onSurface });
+        put({ op: "text", x: 32, y: 64, text: lines[2], size: 16, weight: 400, color: C.onSurface });
+      }
       if (props.actionLabel) {
         put({
           op: "text",

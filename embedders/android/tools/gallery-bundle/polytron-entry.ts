@@ -5,6 +5,7 @@
  */
 import { installHostHandoff } from "@tenunjs/widgets";
 import { WasherRuntime, type BleSeam } from "../../../../examples/polytron/src/runtime";
+import { PROGRAM_SLOTS } from "../../../../examples/polytron/src/protocol";
 
 const host = globalThis as Record<string, unknown>;
 
@@ -248,69 +249,148 @@ const appWithNavBar = {
       });
     });
 
-    // 3. Native on-screen connect banner when offline on mobile
-    // Layout anchor: sits directly above the bottom navigation bar.
-    // Bottom bar has height BAR_H (56) and anchorSize BAR_H (56).
-    // To place a 36-height banner 8px above the nav bar, its combined bottom
-    // chrome height is TOTAL_BOTTOM_H = BAR_H + 8 + 36 = 100.
-    // In bottom-anchored coordinates:
-    // nav bar: y = 100 - BAR_H = 44, h = 56, anchorSize = 100
-    // banner:  y = 0, h = 36, anchorSize = 100
-    // Or simpler: anchorSize represents the bottom region height, and y is offset from its top.
-    // With anchor="bottom", offset = visibleHeight - anchorSize.
-    // When anchorSize = 104, offset = visibleHeight - 104.
-    // Nav bar with anchorSize = 56 sits at [visibleHeight - 56, visibleHeight].
-    // Connect banner at [visibleHeight - 100, visibleHeight - 64] needs:
-    // targetY = visibleHeight - 100.
-    // With anchorSize = 104, targetY = (visibleHeight - 104) + y => y must be 4!
-    // Previously y was BAR_H + 8 = 64 => (visibleHeight - 104) + 64 = visibleHeight - 40 (inside nav bar!).
-    const homeState = app.exportState().states.home as { link?: { connected?: boolean } } | undefined;
-    const isConnected = homeState?.link?.connected === true;
-    if (!isConnected && currentRoute === "home") {
-      const BANNER_H = 36;
-      const BANNER_ANCHOR_SIZE = BAR_H + 8 + BANNER_H; // 100
-      const BANNER_Y = 0; // top of the 100px bottom zone: [visibleHeight - 100, visibleHeight - 64]
-      scene.ops.push({
-        op: "rect",
-        x: 16,
-        y: BANNER_Y,
-        w: w - 32,
-        h: BANNER_H,
-        r: 10,
-        color: "#163430",
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: BANNER_ANCHOR_SIZE,
-      });
-      scene.ops.push({
-        op: "text",
-        x: w / 2,
-        y: BANNER_Y + 23,
-        text: "⚡ SAMBUNGKAN KE MESIN CUCI",
-        size: 11.5,
-        weight: 700,
-        color: "#39D2C0",
-        align: "center",
-        width: 0,
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: BANNER_ANCHOR_SIZE,
-      });
-      const connectTapId = res.tapRuns.length;
+    // 3. THE connection control — one persistent band on every tab, FULL
+    //    WIDTH and FLUSH against the bottom navigation (no inset, no gap):
+    //    it reads as the nav bar's status row, not a floating button. It is
+    //    always visible: disconnected (why + connect), in progress (phase,
+    //    tappable to cancel), connected (device name, tappable to
+    //    disconnect), and connected-but-silent (DATA BEKU warning). The
+    //    scene has no shell header here, so this band IS the header status
+    //    the user asked for: one place that always answers "what is wrong
+    //    right now" and "is the machine's Bluetooth actually on".
+    // Layout anchor math: with anchor="bottom", a region's offset is
+    // visibleHeight - anchorSize + y, so with anchorSize = BAR_H + STRIP_H
+    // the 44px band sits at [visibleHeight - 100, visibleHeight - 56],
+    // touching the nav bar exactly.
+    // app.link() — NOT exportState().states.home, which only exists while
+    // Home is mounted; the band must know the link on every tab.
+    const linkState = app.link();
+    const STRIP_H = 44;
+    const STRIP_ANCHOR_SIZE = BAR_H + STRIP_H; // 100 — flush, no gap
+    const STRIP_Y = 0; // top of the 100px bottom zone: [vh-100, vh-56]
+
+    let bg = "#163430";
+    let fg = "#39D2C0";
+    let line1 = "";
+    let line2 = "";
+    let stripTap: (() => void) | null = null;
+    if (!linkState.supported) {
+      bg = "#101917";
+      fg = "#6E8883";
+      line1 = "BLUETOOTH TIDAK DIDUKUNG";
+      line2 = "perangkat ini tidak punya Bluetooth LE";
+    } else if (linkState.connected) {
+      const staleFor = app.statusAt() === null ? null : Math.max(0, Math.round((Date.now() - app.statusAt()!) / 1000));
+      if (staleFor !== null && staleFor > 15) {
+        bg = "#3B2E12";
+        fg = "#FCB518";
+        line1 = "DATA MESIN BEKU";
+        line2 = `tidak ada kabar ${staleFor}s — dekati mesin · tekan utk putus`;
+      } else {
+        bg = "#0E3B2E";
+        fg = "#7CE8C5";
+        line1 = `● ${linkState.name ?? "MESIN CUCI"}`;
+        line2 = "terhubung · tekan untuk memutuskan";
+      }
+      stripTap = () => nativeBleBridge.disconnect();
+    } else if (linkState.connecting) {
+      bg = "#1C3A36";
+      line1 =
+        linkState.phase === "scanning"
+          ? "MENCARI MESIN CUCI…"
+          : linkState.phase === "found"
+            ? "MESIN TERDETEKSI · MENYAMBUNG…"
+            : linkState.phase === "reconnecting"
+              ? "MENYAMBUNG ULANG KE MESIN CUCI…"
+              : "MENYAMBUNG KE MESIN CUCI…";
+      line2 =
+        linkState.phase === "found"
+          ? "Bluetooth mesin AKTIF — sedang membuka sambungan"
+          : "tekan untuk membatalkan";
+      stripTap = () => nativeBleBridge.disconnect();
+    } else {
+      line1 = "⚡ SAMBUNGKAN KE MESIN CUCI";
+      line2 = linkState.reason ? linkState.reason : "nyalakan mesin & Bluetooth ponsel";
+      stripTap = () => {
+        app.linkPush({ connecting: true, phase: "scanning" });
+        void nativeBleBridge.connect().then(
+          (ok) => {
+            // Host refused synchronously (no adapter etc.) and no event will
+            // follow — release the connecting lock ourselves.
+            if (!ok) app.linkPush({ connected: false, connecting: false, phase: null });
+          },
+          () => app.linkPush({ connected: false, connecting: false, phase: null }),
+        );
+      };
+    }
+
+    scene.ops.push({
+      op: "rect",
+      x: 0,
+      y: STRIP_Y,
+      w,
+      h: STRIP_H,
+      r: 0,
+      color: bg,
+      fixed: true,
+      anchor: "bottom",
+      anchorSize: STRIP_ANCHOR_SIZE,
+    });
+    // Top border shared with the nav bar's own border: one continuous edge.
+    scene.ops.push({
+      op: "line",
+      x1: 0,
+      y1: 0.5,
+      x2: w,
+      y2: 0.5,
+      color: "#182624",
+      width: 1,
+      fixed: true,
+      anchor: "bottom",
+      anchorSize: STRIP_ANCHOR_SIZE,
+    });
+    scene.ops.push({
+      op: "text",
+      x: 18,
+      y: STRIP_Y + 18,
+      text: line1,
+      size: 12,
+      weight: 700,
+      color: fg,
+      align: "left",
+      width: 0,
+      fixed: true,
+      anchor: "bottom",
+      anchorSize: STRIP_ANCHOR_SIZE,
+    });
+    scene.ops.push({
+      op: "text",
+      x: 18,
+      y: STRIP_Y + 34,
+      text: line2,
+      size: 10,
+      weight: 400,
+      color: fg,
+      align: "left",
+      width: 0,
+      fixed: true,
+      anchor: "bottom",
+      anchorSize: STRIP_ANCHOR_SIZE,
+    });
+    if (stripTap) {
+      const stripTapId = res.tapRuns.length;
       scene.taps.push({
-        x: 16,
-        y: BANNER_Y,
-        w: w - 32,
-        h: BANNER_H,
+        x: 0,
+        y: STRIP_Y,
+        w,
+        h: STRIP_H,
         action: "tap",
         fixed: true,
         anchor: "bottom",
-        anchorSize: BANNER_ANCHOR_SIZE,
-        payload: { id: connectTapId },
+        anchorSize: STRIP_ANCHOR_SIZE,
+        payload: { id: stripTapId },
       });
-      res.tapRuns.push(() => {
-        void nativeBleBridge.connect();
-      });
+      res.tapRuns.push(stripTap);
     }
 
     return res;
@@ -335,6 +415,23 @@ host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string 
   if (norm === "TIMER") {
     return JSON.stringify({ route: app.route() });
   }
+  if (norm === "SAVE_PROGRAM") {
+    // Native program-editor Save: run through the runtime send path so the
+    // optimistic cache, ack tracking and failure feedback all apply (a
+    // direct ble write bypassed them and left Programs stale).
+    let slot = 0;
+    let tokens = "";
+    try {
+      const parsed = JSON.parse(payloadJson);
+      slot = typeof parsed.slot === "number" ? parsed.slot : 0;
+      tokens = typeof parsed.tokens === "string" ? parsed.tokens.trim() : "";
+    } catch {
+      // fall through with defaults — an empty payload edits nothing
+    }
+    const key = PROGRAM_SLOTS[slot]?.key;
+    if (key && tokens) app.send(`SET ${key} ${tokens}`);
+    return JSON.stringify({ route: app.route() });
+  }
   if (norm === "BLE_LINE") {
     let line = "";
     try {
@@ -355,7 +452,10 @@ host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string 
     }
     app.linkPush(payload);
     if (payload.connected) {
-      void nativeBleBridge.write("GET:ALL");
+      // Tracked quiet send: the immediate "OK 14 settings follow" ack now
+      // settles its own pending entry instead of consuming the first user
+      // command's reply.
+      app.send("GET:ALL", { quiet: true });
     }
     return JSON.stringify({ route: app.route() });
   }

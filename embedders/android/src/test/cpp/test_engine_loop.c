@@ -225,7 +225,10 @@ static int run_polytron_bundle_checks(const char* asset_path) {
 
   char* reply_link = tenun_android_engine_dispatch(engine, "BLE_LINK", "{\"connected\":true,\"name\":\"Polytron Wash\"}");
   CHECK(reply_link != NULL, "BLE_LINK dispatch accepted");
-  CHECK(capture.count == 1, "BLE_LINK automatically triggered initial GET:ALL command");
+  CHECK(capture.count >= 1, "BLE_LINK automatically triggered initial GET:ALL command");
+  /* The tracked send() also schedules a reply-timeout timer via
+     system.scheduleTimer BEFORE the write — the BLE write is the LAST
+     host call, which the two checks below assert. */
   CHECK(strcmp(capture.service, "ble") == 0, "Initial command routed to ble service");
   CHECK(strstr(capture.payload, "GET:ALL") != NULL, "Initial command was GET:ALL");
   free(reply_link);

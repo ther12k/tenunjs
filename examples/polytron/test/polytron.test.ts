@@ -165,6 +165,9 @@ describe("wire protocol parsing", () => {
     expect(fmtActivityLine("OK STOP")).toBe("Mesin berhenti");
     expect(fmtActivityLine("BUSY - STOP first")).toBe("Ditolak: mesin sedang berjalan");
     expect(fmtActivityLine("ERR motor fail")).toBe("ERR motor fail");
+    expect(fmtActivityLine("> SET WASHMIN 11")).toBe("Atur WASHMIN");
+    expect(fmtActivityLine("> SET PROG0 WASH:600")).toBe("Edit program CEPAT");
+    expect(fmtActivityLine("OK SET WASHMIN")).toBe("Tersimpan: WASHMIN");
   });
 });
 
@@ -411,6 +414,71 @@ describe("WasherRuntime screens", () => {
     runtime.dispose(); // no reply will ever settle these two
   });
 
+  test("a BUSY SET rolls the optimistic value back — motor B never lingers", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.navigate("settings");
+    runtime.lineIn("SET SPINMOTOR A");
+    runtime.tap(tapIdFor(runtime, "B")); // optimistic A → B
+    expect(ble.writes).toEqual(["SET SPINMOTOR B"]);
+    runtime.lineIn("BUSY - STOP first"); // machine rejects it
+    expect(sceneTexts(runtime).join("\n")).toContain("aktif: MOTOR A"); // reverted
+    runtime.tap(tapIdFor(runtime, "B")); // retry still starts from A
+    expect(ble.writes).toEqual(["SET SPINMOTOR B", "SET SPINMOTOR B"]);
+  });
+
+  test("a failed SET write rolls the optimistic value back", async () => {
+    const ble = fakeBle();
+    const seam: BleSeam = {
+      ...ble.seam,
+      write: async (cmd: string) => {
+        ble.writes.push(cmd);
+        return false; // radio dropped it
+      },
+    };
+    const runtime = new WasherRuntime({ ble: seam });
+    runtime.linkPush({ connected: true });
+    runtime.navigate("settings");
+    runtime.lineIn("SET WASHMIN 10");
+    runtime.tap(tapIdFor(runtime, "+")); // 10 → 11 optimistic, write fails
+    await new Promise((r) => setTimeout(r, 0));
+    runtime.tap(tapIdFor(runtime, "+")); // steps from the RESTORED 10 again
+    expect(ble.writes).toEqual(["SET WASHMIN 11", "SET WASHMIN 11"]);
+  });
+
+  test("a rejected program edit rolls the cached tokens back", async () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({
+      ble: ble.seam,
+      editProgram: (_slot, current) => Promise.resolve(current ? `${current}, WAIT:60` : null),
+    });
+    runtime.linkPush({ connected: true });
+    runtime.navigate("programs");
+    runtime.lineIn("SET PROG0 WASH:600");
+    runtime.tap(tapIdFor(runtime, "edit"));
+    await new Promise((r) => setTimeout(r, 0)); // overlay promise settles → SET fires
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, WAIT:60"]);
+    runtime.lineIn("BUSY - STOP first");
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).not.toContain("Tunggu 1 mnt"); // optimistic step gone
+    expect(texts).toContain("Cuci 10 mnt"); // machine's stored program intact
+    runtime.dispose();
+  });
+
+  test("quiet GET:ALL ack settles only itself — cannot steal a user reply", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.send("GET:ALL", { quiet: true });
+    runtime.tap(tapIdFor(runtime, "CUCI")); // user fires before the ack lands
+    runtime.lineIn("OK 14 settings follow"); // GET's own ack
+    runtime.lineIn("OK WASH 600 s"); // WASH's reply — must reach WASH
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Cuci dimulai (10 mnt)");
+    expect(texts).not.toContain("MENGIRIM");
+    expect(texts).not.toContain("GET:ALL"); // housekeeping stays out of the feed
+  });
+
   test("replies route to the screen that SENT each command — a query from another tab cannot steal a reply", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
@@ -555,6 +623,127 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("OFFLINE");
     expect(texts).not.toContain("LANGKAH 2/5");
     expect(texts).not.toContain("8:00"); // strip back to idle
+  });
+
+  test("a native-shaped failure event (no connecting field) releases the connecting lock", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connecting: true });
+    expect(runtime.link().connecting).toBe(true);
+    // Exact native notifyLink(false, name) shape — this used to leave
+    // connecting merged-true forever (permanent MENYAMBUNG, no retry).
+    runtime.linkPush({ connected: false, name: "" });
+    expect(runtime.link().connecting).toBe(false);
+    // And a reconnect attempt can proceed through the same path.
+    runtime.linkPush({ connecting: true, phase: "scanning" });
+    expect(runtime.link().connecting).toBe(true);
+    expect(runtime.link().phase).toBe("scanning");
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
+    expect(runtime.link().connecting).toBe(false); // success is terminal too
+    expect(runtime.link().phase).toBeNull();
+  });
+
+  test("dropping the link mid-cycle warns the machine may still run; fresh IDLE clears it", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
+    runtime.lineIn("ST:WASH|NORMAL|2/5|120|480|1000|142|W63");
+    runtime.linkPush({ connected: false, name: "" });
+    let texts = sceneTexts(runtime).join("\n");
+    // The warning must carry BOTH halves — the risk and the physical remedy
+    // (wrap splits the sentence across snack lines — assert the pieces).
+    expect(texts).toContain("Mesin MUNGKIN masih");
+    expect(texts).toContain("berjalan");
+    expect(texts).toContain("tombol");
+    expect(texts).toContain("fisik");
+    // Reconnect + machine itself reporting IDLE retires the warning.
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
+    runtime.lineIn("ST:IDLE|READY|0/0|0/0|0000|180|W-1");
+    texts = sceneTexts(runtime).join("\n");
+    expect(texts).not.toContain("MUNGKIN");
+  });
+
+  test("a STOP that dies with the link is reported unconfirmed — never as stopped", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    runtime.tap(tapIdFor(runtime, "STOP"));
+    expect(ble.writes).toContain("STOP");
+    runtime.linkPush({ connected: false, name: "" });
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("STOP belum terkonfirmasi");
+    expect(texts).toContain("cek mesin");
+  });
+
+  test("silent telemetry goes stale: DATA BEKU shown, starts gated, STOP stays armed", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    expect(runtime.statusStale()).toBe(false);
+    const realNow = Date.now;
+    const frozen = realNow();
+    Date.now = () => frozen + 20_000; // 20 s of radio silence while connected
+    try {
+      expect(runtime.statusStale()).toBe(true);
+      const texts = sceneTexts(runtime).join("\n");
+      expect(texts).toContain("DATA BEKU");
+      expect(texts).toContain("tidak diperbarui");
+      expect(tapIdFor(runtime, "CUCI")).toBe(-1); // new starts blocked…
+      expect(tapIdFor(runtime, "STOP")).toBeGreaterThanOrEqual(0); // …STOP never
+      runtime.navigate("controls");
+      expect(sceneTexts(runtime).join("\n")).toContain("DATA BEKU");
+    } finally {
+      Date.now = realNow;
+    }
+    // Fresh telemetry un-stales immediately.
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    expect(runtime.statusStale()).toBe(false);
+    expect(sceneTexts(runtime).join("\n")).not.toContain("DATA BEKU");
+  });
+
+  test("offline Controls explains that app STOP needs a connection", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    runtime.navigate("controls");
+    runtime.linkPush({ connected: false, name: "" });
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("STOP aplikasi butuh sambungan");
+    expect(texts).toContain("tombol fisik");
+  });
+
+  test("running and waiting show the orbit spinner; idle shows a plain dot", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    const dotAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 5).length;
+    const orbitAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r > 1 && op.r < 4).length;
+    // waiting (connected, no status): spinner orbiting, no static dot
+    expect(dotAt()).toBe(0);
+    expect(orbitAt()).toBeGreaterThanOrEqual(8);
+    // running: still spinning
+    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    expect(dotAt()).toBe(0);
+    expect(orbitAt()).toBeGreaterThanOrEqual(8);
+    // idle: static accent dot back
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    expect(dotAt()).toBe(1);
+    // and the orbit phase actually advances with the clock
+    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    const realNow = Date.now;
+    Date.now = () => 5_000_000;
+    const a = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3).map((op) => op.cy);
+    Date.now = () => 5_000_520; // ~4 head-steps later
+    const b = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3).map((op) => op.cy);
+    Date.now = realNow;
+    expect(a).not.toEqual(b);
+  });
+
+  test("an unparseable ST fragment never reaches the activity feed", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:WASH|WASH 20min|11"); // a split-line fragment, as BLE chunks arrive
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("MENUNGGU STATUS"); // still honestly waiting
+    expect(texts).not.toContain("ST:WASH|WASH 20min"); // not feed noise
   });
 
   test("every screen stays inside its content bounds after the layout fix", () => {
