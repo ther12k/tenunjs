@@ -33,10 +33,16 @@ function sceneWithoutColors(scene: DisplayListScene): unknown {
   return {
     ...rest,
     ops: scene.ops.map((op) => {
+      if (!("color" in op)) return op;
       const { color: _color, ...geometry } = op;
       return geometry;
     }),
   };
+}
+
+function paintColor(op: DisplayListScene["ops"][number]): string {
+  if (!("color" in op)) throw new Error("The theme reference fixture must contain paint operations");
+  return op.color;
 }
 
 describe("TN-143 persisted theme contract example", () => {
@@ -49,7 +55,7 @@ describe("TN-143 persisted theme contract example", () => {
     expect(example.mode).toBe("light");
     expect(storage.writes).toEqual([]);
     expect(light.background).toBe(LIGHT_PALETTE.background);
-    expect(light.ops.map((op) => op.color)).toEqual([
+    expect(light.ops.map(paintColor)).toEqual([
       LIGHT_PALETTE.surface,
       LIGHT_PALETTE.outline,
       LIGHT_PALETTE.onSurface,
@@ -63,7 +69,7 @@ describe("TN-143 persisted theme contract example", () => {
     expect(example.mode).toBe("dark");
     expect(storage.writes).toEqual(["dark"]);
     expect(dark.background).toBe(DARK_PALETTE.background);
-    expect(dark.ops.map((op) => op.color)).toEqual([
+    expect(dark.ops.map(paintColor)).toEqual([
       DARK_PALETTE.surface,
       DARK_PALETTE.outline,
       DARK_PALETTE.onSurface,
@@ -73,7 +79,7 @@ describe("TN-143 persisted theme contract example", () => {
       DARK_PALETTE.onPrimary,
     ]);
     for (let index = 0; index < light.ops.length; index++) {
-      expect(dark.ops[index]!.color).not.toBe(light.ops[index]!.color);
+      expect(paintColor(dark.ops[index]!)).not.toBe(paintColor(light.ops[index]!));
     }
     expect(sceneWithoutColors(dark)).toEqual(sceneWithoutColors(light));
     expect(JSON.stringify(THEME_REFERENCE_SCENE)).toBe(originalSource);
@@ -91,7 +97,9 @@ describe("TN-143 persisted theme contract example", () => {
     const expected = example.render();
     const delivered = example.render();
     delivered.background = "#000000";
-    delivered.ops[0]!.color = "#000000";
+    const first = delivered.ops[0]!;
+    if (!("color" in first)) throw new Error("The first reference op must paint a color");
+    first.color = "#000000";
     delivered.taps[0]!.payload.id = 99;
     expect(example.render()).toEqual(expected);
   });

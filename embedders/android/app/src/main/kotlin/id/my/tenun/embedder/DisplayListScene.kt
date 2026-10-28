@@ -37,6 +37,9 @@ data class DisplayListScene(
     val ops: List<Op>,
     val taps: List<Tap>
 ) {
+    /** Absolute scene-space clipping, currently emitted for editor text only. */
+    data class Clip(val x: Float, val y: Float, val w: Float, val h: Float)
+
     /** A filled or stroked rounded rectangle, with optional elevation. */
     data class Rect(
         val x: Float,
@@ -70,12 +73,15 @@ data class DisplayListScene(
         /** Viewport-fixed operation metadata. */
         val fixed: Boolean = false,
         val anchor: String? = null,
-        val anchorSize: Float? = null
+        val anchorSize: Float? = null,
+        val clip: Clip? = null
     )
 
     sealed class Op {
         data class RectOp(val rect: Rect) : Op()
         data class TextOp(val text: Text) : Op()
+        /** Required input-session metadata; visible content is separate paint ops. */
+        data class TextInputOp(val input: TextInputDescriptor) : Op()
         data class CircleOp(
             val cx: Float,
             val cy: Float,
@@ -138,6 +144,22 @@ data class DisplayListScene(
         /** Scene `version` this host understands; higher versions are contract violations. */
         const val SUPPORTED_SCENE_VERSION = 1
 
+        private fun textClip(op: JSONObject): Clip? {
+            if (!op.has("clip")) return null
+            val clip = op.opt("clip") as? JSONObject
+                ?: throw SceneContractException("text clip must be an object")
+            fun number(key: String, nonnegative: Boolean = false): Float {
+                val value = (clip.opt(key) as? Number)?.toDouble()
+                    ?: throw SceneContractException("text clip $key must be a number")
+                val result = value.toFloat()
+                if (!value.isFinite() || !result.isFinite() || (nonnegative && value < 0)) {
+                    throw SceneContractException("text clip $key must be finite${if (nonnegative) " and nonnegative" else ""}")
+                }
+                return result
+            }
+            return Clip(number("x"), number("y"), number("w", true), number("h", true))
+        }
+
         fun parse(sceneJson: String): DisplayListScene? {
             // TN-140: once the scene DECLARES itself a display list, every
             // structural failure is a contract violation (thrown) — never a
@@ -160,9 +182,22 @@ data class DisplayListScene(
                 }
                 val opsJson = root.getJSONArray("ops")
                 val ops = ArrayList<Op>(opsJson.length())
+                val textInputIds = HashSet<String>()
+                var hasFocusedTextInput = false
                 for (i in 0 until opsJson.length()) {
                     val op = opsJson.getJSONObject(i)
                     when (op.optString("op")) {
+                        "text-input" -> {
+                            val input = TextInputDescriptor.parse(op)
+                            if (!textInputIds.add(input.id)) {
+                                throw SceneContractException("duplicate text-input id \"${input.id}\"")
+                            }
+                            if (input.focused && hasFocusedTextInput) {
+                                throw SceneContractException("scene has more than one focused text-input")
+                            }
+                            hasFocusedTextInput = hasFocusedTextInput || input.focused
+                            ops.add(Op.TextInputOp(input))
+                        }
                         "rect", "outline", "gradient" -> ops.add(
                             Op.RectOp(
                                 Rect(
@@ -233,7 +268,8 @@ data class DisplayListScene(
                                     align = if (op.has("align")) op.getString("align") else null,
                                     fixed = op.optBoolean("fixed", false),
                                     anchor = if (op.has("anchor")) op.getString("anchor") else null,
-                                    anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null
+                                    anchorSize = if (op.has("anchorSize")) op.optDouble("anchorSize").toFloat() else null,
+                                    clip = textClip(op)
                                 )
                             )
                         )

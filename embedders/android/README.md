@@ -150,6 +150,34 @@ cd embedders/android && ./gradlew :app:assembleDebug
   TN-035, and the M4 widget layer own that. The notes application remains
   the only TN-132 acceptance surface.
 
+### Controlled widget input (TN-160)
+
+Updated display-list bundles can include a required, nonpainting
+`text-input` descriptor. The public `@tenunjs/widgets` TextField emits this
+descriptor alongside its normal drawing operations; `TenunSurfaceView`
+supplies the native editor only for the committed focused field. Older
+hosts reject the unknown operation, so this capability requires the
+matching APK update.
+
+`DisplayListInputConnection` uses Android `Editable` and
+`BaseInputConnection` semantics for selection replacement, composing text
+and regions, cursor positions, surrounding-text queries/deletion, batched
+edits, and Done. Callbacks carry the last accepted field/session/revision.
+The adapter consumes authoritative scenes after dispatch returns and
+retires obsolete connections on field/session changes, external controlled
+updates, engine replacement, or disposal. The legacy notes input path
+remains separate.
+
+`DisplayListTextInputTest` belongs to the installed instrumentation suite
+and drives these real Android editing APIs through the production
+JNI/QuickJS transport. Its bundle is a small contract fixture: this test
+does not drive a live soft keyboard or render the Day Plan TSX journey.
+The Day Plan engine-loop replay supplies shared-application scene parity;
+TN-155 still requires live Android editing/composition and rendering
+evidence for that application. Full shaping, pointer caret placement,
+selection handles, secure entry, autofill, keyboard-inset coordination,
+and accessibility are outside this single-line slice.
+
 ## 6. Dev hot reload (prototype)
 
 The gallery bundle supports Fast-Refresh-style reloads against a laptop

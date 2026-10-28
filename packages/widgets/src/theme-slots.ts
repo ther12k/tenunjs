@@ -4,6 +4,8 @@
  * change layoutScreen or implement TN-068's inherited widget context.
  */
 import type { DisplayListScene, DisplayOp, SerializedTap } from "./display-list";
+import { LayoutError, validateTextClip } from "./display-list";
+import { TextInputError, validateTextInputOp } from "./text-input";
 
 export const SEMANTIC_COLOR_SLOTS = Object.freeze([
   "background", "onBackground", "primary", "onPrimary",
@@ -79,7 +81,9 @@ export function defineColorPalette<T extends ThemePalette>(palette: T): Readonly
 type ColorField = "color" | "colorTo" | "track";
 type NonColorField = "op" | "x" | "y" | "w" | "h" | "r" | "shadow" |
   "width" | "text" | "size" | "weight" | "align" | "cx" | "cy" | "progress" |
-  "x1" | "y1" | "x2" | "y2" | "fixed" | "anchor" | "anchorSize";
+  "x1" | "y1" | "x2" | "y2" | "fixed" | "anchor" | "anchorSize" |
+  "id" | "selection" | "composing" | "focused" | "sessionId" | "revision" |
+  "keyboardType" | "returnAction" | "readOnly" | "label" | "clip";
 type AllKeys<T> = T extends unknown ? keyof T : never;
 type AssertNever<T extends never> = T;
 // Every new host field must be classified so color literals cannot slip through.
@@ -128,6 +132,15 @@ function bakeOp(op: SemanticDisplayOp, palette: ThemePalette, index: number): Di
   }
   const at = `ops[${index}]`;
   switch (op.op) {
+    case "text-input":
+      try {
+        return validateTextInputOp(op);
+      } catch (error) {
+        if (error instanceof TextInputError) {
+          throw new ThemeContractError("INVALID_SCENE", `${at}: ${error.message}`);
+        }
+        throw error;
+      }
     case "gradient":
       return { ...op, color: resolve(op.color, palette, `${at}.color`),
         colorTo: resolve(op.colorTo, palette, `${at}.colorTo`) };
@@ -137,7 +150,17 @@ function bakeOp(op: SemanticDisplayOp, palette: ThemePalette, index: number): Di
       return track === undefined ? result :
         { ...result, track: resolve(track, palette, `${at}.track`) };
     }
-    case "rect": case "outline": case "text": case "circle": case "line":
+    case "text": {
+      const color = resolve(op.color, palette, `${at}.color`);
+      if (op.clip === undefined) return { ...op, color };
+      try {
+        return { ...op, color, clip: validateTextClip(op.clip) };
+      } catch (error) {
+        if (error instanceof LayoutError) throw new ThemeContractError("INVALID_SCENE", `${at}.clip: ${error.message}`);
+        throw error;
+      }
+    }
+    case "rect": case "outline": case "circle": case "line":
       return { ...op, color: resolve(op.color, palette, `${at}.color`) };
     default:
       return unknownOperation(op, index);

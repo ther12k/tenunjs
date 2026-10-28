@@ -292,7 +292,51 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   return 0;
 }
 
-/* TN-157: replay the browser-protocol driver's action sequence against the
+/* TN-160: a rejection must be a visible typed runtime failure, not merely a
+ * NULL result from a broken bridge. Its authoritative scene must survive. */
+static int expect_text_rejection(tenun_android_engine* engine, const char* verb,
+                                 const char* payload, const char* expected_code) {
+  const char* previous_scene = tenun_android_engine_get_scene(engine);
+  char* before = previous_scene ? strdup(previous_scene) : NULL;
+  FILE* capture = tmpfile();
+  int saved_stderr = dup(fileno(stderr));
+  CHECK(before != NULL && capture != NULL && saved_stderr >= 0,
+        "Allocate rejection scene and diagnostic capture");
+  if (!before || !capture || saved_stderr < 0) {
+    free(before);
+    if (capture) fclose(capture);
+    if (saved_stderr >= 0) close(saved_stderr);
+    return 0;
+  }
+  fflush(stderr);
+  int redirected = dup2(fileno(capture), fileno(stderr));
+  CHECK(redirected >= 0, "Capture native rejection diagnostic");
+  if (redirected < 0) { free(before); fclose(capture); close(saved_stderr); return 0; }
+  char* result = tenun_android_engine_dispatch_result(engine, verb, payload);
+  fflush(stderr);
+  CHECK(dup2(saved_stderr, fileno(stderr)) >= 0, "Restore native diagnostic stream");
+  close(saved_stderr);
+  rewind(capture);
+  char* diagnostic = NULL;
+  size_t capacity = 0;
+  int saw_code = 0;
+  while (getline(&diagnostic, &capacity, capture) >= 0) {
+    if (strstr(diagnostic, "TENUN_TEXT_INPUT") && strstr(diagnostic, expected_code)) saw_code = 1;
+  }
+  free(diagnostic);
+  fclose(capture);
+  const char* after = tenun_android_engine_get_scene(engine);
+  int rejected = result == NULL;
+  int preserved = after && strcmp(before, after) == 0;
+  CHECK(rejected, "Expected text event returns a failed dispatch result");
+  CHECK(saw_code, "Native diagnostic identifies the expected text rejection code");
+  CHECK(preserved, "Rejected text callback preserves the authoritative scene");
+  free(result);
+  free(before);
+  return rejected && saw_code && preserved;
+}
+
+/* TN-157/TN-160: replay the browser-protocol driver's action sequence against the
  * exact same compiled app in real QuickJS. The subsequent structural
  * comparator owns scene assertions; this driver must reject failed dispatch
  * instead of treating the bridge's last-good-scene fallback as success. */
@@ -327,6 +371,7 @@ static int run_framework_feel_checks(const char* asset_path,
   size_t capacity = 0;
   ssize_t length;
   size_t dispatched = 0;
+  size_t rejected = 0;
   while ((length = getline(&line, &capacity, commands)) >= 0) {
     if (length > 0 && line[length - 1] == '\n') line[--length] = '\0';
     char* separator = strchr(line, '\t');
@@ -334,24 +379,35 @@ static int run_framework_feel_checks(const char* asset_path,
           "Action transcript entry has a verb and JSON payload");
     if (!separator || separator == line || separator[1] == '\0') break;
     *separator = '\0';
-    char* result = tenun_android_engine_dispatch_result(engine, line, separator + 1);
-    CHECK(result != NULL, "Scripted action succeeds through the real dispatch-result boundary");
-    if (!result) break;
-    free(result);
+    if (strncmp(line, "EXPECT_REJECT:", 14) == 0) {
+      char* expected_code = line + 14;
+      char* verb_separator = strchr(expected_code, ':');
+      CHECK(verb_separator != NULL && verb_separator != expected_code && verb_separator[1] != '\0',
+            "Expected rejection names a code and real dispatch verb");
+      if (!verb_separator || verb_separator == expected_code || verb_separator[1] == '\0') break;
+      *verb_separator = '\0';
+      if (!expect_text_rejection(engine, verb_separator + 1, separator + 1, expected_code)) break;
+      rejected++;
+    } else {
+      char* result = tenun_android_engine_dispatch_result(engine, line, separator + 1);
+      CHECK(result != NULL, "Scripted action succeeds through the real dispatch-result boundary");
+      if (!result) break;
+      free(result);
+      dispatched++;
+    }
     const char* scene = tenun_android_engine_get_scene(engine);
     CHECK(scene != NULL, "Action leaves a committed native scene");
     if (!scene) break;
     fprintf(scenes, "%s\n", scene);
-    dispatched++;
   }
   free(line);
-  CHECK(dispatched > 0 && !ferror(commands), "Shared action sequence was consumed");
+  CHECK(dispatched == 16 && rejected == 3 && !ferror(commands), "All 16 accepted and three rejected dispatches were consumed");
   CHECK(!ferror(scenes), "Native scene transcript writes succeeded");
   fclose(commands);
   CHECK(fclose(scenes) == 0, "Native scene transcript was flushed");
   tenun_android_engine_destroy(engine);
   if (failures) return 1;
-  printf("FRAMEWORK-FEEL QUICKJS PASS (%zu actions; structural comparison follows)\n", dispatched);
+  printf("FRAMEWORK-FEEL QUICKJS PASS (%zu accepted, %zu expected rejections; structural comparison follows)\n", dispatched, rejected);
   return 0;
 }
 

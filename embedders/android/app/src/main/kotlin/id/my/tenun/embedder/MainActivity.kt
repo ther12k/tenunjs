@@ -562,6 +562,8 @@ class MainActivity : Activity() {
         otaManager?.stop()
         mainHandler.removeCallbacksAndMessages(null)
         ioExecutor.shutdownNow()
+        // Invalidate retained InputConnections before their engine is destroyed.
+        surfaceView?.engine = null
         engine?.destroy()
         engine = null
     }

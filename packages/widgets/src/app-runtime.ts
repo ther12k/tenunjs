@@ -55,6 +55,8 @@ import type { ScreenDefinition } from "@tenunjs/core";
 import { LayoutError, layoutScreen, validateLayoutViewport } from "./display-list";
 import type { DisplayListScene, LayoutViewport } from "./display-list";
 import type { ThemeConfig } from "./index";
+import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
+import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from "./text-input";
 
 /** Snapshot contract version. Bump only with a deliberate migration design:
  *  hosts carry state across a bundle swap only when both sides match. */
@@ -183,6 +185,9 @@ export class ApplicationRuntime {
   private readonly stateChannels = new Map<string, unknown>();
   private current: string;
   private lastTapRuns: Array<() => void> = [];
+  private textFields = new Map<string, TextFieldBinding>();
+  private activeTextInput: TextInputSessionState | undefined;
+  private nextTextSessionId = 1;
   private readonly staleListeners = new Set<() => void>();
   private disposedState = false;
 
@@ -252,12 +257,14 @@ export class ApplicationRuntime {
     if (!(name in this.screens)) {
       throw new ApplicationRuntimeError("UNKNOWN_SCREEN", `unknown screen "${name}"`);
     }
+    if (this.current !== name) this.endTextInput();
     this.current = name;
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
     // The new screen has not rendered yet: tap ids from the PREVIOUS
     // scene's committed table must not dispatch against it. render()
     // repopulates the table for the new scene.
     this.lastTapRuns = [];
+    this.textFields.clear();
     // TN-142: replay every cached state channel the newly active screen
     // implements — the "no blank hero after navigate" property. Screens
     // that never subscribed to a channel are skipped; transient pushes
@@ -299,7 +306,18 @@ export class ApplicationRuntime {
         `screen "${session.name}" produced a null view`
       );
     }
-    const { scene, tapRuns } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth);
+    const { scene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
+      active: this.activeTextInput,
+      focus: (id) => this.focusTextInput(id),
+    });
+    // Adopt the whole rendered field table only after layout succeeded. A
+    // removed/read-only field ends its activation; ordinary rerenders keep it.
+    this.textFields = new Map(textFields.map((binding) => [binding.props.id, binding]));
+    const focused = textFields.find((binding) => binding.descriptor.focused)?.descriptor;
+    this.activeTextInput = focused ? {
+      id: focused.id, sessionId: focused.sessionId, revision: focused.revision,
+      text: focused.text, selection: focused.selection, composing: focused.composing,
+    } : undefined;
     this.lastTapRuns = tapRuns;
     return { scene, tapRuns };
   }
@@ -312,6 +330,10 @@ export class ApplicationRuntime {
    *  - "TAP" { id } — run the tap-run the CURRENT render assigned.
    *  - "LONG-PRESS" { id } — same run table; hosts fire it on hold and
    *    must not also dispatch "TAP" for that press (TN-148).
+   *  - "TEXT_EDIT" — full text/selection/composition snapshot guarded by
+   *    current field id, sessionId and baseRevision (TN-160).
+   *  - "TEXT_BLUR" / "TEXT_SUBMIT" — close that guarded edit session;
+   *    submit also invokes the field's current onSubmitted callback.
    *  - "TENUN_RESTORE" — restore a snapshot (see restore).
    *  - "__TENUN_EXPORT" — no-op here; hosts pull state via exportState().
    *
@@ -323,6 +345,38 @@ export class ApplicationRuntime {
     if (normalized === "__TENUN_EXPORT") return;
     if (normalized === "TENUN_RESTORE") {
       this.restore(payload as Partial<ApplicationSnapshot>);
+      return;
+    }
+    if (normalized === "TEXT_EDIT") {
+      const edit = validateTextEditEvent(payload);
+      // Controller state can change without a subscribed host repaint. Resolve
+      // that newer value/removal/readOnly state before accepting an old IME echo.
+      this.render();
+      const field = this.requireTextInput(edit);
+      const previous = this.activeTextInput!;
+      const next: TextInputSessionState = {
+        id: edit.id, sessionId: edit.sessionId, revision: nextTextRevision(previous.revision),
+        text: edit.text, selection: edit.selection, composing: edit.composing,
+      };
+      this.activeTextInput = next;
+      if (edit.text !== previous.text) {
+        try {
+          field.props.onChanged(edit.text);
+        } catch (error) {
+          // Preserve cancellation/navigation performed by a callback. Controller
+          // side effects are its own contract; the pending edit itself is not adopted.
+          if (this.activeTextInput === next) this.activeTextInput = previous;
+          throw error;
+        }
+      }
+      return;
+    }
+    if (normalized === "TEXT_BLUR" || normalized === "TEXT_SUBMIT") {
+      const identity = validateTextInputIdentity(payload);
+      this.render();
+      const field = this.requireTextInput(identity);
+      this.endTextInput();
+      if (normalized === "TEXT_SUBMIT") field.props.onSubmitted?.();
       return;
     }
     if (normalized === "TAP" || normalized === "LONG-PRESS") {
@@ -342,6 +396,42 @@ export class ApplicationRuntime {
       return;
     }
     throw new ApplicationRuntimeError("UNKNOWN_ACTION", `unknown dispatch verb "${action}"`);
+  }
+
+  private focusTextInput(id: string): void {
+    this.assertLive();
+    const field = this.textFields.get(id);
+    if (!field || field.props.readOnly) {
+      throw new TextInputError("STALE_TEXT_SESSION", `TextField "${id}" is not editable in the current scene`);
+    }
+    if (this.activeTextInput?.id === id) return;
+    const sessionId = this.nextTextSessionId;
+    if (!Number.isSafeInteger(sessionId)) {
+      throw new TextInputError("INVALID_TEXT_EDIT", "Text input session identities are exhausted");
+    }
+    this.nextTextSessionId++;
+    const text = field.props.value;
+    this.activeTextInput = { id, sessionId, revision: 0, text,
+      selection: { base: text.length, extent: text.length }, composing: null };
+  }
+
+  private requireTextInput(identity: TextInputIdentity): TextFieldBinding {
+    const active = this.activeTextInput;
+    const field = this.textFields.get(identity.id);
+    if (!active || active.id !== identity.id || active.sessionId !== identity.sessionId ||
+        !field || field.props.readOnly) {
+      throw new TextInputError("STALE_TEXT_SESSION", "Text input callback belongs to an ended or different session");
+    }
+    if (active.revision !== identity.baseRevision) {
+      throw new TextInputError("STALE_TEXT_REVISION", "Text input callback does not match the authoritative revision");
+    }
+    return field;
+  }
+
+  private endTextInput(): void {
+    // Composition already lives in the controlled string; ending a session
+    // clears its transient ranges rather than inventing a rollback of app state.
+    this.activeTextInput = undefined;
   }
 
   // -------------------------------------------------------------------------
@@ -481,6 +571,8 @@ export class ApplicationRuntime {
     // The restored screen has not rendered yet: ids from the previously
     // committed scene must not dispatch against it.
     this.lastTapRuns = [];
+    this.textFields.clear();
+    this.endTextInput();
   }
 
   /**
@@ -505,10 +597,14 @@ export class ApplicationRuntime {
    * rendering entry points (navigate, setViewport, render, dispatch, exportState,
    * restore) throw RUNTIME_DISPOSED afterwards — a host must never
    * drive a disposed runtime. Identity reads (route, routes,
-   * stateSchema, disposed) survive for post-mortem logging.
+   * stateSchema, disposed) survive for post-mortem logging. Active input and
+   * its field callbacks are released; edit-session state is never restored.
    */
   dispose(): void {
     if (this.disposedState) return;
+    this.endTextInput();
+    this.textFields.clear();
+    this.lastTapRuns = [];
     this.abort.abort();
     this.disposedState = true;
   }

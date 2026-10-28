@@ -126,10 +126,11 @@ unbounded flex axis is a visible `UNBOUNDED_FLEX` error. Numeric-width
 
 `ApplicationRuntime.setViewport()` copies and validates new surface bounds,
 preserves route/controller state, and invalidates the scene and tap table.
-The Day Plan application exercises this explicit runtime API. Current
-browser/Android surface resize callbacks still repaint/scale the old scene;
-automatic viewport delivery and its logical-unit/capability contract remain
-a TN-155 follow-on. Runtime conformance tests do not prove host resizing.
+The Day Plan application exercises this runtime API.
+[TN-158](../06-issues/tn-158-deliver-host-viewport-with-negotiation.md)
+connects browser/Android resize callbacks to it with negotiated logical-unit
+viewport delivery; unsupported bundles retain scaled-scene behavior.
+Runtime conformance tests and host-delivery tests remain separate evidence.
 
 Independent scroll regions, clipping, full text shaping/intrinsics, and the
 broader widget/backend integration remain unfinished. Current whole-scene

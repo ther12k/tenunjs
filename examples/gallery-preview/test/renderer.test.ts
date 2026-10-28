@@ -144,6 +144,15 @@ describe("scene contract validation (browser twin of the Android parser)", () =>
     expect(error).toContain("hologram");
     expect(error).toContain("ops[2]");
   });
+
+  test("text clips are finite rectangles; malformed clips reject the whole candidate", () => {
+    const text = { op: "text", x: 12, y: 42, text: "WWWWWW", size: 17, weight: 400, color: "#fff",
+      clip: { x: 12, y: 18, w: 66, h: 36 } } as const;
+    expect(sceneContractError(scene({ ops: [text] }))).toBeNull();
+    for (const clip of [null, { x: 0, y: 0, w: -1, h: 20 }, { x: Infinity, y: 0, w: 20, h: 20 }]) {
+      expect(sceneContractError(scene({ ops: [{ ...text, clip } as unknown as DisplayOp] }))).toContain("invalid text clip");
+    }
+  });
 });
 
 describe("TN-152 gesture-filtered hit-testing (dual regions, same frame)", () => {

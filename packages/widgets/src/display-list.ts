@@ -11,7 +11,8 @@
  * Ops: "rect" (filled rounded rect, optional elevation shadow), "outline"
  * (stroked rounded rect), "text" (single line, y is the baseline), "circle"
  * (filled circle), "ring" (stroked progress arc), "line" (straight line),
- * "gradient" (vertical two-stop gradient rect). Taps are hit-test regions
+ * "gradient" (vertical two-stop gradient rect), and "text-input" (required
+ * nonpainting host input descriptor). Taps are hit-test regions
  * whose payloads index back into the JS callback table rebuilt on every
  * render, so hosts stay dumb painter/dispatchers.
  *
@@ -22,8 +23,8 @@
  * committed scene stays JSON-serializable.
  *
  * Layout executes in TypeScript with bounded/unbounded constraints in both
- * axes. Text metrics remain approximate; independent scrolling and clipping
- * are separate contracts, not implied by bounded widget layout.
+ * axes. Text metrics remain approximate; TextField text has a local hard clip.
+ * Independent scrolling and general widget clipping remain separate contracts.
  */
 
 import type { WidgetChild, WidgetNode } from "@tenunjs/jsx-runtime";
@@ -39,6 +40,8 @@ import {
   WrapKind,
 } from "./structural";
 import type { ThemeConfig } from "./index";
+import { TextFieldKind, TextInputError, resolveTextFieldProps, textInputDescriptor } from "./text-input";
+import type { TextFieldBinding, TextInputLayoutDelegate, TextInputOp } from "./text-input";
 
 /** A finite surface expressed in the same design units as widget geometry. */
 export interface LayoutViewport {
@@ -131,6 +134,28 @@ export interface OutlineOp extends FixedPosition {
   width: number;
 }
 
+/** Absolute scene-coordinate clip; fixed operations apply their anchor to it too. */
+export interface TextClip {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A copied finite rectangle; clipping never coerces malformed host geometry. */
+export function validateTextClip(value: unknown): TextClip {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new LayoutError("INVALID_CONSTRAINT", "Text clip must be a rectangle");
+  }
+  const { x, y, w, h } = value as Record<string, unknown>;
+  if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y) ||
+      typeof w !== "number" || !Number.isFinite(w) || w < 0 ||
+      typeof h !== "number" || !Number.isFinite(h) || h < 0) {
+    throw new LayoutError("INVALID_CONSTRAINT", "Text clip must have finite coordinates and nonnegative finite dimensions");
+  }
+  return { x, y, w, h };
+}
+
 export interface TextOp extends FixedPosition {
   op: "text";
   x: number;
@@ -143,6 +168,8 @@ export interface TextOp extends FixedPosition {
   /** Horizontal alignment within [x, x + width) when width is given. */
   align?: "left" | "center";
   width?: number;
+  /** Optional hard clip for this text operation, in the same coordinate space. */
+  clip?: TextClip;
 }
 
 export interface CircleOp extends FixedPosition {
@@ -188,7 +215,7 @@ export interface GradientOp extends FixedPosition {
   shadow?: number;
 }
 
-export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp;
+export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp | TextInputOp;
 
 /**
  * Hit region gesture kinds a host can dispatch back. "long-press" is
@@ -226,6 +253,9 @@ interface InternalContext extends RenderContext {
   ops: DisplayOp[];
   tapRegions: SerializedTap[];
   tapRuns: Array<() => void>;
+  textFields: TextFieldBinding[];
+  textFieldIds: Set<string>;
+  textInput?: TextInputLayoutDelegate;
   /** Design width is needed when fixed canvas layers leave normal layout. */
   designWidth: number;
   /** Active color roles: theme-derived defaults until a ThemeScope narrows them. */
@@ -783,6 +813,10 @@ function measure(ctx: InternalContext, node: AnyNode, boundsOrWidth: Constraints
 function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): Frame {
   const { kind, props } = node;
   if (typeof kind === "function") return measure(ctx, resolveOnce(ctx, node), bounds);
+  if (kind === TextFieldKind) {
+    resolveTextFieldProps(props);
+    return constrain({ w: Number.isFinite(bounds.maxW) ? bounds.maxW : 240, h: 72 }, bounds);
+  }
   if (kind === Canvas) {
     return constrain({ w: dimension(props, "width") ?? bounds.maxW, h: dimension(props, "height") ?? 0 }, bounds);
   }
@@ -841,6 +875,92 @@ function placeChildren(ctx: InternalContext, layout: NodeLayout, x: number, y: n
   for (const child of layout.children) place(ctx, child.kid, x + child.x, y + child.y, child.frame);
 }
 
+/** Approximate single-line paint window; the descriptor always carries full text. */
+function fieldTextWindow(text: string, size: number, width: number, offset = 0): { text: string; x: number } {
+  let cursor = 0;
+  let start = 0;
+  let visible = "";
+  for (const character of text) {
+    const advance = textWidth(character, size);
+    if (cursor >= offset && cursor + advance <= offset + width) {
+      if (visible.length === 0) start = cursor - offset;
+      visible += character;
+    }
+    cursor += advance;
+    if (cursor > offset + width) break;
+  }
+  return { text: visible, x: start };
+}
+
+function placeTextField(ctx: InternalContext, rawProps: unknown, x: number, y: number, w: number, h: number): void {
+  const props = resolveTextFieldProps(rawProps);
+  if (ctx.textFieldIds.has(props.id)) {
+    throw new TextInputError("DUPLICATE_TEXT_FIELD", `TextField id "${props.id}" appears more than once in a screen`);
+  }
+  ctx.textFieldIds.add(props.id);
+  const descriptor = textInputDescriptor(props, { x, y, w, h }, ctx.textInput?.active);
+  ctx.textFields.push({ props, descriptor });
+  const C = ctx.palette;
+  // Legacy roles have dark defaults. This ordinary field follows the active
+  // theme's paired surface/text values without changing global role semantics.
+  const surface = ctx.theme.colors?.surfaceRaised ?? ctx.theme.colors?.surface ?? C.surfaceContainer;
+  const foreground = ctx.theme.colors?.text ?? C.onSurface;
+  const inset = Math.min(12, w / 2);
+  const innerWidth = Math.max(0, w - inset * 2);
+  const verticalInset = Math.min(2, h / 2);
+  const clip: TextClip = { x: x + inset, y: y + verticalInset, w: innerWidth, h: Math.max(0, h - verticalInset * 2) };
+  const size = Math.min(17, h / 3);
+  const baseline = y + Math.min(h, props.label ? h * 0.72 : h / 2 + size * 0.36);
+  const textTop = Math.max(y, baseline - size);
+  const radius = Math.min(8, w / 2, h / 2);
+  ctx.ops.push({ op: "rect", x, y, w, h, r: radius, color: surface });
+  ctx.ops.push({ op: "outline", x, y, w, h, r: radius,
+    color: descriptor.focused ? C.primary : C.outline, width: descriptor.focused ? 2 : 1 });
+  if (props.label && innerWidth > 0 && h > 0) {
+    const labelSize = Math.min(12, size);
+    ctx.ops.push({ op: "text", x: x + inset, y: y + Math.min(h, 17),
+      text: fieldTextWindow(props.label, labelSize, innerWidth).text,
+      size: labelSize, weight: 500, color: descriptor.focused ? C.primary : foreground, clip });
+  }
+  const extentX = textWidth(descriptor.text.slice(0, descriptor.selection.extent), size);
+  const offset = descriptor.focused ? Math.max(0, extentX - innerWidth + 1) : 0;
+  const position = (index: number): number =>
+    x + inset + Math.max(0, Math.min(innerWidth, textWidth(descriptor.text.slice(0, index), size) - offset));
+  let selected: TextClip | undefined;
+  if (descriptor.focused && descriptor.selection.base !== descriptor.selection.extent) {
+    const left = position(Math.min(descriptor.selection.base, descriptor.selection.extent));
+    const right = position(Math.max(descriptor.selection.base, descriptor.selection.extent));
+    selected = { x: left, y: textTop, w: right - left, h: Math.max(0, Math.min(h, size * 1.2)) };
+    ctx.ops.push({ op: "rect", ...selected, r: 0, color: C.primaryContainer });
+  }
+  const shown = descriptor.text || props.placeholder;
+  const window = fieldTextWindow(shown, size, innerWidth, descriptor.text ? offset : 0);
+  if (window.text && h > 0) {
+    const text: TextOp = { op: "text", x: x + inset + window.x, y: baseline, text: window.text,
+      size, weight: 400, color: foreground, clip };
+    ctx.ops.push(text);
+    // Selection has its own paired foreground, including under a light theme.
+    if (selected) ctx.ops.push({ ...text, color: C.onPrimaryContainer, clip: selected });
+  }
+  if (descriptor.focused && descriptor.composing) {
+    ctx.ops.push({ op: "line", x1: position(descriptor.composing.start), x2: position(descriptor.composing.end),
+      y1: Math.min(y + h, baseline + 2), y2: Math.min(y + h, baseline + 2), width: 1, color: C.primary });
+  }
+  if (descriptor.focused && descriptor.selection.base === descriptor.selection.extent) {
+    ctx.ops.push({ op: "line", x1: position(descriptor.selection.extent), x2: position(descriptor.selection.extent),
+      y1: textTop, y2: Math.min(y + h, baseline + 2), width: 1, color: C.primary });
+  }
+  ctx.ops.push(descriptor);
+  if (!props.readOnly) {
+    addTap(ctx, x, y, w, h, () => {
+      if (!ctx.textInput) {
+        throw new TextInputError("TEXT_INPUT_RUNTIME_REQUIRED", "Editable TextField focus requires ApplicationRuntime");
+      }
+      ctx.textInput.focus(props.id);
+    });
+  }
+}
+
 /**
  * Paints a measured node using its final size and original incoming bounds.
  * Reusing those bounds preserves natural layout versus tight allocation.
@@ -852,6 +972,10 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
 
   if (typeof kind === "function") {
     return place(ctx, resolveOnce(ctx, node), x, y, frame);
+  }
+  if (kind === TextFieldKind) {
+    placeTextField(ctx, props, x, y, w, h);
+    return h;
   }
   if (kind === Canvas) {
     const fixedCanvas = props.fixed === true;
@@ -1147,10 +1271,14 @@ function offsetOp(
       return fixed
         ? { ...op, ...meta, x1: op.x1, y1: op.y1, x2: op.x2, y2: op.y2 }
         : { ...op, x1: op.x1 + dx, y1: op.y1 + dy, x2: op.x2 + dx, y2: op.y2 + dy };
-    case "text":
-      return fixed
+    case "text": {
+      const clip = op.clip === undefined ? undefined : validateTextClip(op.clip);
+      const moved = fixed
         ? { ...op, ...meta, x: op.x, y: op.y }
         : { ...op, x: op.x + dx, y: op.y + dy };
+      return clip === undefined ? moved : { ...moved,
+        clip: { ...clip, x: clip.x + (fixed ? 0 : dx), y: clip.y + (fixed ? 0 : dy) } };
+    }
     default:
       return fixed
         ? { ...op, ...meta, x: op.x, y: op.y }
@@ -1281,13 +1409,16 @@ function addTap(
 /**
  * Lays out a tree at an unbounded-height design width, or in a finite viewport.
  * Explicitly sized ancestors can bound subtrees in either mode. Returns the
- * existing host scene and live callbacks (index-aligned with `scene.taps`).
+ * host scene and live callbacks (index-aligned with `scene.taps`). The optional
+ * input delegate belongs to ApplicationRuntime; discovered field bindings stay
+ * in TypeScript and never enter the serialized scene or application snapshot.
  */
 export function layoutScreen(
   theme: ThemeConfig,
   tree: WidgetNode,
-  viewportOrWidth: number | LayoutViewport = DESIGN_WIDTH
-): { scene: DisplayListScene; tapRuns: Array<() => void> } {
+  viewportOrWidth: number | LayoutViewport = DESIGN_WIDTH,
+  textInput?: TextInputLayoutDelegate,
+): { scene: DisplayListScene; tapRuns: Array<() => void>; textFields: TextFieldBinding[] } {
   const viewport = typeof viewportOrWidth === "number" ? undefined : validateLayoutViewport(viewportOrWidth);
   const designWidth = typeof viewportOrWidth === "number" ? viewportOrWidth : viewport!.width;
   if (!Number.isFinite(designWidth) || designWidth <= 0) {
@@ -1300,6 +1431,9 @@ export function layoutScreen(
     ops: [],
     tapRegions: [],
     tapRuns: [],
+    textFields: [],
+    textFieldIds: new Set(),
+    textInput,
     componentCache: new Map(),
     finish() {
       return {
@@ -1323,5 +1457,5 @@ export function layoutScreen(
   place(ctx, root, 0, 0, frame);
   const scene = ctx.finish();
   scene.contentHeight = frame.h;
-  return { scene, tapRuns: ctx.tapRuns };
+  return { scene, tapRuns: ctx.tapRuns, textFields: ctx.textFields };
 }
