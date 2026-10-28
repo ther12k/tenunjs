@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-158: Deliver host viewport automatically with negotiation"
 summary: "Second TN-155 slice: hosts deliver logical-unit viewport bounds automatically (browser canvas, Android surface), with one-probe negotiation so bundles without viewport support keep design-width scaling."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-158"
 milestone: "M4"
 priority: "P1"
@@ -82,3 +82,17 @@ keep working unchanged.
 - [Automatic host viewport delivery](../04-api/widgets-and-styling.md)
 - TN-157 (bounded layout foundation, closed)
 - TN-155 (framework-feel milestone app, in progress)
+
+## Status note (2026-10-29, closed)
+
+Closed with PR #244 (merge 196d6de), implemented and published in the
+same session: handoff VIEWPORT verb, generic-browser-host delivery with
+one-probe negotiation, Android SurfaceView delivery in density-
+independent units with engine-swap re-negotiation, and the Day Plan
+mid-journey resize tests. Verified locally (513/0 tests, typecheck,
+manifest, full run_android_test.sh with the framework-feel parity) and
+by CI — all eight jobs green on the PR and on main, including the
+installed-device gate exercising the legacy-bundle negotiation path.
+TN-155 continues with editable text/IME, independent scrolling,
+host-evaluated transitions, TN-068 theme integration, and the device
+journey.
