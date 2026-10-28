@@ -260,7 +260,7 @@ status: accepted
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
 | 06-issues/tn-155-framework-feel-milestone-app.md | e007a098524d4d5a0af048aaed9fea133875a5df76918e0235b66c79d425ab22 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
-| 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 5340397ee2227fb133146e6ad70c562726e59c150e0865811f4c88d8fd130f06 |
+| 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

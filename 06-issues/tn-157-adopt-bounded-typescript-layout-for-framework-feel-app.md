@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-157: Adopt bounded TypeScript layout for the framework-feel app"
 summary: "First TN-155 slice: propagate finite viewport constraints through the current framework lowering, expose a runtime viewport update, and exercise the result in an ordinary two-screen TSX application."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-157"
 milestone: "M4"
 priority: "P0"
@@ -137,3 +137,15 @@ Rust, ABI, native-probe/replay, emulator/device, and hosted CI results are
 not claimed by this local evidence. No `spikes/` or `benchmarks/` inputs or
 evidence artifacts changed. The scene comparison proves shared execution
 and data, not actual browser/Android painting or host resize delivery.
+
+## Status note (2026-10-29, closed)
+
+Published as PR #242 (merge 3905592) after independent re-verification
+in the publishing session — 507/0 tests, typecheck, manifest, and the
+full Android engine-loop gate including the Day Plan QuickJS execution
+and 8-scene structural parity — plus a full green CI run on both the PR
+and main, covering the Rust, ABI, Android SDK/NDK, and installed-device
+gates unavailable in the preparing session. TN-155 remains in progress
+for the remaining capability slices (host viewport delivery, editable
+text/IME, independent scrolling, host-evaluated transitions, TN-068
+theme integration, device journey).
