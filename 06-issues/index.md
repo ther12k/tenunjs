@@ -257,3 +257,15 @@ files and manifest rows but missed this index.
 | [TN-152](tn-152-carry-long-press-through-browser-hosts.md) | P1 | TN-133, TN-148 | Carry the long-press gesture through the browser hosts (filtered hit tests, hold timers) |
 | [TN-153](tn-153-run-controller-load-on-fresh-mounts.md) | P1 | TN-133 | Run the controller load hook on fresh mounts; launcher boot and failure surface |
 | [TN-154](tn-154-native-polytron-wash-milestone-validation-app.md) | P0 | TN-132, TN-141, TN-150, TN-151 | Native Polytron Wash milestone validation app on Android (100% native execution) |
+
+## Positioning follow-ups (2026-10-28)
+
+Filed with the Flutter-inspired positioning decision (product definition,
+2026-10-28): the framework is judged against the Flutter app-building
+experience, so the widget-behavior contract and an end-to-end demonstration
+of that experience become the priority over gallery expansion.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-155](tn-155-framework-feel-milestone-app.md) | P0 | TN-143, TN-156 | Framework-feel milestone app — the end-to-end Flutter-inspired experience |
+| [TN-156](tn-156-freeze-public-layout-semantics-contract.md) | P1 | — | Freeze the public layout semantics contract |

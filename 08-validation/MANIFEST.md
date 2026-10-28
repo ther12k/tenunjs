@@ -14,7 +14,7 @@ status: accepted
 | 00-project/naming-and-availability-evidence.md | fd0826c85fd4d86973d2a8a2a5400bb2f2b08d968b9cc50211638b27402f09fb |
 | 00-project/non-goals.md | 5cfd5a4f6a45cc2d55e57550c386aac888409537fbde382bd73d25175cb0f51f |
 | 00-project/principles.md | c165fb71a254a7fd48a71b2dd7f175fc9ad4c4eae96d5d45e8f1f7ca0479bcee |
-| 00-project/product-definition.md | 02e680909f1580502545d6e553353ee817edaab0ae5c98a644aec9358a8dca0f |
+| 00-project/product-definition.md | f88f847bafecf1fad7575e901c56b326d33f46f7314d8c4a750d76e96d1fdcbe |
 | 00-project/scope.md | 2a96a4c1813cf8a61a2448d11c53aae03ffd3d7aa7976ef0be19601ce6d9ce2f |
 | 00-project/terminology.md | 9a259f7d31fed8f3d4f66cd86bb7963dcc85cde485a0782b1badbfa26a3b9c5e |
 | 00-project/vision.md | da514f8001d2028ac4f8bfaff05e281ba79d94304619ff75464f1dc6ea979d5e |
@@ -30,12 +30,12 @@ status: accepted
 | 02-architecture/build-packaging.md | 710af98ddd8f999bd555cd7f6dfdffba264affc92ee7a6db683c562bc4228432 |
 | 02-architecture/controller-action-model.md | 3182dc7e9789da92366ff5db1836b5c4868ac42e261e382b803b0e9f79ff69fd |
 | 02-architecture/error-observability.md | c59dc40b0fa45898cee5cacd5d5a05df07a97ee322c942edf393c7c168f41ccf |
-| 02-architecture/framework-positioning.md | e6d7bdc8149fe3355eead97911e06d0c54644df3233d0459af258dde6ff3b9e3 |
+| 02-architecture/framework-positioning.md | f375490b2e329ccf3832d65b35215fcfc6fd813acb856d8757c14d383de79dcb |
 | 02-architecture/input-focus-gestures.md | b2d3e66834644c398015a8a10451a5c32a704f2421a8bc2d2a068164d84ac16f |
 | 02-architecture/jsx-and-reconciliation.md | 4b08aba69dd46a84c40a860bc4935bc6854a03be6ee3b24efbf21abed33f698e |
 | 02-architecture/language-strategy.md | c1fb06533952d01aa6a56d1bc05378a0012120e2ed63ca6023befa7b09d0b8e9 |
 | 02-architecture/layout-adapter-contract.md | e6728124355e631e5925a82505886c6058cfc8b06c8c020cc7115cfd2acccec1 |
-| 02-architecture/layout.md | 0d4a7326f3b056691bf5c88fc184af433850112608db3d183bbf8c425e1fc46e |
+| 02-architecture/layout.md | 3f8d922145bf9e70b33f3a85e598b46cbe49e21b8b3549c44ccba944bbb60530 |
 | 02-architecture/mutation-protocol.md | c12d583b154e53c805869b144d531a32b53d7cabfa46058b0e3477481c86c51f |
 | 02-architecture/native-engine.md | a1908607a4686b9fab4acb643de1f89f185aab6c0469ff8e628952e27e269194 |
 | 02-architecture/native-modules-platform-views.md | fcea868e3bf44d9627ce03c36d2fb765a585733d22a35dc03a5ee9b7c3ed0c00 |
@@ -78,7 +78,7 @@ status: accepted
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
 | 04-api/external-consumer-guide.md | a4188d163356b4fed25f409feeff6b5a629a2e3aba51caf7c11ace964e29d0fe |
-| 04-api/flutter-migration.md | c59b829a1ba7b59ce72969901e21f994e924aa0c297e46fd06df97a081c344f0 |
+| 04-api/flutter-migration.md | d55084e8deb1efbc09226ed3d6d563a174f37b11ff9a7f910c2cbe39e8d5bf9f |
 | 04-api/index.md | 421cc7b890ea8ef4767f6a0221a5c0dd5365aa5206293863cef7612dca0d1e18 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
@@ -92,9 +92,9 @@ status: accepted
 | 05-delivery/parallel-waves.md | 748f53bde2195b19822a51cf113791bb72bf59836856a77a73a88838dad9ee6e |
 | 05-delivery/release-strategy.md | c5e364a2afead32add83a1d2874ad61790c5a0779d32cdaaa918e1bdee458c3d |
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
-| 05-delivery/roadmap.md | 896f9d71e35e2806fe8bb79567f5ab3cb6409bbf263869f3c208fce0f369eb88 |
+| 05-delivery/roadmap.md | e9e0694b5adc164818a8693b1d8be6d37cd8eea769cc53f863172d055d8fc7cf |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | ae1a4bbe56eea292f1d0bbc09e112cbaba36f62b846af0a6f425423e59a6ea0a |
+| 06-issues/index.md | d03ee6b7ddc4837450d86c6cba629623e23d5d9c4153339eac097046513cf94c |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -257,6 +257,8 @@ status: accepted
 | 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
+| 06-issues/tn-155-framework-feel-milestone-app.md | 06aae6ac82be4ab751f790fd5f7351e619ec1c42ae58b3196972a6851d54c74e |
+| 06-issues/tn-156-freeze-public-layout-semantics-contract.md | a30baa4942d8804b371a2b1b7ea25b07d337401aca661d7b513ca45b0f978a8c |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
@@ -267,7 +269,7 @@ status: accepted
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |
 | CONTRIBUTING.md | 4c0cace7528d2660fe223bc5dae2cb666515c7e75668727af7bec34851b42884 |
-| README.md | 102e9b5e60c631fd65f744966d45bd1b1ac1fc96276d83107d08928491717ba0 |
+| README.md | 7e4767a330adeff54811604a1a36c59c61b38cc32e03d8698416960ab481d131 |
 | index.md | f1952fc49182e6d5132d3e733c0d025d5881b63ceeb18353d5e595d30b8524af |
 | log.md | 176396687e309073cb61eafeefd618dc27602cfea5f23f7c98722ac767c6a862 |
 | references/technology-notes.md | 5cc47a642063b773c9b1d31fde3ce1125a13192d2e0a2ec82211a701b6b0bfe7 |

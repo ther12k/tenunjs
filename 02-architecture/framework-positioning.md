@@ -143,10 +143,32 @@ rendering rather than a custom native Skia scene.
 
 ## Positioning language
 
-The strongest positioning is:
+The canonical positioning (decided 2026-10-28):
 
-> A TypeScript/TSX mobile UI framework with Flutter-like engine ownership,
-> but without Dart, React, or a browser runtime.
+> TenunJS is a Flutter-inspired framework for building native applications
+> in TypeScript, with TSX for declaring UI.
+
+Headline shorthand for landing pages and the README: **"Flutter-style
+development, written in TypeScript and TSX."**
+
+Rules for using it:
+
+- **"Flutter-inspired" describes the experience, never compatibility.** It
+  communicates the widget-composition authoring model and framework-owned
+  rendering — not compatibility with Flutter's Dart packages, plugins, or
+  ecosystem. The typed-action model remains TenunJS's own choice; a
+  Flutter-inspired experience does not require reproducing every Dart
+  class or API name.
+- **Always pair the claim with the development status.** Flutter is the
+  primary benchmark for the application-building experience TenunJS intends;
+  the maturity gap against it is real and stays visible (see the
+  disadvantages above). Lead with widget composition, consistent rendering,
+  and the TypeScript workflow; React independence and the absence of a
+  WebView are supporting architectural facts.
+- **Judge against the Flutter app-building experience, not against
+  Skia-drawing libraries.** The benchmark is what building an application
+  feels like: composable widgets, coherent layout semantics, reliable
+  state updates, and platform integration.
 
 Avoid:
 
@@ -155,11 +177,11 @@ Avoid:
   differentiation is its custom rendering substrate, restricted
   controller/action model, and ownership of the full widget contract — not
   simply faster JavaScript/native calls.
-- **"Flutter, but in TypeScript."** Directionally useful, but it hides the
-  giant maturity gap: Flutter already has a complete engine, widget
-  catalogue, platform integrations, profiling tools, hot reload,
-  accessibility implementation, plugin ecosystem, and broad platform
-  support.
+- **"Flutter, but in TypeScript" as a parity claim.** As shorthand for the
+  authoring experience it is fine; as a claim of parity it hides the
+  maturity gap: Flutter already has a complete engine, widget catalogue,
+  platform integrations, profiling tools, hot reload, accessibility
+  implementation, plugin ecosystem, and broad platform support.
 
 ## Practical conclusion
 
