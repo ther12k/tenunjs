@@ -31,7 +31,13 @@ describe("layout adapter contract", () => {
       for (const v of boxes) {
         expect(Number.isFinite(v)).toBe(true);
       }
-      expect(c.expected).toHaveLength(c.root.children.length);
+      // run_corpus.c asserts one box per NON-ROOT node in pre-order — the
+      // JSON must declare exactly that many expectations, so a multi-level
+      // case (e.g. scroll content inside a viewport) asserts every node it
+      // lays out, never a partial tree.
+      const countNodes = (n: { children: unknown[] }): number =>
+        n.children.reduce((sum: number, child) => sum + 1 + countNodes(child as { children: unknown[] }), 0);
+      expect(c.expected).toHaveLength(countNodes(c.root));
       for (const b of c.expected) expect(Object.keys(b).sort()).toEqual(["height", "width", "x", "y"]);
     }
     expect(readdirSync(dir).filter((f) => f.endsWith(".json")).length).toBeGreaterThanOrEqual(5);

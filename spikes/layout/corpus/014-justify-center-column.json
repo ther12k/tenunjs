@@ -1,0 +1,43 @@
+{
+  "case_id": "014",
+  "name": "justify-center-column",
+  "viewport": {
+    "width": 300,
+    "height": 100
+  },
+  "root": {
+    "style": {
+      "width": 300,
+      "height": 100,
+      "flex_grow": 0,
+      "direction": "column",
+      "gap": 0,
+      "padding": 0,
+      "justify_content": "center",
+      "align_items": "flex_start"
+    },
+    "children": [
+      {
+        "style": {
+          "width": 50,
+          "height": 30,
+          "flex_grow": 0,
+          "direction": "row",
+          "gap": 0,
+          "padding": 0,
+          "justify_content": "flex_start",
+          "align_items": "stretch"
+        },
+        "children": []
+      }
+    ]
+  },
+  "expected": [
+    {
+      "x": 0,
+      "y": 35,
+      "width": 50,
+      "height": 30
+    }
+  ]
+}
