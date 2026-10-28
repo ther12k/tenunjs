@@ -26,6 +26,35 @@ depends_on:
 
 > **Scaffolding note (2026-09-11):** TN-019 (PR #181, #182) introduced preliminary `defineTheme`/`ThemeProvider` in `packages/widgets`. Those declarations do not satisfy this issue's acceptance criteria. This issue retains ownership of typed theme tokens, inherited widget context, and token resolution semantics. Existing scaffolding may be replaced without ceremony.
 
+## TN-143 contract addendum (2026-10-28)
+
+[ADR-0024](../03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md)
+freezes the semantic color vocabulary and `ColorRef` indirection ahead of
+this implementation. Its scoped sequencing exception allows TN-143's
+decision and root-scope reference proof to precede completion of TN-068;
+it does not close this issue or waive its dependencies.
+
+Consume the exported `ColorSlot`, `ColorRef`, and complete `ThemePalette`
+contract from `@tenunjs/widgets`. This issue still owns:
+
+- Ordinary TSX widget property adoption and lowering that retains slot
+  identity until commit-time palette resolution.
+- Inherited theme scopes: child overrides affect descendants only, parent
+  updates propagate through unoverridden values, and retained operations
+  preserve their scope or are regenerated from the scoped widget tree.
+- App-level invalidation and subscription teardown so a palette switch
+  updates the next frame without per-screen wiring or changed input state.
+- Spacing, radius, typography, locale, scale, and platform context values.
+- Integration evidence for actual widgets and runtime behavior, beyond the
+  root semantic-scene and injected-storage proof in `examples/theme-contract`.
+
+Current `defineTheme`/`ThemeProvider`, role-string props, `ThemeScopeBox`,
+and `layoutScreen` remain prototype APIs. The new reference module does
+not retrofit them, make native hosts slot-aware, or add live theme updates
+to `ApplicationRuntime`. Future TN-034 property schemas and TN-042 drawing
+contracts must adopt the accepted references with explicit wire/version
+migration where needed.
+
 ## Required outcome
 
 Typed colors, spacing, radius, typography, locale, scale, and platform values flow predictably.

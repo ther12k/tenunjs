@@ -33,3 +33,4 @@ status: accepted
 | [ADR-0021](adr-0021-product-charter-freeze.md) | Product charter freeze | accepted |
 | [ADR-0022](adr-0022-m0-gates-blocked-on-device-availability.md) | M0 selection gates blocked on device availability; provisional embedder runtime | accepted |
 | [ADR-0023](adr-0023-android-device-unblocks-android-half-evidence.md) | Android device in the dev loop; Android-half device evidence unblocked | accepted |
+| [ADR-0024](adr-0024-semantic-color-slots-before-widget-freeze.md) | Semantic color slots retained through commit-time baking; TN-143 decision precedes TN-068 implementation | accepted |

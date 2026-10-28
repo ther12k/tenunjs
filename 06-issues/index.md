@@ -235,7 +235,7 @@ decided by filing these.
 | [TN-140](tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md) | P2 | TN-042 | Surface a malformed display list instead of silently exiting display-list mode |
 | [TN-141](tn-141-freeze-minimal-capability-seam-contracts.md) | P1 | TN-133 | Freeze the minimal capability-seam contracts (ble, storage, camera) ahead of M5 |
 | [TN-142](tn-142-own-host-to-runtime-push-channel.md) | P1 | TN-133 | Own the host-to-runtime push channel in the execution contract |
-| [TN-143](tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md) | P1 | TN-068 | Decide semantic theme-token slots before the widget layer freezes |
+| [TN-143](tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md) | P1 | TN-068 (decision-only sequencing exception: [ADR-0024](../03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md)) | Decide semantic theme-token slots before the widget layer freezes |
 | [TN-144](tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md) | P1 | TN-023, TN-029 | Run a TSX-compiled example bundle in the Android QuickJS host as the dev-loop exit |
 | [TN-145](tn-145-assert-host-parity-for-application-service-seams.md) | P2 | TN-133 | Assert host parity for application service seams |
 | [TN-146](tn-146-own-browser-shell-integration-ux.md) | P2 | TN-133 | Own the browser-shell integration UX (route rail, hot reload, dev-server routes) |

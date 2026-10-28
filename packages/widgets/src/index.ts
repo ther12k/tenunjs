@@ -15,6 +15,7 @@ export * from "./structural";
 export * from "./display-list";
 export * from "./app-runtime";
 export * from "./host-handoff";
+export * from "./theme-slots";
 
 export interface ThemeColors {
   surface?: string;
