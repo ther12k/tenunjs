@@ -364,14 +364,20 @@ class MainActivity : Activity() {
         trialHealth.onDispatchObserved()
     }
 
+    /** Which bundled asset booted — the dev hot reload fetches THIS file
+     *  from the dev server, never a hardcoded demo name. */
+    private var assetBundleName = "polytron_app.js"
+
     private fun readAssetBundle(): ByteArray? {
         return try {
             assets.open("polytron_app.js").use { it.readBytes() }
         } catch (e0: Exception) {
             try {
+                assetBundleName = "gallery_app.js"
                 assets.open("gallery_app.js").use { it.readBytes() }
             } catch (e: Exception) {
                 try {
+                    assetBundleName = "tenun_app.js"
                     assets.open("tenun_app.js").use { it.readBytes() }
                 } catch (e2: Exception) {
                     null
@@ -403,7 +409,7 @@ class MainActivity : Activity() {
                 val known = lastHash
                 lastHash = hash
                 if (known != null && hash != known && reloadInFlight.compareAndSet(false, true)) {
-                    val bytes = httpGetBytes("$url/gallery_app.js")
+                    val bytes = httpGetBytes("$url/$assetBundleName")
                     runOnUiThread {
                         try {
                             applyReload(bytes)
@@ -510,12 +516,41 @@ class MainActivity : Activity() {
             .setView(inputView)
             .setPositiveButton("Simpan") { _, _ ->
                 val next = inputView.text.toString().trim()
-                val cmd = "SET $slotKey $next"
-                bleService?.write(cmd)
-                // Inbound SET reply from washer will automatically update ProgramsState values
+                if (next.isEmpty()) return@setPositiveButton // cleared text = cancel
+                // Route through the engine's runtime send path (SAVE_PROGRAM):
+                // the runtime owns the optimistic cache update, the pending-ack
+                // tracking, and failure feedback — a direct bleService.write
+                // bypassed all three and left the Programs tab stale.
+                val payload = org.json.JSONObject()
+                    .put("slot", slot)
+                    .put("tokens", next)
+                    .toString()
+                val eng = this.engine
+                if (eng != null) {
+                    eng.dispatchAction("SAVE_PROGRAM", payload)
+                    surfaceView?.syncFromScene(eng.getLatestScene())
+                    surfaceView?.redraw()
+                } else {
+                    bleService?.write("SET $slotKey $next")
+                }
             }
             .setNegativeButton("Batal", null)
             .show()
+    }
+
+    // BLE runtime-permission dialog result: a granted set auto-resumes a
+    // connect() that was parked behind the dialog; a denial reports guidance
+    // (and opens this app's settings page when the OS marked it permanent).
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 101) return
+        val granted = grantResults.isNotEmpty() &&
+            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        bleService?.onPermissionResult(granted)
     }
 
     override fun onDestroy() {

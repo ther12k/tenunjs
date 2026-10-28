@@ -1,184 +1,1018 @@
-<!doctype html>
-<html lang="id">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <link rel="icon" href="data:," />
-    <meta name="theme-color" content="#081110" />
-    <title>Polytron Wash · TenunJS</title>
-    <style>
-      /* Mobile-first: the app is a full-bleed single column — sticky
-         header with brand + link status, tab row (Home Assistant tab
-         style with underline), canvas fills the rest of the viewport.
-         Wide screens get the same app centered as a phone column. */
-      :root {
-        color-scheme: dark;
-        --bg: #081110; --card: #0a141a; --line: #22303c;
-        --txt: #e6eef7; --dim: #86a1bf; --acc: #00b7fd; --ok: #00ff80;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polytron Wash — Software-Defined Washing Machine & Native Mobile App</title>
+  <meta name="description" content="Open-source hardware conversion of a top-load Polytron washing machine into a software-defined appliance driven by an ESP32 microcontroller, 4-channel relays, and native Android companion app over Bluetooth LE.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23081110'/><circle cx='16' cy='16' r='10' stroke='%2300B7FD' stroke-width='3' fill='none'/><path d='M10 16c2-2 4-2 6 0s4 2 6 0' stroke='%2339D2C0' stroke-width='2' fill='none'/></svg>">
+  <style>
+    :root {
+      --bg: #070e14;
+      --card: #0d1a24;
+      --card-alt: #0a131b;
+      --card-border: #182c3f;
+      --card-border-glow: #00b7fd44;
+      --card-hover: #122433;
+      --accent: #00B7FD;
+      --accent-dim: #0077aa;
+      --teal: #39D2C0;
+      --green: #00E676;
+      --amber: #FFB300;
+      --red: #FF3850;
+      --purple: #BB86FC;
+      --text: #EAF3FC;
+      --text-dim: #92ABC2;
+      --text-muted: #587189;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header Nav */
+    header {
+      padding: 20px 0;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(7, 14, 20, 0.88);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .brand-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #00364d;
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--accent-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .nav-links {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .nav-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .nav-links a:hover {
+      color: var(--text);
+    }
+    .btn-github-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: var(--text) !important;
+      font-size: 0.88rem !important;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn-github-nav:hover {
+      border-color: var(--accent);
+      background: #142433;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 72px 0 60px;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 48px;
+      align-items: center;
+    }
+    @media (max-width: 900px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+        text-align: center;
       }
-      * { box-sizing: border-box; }
-      html, body { height: 100%; }
-      body {
-        margin: 0; background: var(--bg); color: var(--txt);
-        font-family: Inter, system-ui, sans-serif;
+      .hero-actions {
+        justify-content: center;
       }
-      .app {
-        height: 100dvh; display: flex; flex-direction: column;
-        max-width: 100vw;
+      .hero-badges {
+        justify-content: center;
       }
-      .hdr {
-        flex: none; position: sticky; top: 0; z-index: 5;
-        background: #0a141ae6; backdrop-filter: blur(10px);
-        border-bottom: 1px solid var(--line);
-        padding-top: env(safe-area-inset-top);
+      .phone-mockup-wrapper {
+        margin: 20px auto 0;
       }
-      .hdr-row {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 14px 8px;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 230, 118, 0.08);
+      border: 1px solid rgba(0, 230, 118, 0.3);
+      color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: 999px;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .hero-pill .dot {
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.3rem, 4.5vw, 3.6rem);
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #FFFFFF 30%, #90cdfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.12rem;
+      color: var(--text-dim);
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #00B7FD, #0077c2);
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 28px;
+      border-radius: 12px;
+      text-decoration: none;
+      box-shadow: 0 4px 24px rgba(0, 183, 253, 0.35);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(0, 183, 253, 0.55);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--card);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 24px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-secondary:hover {
+      background: #142433;
+      border-color: var(--accent);
+    }
+
+    .hero-badges {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .meta-val {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .meta-lbl {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Phone Mockup Frame */
+    .phone-mockup-wrapper {
+      position: relative;
+      max-width: 330px;
+      margin: 0 auto;
+    }
+    .phone-glow {
+      position: absolute;
+      inset: -20px;
+      background: radial-gradient(circle at center, rgba(0, 183, 253, 0.22) 0%, transparent 70%);
+      filter: blur(28px);
+      z-index: 0;
+    }
+    .phone-frame {
+      position: relative;
+      background: #04090d;
+      border: 8px solid #1a2c3d;
+      border-radius: 44px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px #22384e;
+      z-index: 1;
+    }
+    .phone-notch {
+      width: 100px;
+      height: 18px;
+      background: #1a2c3d;
+      margin: 0 auto;
+      border-radius: 0 0 12px 12px;
+    }
+    .phone-screen {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #081110;
+    }
+
+    /* Section Styles */
+    section {
+      padding: 64px 0;
+      border-top: 1px solid #101e2c;
+    }
+    .section-header {
+      margin-bottom: 40px;
+      text-align: center;
+    }
+    .section-tag {
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .section-title {
+      font-size: 2.1rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .section-desc {
+      color: var(--text-dim);
+      font-size: 1.05rem;
+      max-width: 640px;
+      margin: 10px auto 0;
+    }
+
+    /* Diagram Section */
+    .diagram-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px;
+      overflow-x: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    .diagram-svg-wrap {
+      min-width: 820px;
+    }
+
+    /* Feature Deep Dives (Split rows with real screenshots) */
+    .feature-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+      margin-bottom: 56px;
+    }
+    .feature-row.reverse {
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 840px) {
+      .feature-row, .feature-row.reverse {
+        grid-template-columns: 1fr;
+        gap: 32px;
       }
-      .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; letter-spacing: .02em; min-width: 0; }
-      .brand .logo { display: block; width: 20px; height: 20px; flex: none; }
-      .brand .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .link { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); white-space: nowrap; }
-      #demo-btn {
-        border: 1px solid var(--line); background: #0e1a20; color: var(--dim);
-        font: 700 11px/1 Inter, system-ui, sans-serif; letter-spacing: .08em;
-        padding: 6px 10px; border-radius: 999px; cursor: pointer; flex: none;
-      }
-      #demo-btn.on { border-color: var(--acc); color: var(--acc); background: #08222e; }
-      /* Link state lives HERE once — not as a banner atop every tab. The
-         chain icon breaks when unlinked; tap to connect / disconnect. */
-      #link-btn {
-        display: flex; align-items: center; gap: 6px;
-        border: 1px solid var(--line); background: #0e1a20; color: var(--dim);
-        font: 700 11px/1 Inter, system-ui, sans-serif; letter-spacing: .04em;
-        padding: 6px 10px; border-radius: 999px; cursor: pointer; flex: none;
-      }
-      #link-btn svg { width: 13px; height: 13px; flex: none; }
-      #link-btn .icon-full { display: none; }
-      #link-btn.ok { border-color: #00ff8055; color: var(--ok); }
-      #link-btn.ok .icon-full { display: block; }
-      #link-btn.ok .icon-broken { display: none; }
-      #link-btn.wait { border-color: #fcb51866; color: #fcb518; }
-      #link-btn:disabled { cursor: default; }
-      /* Narrow phones: the pill keeps its state color + icon (the title
-         tooltip still carries the full text) so the brand row fits on
-         one 320px line. */
-      @media (max-width: 359px) {
-        #link-btn span { display: none; }
-        #demo-btn { padding: 6px 8px; }
-      }
-      #routes { display: flex; }
-      #routes button {
-        flex: 1 1 0; min-width: 0; border: 0; background: none; color: var(--dim);
-        padding: 9px 4px; font: 600 12.5px/1.2 Inter, system-ui, sans-serif;
-        border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
-      }
-      #routes button.active { color: var(--acc); border-bottom-color: var(--acc); }
-      .stage { flex: 1 1 auto; min-height: 0; position: relative; }
-      canvas {
-        display: block; width: 100%; height: 100%;
-        touch-action: none; background: var(--bg);
-      }
-      @media (min-width: 760px) {
-        body { display: grid; place-items: center; background: radial-gradient(circle at 15% 0%, #0c2a3a, #081110 60%); }
-        .app {
-          width: 480px; max-width: 100vw; height: min(94dvh, 940px); border-radius: 26px;
-          border: 1px solid var(--line); overflow: hidden;
-          box-shadow: 0 24px 70px #0009;
-        }
-        .hdr { position: static; }
-      }
-      @media (min-width: 1100px) {
-        .app { width: 560px; }
-      }
-      #prog-edit { position: fixed; inset: 0; background: #081110f2; display: grid; place-items: center; z-index: 10; padding: 12px; }
-      #prog-edit[hidden] { display: none; }
-      .pair-card { width: min(94vw, 440px); max-height: min(92dvh, 640px); overflow-y: auto; border: 1px solid var(--line); border-radius: 20px; background: #0a141a; padding: 18px; display: grid; gap: 12px; }
-      .pair-card h2 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
-      .pair-card h2 span { font-size: 13px; color: var(--dim); font-weight: normal; }
-      .step-builder { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
-      .step-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #0e1a20; border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; }
-      .step-mode { font: 800 11.5px Inter, system-ui; padding: 4px 8px; border-radius: 6px; letter-spacing: .04em; }
-      .step-stepper { display: flex; align-items: center; gap: 6px; }
-      .step-stepper button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #13242e; color: var(--txt); font-weight: 800; cursor: pointer; }
-      .step-val { font: 700 12.5px ui-monospace, monospace; min-width: 58px; text-align: center; color: var(--acc); }
-      .step-del { border: none; background: transparent; color: #ff5566; font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
-      .quick-adds { display: flex; flex-wrap: wrap; gap: 6px; }
-      .quick-btn { font: 600 11px Inter, system-ui; padding: 5px 9px; border-radius: 8px; border: 1px dashed var(--line); background: #0c181f; color: var(--dim); cursor: pointer; }
-      .quick-btn:hover { border-color: var(--acc); color: var(--txt); }
-      #prog-edit-summary { font: 600 11.5px Inter, system-ui; color: var(--dim); line-height: 1.4; padding: 6px 10px; background: #0c181f; border-radius: 8px; border-left: 3px solid var(--acc); }
-      .raw-toggle { font: 600 11px Inter, system-ui; color: var(--dim); background: none; border: none; cursor: pointer; text-align: left; padding: 2px 0; text-decoration: underline; }
-      #prog-edit-raw-section { display: grid; gap: 8px; }
-      #prog-edit-raw-section[hidden] { display: none; }
-      #prog-edit-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a20; color: var(--txt); font: 600 13px ui-monospace, monospace; letter-spacing: .04em; }
-      #prog-edit-msg { color: var(--dim); font-size: 11.5px; line-height: 1.5; min-height: 18px; }
-      .pair-actions { display: flex; gap: 8px; }
-      .pair-actions button { flex: 1; padding: 11px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a20; color: var(--txt); font-weight: 700; cursor: pointer; }
-      #prog-edit-save { border-color: var(--acc); color: var(--acc); background: #08222e; }
-    </style>
-  </head>
-  <body>
-    <div class="app">
-      <header class="hdr">
-        <div class="hdr-row">
-          <div class="brand">
-            <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="2" y="2" width="20" height="20" rx="6" stroke="#00B7FD" stroke-width="2.4"/>
-              <path d="M6 13.5c1.2-1.6 2.4-1.6 3.6 0s2.4 1.6 3.6 0 2.4-1.6 3.6 0" stroke="#00B7FD" stroke-width="2.2" stroke-linecap="round"/>
-              <path d="M7.5 8.2c.6-.8 1.2-.8 1.8 0" stroke="#00B7FD" stroke-width="1.8" stroke-linecap="round"/>
-              <path d="M13.4 8.2c.6-.8 1.2-.8 1.8 0" stroke="#00B7FD" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-            <span class="name">Polytron Wash</span>
-          </div>
-          <div class="link">
-            <button id="demo-btn" title="jalankan tanpa mesin" aria-pressed="false">DEMO</button>
-            <button id="link-btn" title="status sambungan Bluetooth">
-              <svg class="icon-broken" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M8.5 15.5 15.5 8.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                <path d="M12.5 6.5 14 5a4 4 0 0 1 5.7 5.7l-1.6 1.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                <path d="M11.5 17.5 10 19a4 4 0 0 1-5.7-5.7l1.6-1.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-              </svg>
-              <svg class="icon-full" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M10 14a4 4 0 0 1 0-5.6l2.8-2.9a4 4 0 0 1 5.7 5.7l-1.4 1.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                <path d="M14 10a4 4 0 0 1 0 5.6l-2.8 2.9a4 4 0 0 1-5.7-5.7l1.4-1.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-              </svg>
-              <span id="status" aria-live="polite">offline</span>
-            </button>
-          </div>
-        </div>
-        <nav id="routes" aria-label="Tab aplikasi"></nav>
-      </header>
-      <main class="stage">
-        <canvas id="preview" role="img" aria-label="Dasbor mesin cuci Polytron — kontrol digambar di kanvas"></canvas>
-      </main>
+    }
+    .feature-text h3 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+    .feature-text p {
+      color: var(--text-dim);
+      font-size: 1rem;
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.92rem;
+      color: var(--text);
+    }
+    .feature-list .check {
+      color: var(--teal);
+      font-weight: 800;
+      font-size: 1rem;
+      line-height: 1.4;
+    }
+
+    .screenshot-card {
+      background: var(--card-alt);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .screenshot-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+    }
+    .screenshot-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .screenshot-caption {
+      padding: 14px 18px;
+      background: #09131a;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .screenshot-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--teal);
+      font-weight: 700;
+    }
+
+    /* Circuit & Pinout Table */
+    .table-container {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 24px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      text-align: left;
+    }
+    th {
+      background: #0a141c;
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td {
+      padding: 16px 20px;
+      border-bottom: 1px solid #132433;
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: none; }
+    .pin-badge {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      background: #04253a;
+      color: var(--accent);
+      padding: 4px 9px;
+      border-radius: 6px;
+      border: 1px solid #00547d;
+      font-size: 0.85rem;
+    }
+    .relay-channel {
+      font-family: var(--font-mono);
+      color: var(--teal);
+      font-weight: 700;
+    }
+    .safe-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: rgba(0, 230, 118, 0.12);
+      color: var(--green);
+      padding: 3px 9px;
+      border-radius: 5px;
+      border: 1px solid rgba(0, 230, 118, 0.3);
+    }
+
+    /* Terminal Protocol Block */
+    .protocol-card {
+      background: #050a0e;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 24px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .protocol-header {
+      background: #09131c;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+    .protocol-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .protocol-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    pre {
+      padding: 22px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      color: #9cd5fa;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    /* Call to Action Banner */
+    .cta-banner {
+      background: linear-gradient(135deg, #091a26, #0e293d);
+      border: 1px solid var(--card-border-glow);
+      border-radius: 20px;
+      padding: 48px 32px;
+      text-align: center;
+      margin-top: 32px;
+      box-shadow: 0 12px 48px rgba(0, 183, 253, 0.18);
+    }
+    .cta-banner h2 {
+      font-size: 2.2rem;
+      font-weight: 900;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+    .cta-banner p {
+      color: var(--text-dim);
+      font-size: 1.05rem;
+      max-width: 580px;
+      margin: 0 auto 28px;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 72px;
+      padding: 40px 0;
+      border-top: 1px solid var(--card-border);
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    footer a {
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    footer a:hover {
+      color: var(--accent);
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav-row">
+      <a href="/" class="brand">
+        <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="#0D1A24" stroke="#182C3F"/>
+          <circle cx="16" cy="16" r="9" stroke="#00B7FD" stroke-width="2.5" fill="none"/>
+          <path d="M10 16c2-2 4-2 6 0s4 2 6 0" stroke="#39D2C0" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>Polytron Wash</span>
+        <span class="brand-badge">v0.1.6</span>
+      </a>
+      <div class="nav-links">
+        <a href="#diagram">System Architecture</a>
+        <a href="#features">Features</a>
+        <a href="#circuit">Circuit Diagram</a>
+        <a href="#protocol">Protocol</a>
+        <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener" class="btn-github-nav">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
     </div>
-    <div id="prog-edit" hidden>
-      <div class="pair-card">
-        <h2>
-          <span>Edit Program</span>
-          <span id="prog-edit-title"></span>
-        </h2>
-        <div id="prog-edit-steps" class="step-builder"></div>
-        <div class="quick-adds">
-          <button type="button" class="quick-btn" data-add="WASH:600">+ Cuci</button>
-          <button type="button" class="quick-btn" data-add="RINSE:300">+ Bilas</button>
-          <button type="button" class="quick-btn" data-add="DRAIN:60">+ Buang</button>
-          <button type="button" class="quick-btn" data-add="FILL:60">+ Isi</button>
-          <button type="button" class="quick-btn" data-add="SPIN:300">+ Peras</button>
+  </header>
+
+  <!-- Hero with Live Phone Mockup -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="hero-content">
+        <div class="hero-pill">
+          <span class="dot"></span>
+          <span>Open Source Hardware · wash.rizeva.my.id</span>
         </div>
-        <div id="prog-edit-summary"></div>
-        <button type="button" id="prog-edit-toggle-raw" class="raw-toggle">Tampilkan format teks mentah</button>
-        <div id="prog-edit-raw-section" hidden>
-          <input id="prog-edit-input" placeholder="WASH:600, DRAIN:30, SPIN:300" autocomplete="off" spellcheck="false" />
-          <div id="prog-edit-msg"></div>
+        <h1>Software-Defined Washing Machine Controller</h1>
+        <p>
+          Convert factory top-load Polytron washing machines into intelligent, software-defined appliances. 
+          Powered by an ESP32 microcontroller, 4-channel AC relays, and a 100% native Android mobile companion app communicating over direct Bluetooth LE.
+        </p>
+
+        <div class="hero-actions">
+          <a href="/polytron-wash.apk" class="btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download APK (v0.1.6)
+          </a>
+          <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener" class="btn-secondary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+            GitHub Repository
+          </a>
         </div>
-        <div class="pair-actions">
-          <button id="prog-edit-save">Simpan</button>
-          <button id="prog-edit-cancel">Batal</button>
+
+        <div class="hero-badges">
+          <div class="meta-item">
+            <span class="meta-val">QuickJS + SurfaceView</span>
+            <span class="meta-lbl">Native Android UI</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-val">BLE GATT Offline</span>
+            <span class="meta-lbl">No Wi-Fi Needed</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-val">200ms Dead-Time</span>
+            <span class="meta-lbl">Hardware Interlock</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-val">OTA Hot-Reload</span>
+            <span class="meta-lbl">Live Updates</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone Mockup Container -->
+      <div class="phone-mockup-wrapper">
+        <div class="phone-glow"></div>
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <img src="/assets/img/app-home.png" alt="Polytron Wash Native Android Companion App" class="phone-screen">
         </div>
       </div>
     </div>
-    <script type="module" src="./preview.js"></script>
-  </body>
+  </section>
+
+  <!-- System Architecture & Schematic Diagram -->
+  <section id="diagram">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Topology</div>
+        <h2 class="section-title">Hardware Architecture & Communication Diagram</h2>
+        <p class="section-desc">How software control flows from the mobile phone through the ESP32 microcontroller to 220V AC physical actuators.</p>
+      </div>
+
+      <div class="diagram-card">
+        <div class="diagram-svg-wrap">
+          <svg viewBox="0 0 940 370" width="100%" height="370" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="grad-phone" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0a1a26"/>
+                <stop offset="100%" stop-color="#040e16"/>
+              </linearGradient>
+              <linearGradient id="grad-esp" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#072b38"/>
+                <stop offset="100%" stop-color="#02141c"/>
+              </linearGradient>
+              <linearGradient id="grad-relay" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#1b1d28"/>
+                <stop offset="100%" stop-color="#0c0e16"/>
+              </linearGradient>
+              <linearGradient id="grad-mains" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#2a1215"/>
+                <stop offset="100%" stop-color="#140608"/>
+              </linearGradient>
+              <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#00B7FD"/>
+              </marker>
+              <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#00E676"/>
+              </marker>
+              <marker id="arrow-red" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="#FF5252"/>
+              </marker>
+            </defs>
+
+            <!-- 1. Android Phone Card -->
+            <rect x="20" y="40" width="200" height="290" rx="16" fill="url(#grad-phone)" stroke="#1c3a52" stroke-width="1.5"/>
+            <rect x="35" y="55" width="32" height="32" rx="8" fill="#00354d"/>
+            <text x="51" y="76" font-family="sans-serif" font-size="16" fill="#00B7FD" text-anchor="middle">📱</text>
+            <text x="75" y="70" font-family="sans-serif" font-size="14" font-weight="bold" fill="#EAF3FC">Android Phone</text>
+            <text x="75" y="86" font-family="sans-serif" font-size="10" fill="#92ABC2">Native Companion App</text>
+
+            <rect x="35" y="105" width="170" height="42" rx="8" fill="#07131d" stroke="#132738"/>
+            <text x="45" y="122" font-family="monospace" font-size="11" fill="#39D2C0" font-weight="bold">QuickJS JNI Bridge</text>
+            <text x="45" y="137" font-family="sans-serif" font-size="10" fill="#718fa6">Zero WebView / 60 FPS</text>
+
+            <rect x="35" y="155" width="170" height="42" rx="8" fill="#07131d" stroke="#132738"/>
+            <text x="45" y="172" font-family="monospace" font-size="11" fill="#00B7FD" font-weight="bold">Android BluetoothGatt</text>
+            <text x="45" y="187" font-family="sans-serif" font-size="10" fill="#718fa6">MTU 517 + Reassembly</text>
+
+            <rect x="35" y="205" width="170" height="42" rx="8" fill="#07131d" stroke="#132738"/>
+            <text x="45" y="222" font-family="monospace" font-size="11" fill="#FFB300" font-weight="bold">OTA Hot Reload</text>
+            <text x="45" y="237" font-family="sans-serif" font-size="10" fill="#718fa6">wash.rizeva.my.id</text>
+
+            <rect x="35" y="258" width="170" height="52" rx="8" fill="#061c16" stroke="#0f3b2d"/>
+            <text x="45" y="278" font-family="sans-serif" font-size="11" fill="#00E676" font-weight="bold">✓ 100% Offline Pure</text>
+            <text x="45" y="295" font-family="sans-serif" font-size="10" fill="#7ba395">Cycles run without WiFi</text>
+
+            <!-- Arrow: Phone -> ESP32 -->
+            <path d="M 220 176 L 275 176" stroke="#00B7FD" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arrow)"/>
+            <text x="248" y="165" font-family="monospace" font-size="10" fill="#00B7FD" text-anchor="middle">BLE GATT</text>
+            <text x="248" y="196" font-family="monospace" font-size="9" fill="#92ABC2" text-anchor="middle">@ 1 Hz Push</text>
+
+            <!-- 2. ESP32 Controller Card -->
+            <rect x="285" y="40" width="220" height="290" rx="16" fill="url(#grad-esp)" stroke="#0f5266" stroke-width="1.5"/>
+            <rect x="300" y="55" width="32" height="32" rx="8" fill="#013f4d"/>
+            <text x="316" y="76" font-family="sans-serif" font-size="16" fill="#39D2C0" text-anchor="middle">⚡</text>
+            <text x="340" y="70" font-family="sans-serif" font-size="14" font-weight="bold" fill="#EAF3FC">ESP32 Controller</text>
+            <text x="340" y="86" font-family="sans-serif" font-size="10" fill="#92ABC2">WEMOS D1 R32 / ESPHome</text>
+
+            <rect x="300" y="105" width="190" height="42" rx="8" fill="#03161f" stroke="#093847"/>
+            <text x="310" y="122" font-family="monospace" font-size="11" fill="#39D2C0" font-weight="bold">Cycle Sequencer</text>
+            <text x="310" y="137" font-family="sans-serif" font-size="10" fill="#80a7b5">Cuci · Bilas · Buang · Peras</text>
+
+            <rect x="300" y="155" width="190" height="42" rx="8" fill="#03161f" stroke="#093847"/>
+            <text x="310" y="172" font-family="monospace" font-size="11" fill="#FFB300" font-weight="bold">Hardware Interlocks</text>
+            <text x="310" y="187" font-family="sans-serif" font-size="10" fill="#80a7b5">200ms CW/CCW Dead-Time</text>
+
+            <rect x="300" y="205" width="190" height="42" rx="8" fill="#03161f" stroke="#093847"/>
+            <text x="310" y="222" font-family="monospace" font-size="11" fill="#00B7FD" font-weight="bold">ADC1 Water Sensor</text>
+            <text x="310" y="237" font-family="sans-serif" font-size="10" fill="#80a7b5">GPIO 39 Analog Pressure</text>
+
+            <rect x="300" y="258" width="190" height="52" rx="8" fill="#03161f" stroke="#093847"/>
+            <text x="310" y="278" font-family="monospace" font-size="11" fill="#EAF3FC" font-weight="bold">Web & HA API</text>
+            <text x="310" y="295" font-family="sans-serif" font-size="10" fill="#80a7b5">Port 80 HTTP / 6053 Native</text>
+
+            <!-- Arrow: ESP32 -> Relays -->
+            <path d="M 505 176 L 560 176" stroke="#00E676" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+            <text x="532" y="165" font-family="monospace" font-size="10" fill="#00E676" text-anchor="middle">GPIOs</text>
+            <text x="532" y="194" font-family="monospace" font-size="9" fill="#92ABC2" text-anchor="middle">Active-Low</text>
+
+            <!-- 3. 4-Channel Relays Card -->
+            <rect x="570" y="40" width="160" height="290" rx="16" fill="url(#grad-relay)" stroke="#2b3147" stroke-width="1.5"/>
+            <text x="585" y="72" font-family="sans-serif" font-size="14" font-weight="bold" fill="#EAF3FC">4-CH Relays</text>
+            <text x="585" y="88" font-family="sans-serif" font-size="10" fill="#92ABC2">Optoisolated 250V/10A</text>
+
+            <rect x="585" y="105" width="130" height="42" rx="8" fill="#0e101a" stroke="#212638"/>
+            <text x="595" y="122" font-family="monospace" font-size="11" fill="#00B7FD" font-weight="bold">Relay 1 · IN2</text>
+            <text x="595" y="137" font-family="monospace" font-size="10" fill="#7e859b">GPIO 19 (Motor A)</text>
+
+            <rect x="585" y="155" width="130" height="42" rx="8" fill="#0e101a" stroke="#212638"/>
+            <text x="595" y="172" font-family="monospace" font-size="11" fill="#BB86FC" font-weight="bold">Relay 2 · IN3</text>
+            <text x="595" y="187" font-family="monospace" font-size="10" fill="#7e859b">GPIO 21 (Motor B)</text>
+
+            <rect x="585" y="205" width="130" height="42" rx="8" fill="#0e101a" stroke="#212638"/>
+            <text x="595" y="222" font-family="monospace" font-size="11" fill="#39D2C0" font-weight="bold">Relay 3 · IN4</text>
+            <text x="595" y="237" font-family="monospace" font-size="10" fill="#7e859b">GPIO 23 (Drain)</text>
+
+            <rect x="585" y="258" width="130" height="42" rx="8" fill="#0e101a" stroke="#212638"/>
+            <text x="595" y="275" font-family="monospace" font-size="11" fill="#00E676" font-weight="bold">Relay 4 · IN1</text>
+            <text x="595" y="290" font-family="monospace" font-size="10" fill="#7e859b">GPIO 18 (Inlet)</text>
+
+            <!-- Arrow: Relays -> Actuators -->
+            <path d="M 730 176 L 775 176" stroke="#FF5252" stroke-width="2.5" marker-end="url(#arrow-red)"/>
+            <text x="752" y="165" font-family="monospace" font-size="10" fill="#FF5252" text-anchor="middle">220V AC</text>
+
+            <!-- 4. Actuators & Machine Card -->
+            <rect x="785" y="40" width="135" height="290" rx="16" fill="url(#grad-mains)" stroke="#4d1b20" stroke-width="1.5"/>
+            <text x="800" y="72" font-family="sans-serif" font-size="13" font-weight="bold" fill="#FF8585">Polytron Drum</text>
+            <text x="800" y="88" font-family="sans-serif" font-size="10" fill="#b07b80">Mains Actuators</text>
+
+            <rect x="797" y="105" width="112" height="42" rx="8" fill="#170608" stroke="#3b1115"/>
+            <text x="805" y="123" font-family="sans-serif" font-size="11" font-weight="bold" fill="#EAF3FC">Motor CW</text>
+            <text x="805" y="138" font-family="sans-serif" font-size="9" fill="#9e7275">Wash agitation</text>
+
+            <rect x="797" y="155" width="112" height="42" rx="8" fill="#170608" stroke="#3b1115"/>
+            <text x="805" y="173" font-family="sans-serif" font-size="11" font-weight="bold" fill="#EAF3FC">Motor CCW</text>
+            <text x="805" y="188" font-family="sans-serif" font-size="9" fill="#9e7275">Reverse wash</text>
+
+            <rect x="797" y="205" width="112" height="42" rx="8" fill="#170608" stroke="#3b1115"/>
+            <text x="805" y="223" font-family="sans-serif" font-size="11" font-weight="bold" fill="#EAF3FC">Drain Solenoid</text>
+            <text x="805" y="238" font-family="sans-serif" font-size="9" fill="#9e7275">Clutch lock + drain</text>
+
+            <rect x="797" y="258" width="112" height="42" rx="8" fill="#170608" stroke="#3b1115"/>
+            <text x="805" y="276" font-family="sans-serif" font-size="11" font-weight="bold" fill="#EAF3FC">Inlet Valve</text>
+            <text x="805" y="291" font-family="sans-serif" font-size="9" fill="#9e7275">Water supply</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deep-Dive Features with Real Screenshots -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">User Experience</div>
+        <h2 class="section-title">Engineered for Wet Hands & Real Laundry</h2>
+        <p class="section-desc">Inspect how the native app interface handles real wash cycles, telemetry stream parsing, and hardware control.</p>
+      </div>
+
+      <!-- Feature 1: Home Screen Grid -->
+      <div class="feature-row">
+        <div class="feature-text">
+          <div class="hero-pill" style="margin-bottom: 12px; background: rgba(0, 183, 253, 0.08); border-color: rgba(0, 183, 253, 0.3); color: var(--accent);">
+            <span>Beranda Screen</span>
+          </div>
+          <h3>6-Action Grid with Persistent Safety STOP</h3>
+          <p>
+            No scrolling or paging required to reach emergency controls. Every core wash action is available in a 3×2 high-contrast grid with bold custom icons designed to match the physical touch pod.
+          </p>
+          <ul class="feature-list">
+            <li><span class="check">✓</span> <span><strong>Single-tap triggers:</strong> CUCI (Wash), PERAS (Spin), BUANG (Drain), ISI (Fill), BILAS (Rinse), and BILAS ND.</span></li>
+            <li><span class="check">✓</span> <span><strong>Immediate Emergency STOP:</strong> Purges all pending queues and prioritizes shut-off before any motor reversal.</span></li>
+            <li><span class="check">✓</span> <span><strong>HA-Style Orbiting Spinner:</strong> 8-dot animated telemetry ring indicates live cycle progression in real time.</span></li>
+            <li><span class="check">✓</span> <span><strong>Stale Data Protection:</strong> If telemetry pauses >15s, transitions to an amber "DATA BEKU" warning and gates new starts.</span></li>
+          </ul>
+        </div>
+        <div class="feature-image">
+          <div class="screenshot-card">
+            <img src="/assets/img/app-home.png" alt="Polytron Wash App Home Tab">
+            <div class="screenshot-caption">
+              <span>Home Tab · 6-Function Action Grid</span>
+              <span class="screenshot-tag">FUNGSI MESIN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 2: Controls Screen -->
+      <div class="feature-row reverse">
+        <div class="feature-image">
+          <div class="screenshot-card">
+            <img src="/assets/img/app-controls.png" alt="Polytron Wash Controls Tab">
+            <div class="screenshot-caption">
+              <span>Controls Tab · Live Relay State Mirror</span>
+              <span class="screenshot-tag">RELAI — INDIKATOR</span>
+            </div>
+          </div>
+        </div>
+        <div class="feature-text">
+          <div class="hero-pill" style="margin-bottom: 12px; background: rgba(187, 134, 252, 0.08); border-color: rgba(187, 134, 252, 0.3); color: var(--purple);">
+            <span>Kontrol Screen</span>
+          </div>
+          <h3>Real-Time Relay Indicators & Tub Pressure</h3>
+          <p>
+            The Controls screen acts as a transparent window into the physical hardware. Relays are presented strictly as live state indicators—preventing accidental actuation of conflicting coils while observing motor agitation.
+          </p>
+          <ul class="feature-list">
+            <li><span class="check">✓</span> <span><strong>Relay Mirroring:</strong> Live feedback for Motor A (CW), Motor B (CCW), Drain Solenoid, and Water Inlet.</span></li>
+            <li><span class="check">✓</span> <span><strong>Water Sensor ADC Diagnostics:</strong> Read analog tub water percentage with raw median-filtered calibration readings.</span></li>
+            <li><span class="check">✓</span> <span><strong>Firmware & Heap Telemetry:</strong> Probe controller memory and runtime health with one tap.</span></li>
+            <li><span class="check">✓</span> <span><strong>Cycle Navigation:</strong> Tap the active status bar anytime to jump back to Home and monitor remaining time.</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Feature 3: Home Assistant Integration -->
+      <div class="feature-row">
+        <div class="feature-text">
+          <div class="hero-pill" style="margin-bottom: 12px; background: rgba(0, 230, 118, 0.08); border-color: rgba(0, 230, 118, 0.3); color: var(--green);">
+            <span>Multi-Interface Architecture</span>
+          </div>
+          <h3>Home Assistant & Local Web Coexistence</h3>
+          <p>
+            Adding direct Bluetooth Low Energy did not compromise existing smart-home integrations. The ESPHome firmware concurrently maintains its native API port 6053 for Home Assistant, HTTP port 80 for the browser dashboard, and BLE GATT for the companion app.
+          </p>
+          <ul class="feature-list">
+            <li><span class="check">✓</span> <span><strong>Home Assistant Integration:</strong> Full entity streaming, history graphs, and automated voice routines.</span></li>
+            <li><span class="check">✓</span> <span><strong>Standalone Web UI:</strong> Lightweight embedded dashboard served directly from flash for browser control.</span></li>
+            <li><span class="check">✓</span> <span><strong>No Cloud Lock-in:</strong> Control the machine entirely over local Bluetooth without active internet or router connection.</span></li>
+          </ul>
+        </div>
+        <div class="feature-image">
+          <div class="screenshot-card">
+            <img src="/assets/img/ui-desktop-running.png" alt="Polytron Wash Home Assistant and Web Dashboard">
+            <div class="screenshot-caption">
+              <span>ESPHome Web Dashboard & Home Assistant</span>
+              <span class="screenshot-tag">PORT 80 & 6053</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Complete Circuit & Pinout Table -->
+  <section id="circuit">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Schematics</div>
+        <h2 class="section-title">Circuit & Pinout Connections</h2>
+        <p class="section-desc">Wiring configuration between the ESP32 controller and the 4-channel active-low relay module.</p>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Relay Channel</th>
+              <th>ESP32 GPIO</th>
+              <th>Actuator / Load</th>
+              <th>Electrical Function</th>
+              <th>Safety Interlock Rule</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="relay-channel">IN2 (Relay 1)</span></td>
+              <td><span class="pin-badge">GPIO 19</span></td>
+              <td><strong>Motor A (CW)</strong></td>
+              <td>Main agitator clockwise wash cycle rotation</td>
+              <td><span class="safe-badge">200ms Dead-Time Interlock</span></td>
+            </tr>
+            <tr>
+              <td><span class="relay-channel">IN3 (Relay 2)</span></td>
+              <td><span class="pin-badge">GPIO 21</span></td>
+              <td><strong>Motor B (CCW)</strong></td>
+              <td>Main agitator counter-clockwise wash cycle rotation</td>
+              <td><span class="safe-badge">200ms Dead-Time Interlock</span></td>
+            </tr>
+            <tr>
+              <td><span class="relay-channel">IN4 (Relay 3)</span></td>
+              <td><span class="pin-badge">GPIO 23</span></td>
+              <td><strong>Drain Solenoid & Clutch</strong></td>
+              <td>Opens gravity drain valve and locks drum clutch for spin</td>
+              <td><span class="safe-badge">10s Drain Coast Pre-Spin</span></td>
+            </tr>
+            <tr>
+              <td><span class="relay-channel">IN1 (Relay 4)</span></td>
+              <td><span class="pin-badge">GPIO 18</span></td>
+              <td><strong>Water Inlet Valve</strong></td>
+              <td>Electromagnetic 220V AC solenoid valve for filling tub</td>
+              <td><span class="safe-badge">Max 60m Emergency Cap</span></td>
+            </tr>
+            <tr>
+              <td><span class="relay-channel">Analog Sensor</span></td>
+              <td><span class="pin-badge">GPIO 39</span></td>
+              <td><strong>Water Pressure Sensor</strong></td>
+              <td>Analog ADC1 channel reading water tub pressure (0–3.3V)</td>
+              <td><span class="safe-badge">3.3V Max (Divider Required)</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Protocol Reference -->
+  <section id="protocol">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-tag">Wire Protocol</div>
+        <h2 class="section-title">BLE GATT Line Protocol Reference</h2>
+        <p class="section-desc">Service UUID <code>9f6d1c30-5f2e-4d8a-b7c3-00a1b2c3e001</code> operating with 1 Hz telemetry pushes and MTU reassembly.</p>
+      </div>
+
+      <div class="protocol-card">
+        <div class="protocol-header">
+          <div class="protocol-dots">
+            <span class="protocol-dot" style="background: #ff5f56;"></span>
+            <span class="protocol-dot" style="background: #ffbd2e;"></span>
+            <span class="protocol-dot" style="background: #27c93f;"></span>
+          </div>
+          <span>gatt-protocol-session.log</span>
+          <span>115200 baud / BLE</span>
+        </div>
+        <pre><code>// 1. Inbound Command Characteristic (...e002 write):
+> WASH 600                  // Start wash agitation mode for 600 seconds
+> SPIN 300                  // Engage drain & drum clutch, then spin 300s
+> PROG 0                    // Execute saved sequence in Slot 0 (Cepat)
+> SET WASHMIN 12            // Optimistically update parameter and persist to NVS
+> STOP                      // Emergency halt — immediately de-energize all coils
+
+// 2. Outbound Telemetry Characteristic (...e003 read / notify @ 1 Hz):
+< ST:WASH|WASH 20min|1/1|120|1080|1000|142|W65
+//   Format: ST:&lt;MODE&gt;|&lt;PROG_NAME&gt;|&lt;STEP&gt;/&lt;STEPS&gt;|&lt;ELAPSED_S&gt;|&lt;REMAIN_S&gt;|&lt;ABDI&gt;|&lt;HEAP_KB&gt;|W&lt;WATER%&gt;
+//   MODE:      WASH (Agitation active)
+//   PROG_NAME: WASH 20min
+//   STEP:      1 of 1
+//   ELAPSED:   120 seconds elapsed
+//   REMAIN:    1080 seconds remaining
+//   ABDI:      1000 (Relay A=ON, Relay B=OFF, Drain=OFF, Inlet=OFF)
+//   HEAP:      142 KB free
+//   WATER:     65% tub level</code></pre>
+      </div>
+
+      <!-- CTA Card -->
+      <div class="cta-banner">
+        <h2>Ready to Deploy or Build Your Own?</h2>
+        <p>Download the native Android APK package or browse the full hardware schematics, firmware code, and test suite on GitHub.</p>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <a href="/polytron-wash.apk" class="btn-primary" style="padding: 16px 36px; font-size: 1.05rem;">
+            Download Android APK (v0.1.6)
+          </a>
+          <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener" class="btn-secondary" style="padding: 16px 28px; font-size: 1.05rem;">
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener">GitHub: polytronwash</a>
+        <a href="https://github.com/ther12k/tenunjs" target="_blank" rel="noopener">TenunJS Framework</a>
+        <a href="/polytron-wash.apk">Download APK</a>
+        <a href="/preview">Interactive Canvas Preview</a>
+        <a href="/health">System Health</a>
+      </div>
+      <p>Polytron Wash — Open Source Washing Machine Conversion. Built with ESP32 & TenunJS.</p>
+    </div>
+  </footer>
+
+</body>
 </html>

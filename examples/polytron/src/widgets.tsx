@@ -43,6 +43,43 @@ const C = {
 
 /* -------------------------------- icons --------------------------------- */
 
+/** Blend two #RRGGBB colors (t=0 → a, t=1 → b) — spinner fade tails. */
+function mixHex(a: string, b: string, t: number): string {
+  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return `#${pa.map((v, i) => Math.round(v + (pb[i]! - v) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * HA-style activity spinner: a tail of dots orbiting (cx,cy), head bright
+ * in the accent, fading into the card. Phase advances with the wall clock
+ * — the runtime's animation heartbeat repaints the scene, and each repaint
+ * reads the current phase, so the orbit turns ~4 revolutions / 8 s.
+ */
+function orbitSpinner(
+  put: (op: DisplayOp) => void,
+  cx: number,
+  cy: number,
+  accent: string,
+  phaseMs: number,
+): void {
+  const n = 8;
+  const orbitR = 12;
+  const head = Math.floor(phaseMs / 130) % n;
+  for (let i = 0; i < n; i++) {
+    const idx = (head - i + n) % n; // tail trails the head
+    const angle = (idx / n) * Math.PI * 2;
+    const fade = i === 0 ? 0 : 0.25 + (i / (n - 1)) * 0.75;
+    put({
+      op: "circle",
+      cx: cx + Math.cos(angle) * orbitR,
+      cy: cy + Math.sin(angle) * orbitR,
+      r: i === 0 ? 3 : 2.2 - i * 0.12,
+      color: mixHex(accent, C.card, Math.min(1, fade)),
+    });
+  }
+}
+
 export type FunctionIcon = "wash" | "spin" | "drain" | "droplet" | "waves" | "wavesSlash";
 
 export type IconKind =
@@ -146,7 +183,9 @@ export function drawIcon(
 /* ------------------------------ status strip ----------------------------- */
 
 /** The LCD's SIAP band as a phone strip: status headline + right value,
- *  thin progress track only when there is real progress, caption below. */
+ *  thin progress track only when there is real progress, caption below.
+ *  `spin` swaps the status dot for an orbiting activity spinner (machine
+ *  running / waiting for its first status) — HA loop-card semantics. */
 export function StatusStrip(props: {
   status: string;
   accent: string;
@@ -154,6 +193,7 @@ export function StatusStrip(props: {
   pct: number | null;
   right?: string;
   caption?: string;
+  spin?: boolean;
   onPress?: () => void;
 }): WidgetNode {
   const h = 86;
@@ -162,7 +202,16 @@ export function StatusStrip(props: {
     paint: (origin, put, tap) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
-      put({ op: "circle", cx: 20, cy: 25, r: 5, color: props.accent });
+      // No caption and no progress: center the headline row in the card —
+      // top-aligning it left the lower half dead (the OFFLINE hero looked
+      // half-empty).
+      const bare = props.caption === undefined && props.pct === null;
+      const cy = bare ? Math.round(h / 2) : 25;
+      if (props.spin) {
+        orbitSpinner(put, 20, cy, props.accent, Date.now());
+      } else {
+        put({ op: "circle", cx: 20, cy, r: 5, color: props.accent });
+      }
       const rightBudget = props.right
         ? textWidth(props.right, 15) + (props.onPress ? 42 : 26)
         : props.onPress
@@ -171,7 +220,7 @@ export function StatusStrip(props: {
       put({
         op: "text",
         x: 37,
-        y: 30,
+        y: cy + 5,
         text: truncate(props.status, 15, w - 37 - rightBudget - 12),
         size: 15,
         weight: 800,
@@ -184,7 +233,7 @@ export function StatusStrip(props: {
         put({
           op: "text",
           x: rx,
-          y: 30,
+          y: cy + 5,
           text: props.right,
           size: 15,
           weight: 800,
@@ -192,7 +241,7 @@ export function StatusStrip(props: {
         });
       }
       if (props.onPress) {
-        drawIcon("chevR", w - 16, 25, 7, put, C.dim);
+        drawIcon("chevR", w - 16, cy, 7, put, C.dim);
         tap({ x: 0, y: 0, w, h }, props.onPress);
       }
       const capY = props.pct === null ? 58 : 74;

@@ -95,7 +95,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | f7940530cf4a5a8658a48fa1b6a65ca8a2d7d1e9cdbbd20af825b1d6426c54dc |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | b4b3472fc34b39095889128c6979eae97b009e876f7860a0615a94050871e261 |
+| 06-issues/index.md | 890fb3303186bafdeccc359a3215f884c583291c13365d72322dc684c59b7468 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -262,6 +262,7 @@ status: accepted
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
 | 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
+| 06-issues/tn-159-harden-native-ble-lifecycle-and-connect-ux.md | 7f270b309c824427b85832c16fcf67061ddc5185513a824819c98e88e39e8050 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

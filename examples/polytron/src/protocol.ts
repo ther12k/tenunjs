@@ -205,6 +205,15 @@ export function fmtActivityLine(raw: string): string {
       return `Mulai program ${name}`;
     }
     if (cmd === "TUB") return "Mulai Tub Clean";
+    if (cmd.startsWith("SET PROG")) {
+      const idx = parseInt(cmd.slice(8), 10); // "SET PROG0 …" → slot index
+      const name = PROGRAM_SLOTS[idx]?.name ?? "program";
+      return `Edit program ${name}`;
+    }
+    if (cmd.startsWith("SET ")) {
+      const key = cmd.slice(4).split(" ")[0] ?? "";
+      return `Atur ${key}`;
+    }
     const mode = MODE_LABELS[cmd] ?? cmd;
     return `Mulai ${mode}`;
   }
@@ -212,6 +221,7 @@ export function fmtActivityLine(raw: string): string {
     const msg = line.slice(3).trim();
     if (msg === "STOP") return "Mesin berhenti";
     if (msg.startsWith("PROG ") || msg === "TUB CLEAN") return `Program dimulai (${msg})`;
+    if (msg.startsWith("SET ")) return `Tersimpan: ${msg.slice(4).split(" ")[0] ?? ""}`;
     const m = /^([A-Za-z]+)\s+(\d+)\s*s$/.exec(msg);
     if (m) {
       const mode = MODE_LABELS[m[1]!.toUpperCase()] ?? m[1]!;

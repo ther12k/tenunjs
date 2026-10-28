@@ -16,6 +16,8 @@ import { ListRow, RelayRow, SensorRow, StatusStrip, StopBar } from "../widgets";
 export interface ControlsState {
   link: BleLinkState;
   status: WashStatus | null;
+  /** Receive time (ms) of the last ST: — drives the stale-data flag. */
+  statusAt: number | null;
   pending: string | null;
   snack: WashReply | null;
 }
@@ -26,6 +28,7 @@ export const ControlsScreen = defineScreen({
   initialState: (): ControlsState => ({
     link: { supported: false, connecting: false, connected: false, name: null },
     status: null,
+    statusAt: null,
     pending: null,
     snack: null,
   }),
@@ -40,6 +43,17 @@ export const ControlsScreen = defineScreen({
     status: defineAction<ControlsState, WashStatus | null>({
       run({ input, state }) {
         (state as unknown as ControlsState).status = input;
+      },
+    }),
+    statusAt: defineAction<ControlsState, number | null>({
+      run({ input, state }) {
+        (state as unknown as ControlsState).statusAt = input;
+      },
+    }),
+    /** Heartbeat repaint channel — invalidation-only by design. */
+    tick: defineAction<ControlsState, number>({
+      run() {
+        /* invalidation-only by design */
       },
     }),
     result: defineAction<ControlsState, WashReply>({
@@ -76,6 +90,10 @@ export const ControlsScreen = defineScreen({
     const st = s.status;
     const offline = !s.link.connected;
     const waiting = !offline && st === null;
+    const now = Date.now();
+    const staleFor =
+      offline || waiting || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
+    const stale = !offline && !waiting && staleFor > 15;
 
     const relays: ReadonlyArray<{ icon: "motorA" | "motorB" | "drain" | "droplet"; name: string; on: boolean | null; color: string }> = [
       { icon: "motorA", name: "MOTOR A", on: st ? st.motorA : null, color: "#00B7FD" },
@@ -97,24 +115,29 @@ export const ControlsScreen = defineScreen({
                 ? "OFFLINE"
                 : waiting
                   ? "MENUNGGU STATUS…"
-                  : running
-                    ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
-                    : st!.prog.startsWith("DONE")
-                      ? `SELESAI — ${st!.prog.replace(/^DONE /, "")}`
-                      : st!.mode
+                  : stale
+                    ? `${st!.mode} · DATA BEKU`
+                    : running
+                      ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
+                      : st!.prog.startsWith("DONE")
+                        ? `SELESAI — ${st!.prog.replace(/^DONE /, "")}`
+                        : st!.mode
             }
-            accent={offline || waiting ? "#9DB2C7" : running ? modeColor(st!.mode) : "#00B7FD"}
+            accent={offline || waiting ? "#9DB2C7" : stale ? "#FCB518" : running ? modeColor(st!.mode) : "#00B7FD"}
             pct={pct}
-            right={running ? `SISA ${fmtClock(st!.remainS ?? 0)}` : offline || waiting ? "—" : "SIAP"}
+            right={stale ? `BEKU ${staleFor}s` : running ? `SISA ${fmtClock(st!.remainS ?? 0)}` : offline || waiting ? "—" : "SIAP"}
             caption={
               offline
                 ? "offline · belum ada data"
                 : waiting
                   ? "menunggu status pertama dari mesin"
-                  : running
-                    ? `Ketuk untuk ke Home · ${st!.prog}`
-                    : st?.prog ?? "menunggu status pertama dari mesin"
+                  : stale
+                    ? `data mesin tidak diperbarui · terakhir ${staleFor} dtk lalu`
+                    : running
+                      ? `Ketuk untuk ke Home · ${st!.prog}`
+                      : st?.prog ?? "menunggu status pertama dari mesin"
             }
+            spin={waiting || running}
             onPress={running ? () => actions.goHome() : undefined}
           />
 
@@ -144,6 +167,9 @@ export const ControlsScreen = defineScreen({
             pending={s.pending === "STOP"}
             onPress={() => actions.send1("STOP")}
           />
+          {offline ? (
+            <Text variant="label">STOP aplikasi butuh sambungan — gunakan tombol fisik di mesin</Text>
+          ) : null}
 
           <Column gap="sm">
             <Text variant="label">PERANGKAT</Text>
