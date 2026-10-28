@@ -53,7 +53,7 @@ partially unblocked by ADR-0023):
    the wrong thing.
 2. **Contracts before polish** — capability seams (TN-141, landed:
    `@tenunjs/platform`), the host-to-runtime push channel (TN-142,
-   landed), and semantic theme tokens (TN-143, open) freeze before the
+   landed), and the semantic color contract (TN-143, landed) freeze before the
    widget layer is declared stable; retrofitting seams after apps ship
    is what the consumer record documents.
 3. **P1 Android correctness alongside** — TN-135 (OTA apply vs Activity
@@ -69,6 +69,12 @@ partially unblocked by ADR-0023):
    layout semantics contract (TN-156) freezes the behavior that app
    exercises. Valdi stays engineering reference material; Flutter is the
    benchmark for the experience.
+
+   TN-157 is the first implementation slice: bounded layout in the current
+   TypeScript lowering, an explicit runtime viewport update, and the small
+   Day Plan application. Automatic host viewport delivery, ordinary-widget
+   theme integration, editing, independent scrolling, and host-evaluated
+   transitions remain separate capability slices before TN-155 closes.
 
 Rule of application: overlay items must still declare their issue
 dependencies and land through the normal gate discipline; the overlay

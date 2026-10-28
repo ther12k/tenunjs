@@ -158,6 +158,53 @@ table rebuilt on every render. Hosts stay dumb painter/dispatchers — no
 widget knowledge crosses the boundary, which is why the structural tier
 could grow without touching the Android prototype.
 
+## Finite viewports and framework re-layout (TN-157)
+
+`layoutScreen(theme, tree, { width, height })` supplies finite root bounds
+in design units. `layoutScreen(theme, tree, width)` retains the existing
+content-height mode: root width is finite and root height is unbounded.
+An explicit SizedBox or Container can bound a subtree in either mode.
+
+Finite height reaches the Scaffold body after its AppBar, padded
+containers, and nested Rows/Columns. Expanded shares the available main
+axis in either direction; cross-axis stretch also assigns an actual child
+box. Geometry and hit regions use the same allocation. An Expanded in an
+unbounded main axis throws `LayoutError` with `UNBOUNDED_FLEX`.
+
+`ApplicationRuntime` accepts `viewport` as an alternative to its legacy
+`designWidth` option:
+
+```ts
+const runtime = new ApplicationRuntime({
+  screens,
+  initial: 'today',
+  theme: appTheme,
+  viewport: { width: 720, height: 1000 },
+});
+
+// Called by an adapter that owns the current surface dimensions.
+runtime.setViewport({ width: 540, height: 800 });
+```
+
+A changed viewport preserves route and controller state, invalidates the
+old tap table, and emits one existing state-invalidation notification. A
+subscribed `installHostHandoff` re-renders and commits the new scene;
+otherwise the caller renders explicitly before dispatching new taps.
+Identical dimensions are a no-op. Viewport data is copied, stays outside
+application snapshots, and cannot be changed after runtime disposal.
+
+Viewport dimensions must be positive finite numbers. Malformed dimensions
+or supplying both initial `viewport` and `designWidth` fail with
+`INVALID_VIEWPORT` before state changes. Invalid numeric widget constraints
+fail with `INVALID_CONSTRAINT`; zero-sized widget boxes remain valid.
+
+The [Day Plan foundation](../examples/framework-feel/README.md) exercises
+this API with ordinary TSX screens and one custom visual. **Automatic
+browser/Android viewport delivery is still a TN-155 follow-on.** Current
+hosts repaint/scale a scene when their surface changes size; explicit
+runtime-size tests do not certify that host-resize behavior. No new host
+dispatch verb or scene-wire version is introduced here.
+
 ## Host compatibility contract
 
 Three version identities exist and none implies the others:

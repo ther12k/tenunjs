@@ -35,7 +35,7 @@ status: accepted
 | 02-architecture/jsx-and-reconciliation.md | 4b08aba69dd46a84c40a860bc4935bc6854a03be6ee3b24efbf21abed33f698e |
 | 02-architecture/language-strategy.md | c1fb06533952d01aa6a56d1bc05378a0012120e2ed63ca6023befa7b09d0b8e9 |
 | 02-architecture/layout-adapter-contract.md | e6728124355e631e5925a82505886c6058cfc8b06c8c020cc7115cfd2acccec1 |
-| 02-architecture/layout.md | d8942070164bd0baac4c7a9574b7880427267787faf5963b0f0affe1bc0c834d |
+| 02-architecture/layout.md | a3f0adbc60e15f44887f06902f01f09649a6aa73cd400a8a5ea03dd75efd4cb2 |
 | 02-architecture/mutation-protocol.md | c12d583b154e53c805869b144d531a32b53d7cabfa46058b0e3477481c86c51f |
 | 02-architecture/native-engine.md | a1908607a4686b9fab4acb643de1f89f185aab6c0469ff8e628952e27e269194 |
 | 02-architecture/native-modules-platform-views.md | fcea868e3bf44d9627ce03c36d2fb765a585733d22a35dc03a5ee9b7c3ed0c00 |
@@ -85,7 +85,7 @@ status: accepted
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
-| 04-api/widgets-and-styling.md | da208094de7a1d541d899c92903711e8fbab9750ff63469548090e147f409307 |
+| 04-api/widgets-and-styling.md | 61a2fcc8b2fee80b239f6d37afd22c4131ad61e29d9e9c6c1f82da9d5fb7e15c |
 | 05-delivery/definition-of-done.md | 17adc84f6703efedcde2aaecaf79c1f9946cb6a3c603e70949cde46f584fefe3 |
 | 05-delivery/dependency-graph.md | af2323a75df499ec9d1c58c9c6ea5d3e7a114b8f8fbfed29216ff8130a94c777 |
 | 05-delivery/github-setup.md | 9988283c92ed14677e71efcec3de569f37c90eeac7ea69ab52eea55f6f3fc437 |
@@ -93,9 +93,9 @@ status: accepted
 | 05-delivery/parallel-waves.md | 748f53bde2195b19822a51cf113791bb72bf59836856a77a73a88838dad9ee6e |
 | 05-delivery/release-strategy.md | c5e364a2afead32add83a1d2874ad61790c5a0779d32cdaaa918e1bdee458c3d |
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
-| 05-delivery/roadmap.md | e9e0694b5adc164818a8693b1d8be6d37cd8eea769cc53f863172d055d8fc7cf |
+| 05-delivery/roadmap.md | f7940530cf4a5a8658a48fa1b6a65ca8a2d7d1e9cdbbd20af825b1d6426c54dc |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 2fcf1651496ebb66c6bf958eeaf47799b186140f225e0f1682284a310fafc0ea |
+| 06-issues/index.md | df5c522db1e74731563c1c06a35df82db0dc001830b1a4f812a7d4602bbf25ae |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -173,9 +173,9 @@ status: accepted
 | 06-issues/tn-067-close-controller-action-navigation-gate.md | 9453d771eca4d0833086fbeaea108f8886f2f99be86498bccf7315a8c74bf9ab |
 | 06-issues/tn-068-implement-theme-tokens-and-inherited-widget-context.md | 27cef84189e6d73e63864a1037624696fd464f6315a30018c0725333ccb6833f |
 | 06-issues/tn-069-implement-view-text-fragment-and-spacer-host-widgets.md | ce9eb0e5469d97933304146472b99f7a8291f9369fa19af4f3c3fc61d1cf75e9 |
-| 06-issues/tn-070-implement-row-column-expanded-and-flexible-widgets.md | 9d37ac4e873756338cb4f35be452af53da7211499662870cf245975f4ceb18b0 |
-| 06-issues/tn-071-implement-stack-positioned-align-and-center-widgets.md | db2b5570116d7475bcd10b2604582b8e19f056a67da99ac48661945a6acd4e10 |
-| 06-issues/tn-072-implement-safearea-scaffold-appbar-and-page-shell-widgets.md | 95942e5df3fefd7f14a64a718d7f046fa52df235e240561edebba20e1375ae13 |
+| 06-issues/tn-070-implement-row-column-expanded-and-flexible-widgets.md | 795a37e6e97abc45bca2c3da57fdb77b78eab16817fd02373880bd6e6a571c07 |
+| 06-issues/tn-071-implement-stack-positioned-align-and-center-widgets.md | d3f762ef52b8293a64fbbb8b79b4caf88cdb7d896859ce625c5f40381b357761 |
+| 06-issues/tn-072-implement-safearea-scaffold-appbar-and-page-shell-widgets.md | f110b215c85bb9ae0c38ce3dcd810960b741567f2a70d9ee276d30ae5f396d85 |
 | 06-issues/tn-073-implement-pressable-button-iconbutton-and-interaction-states.md | eebb8b14454a70f236e34a67cf74ed600bc99f293fd515d6d6a6985cf101f11f |
 | 06-issues/tn-074-implement-image-icon-card-divider-badge-and-progress-widgets.md | 43aa85e2a8e563973b19cb969680c5bf6505fd7e62c4b4793c6c0649ef66dcba |
 | 06-issues/tn-075-implement-text-shaping-paragraph-layout-and-font-fallback-service.md | 6d7f3c5025d60e1bf9171504e528383a141d02b7ccdd2410d4906f7593ff21f7 |
@@ -258,8 +258,9 @@ status: accepted
 | 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
-| 06-issues/tn-155-framework-feel-milestone-app.md | 06aae6ac82be4ab751f790fd5f7351e619ec1c42ae58b3196972a6851d54c74e |
+| 06-issues/tn-155-framework-feel-milestone-app.md | e007a098524d4d5a0af048aaed9fea133875a5df76918e0235b66c79d425ab22 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
+| 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 5340397ee2227fb133146e6ad70c562726e59c150e0865811f4c88d8fd130f06 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

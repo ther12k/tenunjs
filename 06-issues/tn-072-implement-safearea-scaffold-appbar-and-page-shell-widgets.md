@@ -26,6 +26,15 @@ depends_on:
 | Suggested size | One focused worktree and PR |
 | Gate impact | Milestone/gate critical |
 
+## Current TypeScript adoption (TN-157)
+
+[TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md)
+gives the existing Scaffold body the finite viewport remainder after its
+AppBar in the TN-133 TypeScript lowering. It does not implement SafeArea,
+IME inset handling, the full page-shell/property-schema contract, or this
+issue's platform evidence. Those responsibilities and dependencies remain
+here; the narrower framework-feel slice does not close this issue.
+
 ## Required outcome
 
 Insets and application shell behavior respond to platform/window changes.
