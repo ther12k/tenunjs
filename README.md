@@ -1,63 +1,128 @@
 ---
 okf_version: 0.2
 title: "TenunJS Native Skia Design Pack v0.2"
-summary: "Repository-ready OKF design, decisions, roadmap, and agent-sized tasks for a TSX mobile framework rendered by Skia."
+summary: "Flutter-inspired framework for building native applications in TypeScript — positioning, design pack, decisions, roadmap, and agent-sized tasks."
 type: index
 status: accepted
 ---
 
 # TenunJS
 
-> **Write TSX. Render native.**
+> **Flutter-style development, written in TypeScript and TSX.**
 
-TenunJS is a new mobile-native UI framework. Application teams write TypeScript and TSX using a compact, Flutter-inspired widget vocabulary. A native engine owns layout, text, input, accessibility, animation, scrolling, scene management, and Skia rendering on iOS and Android.
+TenunJS is an experimental framework for building native mobile applications
+with composable widgets, typed application state, and a familiar TypeScript
+workflow.
 
-> **Project status — framework research, not a product dependency.** TenunJS
-> cannot build and ship a real application today. The API examples in this
-> pack (including the [complete example app](04-api/counter-app-example.md))
-> are **intended API previews**, not quickstarts: the executable application
-> model lands in M3, the usable widget layer in M4, and M0 is still selecting
-> the engine language, JavaScript runtime, and layout backend. There is no
-> package ecosystem yet, and performance/smoothness claims are architectural
-> goals awaiting physical-device evidence — see
-> [Positioning vs React Native, Flutter, NativeScript, and Capacitor](02-architecture/framework-positioning.md).
->
-> What is *executed* today is narrow and experimental: an Android embedder
-> foundation (`embedders/android/`) runs a limited JavaScript-driven
-> reference application — two text fields, an add button, an entry list —
-> installed and operated on a KVM-backed Android 11 emulator as a CI gate
-> (`verify-android-device`), with QuickJS executing the application bundle,
-> Unicode/quote text round-tripping through the production JNI path under
-> CheckJNI, real soft-keyboard input, and a JavaScript-only customization
-> observed on screen. The `verify:android` engine loop also boots a
-> TSX-compiled example bundle (the counter sample through the public
-> host-handoff contract) in the same vendored QuickJS
-> ([TN-144](06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md)),
-> though the packaged APK still boots the hand-authored reference app. A
-> physical Android phone participates in the development loop
-> ([ADR-0023](03-decisions/adr-0023-android-device-unblocks-android-half-evidence.md)),
-> but no governed device evidence has been captured from it yet. Screen
-> readers, animation/scrolling, and iOS remain unimplemented or
-> unexercised; see
-> [TN-132](06-issues/tn-132-installed-android-run-acceptance.md) for the
-> exact evidence boundary.
+Describe your interface in TSX using widgets such as `Scaffold`, `Row`,
+`Column`, `Text`, and `Button`. Build reusable components, connect application
+behavior through typed actions, and organize your application around a
+consistent widget model.
 
+TenunJS is being developed around a shared native UI engine for Android and
+iOS, with Skia as its planned mobile rendering backend. The framework is
+designed to own layout, rendering, interaction, and platform integration.
 
-This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**. TenunJS is not Bundar, is not a Bundar plugin, and does not use HTML or the DOM as its mobile rendering contract.
+> **Development status** — the current Android prototype executes application
+> bundles in embedded QuickJS and renders through Android Canvas. The shared
+> native Skia backend and iOS implementation are planned. APIs and tooling
+> remain experimental — see [Implementation status](#implementation-status-and-roadmap)
+> and [framework positioning](02-architecture/framework-positioning.md) for
+> the exact evidence boundary.
 
-## Fixed product choices
+## A first screen
 
-- Application code is TypeScript + TSX.
-- The framework ships a custom JSX runtime and does not require React.
-- Skia is the mandatory renderer for the v0.x mobile architecture.
-- iOS and Android are the first platforms.
-- Swift and Kotlin thin embedders integrate platform lifecycle, IME, accessibility, and native views.
-- The native engine implementation language is **not predetermined**. A matched C++ versus Rust vertical-slice gate chooses the initial engine implementation based on total development cost.
-- The JavaScript runtime and layout engine are similarly adapter-backed and evidence-gated.
-- The interaction model is action-driven: native event → typed controller action → state transaction → bounded TSX reconciliation → atomic native commit.
-- Scrolling and active animations remain native-side and must continue when JavaScript is busy.
+```tsx
+// examples/counter — a complete screen
+<Scaffold appBar={<AppBar title="Counter" />}>
+  <Column padding="lg" gap="lg" align="center">
+    <Card padding="lg" radius="lg" background="surfaceRaised">
+      <Text variant="display">{state.count}</Text>
+    </Card>
 
-## Start here
+    <Row gap="md">
+      <Button variant="secondary" onPress={actions.decrement}>Decrease</Button>
+      <Button onPress={actions.increment}>Increase</Button>
+    </Row>
+  </Column>
+</Scaffold>
+```
+
+`view({ state, actions })` is the replacement for `setState`: typed actions
+mutate controller state, the runtime re-renders, and the next scene commits
+atomically. The same widget code runs in the browser preview host and in the
+Android embedder's embedded QuickJS.
+
+## Why TenunJS
+
+- **Flutter-inspired composition.** Screens are trees of composable widgets
+  with an explicit layout vocabulary (`Column`, `Row`, `Stack`, `Expanded`,
+  `Positioned`), a coherent set of layout, content, interaction, theme, and
+  navigation widgets, and `CanvasBox` as the custom-drawing escape hatch.
+  Coming from Flutter? The [migration guide](04-api/flutter-migration.md)
+  maps the vocabulary almost name-for-name.
+- **TypeScript authoring.** Typed state and typed actions instead of
+  `setState` and hook rules; strict TypeScript end to end; TSX without React
+  — the framework ships its own JSX runtime.
+- **One framework owns the UI.** A shared rendering model designed for
+  consistent layout and visuals on every platform, with the framework — not
+  an assortment of platform controls — defining how ordinary widgets behave.
+  React independence and the absence of a WebView are supporting
+  architectural facts, not the pitch.
+
+## Try the current prototype
+
+```sh
+bun install
+bun run gallery:preview    # the widget gallery in the browser preview host
+bun run polytron:preview   # the Polytron Wash BLE companion app (dev server)
+```
+
+The Android embedder executes the same TSX-compiled bundles natively — no
+WebView:
+
+```sh
+cd embedders/android
+./gradlew :app:assembleDebug
+```
+
+## How the framework is designed
+
+```text
+TypeScript / TSX application
+            │
+     custom JSX runtime (no React)
+            │
+  controller + typed actions + reconciler
+            │
+   display-list scene (versioned contract)
+            │
+  native widget/scene engine (planned)
+     ├── layout        ├── text + input
+     ├── focus + gestures ├── semantics
+     ├── scroll + animation └── resources
+            │
+           Skia (planned mobile backend)
+            │
+     iOS and Android embedders
+```
+
+Fixed product choices:
+
+- Application code is TypeScript + TSX; the framework ships a custom JSX
+  runtime and does not require React.
+- The interaction model is action-driven: native event → typed controller
+  action → state transaction → bounded TSX reconciliation → atomic native
+  commit.
+- Scrolling and active animations remain native-side and must continue when
+  JavaScript is busy.
+- Skia is the mandatory renderer for the v0.x mobile architecture; the engine
+  implementation language, JavaScript runtime, and layout backend are
+  adapter-backed and evidence-gated.
+- Fail closed and fail visible: a broken bundle or dispatch is never silently
+  replaced by a fallback.
+
+Start here:
 
 1. [Project definition](00-project/product-definition.md)
 2. [System architecture](02-architecture/system-overview.md)
@@ -68,6 +133,73 @@ This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**. TenunJS i
 7. [Issue index](06-issues/index.md)
 8. [Agent execution protocol](07-agent/agent-execution-protocol.md)
 
+## Implementation status and roadmap
+
+TenunJS is framework research in active development, not a product
+dependency. What executes today: TSX-compiled application bundles boot in
+the vendored QuickJS inside the Android embedder (`verify:android` CI gate),
+render through the native display-list painter on Android Canvas, dispatch
+tap/long-press gestures from `MotionEvent`s, and talk to real hardware — the
+[Polytron Wash](examples/polytron/README.md) companion app drives a BLE GATT
+washer controller entirely from TSX with no WebView. The full planned stack —
+shared C++/Rust engine, direct Skia rendering, iOS embedder, complete widget
+layer — is tracked through the [milestones](05-delivery/milestones.md) and
+the [current sequencing overlay](05-delivery/roadmap.md); the next intended
+milestone is a small end-to-end application that demonstrates the framework
+experience this README promises
+([TN-155](06-issues/tn-155-framework-feel-milestone-app.md)). Exact
+capabilities and evidence boundaries:
+[framework positioning](02-architecture/framework-positioning.md),
+[TN-132](06-issues/tn-132-installed-android-run-acceptance.md).
+
+This v0.2 pack **supersedes the HTML/hypermedia assumptions in v0.1**.
+TenunJS is not Bundar, is not a Bundar plugin, and does not use HTML or the
+DOM as its mobile rendering contract.
+
+## Documentation and contributing
+
+```text
+00-project/       Product definition, scope, principles, terminology
+01-requirements/  Functional and quality requirements
+02-architecture/  Runtime, engine, rendering, platform, and source design
+03-decisions/     Architecture decision records
+04-api/           Concrete TSX and controller examples
+05-delivery/      Roadmap, milestones, gates, risks, dependencies
+06-issues/        One agent-sized Markdown task per implementation issue
+07-agent/         Low-context prompts and evidence rules
+08-validation/    Bundle validation and generated reports
+```
+
+The package scope, repository owner, domains, and trademark availability
+remain fail-closed until TN-001 records evidence. Contributions follow
+[CONTRIBUTING.md](CONTRIBUTING.md) and the repository's verification gates
+(`bun run verify`).
+
+## Core repository target
+
+```text
+tenun/
+├── packages/
+│   ├── core/
+│   ├── jsx-runtime/
+│   ├── widgets/
+│   ├── navigation/
+│   ├── native-modules/
+│   ├── cli/
+│   └── testing/
+├── engine/
+│   ├── core/
+│   ├── renderer-skia/
+│   ├── runtime-host/
+│   └── layout/
+├── embedders/
+│   ├── ios/
+│   └── android/
+├── examples/
+├── benchmarks/
+└── docs/
+```
+
 ## Driving development with an AI agent
 
 Paste the prompt below into any coding agent to get protocol-correct work out
@@ -76,12 +208,13 @@ protocol](07-agent/agent-execution-protocol.md); the chosen issue file and
 that protocol remain authoritative when they disagree with this summary.
 
 ```text
-You are implementing ONE task in TenunJS (github.com/ther12k/tenunjs): a TSX
-mobile UI framework that renders NATIVELY — no React, no DOM, no WebView.
-Application code is TypeScript/TSX (custom JSX runtime) executing on embedded
-QuickJS; the Android embedder (embedders/android) paints a display-list scene
-on a SurfaceView and injects native services (BLE, system) through the JNI
-Host Service Bridge.
+You are implementing ONE task in TenunJS (github.com/ther12k/tenunjs): a
+Flutter-inspired framework for building native applications in TypeScript,
+with TSX for declaring UI — no React, no DOM, no WebView. Application code is
+TypeScript/TSX (custom JSX runtime) executing on embedded QuickJS; the
+Android embedder (embedders/android) paints a display-list scene on a
+SurfaceView and injects native services (BLE, system) through the JNI Host
+Service Bridge.
 
 WORKING AGREEMENT
 1. Pick exactly ONE task: an issue file in 06-issues/ with `status: ready`,
@@ -123,7 +256,7 @@ HARD PROHIBITIONS
 - No unrelated issues, refactors, or formatting churn in one PR.
 - No emulator evidence reported as physical-device evidence.
 - No claim of future work as current completion. Match the honesty of the
-  project status block above: state what is executed, what is prototype,
+  development-status note above: state what is executed, what is prototype,
   and what is unimplemented.
 - If blocked, return BLOCKED with the exact missing dependency, a minimal
   reproduction, and why no local workaround preserves the invariant.
@@ -136,44 +269,3 @@ READ DEEPER ONLY WHERE YOUR TASK CROSSES
 - embedders/android/README.md               embedder, hot reload, OTA
 - 06-issues/index.md                        the task queue
 ```
-
-## Bundle shape
-
-```text
-00-project/       Product definition, scope, principles, terminology
-01-requirements/  Functional and quality requirements
-02-architecture/  Runtime, engine, rendering, platform, and source design
-03-decisions/     Architecture decision records
-04-api/           Concrete TSX and controller examples
-05-delivery/      Roadmap, milestones, gates, risks, dependencies
-06-issues/        One agent-sized Markdown task per implementation issue
-07-agent/         Low-context prompts and evidence rules
-08-validation/    Bundle validation and generated reports
-```
-
-## Core repository target
-
-```text
-tenun/
-├── packages/
-│   ├── core/
-│   ├── jsx-runtime/
-│   ├── widgets/
-│   ├── navigation/
-│   ├── native-modules/
-│   ├── cli/
-│   └── testing/
-├── engine/
-│   ├── core/
-│   ├── renderer-skia/
-│   ├── runtime-host/
-│   └── layout/
-├── embedders/
-│   ├── ios/
-│   └── android/
-├── examples/
-├── benchmarks/
-└── docs/
-```
-
-The package scope, repository owner, domains, and trademark availability remain fail-closed until TN-001 records evidence.

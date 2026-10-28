@@ -59,6 +59,16 @@ partially unblocked by ADR-0023):
 3. **P1 Android correctness alongside** — TN-135 (OTA apply vs Activity
    destruction) and TN-136 (bounded bundle evaluation) proceed as
    embedder hardening independent of the M-gates.
+4. **The next convincing milestone is the framework-feel app (2026-10-28)** —
+   the positioning decision (product definition, 2026-10-28) judges TenunJS
+   against the Flutter app-building experience, so after TN-154 proved the
+   platform substrate, the priority is one small end-to-end TSX application
+   (TN-155: nested layout under resizing, editable text, independent
+   scrolling, a route transition with animation, custom drawing, same code
+   on every available embedder) over expanding the gallery. The public
+   layout semantics contract (TN-156) freezes the behavior that app
+   exercises. Valdi stays engineering reference material; Flutter is the
+   benchmark for the experience.
 
 Rule of application: overlay items must still declare their issue
 dependencies and land through the normal gate discipline; the overlay

@@ -56,7 +56,7 @@ The three authoring tiers:
 | `CircleAvatar` | `Avatar` | ui-kit |
 | `Chip` / `FilterChip` | `Chip` | ui-kit |
 | `Switch`, `Checkbox`, `Slider` | same names | ui-kit |
-| `TextField` | `TextField` | focus-ring stand-in for real editing |
+| `TextField` | `TextField` | prototype: focus-ring stand-in; real editing/IME is the intended surface (M4) |
 | `TabBar` / `TabBarView` | `Tabs` | screen state owns the page |
 | `BottomNavigationBar` | `NavigationBar` | ui-kit |
 | `Drawer` | `ModalDrawer` | overlay; place last in the body |
@@ -64,7 +64,7 @@ The three authoring tiers:
 | `showDialog` | `AlertDialog` | overlay; place last |
 | `ScaffoldMessenger` / `SnackBar` | `SnackBar` | screen state owns visibility |
 | `ListTile` | `ListTile` | leading/title/subtitle/trailing |
-| `ListView` | `Column` | the whole scene scrolls; no virtualization yet |
+| `ListView` | `Column` | prototype: the whole scene scrolls; independent scroll regions and virtualization are the intended replacement (TN-155) |
 | `Image` / `Image.network` | — | no image op yet (host capability, tracked) |
 | animations | — | deterministic scenes; animation is future work |
 | `CustomPainter` | `CanvasBox paint=` | same escape hatch |
@@ -93,31 +93,61 @@ Colors on structural widgets accept `#rrggbb`/`#aarrggbb` literals or
 palette role names (`"primary"`, `"onSurfaceVariant"`, ...), so themes flow
 without imports.
 
-## Input model differences (deliberate, not missing)
+## Input model: prototype boundaries, not the destination
 
-- **Tap dispatch is region-based, topmost-wins.** There is no gesture
-  arena and no disambiguation between competing detectors: tap regions
-  register in paint order and the last containing region receives the
-  event. This is what makes modal scrims safe (they register after the
-  content they cover) — the same rule on every host.
-- **One gesture type.** `GestureDetector` means `onTap`. Drag/pinch/
-  long-press are not part of the contract yet; vertical drag is owned by
-  the host's scene scrolling (with touch-slop separation, so a drag never
-  fires a tap).
-- **"Hot reload" is engine replacement + snapshot restore.** A replaced
-  engine gets a serialized snapshot — exported state survives, live
-  objects and callback identity do not. Flutter's hot reload preserves
-  state in place and skips `main()`/`initState()`; the mechanisms differ
-  and so do their limits.
+The widget vocabulary maps closely, but today's interaction behavior is
+prototype-grade. These are boundaries of the executing prototype — each has
+an intended replacement in the architecture, tracked through the issue queue:
 
-## Honest gaps today
+- **Tap dispatch is region-based, topmost-wins (prototype).** There is no
+  gesture arena and no disambiguation between competing detectors yet: tap
+  regions register in paint order and the last containing region receives
+  the event (which is what makes modal scrims safe today). The intended
+  model — gesture arbitration, drag/pinch, focus — is owned by the
+  [input, focus, and gestures architecture](../02-architecture/input-focus-gestures.md);
+  long-press already rides the display-list contract (TN-148/TN-152).
+- **One gesture type, whole-scene scrolling (prototype).** `GestureDetector`
+  means `onTap`; vertical drag is owned by the host scrolling the entire
+  scene. The intended model is independent, nested scroll regions with
+  gesture arbitration
+  ([scrolling and animation](../02-architecture/scrolling-animation.md)) —
+  `ListView`-style widgets arrive with it, not as a `Column` substitute
+  forever.
+- **`TextField` is a focus-ring stand-in (prototype).** Real text editing,
+  IME composition, and selection are owned by the
+  [text and IME architecture](../02-architecture/text-and-ime.md); the
+  Android embedder already exercises a production soft-keyboard path on its
+  reference app, and the widget-level surface catches up under M4.
+- **"Hot reload" is engine replacement + snapshot restore (deliberate
+  mechanism).** A replaced engine gets a serialized snapshot — exported
+  state survives, live objects and callback identity do not. Flutter's hot
+  reload preserves state in place and skips `main()`/`initState()`; the
+  mechanisms differ and so do their limits. This is a design choice about
+  the QuickJS runtime, not a missing feature.
+
+## Honest gaps today (prototype boundaries to be replaced)
+
+These are known prototype limits with intended replacements — not permanent
+framework positions:
 
 - `Column` has no main-axis `justify` — the scene is content-height and
-  scrolls, so there is no free main-axis space to distribute.
+  scrolls, so there is no free main-axis space to distribute (bounded
+  containers arrive with the
+  [public layout contract](../02-architecture/layout.md), TN-156).
 - `Expanded` works in Rows; bounded-height Columns come later.
 - Row `align="stretch"` degrades to `start` (no cross-axis size forcing
   in the prototype engine).
 - No `Image`, no animations, no list virtualization (see the table).
+- No persistent element/render layer yet: every render rebuilds the
+  display list. Widget identity, incremental reconciliation, and preserved
+  state across reconciliation are part of the planned widget layer — the
+  display-list scene is the prototype's commit format, not the final
+  element model.
+
+The end-to-end application that exercises the intended behavior — nested
+layout under resizing, editable text, independent scrolling, route
+transitions with animation — is the next milestone
+([TN-155](../06-issues/tn-155-framework-feel-milestone-app.md)).
 
 ## Cookbook
 

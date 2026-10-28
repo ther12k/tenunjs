@@ -15,6 +15,16 @@ TenunJS is a **mobile-native UI framework** with four layers:
 3. A native UI engine that owns layout, rendering, input, semantics, scrolling, animation, and resources.
 4. Thin iOS and Android embedders for platform lifecycle and services.
 
+## Positioning
+
+TenunJS is a **Flutter-inspired framework for building native applications
+in TypeScript, with TSX for declaring UI** (decided 2026-10-28; see
+[framework positioning](../02-architecture/framework-positioning.md)).
+Flutter is the primary benchmark for the application-building experience —
+composable widgets, coherent layout semantics, framework-owned rendering —
+while the typed-action state model and TSX-without-React authoring remain
+TenunJS's own choices, not Dart-API reproductions.
+
 ## Primary user
 
 A TypeScript developer building application-oriented mobile interfaces who wants Flutter-like widget composition without Dart and without requiring React or a browser engine.
