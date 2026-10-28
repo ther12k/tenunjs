@@ -71,7 +71,8 @@ status: accepted
 | 03-decisions/adr-0021-product-charter-freeze.md | d3d3081b9119d36225d4b4d0c07beae83c40f644f88c52c775dbfe825b66f913 |
 | 03-decisions/adr-0022-m0-gates-blocked-on-device-availability.md | 4a115de9285c3f4b4ad2a917fc9037302633dc7e5a940efa72aadfb431383440 |
 | 03-decisions/adr-0023-android-device-unblocks-android-half-evidence.md | 705502479067cd4581b7c92072439b6bcf588eea122829de1978a3ebeb49149a |
-| 03-decisions/index.md | e08a182f9567f52146dc014058ae52179f0962e12896069118e36d2dc6ac7683 |
+| 03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md | 1f1a0b7d89c0d297f6a1359d9562c0c9a37bfa6e589d45b25d37d16e414ecc35 |
+| 03-decisions/index.md | c8cdc83e9f41b6c1adbd21c13a7650e39a86b2fa618a7aed16db2ee473b43e01 |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |
@@ -84,7 +85,7 @@ status: accepted
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
-| 04-api/widgets-and-styling.md | b38e1e7327594eaecf6a0e587f501e62ceccde31e4cf88fce0f7514d92ee4e78 |
+| 04-api/widgets-and-styling.md | da208094de7a1d541d899c92903711e8fbab9750ff63469548090e147f409307 |
 | 05-delivery/definition-of-done.md | 17adc84f6703efedcde2aaecaf79c1f9946cb6a3c603e70949cde46f584fefe3 |
 | 05-delivery/dependency-graph.md | af2323a75df499ec9d1c58c9c6ea5d3e7a114b8f8fbfed29216ff8130a94c777 |
 | 05-delivery/github-setup.md | 9988283c92ed14677e71efcec3de569f37c90eeac7ea69ab52eea55f6f3fc437 |
@@ -94,7 +95,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | e9e0694b5adc164818a8693b1d8be6d37cd8eea769cc53f863172d055d8fc7cf |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | d03ee6b7ddc4837450d86c6cba629623e23d5d9c4153339eac097046513cf94c |
+| 06-issues/index.md | 2fcf1651496ebb66c6bf958eeaf47799b186140f225e0f1682284a310fafc0ea |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -170,7 +171,7 @@ status: accepted
 | 06-issues/tn-065-implement-android-back-and-ios-interactive-navigation-hooks.md | 1dc307c58bd09debe7bc99f4dda70d93f74db7f87bef66e7582ccb07f45b4b7c |
 | 06-issues/tn-066-implement-versioned-navigation-and-controller-state-restoration.md | d05278f2271d12b6ca69550679242ed3bc4307e10f705bd34375a85f61945e29 |
 | 06-issues/tn-067-close-controller-action-navigation-gate.md | 9453d771eca4d0833086fbeaea108f8886f2f99be86498bccf7315a8c74bf9ab |
-| 06-issues/tn-068-implement-theme-tokens-and-inherited-widget-context.md | c7ce5550740d90cc2cff3c36c7767112d95d99776a2e13fe767736f9e91a53c2 |
+| 06-issues/tn-068-implement-theme-tokens-and-inherited-widget-context.md | 27cef84189e6d73e63864a1037624696fd464f6315a30018c0725333ccb6833f |
 | 06-issues/tn-069-implement-view-text-fragment-and-spacer-host-widgets.md | ce9eb0e5469d97933304146472b99f7a8291f9369fa19af4f3c3fc61d1cf75e9 |
 | 06-issues/tn-070-implement-row-column-expanded-and-flexible-widgets.md | 9d37ac4e873756338cb4f35be452af53da7211499662870cf245975f4ceb18b0 |
 | 06-issues/tn-071-implement-stack-positioned-align-and-center-widgets.md | db2b5570116d7475bcd10b2604582b8e19f056a67da99ac48661945a6acd4e10 |
@@ -245,7 +246,7 @@ status: accepted
 | 06-issues/tn-140-surface-malformed-display-list-instead-of-legacy-fallback.md | 25cdf2a3db9c4caee10ae3b625b4cf14571f015eb4b4efca126338764caa097d |
 | 06-issues/tn-141-freeze-minimal-capability-seam-contracts.md | c7100ab6a6091a8f59e801cf3d3cd4810cfed9851dcd4a80c4ce0cd8458708e6 |
 | 06-issues/tn-142-own-host-to-runtime-push-channel.md | 2f2cfaf0ea30c21ef0339575f030179bf383a93845665976fd32cc4693845ab7 |
-| 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | d667682e6177568360e9ffa1b8ea51d53a7ffef673a6b67a31854558ddc668b7 |
+| 06-issues/tn-143-decide-semantic-theme-token-slots-before-widgets-freeze.md | 9b95ba47ce334004bbb6da2037545d1d941cf6adcf90edbeb6554a0c2924407e |
 | 06-issues/tn-144-run-a-tsx-compiled-example-bundle-in-the-android-quickjs-host.md | 6b191617fffe14fc708c006db4d3d9e2b13cf976bda033fcb9abf30796bc91ea |
 | 06-issues/tn-145-assert-host-parity-for-application-service-seams.md | 971f7d8476d59f68f3f396c24e2710d437b33b292dd25665a61d9b7af47162cb |
 | 06-issues/tn-146-own-browser-shell-integration-ux.md | 3bfd494f851ec13015003f52de20b1faf76ab7c316f567c97363119db51cd786 |

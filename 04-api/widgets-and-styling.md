@@ -47,7 +47,7 @@ top of the structural tier: `Avatar`, `Chip`, `Switch`, `Checkbox`,
 equivalent for genuinely hand-drawn visuals; its paint closure emits plain
 display-list ops and composes inside the structural widgets.
 
-## Typed theme
+## Current prototype theme
 
 ```ts
 export const appTheme = defineTheme({
@@ -73,12 +73,72 @@ selectors or cascade, and compiles to host-widget property blocks.
 Color props on the structural widgets accept `#rrggbb` / `#aarrggbb`
 literals or palette role names (`"primary"`, `"onSurfaceVariant"`, ...).
 `ThemeScopeBox` narrows the palette for a region — Flutter's `Theme`
-widget, minus the context gymnastics.
+inspiration for the prototype. It is not yet the complete inherited
+widget context or app-wide theme invalidation promised by TN-068.
+
+## Accepted semantic color contract (TN-143)
+
+[ADR-0024](../03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md)
+freezes the color vocabulary and indirection rule before the widget layer
+stabilizes. New widget schemas and semantic drawing APIs use a `ColorRef`,
+created with `colorSlot("onSurface")`, instead of a literal color. Complete
+palettes own the literal values. Application-specific colors use named
+slots such as `colorSlot("app.chartRevenue")`.
+
+The reference API is exported from `@tenunjs/widgets`:
+
+```ts
+import {
+  bakeThemeScene,
+  colorSlot,
+  type SemanticDisplayListScene,
+  type ThemePalette,
+} from '@tenunjs/widgets';
+
+const source: SemanticDisplayListScene = {
+  tenun: 'semantic-display-list',
+  version: 1,
+  designWidth: 360,
+  contentHeight: 120,
+  background: colorSlot('background'),
+  ops: [{
+    op: 'text', x: 16, y: 40, text: 'One screen, two palettes',
+    size: 18, weight: 600, color: colorSlot('onBackground'),
+  }],
+  taps: [],
+};
+
+function commitWithPalette(palette: ThemePalette) {
+  // Keep source for the next palette change. The returned scene is
+  // disposable concrete-color output for the current v1 hosts.
+  return bakeThemeScene(source, palette);
+}
+```
+
+`defineColorPalette()` validates and freezes a complete palette. Built-in
+slots include background/surface pairs, primary/container pairs, outlines,
+status/foreground pairs, and inverse surfaces; the ADR lists all 24.
+Missing slots, malformed colors, unknown names, and literals inside a
+semantic scene throw `ThemeContractError` with a stable code. A failed
+bake does not mutate the source or the previous scene.
+
+The [theme contract example](../examples/theme-contract/README.md) supplies
+complete light/dark palettes and persists the selected preference through
+`StorageCapability`. It proves this boundary with one unchanged semantic
+screen. Ordinary TSX widgets, inherited scopes, and `ApplicationRuntime`
+theme invalidation are still TN-068 implementation work; the prototype
+widget props shown above have not silently changed to accept `ColorRef`.
+
+The semantic scene stays in TypeScript. Only the result of
+`bakeThemeScene()` uses the existing display-list v1 host format. Palette
+colors use `#RRGGBB` or alpha-first `#AARRGGBB`; browser preview adapters
+need conversion for the latter before claiming alpha conformance. The
+reference example uses opaque colors.
 
 ## How layout lowers
 
 The display-list engine walks the widget tree in a measure/place pass and
-emits a plain-JSON scene every host paints identically:
+emits a plain-JSON scene consumed by the prototype hosts:
 
 ```json
 {

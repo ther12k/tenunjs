@@ -1,0 +1,12 @@
+{
+  "name": "@tenunjs-examples/theme-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TN-143 semantic color and persisted-preference contract reference",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/platform": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  }
+}
