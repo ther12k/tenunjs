@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { HostWidgetKind } from "@tenunjs/protocol";
 import { Fragment, JsxValidationError, jsx, validateProps } from "../src/index";
@@ -31,6 +31,30 @@ const EMIT = (variant: "production" | "development", name: string) =>
     variant,
     `${name}.js`
   );
+
+// This file must be self-sufficient: bun test interleaves test files, so
+// the fixtures this file imports cannot rely on tsx-transform.test.ts
+// having compiled first (on CI a cold `bun x tsc` cache widens that
+// window and the imports fail with "Cannot find module"). Both variants
+// are compiled here because the source-metadata test below imports a
+// development fixture. spawnSync blocks the thread, so once a beforeAll
+// compile runs, no other file's imports can observe a half-emitted .out.
+// The invocation is idempotent and cheap warm.
+beforeAll(() => {
+  for (const config of ["tsconfig.production.json", "tsconfig.development.json"]) {
+    const proc = Bun.spawnSync({
+      cmd: ["bun", "x", "tsc", "-p", config],
+      cwd: FIXTURES_DIR,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `${config} fixture compile failed:\n${proc.stdout.toString()}${proc.stderr.toString()}`
+      );
+    }
+  }
+});
 
 async function loadFixture(name: string): Promise<Record<string, unknown>> {
   return import(EMIT("production", name)) as Promise<Record<string, unknown>>;
