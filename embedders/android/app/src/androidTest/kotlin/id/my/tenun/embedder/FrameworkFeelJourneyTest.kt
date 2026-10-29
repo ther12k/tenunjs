@@ -8,7 +8,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.TimeUnit
 
 /**
  * TN-155 requirement 7, surface leg: the SAME compiled Day Plan bundle
@@ -17,6 +16,10 @@ import java.util.concurrent.TimeUnit
  * the InputConnection — taps, the host-evaluated route transition, the
  * runtime theme toggle, checklist scrolling, and title editing. Host
  * divergence is a bug, not a port.
+ *
+ * Everything touching the view runs on the MAIN thread (runOnMainSync is
+ * not reentrant, so composite steps use the raw* helpers inside one
+ * block) — the same discipline DisplayListTextInputTest follows.
  */
 @RunWith(AndroidJUnit4::class)
 class FrameworkFeelJourneyTest {
@@ -25,6 +28,9 @@ class FrameworkFeelJourneyTest {
     private val bundle: ByteArray by lazy {
         instrumentation.context.assets.open("framework_feel_app.js").use { it.readBytes() }
     }
+
+    private lateinit var view: TenunSurfaceView
+    private lateinit var engine: TenunEngine
 
     /** A tap region's center in VIEW pixels (the view is laid out at the
      *  app's design size, so pixels equal design units). */
@@ -44,26 +50,30 @@ class FrameworkFeelJourneyTest {
         view.committedSceneForTest().first!!.ops.filterIsInstance<DisplayListScene.Op.TextOp>()
             .first { it.text.text == label }
 
-    private fun sceneText(): String =
-        view.committedSceneForTest().first.toString()
+    private fun sceneText(): String = view.committedSceneForTest().first.toString()
 
-    private lateinit var view: TenunSurfaceView
-    private lateinit var engine: TenunEngine
+    private fun fieldDescriptor(): DisplayListScene.Op.TextInputOp? =
+        view.committedSceneForTest().first!!.focusedEditableInput()
 
-    private fun tap(label: String) {
-        val (x, y) = tapCenter(label)
-        touch(MotionEvent.ACTION_DOWN, x, y)
-        touch(MotionEvent.ACTION_UP, x, y)
-    }
-
-    private fun touch(action: Int, x: Float, y: Float) {
+    /** Raw event delivery — MUST be called on the main thread. */
+    private fun rawTouch(action: Int, x: Float, y: Float) {
         val now = System.currentTimeMillis()
         val event = MotionEvent.obtain(now, now, action, x, y, 0)
         try {
-            instrumentation.runOnMainSync { view.dispatchTouchEvent(event) }
+            view.dispatchTouchEvent(event)
         } finally {
             event.recycle()
         }
+    }
+
+    private fun rawTap(label: String) {
+        val (x, y) = tapCenter(label)
+        rawTouch(MotionEvent.ACTION_DOWN, x, y)
+        rawTouch(MotionEvent.ACTION_UP, x, y)
+    }
+
+    private fun tap(label: String) {
+        instrumentation.runOnMainSync { rawTap(label) }
     }
 
     private fun waitForSettle(timeoutMs: Long = 3000) {
@@ -91,9 +101,10 @@ class FrameworkFeelJourneyTest {
         try {
             // 1. Boot: the shared bundle commits its first frame.
             val initial = view.committedSceneForTest().first!!
-            assertEquals("#F6F7FC", initial.background) // light palette surface
+            assertEquals("light palette surface at boot", "#F6F7FC", initial.background)
             assertEquals("Day Plan", textOf("Day Plan").text.text)
             assertEquals("0 / 3", textOf("0 / 3").text.text)
+            assertNull("boot commit carries no transition", initial.transition)
 
             // 2. Complete a task through a real tap.
             tap("Complete task")
@@ -104,9 +115,8 @@ class FrameworkFeelJourneyTest {
             tap("View progress")
             val navigated = view.committedSceneForTest().first!!
             assertEquals("Progress", textOf("Progress").text.text)
-            assertEquals("slide", navigated.transition?.kind)
+            assertEquals("forward transition on the committed scene", "slide", navigated.transition?.kind)
             assertEquals("forward", navigated.transition?.direction)
-            assertTrue(view.isTransitionActiveForTest || runSettledQuick())
             waitForSettle()
 
             // 4. Return: backward transition, retained Today session.
@@ -114,45 +124,51 @@ class FrameworkFeelJourneyTest {
             assertEquals("backward", view.committedSceneForTest().first!!.transition?.direction)
             waitForSettle()
             assertEquals("Day Plan", textOf("Day Plan").text.text)
-            assertEquals("1 / 3", textOf("1 / 3").text.text)
+            assertEquals("retained journey state after return", "1 / 3", textOf("1 / 3").text.text)
 
             // 5. Runtime theme toggle: recolors the committed scene, keeps
             //    the journey state (TN-170).
             tap("Toggle theme")
-            assertEquals("#101014", view.committedSceneForTest().first!!.background)
+            assertEquals("dark palette after toggle", "#101014", view.committedSceneForTest().first!!.background)
             assertEquals("1 / 3", textOf("1 / 3").text.text)
             tap("Toggle theme")
-            assertEquals("#F6F7FC", view.committedSceneForTest().first!!.background)
+            assertEquals("light palette restored", "#F6F7FC", view.committedSceneForTest().first!!.background)
 
-            // 6. Edit the plan title through the platform input path.
-            tap("Plan title")
-            val connection = view.onCreateInputConnection(EditorInfo())
-            assertNotNull("focused plan-title adopts an editor", connection)
-            assertTrue(connection!!.commitText(" (weekend)", 1))
-            assertTrue(sceneText().contains("(weekend)"))
+            // 6. Edit the plan title through the platform input path — one
+            //    main-thread block (runOnMainSync is not reentrant).
+            instrumentation.runOnMainSync {
+                rawTap("Plan title")
+                val focused = fieldDescriptor()
+                assertNotNull("plan-title focused by the tap", focused)
+                val before = focused!!.input.text
+                val connection = view.onCreateInputConnection(EditorInfo())
+                assertNotNull("focused plan-title adopts an editor", connection)
+                assertTrue("commitText accepted", connection!!.commitText(" (weekend)", 1))
+                val edited = fieldDescriptor()
+                assertNotNull("descriptor present after edit", edited)
+                assertEquals(
+                    "edited title committed: ${edited!!.input.text}",
+                    before + " (weekend)", edited.input.text
+                )
+            }
 
             // 7. Scroll the checklist region with a real drag, then keep
             //    tapping accurately — content-space hit-testing holds.
-            val checklist = textOf("Today's checklist")
-            val startX = 360f
-            val startY = checklist.text.y + 60f
-            touch(MotionEvent.ACTION_DOWN, startX, startY)
-            for (step in 1..6) touch(MotionEvent.ACTION_MOVE, startX, startY - step * 40f)
-            touch(MotionEvent.ACTION_UP, startX, startY - 240f)
+            instrumentation.runOnMainSync {
+                val checklist = textOf("Today's checklist")
+                val startX = 360f
+                val startY = checklist.text.y + 60f
+                rawTouch(MotionEvent.ACTION_DOWN, startX, startY)
+                for (step in 1..6) rawTouch(MotionEvent.ACTION_MOVE, startX, startY - step * 40f)
+                rawTouch(MotionEvent.ACTION_UP, startX, startY - 240f)
+            }
             tap("Complete task")
-            assertEquals("2 / 3", textOf("2 / 3").text.text)
+            assertEquals("taps stay accurate after scrolling", "2 / 3", textOf("2 / 3").text.text)
         } finally {
             instrumentation.runOnMainSync {
                 view.engine = null
                 engine.destroy()
             }
         }
-    }
-
-    private fun runSettledQuick(): Boolean {
-        // The transition may have completed before the assertion ran; that
-        // is success, not failure — waitForSettle below enforces settle.
-        TimeUnit.MILLISECONDS.sleep(50)
-        return true
     }
 }
