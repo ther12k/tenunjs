@@ -263,7 +263,7 @@ status: accepted
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
 | 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
 | 06-issues/tn-159-harden-native-ble-lifecycle-and-connect-ux.md | 7f270b309c824427b85832c16fcf67061ddc5185513a824819c98e88e39e8050 |
-| 06-issues/tn-160-deliver-controlled-widget-text-input.md | 2ddfc0c4e7c15448fcb715abba7ddb195df12dab1f05d98f0873f1d3de90b0c1 |
+| 06-issues/tn-160-deliver-controlled-widget-text-input.md | beda45559081b4c5c462f6320febf3d53871a3001702d3b60e504aa1ff322439 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
