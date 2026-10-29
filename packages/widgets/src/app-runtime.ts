@@ -282,6 +282,19 @@ export class ApplicationRuntime {
     this.notifyStale();
   }
 
+  /**
+   * TN-169 burst semantics: a navigation inside one dispatch may commit
+   * MORE THAN ONE scene (the out-of-band invalidation commit for channel
+   * replay, then the dispatch-return commit). Hosts that only observe
+   * dispatch boundaries — the Android engine returns the FINAL commit —
+   * must still see the transition, so the stamp rides every commit of
+   * the burst and the host handoff ends the burst after its final
+   * dispatch-path commit (see installHostHandoff).
+   */
+  endTransitionBurst(): void {
+    this.pendingTransition = null;
+  }
+
   navigate(name: string, options?: NavigateOptions): void {
     this.assertLive();
     if (!(name in this.screens)) {
@@ -356,9 +369,10 @@ export class ApplicationRuntime {
       text: focused.text, selection: focused.selection, composing: focused.composing,
     } : undefined;
     this.lastTapRuns = tapRuns;
+    // TN-169 burst semantics: every commit of the navigation burst carries
+    // the stamp; the next dispatch entry clears it (see dispatch).
     if (this.pendingTransition !== null) {
       scene.transition = this.pendingTransition;
-      this.pendingTransition = null;
     }
     return { scene, tapRuns };
   }

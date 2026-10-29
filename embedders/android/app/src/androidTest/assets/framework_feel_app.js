@@ -1572,6 +1572,9 @@
       this.theme = theme;
       this.notifyStale();
     }
+    endTransitionBurst() {
+      this.pendingTransition = null;
+    }
     navigate(name, options) {
       this.assertLive();
       if (!(name in this.screens)) {
@@ -1627,7 +1630,6 @@
       this.lastTapRuns = tapRuns;
       if (this.pendingTransition !== null) {
         scene.transition = this.pendingTransition;
-        this.pendingTransition = null;
       }
       return { scene, tapRuns };
     }
@@ -1878,15 +1880,21 @@
     }
   }
   // packages/widgets/src/host-handoff.ts
+  function withoutTransition(sceneJson) {
+    const parsed = JSON.parse(sceneJson);
+    if (parsed.transition === undefined)
+      return sceneJson;
+    const { transition: _omit, ...rest } = parsed;
+    return JSON.stringify(rest);
+  }
   function installHostHandoff(options) {
     const { app } = options;
     let last = null;
     const commit = () => {
       const json = JSON.stringify(app.render().scene);
+      last = json;
       if (typeof options.commit === "function") {
         options.commit(json);
-      } else {
-        last = json;
       }
     };
     const dispatch = (action, payloadJson) => {
@@ -1897,6 +1905,13 @@
         payload = {};
       }
       const normalized = action.toUpperCase();
+      try {
+        return dispatchInBurst(normalized, payload);
+      } finally {
+        app.endTransitionBurst?.();
+      }
+    };
+    const dispatchInBurst = (normalized, payload) => {
       if (normalized === "__TENUN_EXPORT") {
         return JSON.stringify(app.exportState());
       }
@@ -1915,8 +1930,13 @@
       try {
         app.dispatch(normalized, payload);
       } catch (error) {
-        if (textInput && error instanceof TextInputError && (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION"))
-          commit();
+        if (textInput && error instanceof TextInputError && (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) {
+          const fresh = JSON.stringify(app.render().scene);
+          const emit = last !== null && withoutTransition(fresh) === withoutTransition(last) ? last : fresh;
+          last = emit;
+          if (typeof options.commit === "function")
+            options.commit(emit);
+        }
         throw error;
       }
       if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE" || textInput)

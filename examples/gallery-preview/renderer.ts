@@ -261,6 +261,12 @@ export interface CanvasRendererOptions {
   now?: () => number;
 }
 
+/** Scene identity without the transition stamp — burst continuation check. */
+function stripTransition(scene: DisplayListScene): string {
+  const { transition: _omit, ...rest } = scene;
+  return JSON.stringify(rest);
+}
+
 export class CanvasPreviewRenderer implements PreviewRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
@@ -317,6 +323,15 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     // settled scene on this renderer's own frame clock — JavaScript only
     // configured the request; the host evaluates every frame. A commit
     // without a transition cuts any in-flight animation to the new scene.
+    // A commit WITH a transition whose content equals the in-flight
+    // destination is a continuation of the same navigation burst (the
+    // dispatch-return commit after the invalidation commit): the clock
+    // keeps running; only the destination scene object is refreshed.
+    const active = this.activeTransition;
+    if (scene.transition && active && stripTransition(active.to) === stripTransition(scene)) {
+      active.to = scene;
+      return;
+    }
     this.cancelTransition();
     const from = this.settledScene;
     if (scene.transition && from && from !== scene) {

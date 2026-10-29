@@ -67,6 +67,13 @@ export interface HandoffApplication {
    * commit-after-dispatch-only behavior).
    */
   onStateInvalidation?(listener: () => void): () => void;
+  /**
+   * TN-169: called by the handoff after a dispatch ends (including
+   * thrown paths) so a navigation's transition stamp covers exactly one
+   * dispatch burst. ApplicationRuntime provides it; wrappers may
+   * delegate or omit it.
+   */
+  endTransitionBurst?(): void;
 }
 
 export interface HostHandoff {
@@ -84,16 +91,25 @@ export interface HostHandoffOptions {
   commit?: (sceneJson: string) => void;
 }
 
+/** Scene JSON identity without the transition stamp (burst continuation). */
+function withoutTransition(sceneJson: string): string {
+  const parsed = JSON.parse(sceneJson) as { transition?: unknown };
+  if (parsed.transition === undefined) return sceneJson;
+  const { transition: _omit, ...rest } = parsed;
+  return JSON.stringify(rest);
+}
+
 export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
   const { app } = options;
   let last: string | null = null;
 
   const commit = (): void => {
     const json = JSON.stringify(app.render().scene);
+    // Track the last committed scene even with a native sink: the stale
+    // recovery path republishes it verbatim (see dispatchInBurst).
+    last = json;
     if (typeof options.commit === "function") {
       options.commit(json);
-    } else {
-      last = json;
     }
   };
 
@@ -105,6 +121,20 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       payload = {};
     }
     const normalized = action.toUpperCase();
+    // TN-169 burst semantics: while a navigation's transition stamp is
+    // pending, EVERY commit of this dispatch carries it (invalidation
+    // commit and dispatch-return commit alike), so hosts that only
+    // observe the dispatch's final scene still see the transition. The
+    // burst ends when this dispatch does — including the thrown paths,
+    // whose recovery commits are byte-identical to the last good scene.
+    try {
+      return dispatchInBurst(normalized, payload);
+    } finally {
+      app.endTransitionBurst?.();
+    }
+  };
+
+  const dispatchInBurst = (normalized: string, payload: unknown): string => {
     if (normalized === "__TENUN_EXPORT") {
       return JSON.stringify(app.exportState());
     }
@@ -135,8 +165,18 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       // A delayed InputConnection/DOM callback may lose the revision race.
       // Re-publish authority so the host can replace its optimistic edit, then
       // retain the typed rejection instead of silently treating it as accepted.
+      // The republish re-renders (controller state may have changed outside
+      // dispatch), but when the fresh scene is content-identical to the last
+      // commit the previous BYTES win — a fresh render would drop a burst
+      // transition stamp that commit carried (TN-169) and break the
+      // rejected-dispatch-preserves-the-scene invariant.
       if (textInput && error instanceof TextInputError &&
-          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) commit();
+          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) {
+        const fresh = JSON.stringify(app.render().scene);
+        const emit = last !== null && withoutTransition(fresh) === withoutTransition(last) ? last : fresh;
+        last = emit;
+        if (typeof options.commit === "function") options.commit(emit);
+      }
       throw error;
     }
     if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE" || textInput) commit();

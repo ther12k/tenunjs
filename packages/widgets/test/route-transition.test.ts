@@ -26,13 +26,19 @@ function fixture() {
 }
 
 describe("route transition stamping (TN-169)", () => {
-  test("navigate options stamp exactly the first rendered scene, then clear", () => {
+  test("the stamp rides the whole commit burst and the next dispatch clears it", () => {
     const f = fixture();
     expect(f.app.render().scene.transition).toBeUndefined();
     f.app.navigate("away", { transition: { kind: "fade", direction: "backward", durationMs: 500 } });
-    // The handoff commits by rendering — the first render after the
-    // navigation is the one hosts animate from.
+    // A navigation inside a dispatch can commit more than once (the
+    // out-of-band invalidation commit, then the dispatch-return commit).
+    // Hosts that only see the dispatch's FINAL scene must still see the
+    // transition — so every render of the burst carries it.
     expect(f.app.render().scene.transition).toEqual({ kind: "fade", direction: "backward", durationMs: 500 });
+    expect(f.app.render().scene.transition).toEqual({ kind: "fade", direction: "backward", durationMs: 500 });
+    // The next host dispatch ends the burst.
+    const snapshot = f.handoff.dispatch("__TENUN_EXPORT", "{}");
+    f.handoff.dispatch("TENUN_RESTORE", snapshot);
     expect(f.app.render().scene.transition).toBeUndefined();
     f.handoff.dispose();
   });
