@@ -269,7 +269,7 @@ status: accepted
 | 06-issues/tn-163-refuse-engine-swap-when-restore-is-not-acknowledged.md | a7b9f7aab08f760062e4f31b526278c267cc766f307c3fbb8612e8afa051e695 |
 | 06-issues/tn-164-scope-the-js-time-budget-to-the-native-entry.md | eef1a0a3d9d318e8316071ac265fef108d47c3da8f08845346a8fbc797d52ffc |
 | 06-issues/tn-165-fix-android-scroll-region-origin-input-discovery-and-offset-lifecycle.md | 9499ce2e58ff28fa021ee7ad1ea1d04170a98099c024454d9ba6b14b146741d9 |
-| 06-issues/tn-166-fix-browser-scroll-region-twins-of-tn-165.md | 7b02a4f17f139c47b248f2a7c099e847c1fd7f71e2fa0bf0c3ab6dc95f4995b3 |
+| 06-issues/tn-166-fix-browser-scroll-region-twins-of-tn-165.md | 771dc0aad71972071aabba62fa05a4de3798e022cf0d94234d700eb5992490bb |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

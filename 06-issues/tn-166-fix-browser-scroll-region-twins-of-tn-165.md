@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-166: Fix the browser scroll-region twins of TN-165"
 summary: "The browser host paints scroll-region children without the region origin, hit-tests with stale unclamped offsets, finds no editor for a nested TextField, and skips nested text-input/text-clip contract checks."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-166"
 milestone: "M4"
 priority: "P1"
@@ -84,3 +84,14 @@ Android rejects.
   null child through) — the host boundary already rejects those scenes
   fail-visibly; separate issue if pursued.
 - Whole-scene scroll behavior, region lifecycle beyond offsets.
+
+## Status note (2026-10-29, closed)
+
+Implemented and published in one session. Fixed in PR #251 (commit 3021985):
+browser paint/hit-testing now share the region-origin math and one clamped
+offset value, the platform editor adopts and positions focused descriptors
+nested in scroll regions through the real widget handoff, and nested ops
+carry the full per-kind contract checks. Four checked-in tests fail
+pre-fix and pass post-fix; 583-test suite, typecheck, manifest, and all
+eight CI gates green including the device gate.
+
