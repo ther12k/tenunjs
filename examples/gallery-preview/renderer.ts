@@ -1,5 +1,8 @@
 import type { DisplayListScene, DisplayOp, FixedPosition, SerializedTap } from "../ui-kit/src/display-list";
-import { textInputContractError, validateTextClip } from "@tenunjs/widgets";
+import {
+  sceneTransitionWireError, textInputContractError, transitionEasing,
+  validateTextClip, type SceneTransition,
+} from "@tenunjs/widgets";
 
 /**
  * Normalizes the display-list color convention for CSS: scenes use
@@ -72,6 +75,13 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   }
   if (scene.version > CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION) {
     return `scene version ${scene.version} exceeds renderer support (${CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION})`;
+  }
+  // TN-169: the transition block is optional, but a present malformed one
+  // is a contract violation — an animator that half-reads it would freeze
+  // or misplace whole routes.
+  const transitionViolation = sceneTransitionWireError((scene as { transition?: unknown }).transition);
+  if (transitionViolation) {
+    return `invalid transition: ${transitionViolation}`;
   }
   const inputIds = new Set<string>();
   let hasFocusedInput = false;
@@ -244,6 +254,13 @@ function translateFixedOp(op: DisplayOp, visibleHeight: number): DisplayOp {
  * CanvasKit/WASM is unavailable, this deterministic Canvas 2D implementation
  * keeps the preview usable.
  */
+export interface CanvasRendererOptions {
+  /** Injectable frame clock for the adapter's transition tests. */
+  raf?: (callback: (timeMs: number) => void) => number;
+  cancelRaf?: (handle: number) => void;
+  now?: () => number;
+}
+
 export class CanvasPreviewRenderer implements PreviewRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
@@ -251,14 +268,31 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
   private designWidth = 720;
   /** TN-161 per-region paint offsets (host-owned scroll state, keyed by region id). */
   private readonly regionOffsets = new Map<string, number>();
+  /** TN-169: the last scene painted as settled (transition source). */
+  private settledScene: DisplayListScene | null = null;
+  private activeTransition: {
+    from: DisplayListScene;
+    to: DisplayListScene;
+    spec: SceneTransition;
+    scrollY: number;
+    startMs: number;
+    handle: number;
+  } | null = null;
+  private readonly raf: (callback: (timeMs: number) => void) => number;
+  private readonly cancelRaf: (handle: number) => void;
+  private readonly now: () => number;
   /** Scene contract version this renderer understands (mirrors the Android host). */
   static readonly SUPPORTED_SCENE_VERSION = 1;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, options?: CanvasRendererOptions) {
     this.canvas = canvas;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas 2D context unavailable");
     this.context = context;
+    const scope = globalThis as { requestAnimationFrame?: typeof requestAnimationFrame; cancelAnimationFrame?: typeof cancelAnimationFrame };
+    this.raf = options?.raf ?? ((callback) => scope.requestAnimationFrame!.call(globalThis, callback));
+    this.cancelRaf = options?.cancelRaf ?? ((handle) => scope.cancelAnimationFrame!.call(globalThis, handle));
+    this.now = options?.now ?? (() => performance.now());
     this.resize();
   }
 
@@ -279,26 +313,105 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
       console.error(`[TENUN_SCENE_ERROR] ${error}; keeping the last painted scene`);
       return;
     }
+    // TN-169: a scene carrying a transition animates FROM the previously
+    // settled scene on this renderer's own frame clock — JavaScript only
+    // configured the request; the host evaluates every frame. A commit
+    // without a transition cuts any in-flight animation to the new scene.
+    this.cancelTransition();
+    const from = this.settledScene;
+    if (scene.transition && from && from !== scene) {
+      this.designWidth = scene.designWidth;
+      this.settledScene = scene;
+      this.activeTransition = {
+        from, to: scene, spec: scene.transition, scrollY,
+        startMs: this.now(), handle: 0,
+      };
+      // Paint frame zero synchronously so the first committed frame never
+      // flashes the settled previous scene, then continue on the frame clock.
+      this.paintTransitionFrame(from, scene, scene.transition, scrollY, 0);
+      this.activeTransition.handle = this.raf(() => this.stepTransition());
+      return;
+    }
+    this.settledScene = scene;
     this.designWidth = scene.designWidth;
-    this.resize();
+    this.paintPlain(scene, scrollY);
+  }
+
+  private cancelTransition(): void {
+    const active = this.activeTransition;
+    if (active) {
+      this.cancelRaf(active.handle);
+      this.activeTransition = null;
+    }
+  }
+
+  private stepTransition(): void {
+    const active = this.activeTransition;
+    if (!active) return;
+    const progress = (this.now() - active.startMs) / active.spec.durationMs;
+    if (progress >= 1) {
+      this.activeTransition = null;
+      this.paintPlain(active.to, active.scrollY);
+      return;
+    }
+    this.paintTransitionFrame(active.from, active.to, active.spec, active.scrollY, progress);
+    active.handle = this.raf(() => this.stepTransition());
+  }
+
+  /** One host-evaluated transition frame. `progress` is raw 0..1; the
+   *  easing curve and offsets are shared with the Android host. */
+  paintTransitionFrame(
+    from: DisplayListScene, to: DisplayListScene, spec: SceneTransition, scrollY: number, progress: number
+  ): void {
+    const eased = transitionEasing(progress);
     const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const width = rect.width;
-    const height = rect.height;
-    const scale = width / scene.designWidth;
-    const visibleHeight = height / scale;
+    const scale = rect.width / to.designWidth;
+    const visibleHeight = rect.height / scale;
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = toCss(scene.background);
-    ctx.fillRect(0, 0, width, height);
-
-    // Scrollable content is clipped and translated as before.
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.fillStyle = toCss(to.background);
+    ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.save();
-    ctx.scale(scale, scale);
-    ctx.translate(0, -scrollY);
     ctx.beginPath();
-    ctx.rect(0, scrollY, scene.designWidth, visibleHeight);
+    ctx.rect(0, 0, to.designWidth, visibleHeight);
+    ctx.clip();
+    if (spec.kind === "slide") {
+      const direction = spec.direction === "forward" ? 1 : -1;
+      this.paintScene(from, scrollY, -direction * eased * to.designWidth, 1, scale, visibleHeight);
+      this.paintScene(to, scrollY, direction * (1 - eased) * to.designWidth, 1, scale, visibleHeight);
+    } else {
+      this.paintScene(from, scrollY, 0, 1 - eased, scale, visibleHeight);
+      this.paintScene(to, scrollY, 0, eased, scale, visibleHeight);
+    }
+    ctx.restore();
+  }
+
+  private paintPlain(scene: DisplayListScene, scrollY: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = this.context;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.fillStyle = toCss(scene.background);
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    this.paintScene(scene, scrollY, 0, 1, rect.width / scene.designWidth, rect.height * scene.designWidth / rect.width);
+  }
+
+  /** The scene body (scrollable layer + fixed overlays) under an
+   *  x-translate and alpha — the shared path for plain and transition
+   *  frames. */
+  private paintScene(
+    scene: DisplayListScene, scrollY: number, dx: number, alpha: number, scale: number, visibleHeight: number
+  ): void {
+    const ctx = this.context;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.scale(scale, scale);
+    ctx.translate(dx, -scrollY);
+    ctx.beginPath();
+    ctx.rect(-dx, scrollY, scene.designWidth, visibleHeight);
     ctx.clip();
     for (const op of scene.ops) {
       if (op.fixed) continue;
@@ -332,9 +445,11 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
 
     // Fixed overlays form a viewport layer above all scrollable content.
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.scale(scale, scale);
+    ctx.translate(dx, 0);
     ctx.beginPath();
-    ctx.rect(0, 0, scene.designWidth, visibleHeight);
+    ctx.rect(-dx, 0, scene.designWidth, visibleHeight);
     ctx.clip();
     for (const op of scene.ops) {
       if (op.fixed) this.paint(ctx, translateFixedOp(op, visibleHeight));

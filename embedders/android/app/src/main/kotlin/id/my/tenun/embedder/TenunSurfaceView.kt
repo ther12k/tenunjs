@@ -6,7 +6,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.util.AttributeSet
 import android.util.Log
@@ -286,6 +288,8 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     companion object {
         private const val TAG = "TenunSurfaceView"
+        /** TN-169: transition frame cadence (~60 fps). */
+        private const val FRAME_DELAY_MS = 16L
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -320,6 +324,12 @@ class TenunSurfaceView @JvmOverloads constructor(
         acceptsTextInput = false
         cancelLongPressTimer()
         endDisplayTextInput(notifyRuntime = true)
+        // TN-169: stop evaluating route transitions with the view.
+        transitionHandler?.removeCallbacksAndMessages(null)
+        clearRouteTransition()
+        transitionAnim?.quitSafely()
+        transitionAnim = null
+        transitionHandler = null
         super.onDetachedFromWindow()
     }
 
@@ -470,9 +480,18 @@ class TenunSurfaceView @JvmOverloads constructor(
         // A scene the host cannot render WHOLE (unsupported version or op
         // kind) is a compatibility failure: SceneHolder keeps the last
         // committed scene atomically — never a partial interface.
+        val transitionSource = sceneHolder.current
         when (sceneHolder.apply(sceneJson)) {
             SceneHolder.Outcome.APPLIED -> {
-                adoptDisplayTextInput(sceneHolder.current!!, editResponse)
+                val applied = sceneHolder.current!!
+                // TN-169: a commit carrying a transition animates from the
+                // previously settled scene on the animation thread; the
+                // follow-up redraw defers to the in-flight transition.
+                val spec = applied.transition
+                if (spec != null && transitionSource != null) {
+                    beginRouteTransition(transitionSource, applied, spec)
+                }
+                adoptDisplayTextInput(applied, editResponse)
                 return true
             }
             SceneHolder.Outcome.REJECTED -> {
@@ -639,11 +658,152 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     fun redraw() {
         if (!isSurfaceValid) return
-        val canvas = holder.lockCanvas() ?: return
-        try {
-            renderScene(canvas)
-        } finally {
-            holder.unlockCanvasAndPost(canvas)
+        // TN-169: an in-flight route transition owns the surface — a plain
+        // redraw here would blank its first frame; the transition settles
+        // with its own final render.
+        if (synchronized(paintLock) { activeRouteTransition } != null) return
+        // Transition frames draw from the animation thread; the paint lock
+        // keeps at most one thread between lock and post.
+        synchronized(paintLock) {
+            val canvas = holder.lockCanvas() ?: return
+            try {
+                renderScene(canvas)
+            } finally {
+                holder.unlockCanvasAndPost(canvas)
+            }
+        }
+    }
+
+    /* ---------------- TN-169: host-evaluated route transitions ---------------- */
+
+    /** Serializes canvas access between the main thread and the transition
+     *  animation thread (SurfaceView allows one drawer at a time). */
+    private val paintLock = Object()
+
+    private var transitionAnim: HandlerThread? = null
+    private var transitionHandler: Handler? = null
+    private var activeRouteTransition: RouteTransitionState? = null
+
+    /** Acceptance observation: frames the animation thread evaluated. */
+    @Volatile var transitionFrameCountForTest: Int = 0
+        private set
+
+    /** TN-169 acceptance observation: whether a route transition is in flight. */
+    val isTransitionActiveForTest: Boolean
+        get() = synchronized(paintLock) { activeRouteTransition != null }
+
+    private class RouteTransitionState(
+        val from: DisplayListScene,
+        val to: DisplayListScene,
+        val spec: SceneTransition,
+        val startUptimeMs: Long
+    )
+
+    /** Starts (or replaces) the transition to [to]. Evaluated on the
+     *  dedicated animation thread so a busy main thread — a long JS
+     *  dispatch, a stalled capability call — cannot freeze route motion:
+     *  JavaScript configured the transition; the host evaluates it. */
+    private fun beginRouteTransition(from: DisplayListScene, to: DisplayListScene, spec: SceneTransition) {
+        val state = RouteTransitionState(from, to, spec, SystemClock.uptimeMillis())
+        synchronized(paintLock) { activeRouteTransition = state }
+        val handler = ensureTransitionHandler()
+        handler.removeCallbacksAndMessages(null)
+        handler.post(transitionFrameRunnable)
+    }
+
+    private val transitionFrameRunnable = object : Runnable {
+        override fun run() {
+            val state = synchronized(paintLock) { activeRouteTransition } ?: return
+            val elapsed = SystemClock.uptimeMillis() - state.startUptimeMs
+            val raw = SceneTransitionEvaluator.progress(elapsed, state.spec.durationMs)
+            transitionFrameCountForTest++
+            if (!isSurfaceValid) {
+                // No surface: frames still evaluate (the clock keeps the
+                // transition honest); drawing resumes when a surface exists.
+                if (raw < 1f) transitionHandler?.postDelayed(this, FRAME_DELAY_MS)
+                else clearRouteTransition()
+                return
+            }
+            synchronized(paintLock) {
+                if (activeRouteTransition !== state) return
+                val canvas = holder.lockCanvas()
+                if (canvas != null) {
+                    try {
+                        if (raw >= 1f) {
+                            renderScene(canvas) // settle on the committed scene
+                        } else {
+                            renderTransitionFrame(canvas, state, raw)
+                        }
+                    } finally {
+                        holder.unlockCanvasAndPost(canvas)
+                    }
+                }
+            }
+            if (raw < 1f) {
+                transitionHandler?.postDelayed(this, FRAME_DELAY_MS)
+            } else {
+                clearRouteTransition()
+            }
+        }
+    }
+
+    private fun clearRouteTransition() {
+        synchronized(paintLock) { activeRouteTransition = null }
+    }
+
+    private fun ensureTransitionHandler(): Handler {
+        var thread = transitionAnim
+        if (thread == null || !thread.isAlive) {
+            thread = HandlerThread("tenun-route-transition").apply { start() }
+            transitionAnim = thread
+            transitionHandler = Handler(thread.looper)
+        }
+        return transitionHandler!!
+    }
+
+    /** One interpolated frame: the outgoing scene exits as the incoming
+     *  enters, along the shared easing curve. Alpha rides saveLayerAlpha —
+     *  the software canvas has no global alpha. */
+    private fun renderTransitionFrame(canvas: Canvas, state: RouteTransitionState, rawProgress: Float) {
+        val to = state.to
+        val scale = if (to.designWidth > 0) width / to.designWidth else 1f
+        val frame = SceneTransitionEvaluator.frame(state.spec, rawProgress, to.designWidth)
+        canvas.drawColor(Color.parseColor(to.background))
+        canvas.save()
+        canvas.scale(scale, scale)
+        canvas.clipRect(0f, 0f, to.designWidth, height / scale)
+        drawSceneLayer(canvas, state.from, frame.fromDx, frame.fromAlpha)
+        drawSceneLayer(canvas, to, frame.toDx, frame.toAlpha)
+        canvas.restore()
+    }
+
+    /** One scene body under a horizontal translate and alpha, clipped to
+     *  the viewport. Design units (the caller scaled); alpha rides
+     *  saveLayerAlpha — the software canvas has no global alpha. */
+    private fun drawSceneLayer(canvas: Canvas, scene: DisplayListScene, dx: Float, alpha: Float) {
+        val scale = if (scene.designWidth > 0) width / scene.designWidth else 1f
+        val visibleHeight = height / scale
+        canvas.save()
+        var layered = false
+        if (alpha < 1f) {
+            canvas.saveLayerAlpha(dx, 0f, dx + scene.designWidth, visibleHeight, (alpha * 255).toInt())
+            layered = true
+        }
+        canvas.translate(dx, 0f)
+        canvas.clipRect(-dx, 0f, -dx + scene.designWidth, visibleHeight)
+        renderDisplayListOps(canvas, scene, visibleHeight)
+        if (layered) canvas.restore()
+        canvas.restore()
+    }
+
+    /** The ops body of renderDisplayList without background/bounds effects —
+     *  shared by plain rendering and transition layers. */
+    private fun renderDisplayListOps(canvas: Canvas, dl: DisplayListScene, visibleHeight: Float) {
+        for (op in dl.ops) {
+            if (!op.isFixed()) paintDisplayListOp(canvas, op, visibleHeight)
+        }
+        for (op in dl.ops) {
+            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
         }
     }
 

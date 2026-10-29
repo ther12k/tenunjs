@@ -52,8 +52,8 @@
  */
 
 import type { ScreenDefinition } from "@tenunjs/core";
-import { LayoutError, layoutScreen, validateLayoutViewport } from "./display-list";
-import type { DisplayListScene, LayoutViewport } from "./display-list";
+import { LayoutError, layoutScreen, normalizeSceneTransition, validateLayoutViewport } from "./display-list";
+import type { DisplayListScene, LayoutViewport, SceneTransition, SceneTransitionRequest } from "./display-list";
 import type { ThemeConfig } from "./index";
 import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
 import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from "./text-input";
@@ -71,6 +71,12 @@ export interface ApplicationSnapshot {
 export interface ApplicationRender {
   readonly scene: DisplayListScene;
   readonly tapRuns: Array<() => void>;
+}
+
+/** TN-169: navigation options. `transition` requests a host-evaluated
+ *  route transition on the next committed scene (see SceneTransition). */
+export interface NavigateOptions {
+  transition?: SceneTransitionRequest;
 }
 
 export type ApplicationServices = Record<string, unknown>;
@@ -189,6 +195,8 @@ export class ApplicationRuntime {
   private activeTextInput: TextInputSessionState | undefined;
   private nextTextSessionId = 1;
   private readonly staleListeners = new Set<() => void>();
+  /** TN-169: stamped onto the next rendered scene, then cleared. */
+  private pendingTransition: SceneTransition | null = null;
   private disposedState = false;
 
   constructor(options: ApplicationRuntimeOptions) {
@@ -252,11 +260,18 @@ export class ApplicationRuntime {
     this.notifyStale();
   }
 
-  navigate(name: string): void {
+  navigate(name: string, options?: NavigateOptions): void {
     this.assertLive();
     if (!(name in this.screens)) {
       throw new ApplicationRuntimeError("UNKNOWN_SCREEN", `unknown screen "${name}"`);
     }
+    // TN-169: a navigation may request a host-evaluated transition. The
+    // descriptor is stamped on the FIRST scene rendered after this call
+    // (exactly one commit) and then clears; a navigation without options
+    // cancels any pending one. Snapshots never carry it.
+    this.pendingTransition = options?.transition === undefined
+      ? null
+      : normalizeSceneTransition(options.transition);
     if (this.current !== name) this.endTextInput();
     this.current = name;
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
@@ -319,6 +334,10 @@ export class ApplicationRuntime {
       text: focused.text, selection: focused.selection, composing: focused.composing,
     } : undefined;
     this.lastTapRuns = tapRuns;
+    if (this.pendingTransition !== null) {
+      scene.transition = this.pendingTransition;
+      this.pendingTransition = null;
+    }
     return { scene, tapRuns };
   }
 

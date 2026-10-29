@@ -258,7 +258,7 @@ status: accepted
 | 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
-| 06-issues/tn-155-framework-feel-milestone-app.md | 1ff2160be1ced87b283cc97f1876a1faba58143578465ebba6172becabe156d1 |
+| 06-issues/tn-155-framework-feel-milestone-app.md | 07fec8d5c7fde3c44a2aec1ad74db905295b3052acc5b66afcac9c1578a996c1 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
 | 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
@@ -272,6 +272,7 @@ status: accepted
 | 06-issues/tn-166-fix-browser-scroll-region-twins-of-tn-165.md | 771dc0aad71972071aabba62fa05a4de3798e022cf0d94234d700eb5992490bb |
 | 06-issues/tn-167-refuse-same-engine-reentry-visibly.md | 3bebe76507138ed36f693290f6af93fb594681ebcfdb311298b33753282a3bf9 |
 | 06-issues/tn-168-harden-scrollview-children-and-theme-baker-nested-ops.md | d2c7867defc56647964cad669bf762d7b0596db3b706fa393c19697968095f50 |
+| 06-issues/tn-169-deliver-host-evaluated-route-transitions.md | b246eaedcb5418b2461c4a91dc6bf07e564759068cfbc46e461254d4168a3a83 |
 <<<<<<< HEAD
 =======
 >>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))
