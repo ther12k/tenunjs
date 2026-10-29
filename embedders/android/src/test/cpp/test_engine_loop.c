@@ -196,6 +196,23 @@ static char* test_tn154_host_call_handler(void* opaque, const char* svc, const c
   return strdup("{\"written\":true}");
 }
 
+/* TN-167: the same-engine reentry probe. The engine's dispatch handler
+ * calls tenun_host_call; this handler (running on the SAME thread, like
+ * a JNI callback into Kotlin would) re-enters both dispatch entries. */
+static tenun_android_engine* tn167_engine;
+static int tn167_inner_result_null;
+static int tn167_inner_scene_null;
+static char* test_tn167_reentry_handler(void* opaque, const char* svc, const char* method, const char* payload) {
+  (void)opaque; (void)svc; (void)method; (void)payload;
+  char* inner_result = tenun_android_engine_dispatch_result(tn167_engine, "INNER", "{}");
+  tn167_inner_result_null = (inner_result == NULL);
+  free(inner_result);
+  char* inner_scene = tenun_android_engine_dispatch(tn167_engine, "INNER2", "{}");
+  tn167_inner_scene_null = (inner_scene == NULL);
+  free(inner_scene);
+  return strdup("{\"ok\":true}");
+}
+
 static int run_polytron_bundle_checks(const char* asset_path) {
   printf("== TenunJS Android Native Engine Loop Test (Polytron Wash, TN-154) ==\n");
   printf("Loading Polytron application bundle: %s\n", asset_path);
@@ -1133,6 +1150,45 @@ int main(int argc, char** argv) {
       tenun_android_engine_destroy(good_engine);
     }
   }
+
+  /* 18. TN-167: same-engine reentry from inside a host-service callback
+   * is REFUSED visibly instead of deadlocking the non-recursive engine
+   * mutex. The engine mutex is held across JS_Call, and a
+   * tenun_host_call handler runs on the same thread — a synchronous
+   * call back into this engine used to hang forever (the readiness
+   * probe needed an external kill). alarm() is the watchdog: if the
+   * guard ever regresses, SIGALRM fails the gate instead of hanging
+   * CI. */
+  printf("== 18. TN-167 same-engine reentry refusal ==\n");
+  alarm(30);
+  {
+    const char* reentry_js =
+        "tenun_commit('{\"v\":1}');"
+        "globalThis.__tenun_dispatch_action = function(a) {"
+        " if (a === 'OUTER') tenun_host_call('echo', 'nested', '{}');"
+        " else if (a === 'LATER') tenun_commit('{\"v\":2}');"
+        " return 'ok';"
+        "};";
+    tn167_engine = tenun_android_engine_create_with_handler(
+        (const uint8_t*)reentry_js, strlen(reentry_js), test_tn167_reentry_handler, NULL);
+    CHECK(tn167_engine != NULL, "reentry bundle boots");
+    if (tn167_engine) {
+      char* outer = tenun_android_engine_dispatch(tn167_engine, "OUTER", "{}");
+      CHECK(outer != NULL, "the OUTER dispatch completes instead of deadlocking");
+      CHECK(outer != NULL && strstr(outer, "\"v\":1") != NULL,
+            "the outer entry preserved the last committed scene");
+      free(outer);
+      CHECK(tn167_inner_result_null, "the re-entered dispatch_result is refused with NULL");
+      CHECK(tn167_inner_scene_null, "the re-entered legacy dispatch is refused with NULL");
+      char* later = tenun_android_engine_dispatch(tn167_engine, "LATER", "{}");
+      CHECK(later != NULL && strstr(later, "\"v\":2") != NULL,
+            "the engine stays usable after a refused reentry");
+      free(later);
+      tenun_android_engine_destroy(tn167_engine);
+      tn167_engine = NULL;
+    }
+  }
+  alarm(0);
 
   if (failures > 0) {
     printf("FAILED: %d checks failed\n", failures);
