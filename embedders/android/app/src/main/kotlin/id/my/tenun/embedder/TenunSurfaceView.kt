@@ -140,6 +140,10 @@ class TenunSurfaceView @JvmOverloads constructor(
             // TN-158: a swapped engine re-negotiates viewport delivery —
             // support is a property of the bundle, not the view.
             viewportDriven = false
+            // TN-165: scroll offsets belong to the engine that produced
+            // them — a swapped-in bundle whose regions reuse the same ids
+            // must not inherit another application's scroll positions.
+            regionOffsets.clear()
             // Reflect the engine's already-committed scene (including the
             // JS-provided button label) before the first draw, so the view
             // renders the JavaScript application's initial state.
@@ -536,8 +540,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     /** Called only after native dispatch returns; never from tenun_host_call. */
     private fun adoptDisplayTextInput(scene: DisplayListScene, editResponse: TextEditResponse? = null) {
         val owner = engine?.takeUnless { it.isDisposed }
-        val input = if (acceptsTextInput) scene.ops.filterIsInstance<DisplayListScene.Op.TextInputOp>()
-            .firstOrNull { it.input.focused && !it.input.readOnly }?.input else null
+        // TN-165: discovery sees focused descriptors nested inside scroll
+        // regions too — root-only lookup left a TextField inside a
+        // ScrollView with no editor session on a scene the contract accepts.
+        val input = if (acceptsTextInput) scene.focusedEditableInput()?.input else null
         val previous = textInputSession.current
         val ownEdit = editResponse?.let { it.accepted && input?.acknowledgesEdit(it.previous, it.proposed) == true } ?: false
         // A rejected edit may leave the committed descriptor unchanged while
@@ -877,7 +883,12 @@ class TenunSurfaceView @JvmOverloads constructor(
             val offset = regionOffset(op)
             canvas.save()
             canvas.clipRect(op.x, op.y, op.x + op.w, op.y + op.h)
-            canvas.translate(0f, -offset)
+            // TN-165: children are in content space RELATIVE TO THE REGION.
+            // Hit-testing already subtracts the region origin; painting must
+            // add it back, or a region at (20,100) clips its first rows away
+            // (they painted at scene (0,0) while their taps still hit —
+            // invisible content with working hit-testing).
+            canvas.translate(op.x, op.y - offset)
             for (nested in op.ops) paintDisplayOp(canvas, nested, visibleHeight)
             canvas.restore()
             return

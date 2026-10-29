@@ -132,6 +132,27 @@ data class DisplayListScene(
         ) : Op()
     }
 
+    /**
+     * TN-165: the focused, editable text-input descriptor — at the scene
+     * root OR nested inside a scroll region's content ops (a TextField
+     * inside a ScrollView). Root ops and nested content are walked in
+     * paint order; the parser already rejects a second focused
+     * descriptor anywhere in the scene, so this is discovery, not
+     * arbitration. Read-only fields never adopt an editor session.
+     */
+    fun focusedEditableInput(): Op.TextInputOp? {
+        for (op in ops) {
+            when (op) {
+                is Op.TextInputOp -> if (op.input.focused && !op.input.readOnly) return op
+                is Op.ScrollRegionOp -> op.ops.mapNotNull { nested ->
+                    if (nested is Op.TextInputOp && nested.input.focused && !nested.input.readOnly) nested else null
+                }.firstOrNull()?.let { return it }
+                else -> Unit
+            }
+        }
+        return null
+    }
+
     /** Hit region; [payloadJson] is sent back verbatim on dispatch. */
     data class Tap(
         val x: Float,

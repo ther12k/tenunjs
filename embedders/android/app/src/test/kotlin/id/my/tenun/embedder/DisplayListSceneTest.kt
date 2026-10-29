@@ -69,6 +69,48 @@ class DisplayListSceneTest {
     }
 
     @Test
+    fun testFocusedEditableInputDiscovery_tn165() {
+        // TN-165: discovery must see a focused descriptor at the scene root
+        // OR nested inside a scroll region's content ops (a TextField inside
+        // a ScrollView); read-only fields never adopt an editor session.
+        fun input(focused: Boolean, readOnly: Boolean = false, id: String = "f") = """
+            { "op": "text-input", "id": "$id", "x": 0, "y": 0, "w": 280, "h": 64,
+              "text": "a", "selection": { "base": 1, "extent": 1 }, "composing": null,
+              "focused": $focused, "sessionId": ${if (focused) 1 else 0}, "revision": 0,
+              "keyboardType": "text", "returnAction": "done", "readOnly": $readOnly, "label": "L" }
+        """.trimIndent()
+        fun scene(ops: String): DisplayListScene = DisplayListScene.parse("""
+            { "tenun": "display-list", "version": 1, "designWidth": 320, "contentHeight": 480,
+              "background": "#101014", "ops": [$ops], "taps": [] }
+        """.trimIndent())!!
+
+        assertEquals("f", scene(input(focused = true)).focusedEditableInput()!!.input.id)
+
+        val nested = scene(
+            """{ "op": "scroll-region", "id": "list", "x": 20, "y": 96, "w": 280, "h": 300,
+                "contentHeight": 800, "ops": [${input(focused = true, id = "nested")}] }"""
+        )
+        assertEquals("nested", nested.focusedEditableInput()!!.input.id)
+
+        // A read-only field never adopts an editor session; the contract
+        // keeps read-only descriptors UNFOCUSED (focused+writable is one
+        // invariant), so discovery finds nothing to adopt.
+        assertNull(scene(input(focused = false, readOnly = true)).focusedEditableInput())
+        assertNull(scene(input(focused = false)).focusedEditableInput())
+
+        // Mixed content: discovery skips the read-only sibling and returns
+        // the focused writable field inside the region.
+        val mixed = scene(
+            """{ "op": "scroll-region", "id": "list", "x": 0, "y": 0, "w": 320, "h": 480,
+                "contentHeight": 900, "ops": [
+                  ${input(focused = false, readOnly = true, id = "locked")},
+                  ${input(focused = true, id = "editable")}
+                ] }"""
+        )
+        assertEquals("editable", mixed.focusedEditableInput()!!.input.id)
+    }
+
+    @Test
     fun testLegacyNotesSceneIsNotADisplayList() {
         val legacy = """
         {

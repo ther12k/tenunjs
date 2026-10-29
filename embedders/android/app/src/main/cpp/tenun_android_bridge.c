@@ -136,15 +136,18 @@ static int tenun_interrupt_handler(JSRuntime* rt, void* opaque) {
  * native entry point that ran JS — bundle eval and each dispatch — so
  * async actions and capability calls can settle inside the entry that
  * scheduled them. Without this, `Promise.resolve().then(fn)` NEVER runs
- * fn on this host: nothing else pumps the job queue. Each job gets its
- * own time budget (the interrupt handler bounds it), the count is
- * capped, and a job that throws is fetched, WARNed, and stops the drain
- * (fail-visible; the last committed scene stays and the engine remains
- * usable). */
+ * fn on this host: nothing else pumps the job queue. TN-164: the drain
+ * runs under the deadline the ENTRY armed — it must not re-arm per job,
+ * or job-count x budget escapes the entry bound entirely (a production
+ * probe measured 61 chained busy jobs holding one dispatch for 6.6 s
+ * against the 5 s budget). An interrupt mid-drain surfaces as a thrown
+ * job: fetched, WARNed, and stops the drain (fail-visible; the last
+ * committed scene stays and the engine remains usable — the next entry
+ * arms a fresh budget, so bounded progress across entries is expected).
+ * The count stays capped. */
 static void tenun_drain_pending_jobs(tenun_android_engine* engine) {
   int executed = 0;
   while (executed < TENUN_JS_MAX_JOBS_PER_ENTRY && JS_IsJobPending(engine->rt)) {
-    engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
     /* This QuickJS revision reports the job's context through pctx. */
     JSContext* job_ctx = NULL;
     int err = JS_ExecutePendingJob(engine->rt, &job_ctx);
@@ -325,7 +328,8 @@ static tenun_android_engine* tenun_android_engine_create_internal(
    * startup state deterministically. */
   int eval_injected = 0;
   JSValue eval_res;
-  /* TN-136: the eval runs under the time budget. */
+  /* TN-136/TN-164: the eval AND the boot-time job drain below share
+   * this one entry budget. */
   engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
 #ifdef TENUN_TEST_INJECTION
   if (tenun_injected(TENUN_INIT_SCRIPT_EVAL)) {
@@ -417,17 +421,16 @@ tenun_android_engine* tenun_android_engine_create(const uint8_t* bundle, size_t 
   return tenun_android_engine_create_with_handler(bundle, bundle_len, NULL, NULL);
 }
 
-/* Runs one host→JS dispatch under the CALLER-HELD engine lock: arms the
- * deadline, resolves __tenun_dispatch_action (a property getter may run
- * JS first), calls it, and returns a strdup'd copy of the handler's
- * STRING return value — or NULL when no handler exists, the handler
- * threw (already WARNed here), or it returned a non-string. The caller
- * owns the returned bytes. */
+/* Runs one host→JS dispatch under the CALLER-HELD engine lock (the
+ * public dispatch entries arm the TN-164 deadline): resolves
+ * __tenun_dispatch_action (a property getter may run JS first), calls
+ * it, and returns a strdup'd copy of the handler's STRING return
+ * value — or NULL when no handler exists, the handler threw (already
+ * WARNed here), or it returned a non-string. The caller owns the
+ * returned bytes. */
 static char* tenun_run_dispatch_handler(tenun_android_engine* engine, const char* action, const char* payload_json) {
   char* result = NULL;
 
-  // A property getter can execute JS before the dispatch function is called.
-  engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
   JSValue global = JS_GetGlobalObject(engine->ctx);
   JSValue dispatch_fn = JS_GetPropertyStr(engine->ctx, global, "__tenun_dispatch_action");
 
@@ -479,6 +482,9 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
 
   pthread_mutex_lock(&engine->lock);
 
+  /* TN-164: one budget for the WHOLE entry — the handler and the job
+   * drain below share it; neither re-arms. */
+  engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
   free(tenun_run_dispatch_handler(engine, action, payload_json));
   /* TN-151: continuations the handler scheduled (async actions) settle
    * inside this entry point; commits they make are visible in the scene
@@ -495,6 +501,9 @@ char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const c
   if (!engine || !engine->ctx || !action) return NULL;
 
   pthread_mutex_lock(&engine->lock);
+
+  /* TN-164: one budget for the whole entry (handler + drain). */
+  engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
 
   /* TN-150: the handler's return value is the host's data channel
    * (__TENUN_EXPORT state snapshots, __TENUN_STATE_SCHEMA replies).

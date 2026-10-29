@@ -265,6 +265,10 @@ status: accepted
 | 06-issues/tn-159-harden-native-ble-lifecycle-and-connect-ux.md | 7f270b309c824427b85832c16fcf67061ddc5185513a824819c98e88e39e8050 |
 | 06-issues/tn-160-deliver-controlled-widget-text-input.md | beda45559081b4c5c462f6320febf3d53871a3001702d3b60e504aa1ff322439 |
 | 06-issues/tn-161-deliver-independent-scroll-regions.md | 1304d77ecb8dbb37d5771fea1ef5b5430f258440988df3e0ddb716e0dd5ae914 |
+| 06-issues/tn-162-attribute-gatt-write-completions-to-their-submission.md | 9abe8deb39b870eae8823a8545f3eabf9da4665a2fba7982c6b830ea360c7a94 |
+| 06-issues/tn-163-refuse-engine-swap-when-restore-is-not-acknowledged.md | a7b9f7aab08f760062e4f31b526278c267cc766f307c3fbb8612e8afa051e695 |
+| 06-issues/tn-164-scope-the-js-time-budget-to-the-native-entry.md | eef1a0a3d9d318e8316071ac265fef108d47c3da8f08845346a8fbc797d52ffc |
+| 06-issues/tn-165-fix-android-scroll-region-origin-input-discovery-and-offset-lifecycle.md | 9499ce2e58ff28fa021ee7ad1ea1d04170a98099c024454d9ba6b14b146741d9 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

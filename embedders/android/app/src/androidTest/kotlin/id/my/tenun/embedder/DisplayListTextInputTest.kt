@@ -208,7 +208,60 @@ class DisplayListTextInputTest {
         }
     }
 
+    @Test
+    fun focusedInputInsideAScrollRegionGetsAWorkingEditorSession() {
+        instrumentation.runOnMainSync {
+            val engine = TenunEngine(NESTED_BUNDLE.toByteArray(Charsets.UTF_8))
+            val view = TenunSurfaceView(instrumentation.targetContext)
+            try {
+                view.engine = engine
+                // Pre-TN-165 root-only discovery found no descriptor inside
+                // the scroll region and the field silently had no editor.
+                val ic = connection(view)
+                assertEquals("A", ic.getTextBeforeCursor(20, 0).toString())
+                assertTrue(ic.commitText("B", 1))
+                assertEquals("AB", nestedDescriptor(view).text)
+            } finally {
+                view.engine = null
+                engine.destroy()
+            }
+        }
+    }
+
+    private fun nestedDescriptor(view: TenunSurfaceView): TextInputDescriptor =
+        view.committedSceneForTest().first!!
+            .ops.filterIsInstance<DisplayListScene.Op.ScrollRegionOp>().single()
+            .ops.filterIsInstance<DisplayListScene.Op.TextInputOp>().single().input
+
     companion object {
+        private val NESTED_BUNDLE = """
+            (function () {
+              var input = {op:'text-input', id:'title', x:10, y:20, w:280, h:64,
+                text:'A', selection:{base:1,extent:1}, composing:null,
+                focused:true, sessionId:1, revision:0, keyboardType:'text',
+                returnAction:'done', readOnly:false, label:'Title'};
+              function commit() {
+                tenun_commit(JSON.stringify({tenun:'display-list', version:1,
+                  designWidth:320, contentHeight:480, background:'#101014',
+                  ops:[{op:'scroll-region', id:'editor-list', x:0, y:96, w:320, h:384,
+                        contentHeight:800, ops:[input]}],
+                  taps:[]}));
+              }
+              globalThis.__tenun_dispatch_action = function (action, payloadJson) {
+                var p=JSON.parse(payloadJson || '{}');
+                if (action === 'TEXT_EDIT' || action === 'TEXT_SUBMIT') {
+                  if (!input.focused || p.id !== input.id || p.sessionId !== input.sessionId || p.baseRevision !== input.revision)
+                    throw new Error('stale text session/revision');
+                  input.text=p.text; input.selection=p.selection; input.composing=p.composing; input.revision++;
+                } else if (action === 'TEXT_BLUR') {
+                  input.focused=false; input.sessionId=0; input.revision=0; input.composing=null;
+                } else if (action !== 'VIEWPORT') throw new Error('unknown action');
+                commit(); return JSON.stringify({route:'nested-test'});
+              };
+              commit();
+            })();
+        """.trimIndent()
+
         private val BUNDLE = """
             (function () {
               var nextSession = 1, present = true, transformNextEdit = false;
