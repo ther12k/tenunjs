@@ -271,6 +271,10 @@ status: accepted
 | 06-issues/tn-165-fix-android-scroll-region-origin-input-discovery-and-offset-lifecycle.md | 9499ce2e58ff28fa021ee7ad1ea1d04170a98099c024454d9ba6b14b146741d9 |
 | 06-issues/tn-166-fix-browser-scroll-region-twins-of-tn-165.md | 771dc0aad71972071aabba62fa05a4de3798e022cf0d94234d700eb5992490bb |
 | 06-issues/tn-167-refuse-same-engine-reentry-visibly.md | 3bebe76507138ed36f693290f6af93fb594681ebcfdb311298b33753282a3bf9 |
+| 06-issues/tn-168-harden-scrollview-children-and-theme-baker-nested-ops.md | 0fdae613e8288a1c488f421150e38e1818b4f60ce00d05b717bc110821f223d8 |
+<<<<<<< HEAD
+=======
+>>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

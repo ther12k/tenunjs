@@ -228,6 +228,30 @@ describe("TN-143 commit-time baking", () => {
     expectCode(() => bakeThemeScene(sparseTaps, palette()), "INVALID_SCENE");
   });
 
+  test("scroll-region children bake recursively; holes and non-array ops fail typed (TN-168)", () => {
+    const region = (ops: unknown) => ({
+      op: "scroll-region", id: "list", x: 0, y: 100, w: 360, h: 400, contentHeight: 900,
+      ops,
+    });
+    const nested = { ...scene(), ops: [region([
+      { op: "rect", x: 0, y: 0, w: 10, h: 10, r: 0, color: colorSlot("surface") },
+      { op: "text", x: 2, y: 12, text: "row", size: 14, weight: 400, color: colorSlot("onSurface") },
+    ])] };
+    const baked = bakeThemeScene(nested as unknown as SemanticDisplayListScene, palette());
+    const bakedRegion = baked.ops[0] as unknown as { op: string; ops: Array<{ op: string; color: string }> };
+    expect(bakedRegion.op).toBe("scroll-region");
+    expect(bakedRegion.ops).toHaveLength(2);
+    expect(bakedRegion.ops[0]!.color).toBe("#FAFAFC"); // surface slot resolved
+    expect(bakedRegion.ops[1]!.color).toBe("#202024"); // onSurface slot resolved
+
+    // Pre-TN-168 Array.prototype.map SKIPPED the hole and baked it into
+    // the scene untouched; a non-array ops field threw a bare TypeError.
+    const holed = { ...scene(), ops: [region(new Array(1))] };
+    expectCode(() => bakeThemeScene(holed as unknown as SemanticDisplayListScene, palette()), "INVALID_SCENE");
+    const nonArray = { ...scene(), ops: [region(null)] };
+    expectCode(() => bakeThemeScene(nonArray as unknown as SemanticDisplayListScene, palette()), "INVALID_SCENE");
+  });
+
   test("a failed later color leaves source and prior result untouched", () => {
     const source = scene();
     const committed = bakeThemeScene(source, palette());

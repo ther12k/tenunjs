@@ -65,6 +65,39 @@ describe("ScrollView lowering (TN-161)", () => {
       { width: 100, height: 100 })).toThrow(/Nested ScrollView/);
   });
 
+  test("nested-array children flatten to the same region content (TN-168)", () => {
+    // TSX composition naturally produces children={[list]} — an array
+    // wrapping the real child array. Pre-TN-168 that reached layout as
+    // one non-node element and the region rendered silently empty.
+    const buttons = Array.from({ length: 3 }, (_, i) =>
+      Button({ children: `task ${i}`, onPress: () => undefined }));
+    const wrapped = layoutScreen(theme, Column({ align: "stretch", children: [
+      Expanded({ child: ScrollView({ id: "list", gap: 8, children: [buttons] }) }),
+    ] }), viewport).scene;
+    const flat = layoutScreen(theme, Column({ align: "stretch", children: [
+      Expanded({ child: ScrollView({ id: "list", gap: 8, children: buttons }) }),
+    ] }), viewport).scene;
+    const a = wrapped.ops.find((op) => op.op === "scroll-region")!;
+    const b = flat.ops.find((op) => op.op === "scroll-region")!;
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(a.ops.length).toBe(b.ops.length);
+    expect(a.ops.length).toBeGreaterThan(0);
+    expect(a.contentHeight).toBe(b.contentHeight);
+    expect(wrapped.taps.filter((tap) => tap.scroll === "list")).toHaveLength(3);
+  });
+
+  test("null and undefined child entries are dropped, not laid out as nodes (TN-168)", () => {
+    const scene = layoutScreen(theme, ScrollView({ id: "list", children: [
+      Button({ children: "only", onPress: () => undefined }),
+      undefined,
+      null,
+    ] as never }), { width: 100, height: 100 }).scene;
+    const region = scene.ops.find((op) => op.op === "scroll-region")!;
+    expect(region.ops.length).toBe(2); // rect + text of the one button
+    expect(scene.taps.filter((tap) => tap.scroll === "list")).toHaveLength(1);
+  });
+
   test("an omitted id derives from the viewport box — stable across identical re-renders", () => {
     const tree = () => Column({ align: "stretch", children: [
       Expanded({ child: ScrollView({ children: [Button({ children: "only", onPress: () => undefined })] }) }),
