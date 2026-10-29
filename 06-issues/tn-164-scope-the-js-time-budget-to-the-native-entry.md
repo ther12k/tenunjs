@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-164: Scope the JS time budget to the native entry"
 summary: "Each drained promise job arms a fresh 5 s deadline, so one dispatch can hold the engine lock for job-count × budget; a production-default probe measured 6.6 s for 61 jobs."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-164"
 milestone: "M1"
 priority: "P1"
@@ -59,3 +59,8 @@ over-budget dispatch, not an observed device ANR.
 - Changing the default budget value or the job-count cap.
 - Moving dispatch off the main thread (scheduling separation is TN-155's
   animation-slice problem).
+## Status note
+
+**Closed 2026-10-29 by PR #250** (branch `fix/tn-162-165-android-production-blockers`,
+commit `33f5602`). Evidence: C engine-loop section 12(e) (over-budget drain keeps the last scene; later entry finishes the jobs); production-default probe 6600ms/settled before, 5000ms/initial after; TN-136/TN-151 sections still pass.
+

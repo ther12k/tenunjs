@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-162: Attribute GATT write completions to their submission"
 summary: "A late completion callback for an abandoned write must never confirm the current command; today it can clear the STOP latch for a STOP that was never written."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-162"
 milestone: "M1"
 priority: "P1"
@@ -68,3 +68,8 @@ drop + reconnect → replacement sends no STOP
 
 - Browser host surfaces (no GATT there).
 - Any change to the write protocol itself (gap, retry counts, MTU).
+## Status note
+
+**Closed 2026-10-29 by PR #250** (branch `fix/tn-162-165-android-production-blockers`,
+commit `33f5602`). Evidence: offline fake-transport harness against the production service (late-callback latch survival + STOP on reconnect + the three TN-159 regression controls); GattWriteLedgerTest JVM suite; full run_android_test.sh; device gate green.
+

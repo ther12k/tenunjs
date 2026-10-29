@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-163: Refuse the engine swap when TENUN_RESTORE is not acknowledged"
 summary: "OTA and hot reload currently activate the candidate engine even when the state restore threw inside QuickJS, destroying the running application's state."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-163"
 milestone: "M1"
 priority: "P1"
@@ -60,3 +60,8 @@ propagates the restore error otherwise.
 - Any change to the restore protocol or snapshot format.
 - Quarantine/trial semantics (unchanged; a refused apply simply returns
   false the same way a failed candidate boot does).
+## Status note
+
+**Closed 2026-10-29 by PR #250** (branch `fix/tn-162-165-android-production-blockers`,
+commit `33f5602`). Evidence: C engine-loop section 17 (result channel NULL on thrown restore, route reply on success; legacy channel still returns the last scene); MainActivity applyOtaUpdate/applyReload gate; OTA journey instrumentation green on the device gate.
+

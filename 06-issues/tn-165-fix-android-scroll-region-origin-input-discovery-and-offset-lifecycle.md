@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-165: Fix Android scroll-region paint origin, nested input discovery, and offset lifecycle"
 summary: "TN-161's Android adapter clips to the region box but paints children without the region origin, finds no editor for a TextField inside a ScrollView, and leaks region offsets across engine swaps."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-165"
 milestone: "M4"
 priority: "P1"
@@ -63,3 +63,8 @@ current focus — the browser twins are follow-up work):
 - The browser host twins (renderer paint origin, stale stored offsets,
   `BrowserTextInput.sync` discovery) — separate follow-up issue.
 - Any scene-op wire format change.
+## Status note
+
+**Closed 2026-10-29 by PR #250** (branch `fix/tn-162-165-android-production-blockers`,
+commit `33f5602`). Evidence: DisplayListSceneTest discovery (root/nested/read-only/none), TenunSurfaceViewTest paint-transform mirror, device-gate DisplayListTextInputTest nested-scroll-region InputConnection case, TN-161 parity gate unchanged.
+
