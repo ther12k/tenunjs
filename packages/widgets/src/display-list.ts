@@ -49,7 +49,7 @@ export interface LayoutViewport {
   readonly height: number;
 }
 
-export type LayoutErrorCode = "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX";
+export type LayoutErrorCode = "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX" | "INVALID_TRANSITION";
 
 export class LayoutError extends Error {
   constructor(readonly code: LayoutErrorCode, message: string) {
@@ -267,6 +267,82 @@ export interface DisplayListScene {
   background: string;
   ops: DisplayOp[];
   taps: SerializedTap[];
+  /**
+   * TN-169: host-evaluated route transition. Present on exactly the first
+   * scene committed after a navigation that requested one; hosts animate
+   * between their previous settled scene and this scene on their own frame
+   * clock and then settle. Optional and ignored by hosts that predate it
+   * (an unknown top-level field, not a new op kind). Never part of state
+   * snapshots.
+   */
+  transition?: SceneTransition;
+}
+
+/** A requested route transition, normalized before it reaches a scene. */
+export interface SceneTransition {
+  kind: "slide" | "fade";
+  durationMs: number;
+  direction: "forward" | "backward";
+}
+
+export interface SceneTransitionRequest {
+  kind?: "slide" | "fade";
+  durationMs?: number;
+  direction?: "forward" | "backward";
+}
+
+const TRANSITION_KINDS: ReadonlySet<string> = new Set(["slide", "fade"]);
+const TRANSITION_DIRECTIONS: ReadonlySet<string> = new Set(["forward", "backward"]);
+export const TRANSITION_DEFAULT_DURATION_MS = 240;
+
+/**
+ * Normalizes a transition request into the full wire descriptor, failing
+ * visibly on malformed input. Shared by the runtime (navigation options)
+ * and hosts (scene validation), so both sides enforce one shape.
+ */
+export function normalizeSceneTransition(request: SceneTransitionRequest): SceneTransition {
+  const kind = request.kind ?? "slide";
+  const direction = request.direction ?? "forward";
+  const durationMs = request.durationMs ?? TRANSITION_DEFAULT_DURATION_MS;
+  if (!TRANSITION_KINDS.has(kind)) {
+    throw new LayoutError("INVALID_TRANSITION", `unknown transition kind "${String(kind)}"`);
+  }
+  if (!TRANSITION_DIRECTIONS.has(direction)) {
+    throw new LayoutError("INVALID_TRANSITION", `unknown transition direction "${String(direction)}"`);
+  }
+  if (!Number.isFinite(durationMs) || durationMs <= 0 || durationMs > 10_000) {
+    throw new LayoutError("INVALID_TRANSITION", "transition durationMs must be a finite value in (0, 10000]");
+  }
+  return { kind, direction, durationMs } as SceneTransition;
+}
+
+/** True when a parsed JSON value is a valid wire-form transition block. */
+export function sceneTransitionWireError(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return "scene.transition must be an object";
+  }
+  const block = value as { kind?: unknown; durationMs?: unknown; direction?: unknown };
+  if (block.kind !== "slide" && block.kind !== "fade") {
+    return `scene.transition has unknown kind "${String(block.kind)}"`;
+  }
+  if (block.direction !== "forward" && block.direction !== "backward") {
+    return `scene.transition has unknown direction "${String(block.direction)}"`;
+  }
+  if (typeof block.durationMs !== "number" || !Number.isFinite(block.durationMs) || block.durationMs <= 0) {
+    return "scene.transition durationMs must be a positive finite number";
+  }
+  return null;
+}
+
+/**
+ * The shared easing curve for host-evaluated transitions — identical on
+ * every host so the same progress produces the same picture. Ease-in-out
+ * cubic: motion starts and ends at rest.
+ */
+export function transitionEasing(progress: number): number {
+  const p = Math.min(Math.max(progress, 0), 1);
+  return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
 }
 
 export interface RenderContext {

@@ -30,12 +30,22 @@ import org.json.JSONObject
 
 /** A display-list scene this host cannot render whole: reject, never partially render. */
 class SceneContractException(message: String) : Exception(message)
+
+/** TN-169: a host-evaluated route transition request carried by one commit. */
+data class SceneTransition(
+    val kind: String,
+    val durationMs: Long,
+    val direction: String
+)
+
 data class DisplayListScene(
     val designWidth: Float,
     val contentHeight: Float,
     val background: String,
     val ops: List<Op>,
-    val taps: List<Tap>
+    val taps: List<Tap>,
+    /** TN-169: optional host-evaluated route transition; null on ordinary commits. */
+    val transition: SceneTransition? = null
 ) {
     /** Absolute scene-space clipping, currently emitted for editor text only. */
     data class Clip(val x: Float, val y: Float, val w: Float, val h: Float)
@@ -249,7 +259,8 @@ data class DisplayListScene(
                     contentHeight = root.optDouble("contentHeight", 0.0).toFloat(),
                     background = root.optString("background", "#101014"),
                     ops = ops,
-                    taps = taps
+                    taps = taps,
+                    transition = parseTransition(root.optJSONObject("transition"))
                 )
             } catch (e: SceneContractException) {
                 // Contract violations must surface to the host, not fall
@@ -265,6 +276,29 @@ data class DisplayListScene(
                 }
                 null
             }
+        }
+
+        /**
+         * TN-169: the optional host-evaluated route transition block.
+         * Absent → null (pre-existing scenes unchanged); present-but-
+         * malformed → contract violation, the same fail-visible rule as
+         * every other declared field.
+         */
+        private fun parseTransition(block: JSONObject?): SceneTransition? {
+            if (block == null) return null
+            val kind = block.optString("kind")
+            val direction = block.optString("direction")
+            val durationMs = block.optDouble("durationMs", Double.NaN)
+            if (kind != "slide" && kind != "fade") {
+                throw SceneContractException("scene.transition has unknown kind \"$kind\"")
+            }
+            if (direction != "forward" && direction != "backward") {
+                throw SceneContractException("scene.transition has unknown direction \"$direction\"")
+            }
+            if (durationMs.isNaN() || durationMs <= 0.0 || durationMs > 10_000.0) {
+                throw SceneContractException("scene.transition durationMs must be a finite value in (0, 10000]")
+            }
+            return SceneTransition(kind, durationMs.toLong(), direction)
         }
 
         /**

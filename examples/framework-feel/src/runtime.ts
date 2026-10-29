@@ -20,7 +20,11 @@ export function createFrameworkFeelRuntime(viewport: LayoutViewport = FRAMEWORK_
           // The newly active route receives it without remounting its session.
           app.pushState("receiveProgress", checkedPlanProgress(progress));
         }
-        app.navigate(route);
+        // TN-169: the route change carries a host-evaluated slide — forward
+        // into Progress, backward back to Today.
+        app.navigate(route, {
+          transition: { kind: "slide", direction: route === "progress" ? "forward" : "backward" },
+        });
       },
     },
   });

@@ -49,7 +49,7 @@ application journey and host evidence below are complete.
 | Ordinary semantic widget themes | TN-068, retaining its dependencies and ADR-0024 responsibilities. |
 | Editable widget and IME path | [TN-160](tn-160-deliver-controlled-widget-text-input.md), in progress: controlled single-line TextField, guarded sessions, browser/Android adapters, and the Day Plan title. Live Android IME journey evidence remains required; broader TN-076/TN-078/TN-079/TN-081 scope stays open. |
 | Independent list viewport | TN-083/TN-084, with gesture arbitration from TN-082. |
-| Host-evaluated route transition and animation | TN-048/TN-086/TN-087, with route lifecycle from TN-063. The JS-stall test requires scheduling separation, not only a timer on the existing UI thread. |
+| Host-evaluated route transition and animation | [TN-169](tn-169-deliver-host-evaluated-route-transitions.md), closed: navigation commits carry an optional `transition` block; both hosts interpolate between the settled and incoming scene on their own frame clock (Android on a dedicated animation thread — frames advance while the main thread is blocked), with the shared easing curve and the Day Plan slide. The broader animation-graph tracks TN-048/TN-086/TN-087 and route lifecycle TN-063 stay open. |
 | Final parity journey and README recording | TN-155 closure: complete all seven requirements on the available hosts, then capture the real application. |
 
 TN-157 adopts the frozen semantics in the already executable TypeScript
