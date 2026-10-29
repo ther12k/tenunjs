@@ -75,29 +75,41 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   }
   const inputIds = new Set<string>();
   let hasFocusedInput = false;
-  for (let index = 0; index < scene.ops.length; index++) {
-    const op = scene.ops[index] as { op?: string } | null;
+  // TN-166: the per-op contract checks (op kind, text clip, text-input
+  // descriptor, duplicate ids, single focus) apply to ROOT ops and to
+  // scroll-region content ops alike — the pre-TN-166 nested loop checked
+  // only kinds, so a nested invalid text-input descriptor or clip passed
+  // browser validation that the Android parser rejects. Id/focus tracking
+  // is shared across both levels, so a root field and a nested field
+  // cannot collide or both claim focus.
+  const opViolation = (op: { op?: string } | null, label: string): string | null => {
     if (!op || typeof op !== "object") {
-      return `ops[${index}] is not an object`;
+      return `${label} is not an object`;
     }
     const kind: string = op.op as string;
     if (!KNOWN_OP_KINDS.has(kind)) {
-      return `unknown op kind "${kind}" at ops[${index}]`;
+      return `unknown op kind "${kind}" at ${label}`;
     }
     if (kind === "text" && "clip" in op && op.clip !== undefined) {
       try { validateTextClip(op.clip); }
-      catch (error) { return `invalid text clip at ops[${index}]: ${(error as Error).message}`; }
+      catch (error) { return `invalid text clip at ${label}: ${(error as Error).message}`; }
     }
     if (kind === "text-input") {
       const violation = textInputContractError(op);
-      if (violation) return `invalid text input at ops[${index}]: ${violation}`;
-      const field = scene.ops[index]! as Extract<DisplayOp, { op: "text-input" }>;
+      if (violation) return `invalid text input at ${label}: ${violation}`;
+      const field = op as unknown as Extract<DisplayOp, { op: "text-input" }>;
       if (inputIds.has(field.id)) return `duplicate text input id "${field.id}"`;
       inputIds.add(field.id);
       if (field.focused && hasFocusedInput) return "more than one focused text input";
       if (field.focused) hasFocusedInput = true;
     }
-    if (kind === "scroll-region") {
+    return null;
+  };
+  for (let index = 0; index < scene.ops.length; index++) {
+    const op = scene.ops[index] as { op?: string } | null;
+    const violation = opViolation(op, `ops[${index}]`);
+    if (violation) return violation;
+    if (op && (op as { op?: string }).op === "scroll-region") {
       const region = op as { id?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown; contentHeight?: unknown; ops?: unknown };
       if (typeof region.id !== "string" || region.id.length === 0) {
         return `scroll region at ops[${index}] has no id`;
@@ -112,15 +124,11 @@ export function sceneContractError(scene: DisplayListScene): string | null {
       }
       for (let child = 0; child < region.ops.length; child++) {
         const nested = region.ops[child] as { op?: string } | null;
-        if (!nested || typeof nested !== "object") {
-          return `scroll region "${region.id}" ops[${child}] is not an object`;
-        }
-        if (nested.op === "scroll-region") {
+        if (nested && typeof nested === "object" && (nested as { op?: string }).op === "scroll-region") {
           return `nested scroll regions are not supported ("${region.id}")`;
         }
-        if (!KNOWN_OP_KINDS.has(nested.op as string)) {
-          return `unknown op kind "${nested.op}" in scroll region "${region.id}"`;
-        }
+        const nestedViolation = opViolation(nested, `scroll region "${region.id}" ops[${child}]`);
+        if (nestedViolation) return nestedViolation;
       }
     }
   }
@@ -162,7 +170,12 @@ export function hitTestTapsWithRegions(
     const regionViewportTop = region.y - scrollY;
     if (designX < region.x || designX > region.x + region.w) continue;
     if (viewportY < regionViewportTop || viewportY > regionViewportTop + region.h) continue;
-    const offset = regionOffsets.get(region.id) ?? 0;
+    // TN-166: clamp against THIS region's bounds — a stored offset left
+    // over from a taller previous scene must not desync hit-testing from
+    // painting (render() normalizes the stored value; this keeps the
+    // exported resolver correct for any caller-supplied map).
+    const maxOffset = Math.max(0, region.contentHeight - region.h);
+    const offset = Math.min(Math.max(regionOffsets.get(region.id) ?? 0, 0), maxOffset);
     const contentY = viewportY - regionViewportTop + offset;
     if (tap.x <= designX - region.x && designX - region.x <= tap.x + tap.w &&
         tap.y <= contentY && contentY <= tap.y + tap.h) {
@@ -295,11 +308,20 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
         // paint offset translates it. Scrolling changes paint only.
         const offset = Math.min(Math.max(this.regionOffsets.get(op.id) ?? 0, 0),
           Math.max(0, op.contentHeight - op.h));
+        // TN-166: normalize the stored offset to THIS scene's bounds so
+        // every reader — hit-testing, the text-input adapter, the next
+        // drag — agrees with what painting shows, even after content
+        // shrinks below a previously scrolled position.
+        this.regionOffsets.set(op.id, offset);
         ctx.save();
         ctx.beginPath();
         ctx.rect(op.x, op.y, op.w, op.h);
         ctx.clip();
-        ctx.translate(0, -offset);
+        // TN-166: children are in content space RELATIVE TO THE REGION —
+        // painting adds the region origin (hit-testing already subtracts
+        // it), or a region at (20,44) clips its first rows away while
+        // their taps still hit: invisible content with working hits.
+        ctx.translate(op.x, op.y - offset);
         for (const nested of op.ops) this.paint(ctx, nested);
         ctx.restore();
         continue;

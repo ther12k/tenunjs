@@ -1,4 +1,6 @@
-import type { DisplayListScene, TextInputOp } from "@tenunjs/widgets";
+import type { DisplayListScene, DisplayOp, TextInputOp } from "@tenunjs/widgets";
+
+type ScrollRegionOp = Extract<DisplayOp, { op: "scroll-region" }>;
 
 interface EditingValue {
   text: string;
@@ -23,6 +25,31 @@ export interface BrowserTextInputOptions {
   onError: (message: string) => void;
   /** Injectable DOM boundary for the adapter's event/lifecycle tests. */
   document?: Document;
+  /** TN-166: a scroll region's current paint offset, so an editor nested
+   *  in that region positions at its on-screen location. The host wires
+   *  this to its renderer's offset state; omitted treats it as zero. */
+  regionOffset?: (regionId: string) => number;
+}
+
+/**
+ * TN-166: the focused, editable text-input descriptor — at the scene root
+ * OR nested inside a scroll region's content ops (a TextField inside a
+ * ScrollView). Root-only lookup left nested fields with no editor on a
+ * scene the contract accepts. Read-only fields never adopt an editor.
+ */
+function focusedEditableInput(scene: DisplayListScene): { op: TextInputOp; region: ScrollRegionOp | null } | null {
+  for (const op of scene.ops) {
+    if (op.op === "text-input") {
+      if (op.focused && !op.readOnly) return { op, region: null };
+    } else if (op.op === "scroll-region") {
+      for (const nested of op.ops) {
+        if (nested.op === "text-input" && nested.focused && !nested.readOnly) {
+          return { op: nested, region: op };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function selectionOf(input: HTMLInputElement): EditingValue["selection"] {
@@ -61,8 +88,9 @@ export class BrowserTextInput {
   sync(scene = this.options.scene(), scrollY = this.scrollY): void {
     if (this.disposed) return;
     this.scrollY = scrollY;
-    const focused = scene?.ops.find((op): op is TextInputOp => op.op === "text-input" && op.focused);
-    if (!focused || focused.readOnly) {
+    const found = scene ? focusedEditableInput(scene) : null;
+    const focused = found?.op;
+    if (!focused) {
       this.removeEditor();
       return;
     }
@@ -81,14 +109,14 @@ export class BrowserTextInput {
       this.removeEditor();
       editor = this.createEditor(focused);
       this.editor = editor;
-      this.position(editor, scene!);
+      this.position(editor, scene!, found.region);
       editor.element.focus({ preventScroll: true });
     } else if (editor) {
       // An acknowledged native edit must not rewrite value/selection: doing
       // so can cancel the browser's still-active composing span.
       editor.descriptor = focused;
       editor.element.setAttribute("aria-label", focused.label || focused.id);
-      this.position(editor, scene!);
+      this.position(editor, scene!, found.region);
     }
   }
 
@@ -108,7 +136,7 @@ export class BrowserTextInput {
     return !this.disposed && this.editor === editor;
   }
 
-  private position(editor: Editor, scene: DisplayListScene): void {
+  private position(editor: Editor, scene: DisplayListScene, region: ScrollRegionOp | null): void {
     const rect = this.options.canvas.getBoundingClientRect();
     const scale = rect.width / scene.designWidth;
     const op = editor.descriptor;
@@ -117,9 +145,19 @@ export class BrowserTextInput {
       ? op.anchor === "bottom" ? visibleHeight - op.anchorSize
         : op.anchor === "center" ? (visibleHeight - op.anchorSize) / 2 : 0
       : 0;
-    const y = op.fixed ? op.y + anchor : op.y - this.scrollY;
+    let x = op.x;
+    let y = op.fixed ? op.y + anchor : op.y - this.scrollY;
+    if (region) {
+      // TN-166: the descriptor lives in the region's CONTENT space — its
+      // on-screen position is the region's viewport-box origin plus the
+      // content coordinates, lifted by the region's current paint offset
+      // (the same math the renderer paints with).
+      const offset = this.options.regionOffset ? this.options.regionOffset(region.id) : 0;
+      x = region.x + op.x;
+      y = region.y + op.y - offset;
+    }
     const style = editor.element.style;
-    style.left = `${rect.left + op.x * scale}px`;
+    style.left = `${rect.left + x * scale}px`;
     style.top = `${rect.top + y * scale}px`;
     style.width = `${Math.max(1, op.w * scale)}px`;
     style.height = `${Math.max(1, op.h * scale)}px`;

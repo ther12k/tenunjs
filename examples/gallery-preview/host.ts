@@ -30,7 +30,12 @@ if (!canvas || !statusEl || !routeEl || !bundleEl) throw new Error("host shell i
 const renderer = new CanvasPreviewRenderer(canvas);
 let scrollY = 0;
 let scene: DisplayListScene | null = null;
-const textInput = new BrowserTextInput({ canvas, dispatch: invoke, scene: () => scene, onError: fail });
+const textInput = new BrowserTextInput({
+  canvas, dispatch: invoke, scene: () => scene, onError: fail,
+  // TN-166: a field nested in a scroll region positions with the
+  // region's current paint offset, matching what painting shows.
+  regionOffset: (id) => renderer.regionOffset(id),
+});
 let textSyncQueued = false;
 
 function queueTextSync(): void {
