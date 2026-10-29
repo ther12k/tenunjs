@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-160: Deliver controlled widget text input"
 summary: "TN-155 editing slice: an ordinary single-line TSX TextField, revision-safe edit sessions, browser and Android input adapters, and an editable Day Plan title."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-160"
 milestone: "M4"
 priority: "P0"
@@ -155,3 +155,20 @@ fonts and existing narrow-layout text overflow outside the edited field.
 Unicode transport and the field's hard clip do not prove font fallback,
 full shaping, or arbitrary widget overflow behavior. The capture is not
 promoted to a README headline demonstration.
+
+
+## Status note (2026-10-29, closed)
+
+Published as PR #247 (merge 5fac903). The publishing session re-verified
+the handoff independently (572/0 tests, typecheck, manifest, full
+run_android_test.sh with the extended framework-feel text-input journey)
+and repository CI passed all eight gates — including the first real
+execution of the three new DisplayListTextInputTest instrumentation
+cases on the CI emulator (15 device tests total, 0 failed): composition
+and UTF-16 edits round-tripping through the production JNI/QuickJS
+bridge, controlled rewrites retiring the composing connection, and
+connection isolation across field removal/restore/swap/engine disposal.
+TN-155 continues with independent scrolling, route transitions and
+animation, TN-068 theme integration, and the same-code device journey;
+font fallback and narrow-overflow polish remain pre-demonstration work.
+
