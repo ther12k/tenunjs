@@ -308,3 +308,30 @@ describe("Day Plan independent scrolling (TN-161)", () => {
     app.dispose();
   });
 });
+
+describe("Day Plan runtime theme switching (TN-170)", () => {
+  test("toggling the theme recolors the committed scene and retains journey state", () => {
+    const app = createFrameworkFeelRuntime();
+    const initial = app.render().scene;
+    expect(initial.background).toBe("#F6F7FC"); // light palette surface
+
+    // Journey: complete a task, open Progress, come back.
+    app.dispatch("TAP", tapForText(initial, "Complete task").payload);
+    app.dispatch("TAP", tapForText(app.render().scene, "View progress").payload);
+    expect(JSON.stringify(app.render().scene)).toContain('"text":"Progress"');
+
+    // Toggle on Today: colors swap through the invalidation channel.
+    app.dispatch("TAP", tapForText(app.render().scene, "Back to today").payload);
+    const beforeToggle = app.render().scene;
+    app.dispatch("TAP", tapForText(beforeToggle, "Toggle theme").payload);
+    const dark = app.render().scene;
+    expect(dark.background).toBe("#101014");
+    // The retained session state survived the swap.
+    expect(JSON.stringify(dark)).toContain('"text":"1 / 3"');
+
+    // And back to light.
+    app.dispatch("TAP", tapForText(dark, "Toggle theme").payload);
+    expect(app.render().scene.background).toBe("#F6F7FC");
+    expect(JSON.stringify(app.render().scene)).toContain('"text":"1 / 3"');
+  });
+});
