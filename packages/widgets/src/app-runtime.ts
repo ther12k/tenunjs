@@ -108,6 +108,7 @@ export type ApplicationErrorCode =
   | "UNKNOWN_ACTION"
   | "TAP_TARGET_UNKNOWN"
   | "INVALID_VIEW"
+  | "INVALID_THEME"
   | "SNAPSHOT_INVALID"
   | "SNAPSHOT_SCHEMA_MISMATCH"
   | "RUNTIME_DISPOSED";
@@ -178,7 +179,7 @@ function createAbortSource(): { signal: AbortSignal; abort(): void } {
 
 export class ApplicationRuntime {
   private readonly screens: Record<string, ScreenDefinition<any, any>>;
-  private readonly theme: ThemeConfig;
+  private theme: ThemeConfig;
   private readonly services: ApplicationServices;
   private readonly designWidth: number | undefined;
   private viewport: Readonly<LayoutViewport> | undefined;
@@ -257,6 +258,27 @@ export class ApplicationRuntime {
     // Coordinates from the previous layout cannot target the new surface.
     // A subscribed handoff rebuilds this table synchronously on invalidation.
     this.lastTapRuns = [];
+    this.notifyStale();
+  }
+
+  /**
+   * TN-170: swaps the application-owned theme through the same
+   * invalidation channel as setViewport. Route, screen sessions,
+   * application state, viewport, and the active text-input session are
+   * preserved — a palette switch updates the next committed frame with
+   * no per-screen wiring and no changed input state (colors ride the
+   * role plumbing screens already consume). The theme is not part of
+   * state snapshots: restoring a snapshot keeps the CURRENT theme.
+   */
+  setTheme(theme: ThemeConfig): void {
+    this.assertLive();
+    if (!theme || typeof theme !== "object" || Array.isArray(theme)) {
+      throw new ApplicationRuntimeError("INVALID_THEME", "theme must be an object");
+    }
+    if (theme.colors !== undefined && (typeof theme.colors !== "object" || Array.isArray(theme.colors))) {
+      throw new ApplicationRuntimeError("INVALID_THEME", "theme.colors must be an object");
+    }
+    this.theme = theme;
     this.notifyStale();
   }
 

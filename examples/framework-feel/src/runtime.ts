@@ -2,12 +2,15 @@ import { ApplicationRuntime, type LayoutViewport } from "@tenunjs/widgets";
 import { checkedPlanProgress, type PlanProgress, type PlanRoute } from "./plan";
 import { ProgressScreen } from "./screens/progress.screen";
 import { TodayScreen } from "./screens/today.screen";
-import { dayPlanTheme } from "./theme";
+import { dayPlanDarkTheme, dayPlanTheme } from "./theme";
 
 export const FRAMEWORK_FEEL_VIEWPORT: Readonly<LayoutViewport> = Object.freeze({ width: 720, height: 1000 });
 
 /** One composition shared by the browser host, QuickJS, and structural tests. */
 export function createFrameworkFeelRuntime(viewport: LayoutViewport = FRAMEWORK_FEEL_VIEWPORT): ApplicationRuntime {
+  // TN-170: the runtime owns the current theme; the toggle service swaps
+  // it through the invalidation channel — no screen state, no remounts.
+  let dark = false;
   const app: ApplicationRuntime = new ApplicationRuntime({
     screens: { today: TodayScreen, progress: ProgressScreen },
     initial: "today",
@@ -25,6 +28,10 @@ export function createFrameworkFeelRuntime(viewport: LayoutViewport = FRAMEWORK_
         app.navigate(route, {
           transition: { kind: "slide", direction: route === "progress" ? "forward" : "backward" },
         });
+      },
+      toggleTheme() {
+        dark = !dark;
+        app.setTheme(dark ? dayPlanDarkTheme : dayPlanTheme);
       },
     },
   });

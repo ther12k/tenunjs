@@ -273,6 +273,7 @@ status: accepted
 | 06-issues/tn-167-refuse-same-engine-reentry-visibly.md | 3bebe76507138ed36f693290f6af93fb594681ebcfdb311298b33753282a3bf9 |
 | 06-issues/tn-168-harden-scrollview-children-and-theme-baker-nested-ops.md | d2c7867defc56647964cad669bf762d7b0596db3b706fa393c19697968095f50 |
 | 06-issues/tn-169-deliver-host-evaluated-route-transitions.md | b616364a896846fc3b4c28cc740456b4542bb302877dac24e9475bd5f1fd9b86 |
+| 06-issues/tn-170-deliver-runtime-theme-switching-and-palette-themes.md | 8e24a6c588d241ff1ac1bdc6eb40922e754041bac1d72feafb0bfa2daa7dd013 |
 <<<<<<< HEAD
 =======
 >>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))

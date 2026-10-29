@@ -23,11 +23,23 @@ export const TodayScreen = defineScreen({
         planTitle: state.planTitle === undefined ? defaultPlanTitle : state.planTitle,
       });
     },
+    toggleTheme({ services }: ScreenActionContext<TodayState>) {
+      // TN-170: the runtime owns the swap; screens keep no theme state.
+      if (typeof services.toggleTheme !== "function") {
+        throw new Error("Missing fixture theme toggle service");
+      }
+      services.toggleTheme();
+    },
   },
   view({ state, actions }) {
     return (
       <Scaffold appBar={<AppBar title="Day Plan" />}>
         <Column padding="lg" gap="md" align="stretch">
+          <Row gap="sm" align="stretch">
+            <Expanded>
+              <Button variant="text" onPress={actions.toggleTheme}>Toggle theme</Button>
+            </Expanded>
+          </Row>
           <Card padding="md" radius="md" background="surfaceRaised">
             <Column gap="sm" align="stretch">
               <TextField

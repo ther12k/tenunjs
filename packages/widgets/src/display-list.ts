@@ -432,24 +432,29 @@ export function resolveRoles(theme: ThemeConfig): SchemeRoles {
   const c = theme.colors ?? {};
   return {
     primary: c.accent ?? "#4C8DFF",
-    onPrimary: "#FFFFFF",
+    onPrimary: c.onPrimary ?? "#FFFFFF",
     primaryContainer: c.primaryContainer ?? "#223354",
     onPrimaryContainer: c.onPrimaryContainer ?? "#D6E4FF",
     secondaryContainer: c.secondaryContainer ?? "#30354A",
     onSecondaryContainer: c.onSecondaryContainer ?? "#DCE4FF",
     surface: c.surface ?? "#101014",
-    surfaceContainer: "#16161D",
-    surfaceContainerHigh: "#232330",
+    // TN-170: these roles used to be hardcoded dark values — a light
+    // theme's cards and secondary text could not change them. Honoring
+    // declared tokens keeps existing apps byte-identical (absent keys
+    // fall through to the same defaults) while paletteTheme can reach
+    // every role ordinary widgets consume.
+    surfaceContainer: c.surfaceContainer ?? "#16161D",
+    surfaceContainerHigh: c.surfaceContainerHigh ?? "#232330",
     onSurface: c.text ?? "#F2F2F7",
-    onSurfaceVariant: "#9AA3B2",
+    onSurfaceVariant: c.onSurfaceVariant ?? "#9AA3B2",
     outline: c.outline ?? "#474B5A",
     outlineVariant: c.outlineVariant ?? "#26262F",
     error: c.danger ?? "#FF5A5F",
     success: c.success ?? "#3DD68C",
     warning: c.warning ?? "#F5A623",
-    inverseSurface: "#2E2E3C",
-    onInverseSurface: "#F2F2F7",
-    onPrimaryFixed: "#FFFFFF",
+    inverseSurface: c.inverseSurface ?? "#2E2E3C",
+    onInverseSurface: c.onInverseSurface ?? "#F2F2F7",
+    onPrimaryFixed: c.onPrimaryFixed ?? "#FFFFFF",
   };
 }
 

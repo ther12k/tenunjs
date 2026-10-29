@@ -54,6 +54,43 @@ export function colorSlot(name: ColorSlot): ColorRef {
 }
 
 /**
+ * TN-170: derives a complete ordinary-widget theme config from a
+ * semantic palette, so a TN-143 slot vocabulary drives every role the
+ * kit's widgets consume — including the roles resolveRoles only honors
+ * when declared (surfaceContainer, surfaceContainerHigh, onSurfaceVariant,
+ * inverseSurface, onInverseSurface, onPrimaryFixed). Validation rides
+ * defineColorPalette; the returned config is what ApplicationRuntime's
+ * constructor and setTheme accept.
+ */
+export function paletteTheme(palette: ThemePalette): { colors: Record<string, string> } {
+  const p = defineColorPalette(palette);
+  return {
+    colors: {
+      surface: p.surface,
+      surfaceRaised: p.surfaceContainer,
+      text: p.onSurface,
+      accent: p.primary,
+      danger: p.error,
+      success: p.success,
+      warning: p.warning,
+      outline: p.outline,
+      outlineVariant: p.outlineVariant,
+      primaryContainer: p.primaryContainer,
+      onPrimaryContainer: p.onPrimaryContainer,
+      onPrimary: p.onPrimary,
+      secondaryContainer: p.secondaryContainer,
+      onSecondaryContainer: p.onSecondaryContainer,
+      surfaceContainer: p.surfaceContainer,
+      surfaceContainerHigh: p.surfaceContainerHigh,
+      onSurfaceVariant: p.onSurfaceVariant,
+      inverseSurface: p.inverseSurface,
+      onInverseSurface: p.onInverseSurface,
+      onPrimaryFixed: p.onPrimaryFixed,
+    },
+  };
+}
+
+/**
  * A complete palette owns all literals. Eight-digit colors use Android's
  * #AARRGGBB order, not CSS #RRGGBBAA. Copy first to retain one value snapshot.
  */
