@@ -20,7 +20,7 @@ The three authoring tiers:
    vocabulary: `Scaffold`, `AppBar`, `Column`, `Row`, `Text`, `Button`,
    `Card`, plus the migration set `SizedBox`, `Center`, `Stack`,
    `Positioned`, `Expanded`, `GestureDetector`, `Container`, `Icon`,
-   `Spacer`, `Wrap`.
+   `Spacer`, `Wrap`, and the controlled single-line `TextField`.
 2. **Material components** (`@tenunjs-examples/ui-kit`) — the M3 family:
    `Avatar`, `Chip`, `Switch`, `Checkbox`, `Slider`, `TextField`, `Tabs`,
    `NavigationBar`, `ModalDrawer`, `ModalBottomSheet`, `AlertDialog`,
@@ -30,6 +30,10 @@ The three authoring tiers:
 3. **Canvas escape hatch** (`CanvasBox`) — Flutter's `CustomPaint`: a paint
    closure emitting plain display-list ops when a visual genuinely needs
    hand-drawing.
+
+For editable text, import `TextField` from `@tenunjs/widgets`. The older
+ui-kit component with that name remains a visual focus-ring stand-in;
+its API is distinct from the controlled editing widget.
 
 ## Widget mapping
 
@@ -47,7 +51,7 @@ The three authoring tiers:
 | `Center` | `Center` | |
 | `Stack` | `Stack` | children in declaration order, later on top |
 | `Positioned` | `Positioned` | `left`+`right` (or `top`+`bottom`) stretches |
-| `Expanded` | `Expanded` | `flex` shares the Row's free width |
+| `Expanded` | `Expanded` | `flex` shares bounded Row width or Column height; unbounded main-axis use fails visibly |
 | `Flexible` | — | implicit text shrink covers the loose case |
 | `GestureDetector` / `InkWell` | `GestureDetector` | `onTap` around any widget; see the input-model note below |
 | `Spacer` | `Spacer` | Columns; Rows space with `gap` |
@@ -56,7 +60,7 @@ The three authoring tiers:
 | `CircleAvatar` | `Avatar` | ui-kit |
 | `Chip` / `FilterChip` | `Chip` | ui-kit |
 | `Switch`, `Checkbox`, `Slider` | same names | ui-kit |
-| `TextField` | `TextField` | prototype: focus-ring stand-in; real editing/IME is the intended surface (M4) |
+| `TextField` | `TextField` from `@tenunjs/widgets` | controlled single-line `value`/`onChanged`, selection and composition through browser/Android adapters (TN-160); broader forms/IME scope remains M4 work |
 | `TabBar` / `TabBarView` | `Tabs` | screen state owns the page |
 | `BottomNavigationBar` | `NavigationBar` | ui-kit |
 | `Drawer` | `ModalDrawer` | overlay; place last in the body |
@@ -113,11 +117,16 @@ an intended replacement in the architecture, tracked through the issue queue:
   ([scrolling and animation](../02-architecture/scrolling-animation.md)) —
   `ListView`-style widgets arrive with it, not as a `Column` substitute
   forever.
-- **`TextField` is a focus-ring stand-in (prototype).** Real text editing,
-  IME composition, and selection are owned by the
-  [text and IME architecture](../02-architecture/text-and-ime.md); the
-  Android embedder already exercises a production soft-keyboard path on its
-  reference app, and the widget-level surface catches up under M4.
+- **Editable `TextField` is a controlled single-line prototype.** The
+  public widget opens a guarded edit session through the browser's native
+  input or Android InputConnection. The controller owns the string;
+  selection/composition use transient UTF-16 ranges. Day Plan consumes this
+  path through ordinary TSX. Pointer caret placement, selection handles,
+  full shaping/bidi geometry, secure entry, autofill, multiline forms, and
+  focus traversal remain broader M4 work. Live Android keyboard evidence
+  for Day Plan remains part of the milestone journey; the existing notes
+  app's keyboard evidence does not establish it. See the
+  [current text/IME contract](../02-architecture/text-and-ime.md).
 - **"Hot reload" is engine replacement + snapshot restore (deliberate
   mechanism).** A replaced engine gets a serialized snapshot — exported
   state survives, live objects and callback identity do not. Flutter's hot
@@ -130,13 +139,12 @@ an intended replacement in the architecture, tracked through the issue queue:
 These are known prototype limits with intended replacements — not permanent
 framework positions:
 
-- `Column` has no main-axis `justify` — the scene is content-height and
-  scrolls, so there is no free main-axis space to distribute (bounded
-  containers arrive with the
-  [public layout contract](../02-architecture/layout.md), TN-156).
-- `Expanded` works in Rows; bounded-height Columns come later.
-- Row `align="stretch"` degrades to `start` (no cross-axis size forcing
-  in the prototype engine).
+- Bounded Row/Column layout now supports `justify`, `Expanded` in either
+  axis, and cross-axis stretch (TN-157). The numeric-width `layoutScreen`
+  overload still supplies unbounded root height; Expanded requires a
+  bounded main axis. The [public layout contract](../02-architecture/layout.md)
+  specifies these semantics, while independent scroll regions and full
+  text intrinsics remain unfinished.
 - No `Image`, no animations, no list virtualization (see the table).
 - No persistent element/render layer yet: every render rebuilds the
   display list. Widget identity, incremental reconciliation, and preserved

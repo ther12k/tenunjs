@@ -1,7 +1,7 @@
 ---
 okf_version: 0.2
 title: "Implementation Issue Index"
-summary: "All 146 dependency-ordered, agent-sized implementation tasks, with governed lifecycle statuses."
+summary: "Dependency-ordered implementation tasks, with governed lifecycle statuses."
 type: index
 status: accepted
 ---
@@ -272,3 +272,4 @@ of that experience become the priority over gallery expansion.
 | [TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md) | P0 | TN-133, TN-156 | Adopt bounded TypeScript layout and the framework-feel app foundation |
 | [TN-158](tn-158-deliver-host-viewport-with-negotiation.md) | P1 | TN-157 | Deliver host viewport automatically with negotiation |
 | [TN-159](tn-159-harden-native-ble-lifecycle-and-connect-ux.md) | P0 | TN-154 | Harden native BLE lifecycle and connect UX (review follow-ups) |
+| [TN-160](tn-160-deliver-controlled-widget-text-input.md) | P0 | TN-158 | Deliver controlled widget text input and the Day Plan editing path |

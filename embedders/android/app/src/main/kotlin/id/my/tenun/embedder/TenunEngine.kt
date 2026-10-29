@@ -55,6 +55,10 @@ class TenunEngine(
         return nativeGetLatestScene(nativeHandle)
     }
 
+    /** Lifecycle check for retained platform callbacks; never enters JNI. */
+    val isDisposed: Boolean
+        @Synchronized get() = nativeHandle == 0L
+
     @Synchronized
     fun destroy() {
         if (nativeHandle != 0L) {

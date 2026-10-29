@@ -40,6 +40,26 @@ This is a development preview, not proof that the future M4 native widget host
 is complete. It deliberately uses approximate text metrics and the prototype
 display-list layout; Android TN-132 acceptance remains a separate gate.
 
+## Generic host and controlled text input
+
+`host.html?bundle=...` is the generic bundle-consuming shell used by
+[Day Plan](../framework-feel/README.md), separate from the gallery-specific
+`index.html` route rail above. It negotiates logical viewport delivery and
+supports TN-160's `text-input` descriptors. A transparent native input
+provides browser keyboard, selection, clipboard, and composition events;
+the canvas paints the ordinary field and its editing state.
+
+The host reconciles editors after dispatch returns. An acknowledged edit
+or geometry-only update keeps the active editor; changed controller state
+or a retired session replaces it and removes old listeners. A failed edit
+restores the accepted scene's value. Field text honors `TextOp.clip`, while
+general scroll-container clipping remains separate work.
+
+The ui-kit's gallery `TextField` remains a visual focus-ring component.
+Editable screens use the controlled `TextField` from `@tenunjs/widgets`
+with `ApplicationRuntime`. This prototype does not provide pointer caret
+placement, native selection handles, or a virtual accessibility tree.
+
 ## Automation hooks
 
 The shell exposes three `window` hooks so tests and agents can drive the

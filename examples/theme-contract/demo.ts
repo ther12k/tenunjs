@@ -37,13 +37,17 @@ const storage: ThemePreferenceStorage = {
 const example = await ThemeContractExample.open(storage);
 if (requestedMode !== undefined) await example.setMode(requestedMode as ThemeMode);
 const scene = example.render();
+const colorAt = (index: number): string | undefined => {
+  const op = scene.ops[index];
+  return op && "color" in op ? op.color : undefined;
+};
 console.log(JSON.stringify({
   mode: example.mode,
   background: scene.background,
-  card: scene.ops[0]?.color,
-  text: scene.ops[2]?.color,
-  button: scene.ops[5]?.color,
-  buttonText: scene.ops[6]?.color,
+  card: colorAt(0),
+  text: colorAt(2),
+  button: colorAt(5),
+  buttonText: colorAt(6),
   operationCount: scene.ops.length,
   tapCount: scene.taps.length,
 }, null, 2));

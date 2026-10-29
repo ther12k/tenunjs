@@ -1,4 +1,5 @@
 import type { DisplayListScene, DisplayOp, FixedPosition, SerializedTap } from "../ui-kit/src/display-list";
+import { textInputContractError, validateTextClip } from "@tenunjs/widgets";
 
 /**
  * Normalizes the display-list color convention for CSS: scenes use
@@ -42,6 +43,7 @@ const KNOWN_OP_KINDS: ReadonlySet<string> = new Set([
   "ring",
   "line",
   "gradient",
+  "text-input",
 ]);
 
 /**
@@ -70,6 +72,8 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   if (scene.version > CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION) {
     return `scene version ${scene.version} exceeds renderer support (${CanvasPreviewRenderer.SUPPORTED_SCENE_VERSION})`;
   }
+  const inputIds = new Set<string>();
+  let hasFocusedInput = false;
   for (let index = 0; index < scene.ops.length; index++) {
     const op = scene.ops[index] as { op?: string } | null;
     if (!op || typeof op !== "object") {
@@ -78,6 +82,19 @@ export function sceneContractError(scene: DisplayListScene): string | null {
     const kind: string = op.op as string;
     if (!KNOWN_OP_KINDS.has(kind)) {
       return `unknown op kind "${kind}" at ops[${index}]`;
+    }
+    if (kind === "text" && "clip" in op && op.clip !== undefined) {
+      try { validateTextClip(op.clip); }
+      catch (error) { return `invalid text clip at ops[${index}]: ${(error as Error).message}`; }
+    }
+    if (kind === "text-input") {
+      const violation = textInputContractError(op);
+      if (violation) return `invalid text input at ops[${index}]: ${violation}`;
+      const field = scene.ops[index]! as Extract<DisplayOp, { op: "text-input" }>;
+      if (inputIds.has(field.id)) return `duplicate text input id "${field.id}"`;
+      inputIds.add(field.id);
+      if (field.focused && hasFocusedInput) return "more than one focused text input";
+      if (field.focused) hasFocusedInput = true;
     }
   }
   return null;
@@ -129,6 +146,8 @@ function translateFixedOp(op: DisplayOp, visibleHeight: number): DisplayOp {
       return { ...op, cy: op.cy + dy };
     case "line":
       return { ...op, y1: op.y1 + dy, y2: op.y2 + dy };
+    case "text":
+      return { ...op, y: op.y + dy, ...(op.clip ? { clip: { ...op.clip, y: op.clip.y + dy } } : {}) };
     default:
       return { ...op, y: op.y + dy };
   }
@@ -235,7 +254,17 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
 
   private paint(ctx: CanvasRenderingContext2D, op: DisplayOp): void {
     switch (op.op) {
+      case "text-input":
+        // Required editing metadata. Ordinary operations paint the field;
+        // BrowserTextInput owns its platform input connection.
+        return;
       case "text": {
+        if (op.clip) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(op.clip.x, op.clip.y, op.clip.w, op.clip.h);
+          ctx.clip();
+        }
         ctx.fillStyle = toCss(op.color);
         ctx.font = `${op.weight >= 600 ? "700" : "400"} ${op.size}px sans-serif`;
         // Honor the scene's own alignment contract: align/width describe
@@ -248,6 +277,7 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
           x = op.x + Math.max(0, (op.width - measured) / 2);
         }
         ctx.fillText(op.text, x, op.y);
+        if (op.clip) ctx.restore();
         return;
       }
       case "circle": {

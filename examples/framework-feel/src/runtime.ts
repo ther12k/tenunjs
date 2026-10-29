@@ -1,5 +1,5 @@
 import { ApplicationRuntime, type LayoutViewport } from "@tenunjs/widgets";
-import { checkedCompleted, type PlanRoute } from "./plan";
+import { checkedPlanProgress, type PlanProgress, type PlanRoute } from "./plan";
 import { ProgressScreen } from "./screens/progress.screen";
 import { TodayScreen } from "./screens/today.screen";
 import { dayPlanTheme } from "./theme";
@@ -14,11 +14,11 @@ export function createFrameworkFeelRuntime(viewport: LayoutViewport = FRAMEWORK_
     theme: dayPlanTheme,
     viewport,
     services: {
-      navigate(route: PlanRoute, completed?: number) {
+      navigate(route: PlanRoute, progress?: PlanProgress) {
         if (route === "progress") {
           // App data travels through the existing state-channel contract.
           // The newly active route receives it without remounting its session.
-          app.pushState("receiveProgress", checkedCompleted(completed));
+          app.pushState("receiveProgress", checkedPlanProgress(progress));
         }
         app.navigate(route);
       },

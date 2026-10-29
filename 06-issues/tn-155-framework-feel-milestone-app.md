@@ -45,9 +45,9 @@ application journey and host evidence below are complete.
 | Slice | Owner and acceptance boundary |
 | --- | --- |
 | Bounded framework layout and Day Plan foundation | [TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md): ordinary two-screen TSX app, explicit runtime viewport inputs, custom drawing, shared-bundle execution. |
-| Host viewport delivery | TN-155 follow-on: compatible input negotiation, logical units, initial dimensions and resize updates in browser and Android. Scaling a previous scene does not count as re-layout. |
+| Host viewport delivery | [TN-158](tn-158-deliver-host-viewport-with-negotiation.md), closed: compatible input negotiation, logical units, initial dimensions and resize updates in browser and Android. Scaling a previous scene does not count as re-layout. |
 | Ordinary semantic widget themes | TN-068, retaining its dependencies and ADR-0024 responsibilities. |
-| Editable widget and IME path | TN-076/TN-078/TN-079, with focus ownership from TN-081. |
+| Editable widget and IME path | [TN-160](tn-160-deliver-controlled-widget-text-input.md), in progress: controlled single-line TextField, guarded sessions, browser/Android adapters, and the Day Plan title. Live Android IME journey evidence remains required; broader TN-076/TN-078/TN-079/TN-081 scope stays open. |
 | Independent list viewport | TN-083/TN-084, with gesture arbitration from TN-082. |
 | Host-evaluated route transition and animation | TN-048/TN-086/TN-087, with route lifecycle from TN-063. The JS-stall test requires scheduling separation, not only a timer on the existing UI thread. |
 | Final parity journey and README recording | TN-155 closure: complete all seven requirements on the available hosts, then capture the real application. |

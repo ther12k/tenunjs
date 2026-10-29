@@ -2,6 +2,24 @@ import { describe, expect, test } from "bun:test";
 import { installHostHandoff, type DisplayListScene, type RectOp, type SerializedTap } from "@tenunjs/widgets";
 import { createFrameworkFeelRuntime } from "../src/runtime";
 
+type TextInputOp = Extract<DisplayListScene["ops"][number], { op: "text-input" }>;
+
+function titleField(scene: DisplayListScene): TextInputOp {
+  const field = scene.ops.find((op): op is TextInputOp => op.op === "text-input" && op.id === "plan-title");
+  if (!field) throw new Error("Missing plan-title editor");
+  return field;
+}
+
+function tapForTitle(scene: DisplayListScene): SerializedTap {
+  const field = titleField(scene);
+  const x = field.x + field.w / 2;
+  const y = field.y + field.h / 2;
+  const tap = [...scene.taps].reverse().find((region) => region.action === "tap" &&
+    x >= region.x && x <= region.x + region.w && y >= region.y && y <= region.y + region.h);
+  if (!tap) throw new Error("Missing tap for the plan-title editor");
+  return tap;
+}
+
 function tapForText(scene: DisplayListScene, text: string): SerializedTap {
   const label = scene.ops.find((op) => op.op === "text" && op.text === text);
   if (!label || label.op !== "text") throw new Error(`Missing label: ${text}`);
@@ -42,14 +60,14 @@ describe("Day Plan bounded runtime foundation", () => {
       expect(progress.x + progress.w).toBeCloseTo(viewport.width - 24);
       expect(progress.x - complete.x - complete.w).toBeCloseTo(16);
 
-      const plan = cardForText(scene, "Plan");
       const completed = cardForText(scene, "Completed");
-      expect(plan.w).toBeCloseTo((viewport.width - 48 - 16) / 2);
-      expect(completed.w).toBeCloseTo(plan.w);
-      expect(completed.y).toBeCloseTo(plan.y);
-      expect(completed.h).toBeCloseTo(plan.h);
+      expect(completed.x).toBe(24);
+      expect(completed.w).toBeCloseTo(viewport.width - 48);
+      const editor = titleField(scene);
+      expect(editor.x).toBe(completed.x + 16);
+      expect(editor.w).toBeCloseTo(completed.w - 32);
       const body = cardForText(scene, "Today's checklist");
-      expect(body.y).toBeGreaterThan(plan.y + plan.h);
+      expect(body.y).toBeGreaterThan(completed.y + completed.h);
       expect(body.y + body.h).toBeCloseTo(complete.y - 16);
     }
     app.dispose();
@@ -76,8 +94,8 @@ describe("Day Plan bounded runtime foundation", () => {
     expect(scene().ops.find((op) => op.op === "ring")).toMatchObject({ progress: 2 / 3 });
     expect(JSON.stringify(scene())).toContain('"text":"Hide details"');
     expect(app.exportState().states).toEqual({
-      today: { completed: 2 },
-      progress: { completed: 2, detailsVisible: true },
+      today: { completed: 2, planTitle: "Release day" },
+      progress: { completed: 2, planTitle: "Release day", detailsVisible: true },
     });
 
     handoff.dispose();
@@ -92,6 +110,122 @@ describe("Day Plan bounded runtime foundation", () => {
     expect(commits).toHaveLength(2);
     expect(commits[1]).toMatchObject({ tenun: "display-list", version: 1, designWidth: 480, contentHeight: 840 });
     expect(tapForText(commits[1]!, "View progress").y).toBeLessThan(840);
+    handoff.dispose();
+    app.dispose();
+  });
+});
+
+describe("Day Plan widget editing", () => {
+  test("older snapshots default the missing title until an ordinary edit supplies it", () => {
+    const app = createFrameworkFeelRuntime();
+    const handoff = installHostHandoff({ app });
+    const scene = (): DisplayListScene => JSON.parse(handoff.lastScene()!);
+    const press = (label: string): void => {
+      handoff.dispatch("TAP", JSON.stringify(tapForText(scene(), label).payload));
+    };
+
+    handoff.dispatch("TENUN_RESTORE", JSON.stringify({
+      stateSchema: 1,
+      route: "progress",
+      states: { today: { completed: 1 }, progress: { completed: 1, detailsVisible: true } },
+    }));
+    expect(scene().ops.some((op) => op.op === "text" && op.text === "Release day")).toBe(true);
+    expect(app.exportState().states.progress).toEqual({ completed: 1, detailsVisible: true });
+    press("Back to today");
+    expect(titleField(scene()).text).toBe("Release day");
+    expect(app.exportState().states.today).toEqual({ completed: 1 });
+    press("View progress");
+    expect(app.exportState().states.progress).toEqual({ completed: 1, planTitle: "Release day", detailsVisible: true });
+    press("Back to today");
+
+    handoff.dispatch("TAP", JSON.stringify(tapForTitle(scene()).payload));
+    const field = titleField(scene());
+    const title = "Ship 🎉";
+    handoff.dispatch("TEXT_EDIT", JSON.stringify({
+      id: field.id,
+      sessionId: field.sessionId,
+      baseRevision: field.revision,
+      text: title,
+      selection: { base: title.length, extent: title.length },
+      composing: null,
+    }));
+    expect(app.exportState().states.today).toEqual({ completed: 1, planTitle: title });
+    press("View progress");
+    expect(app.exportState().states.progress).toEqual({ completed: 1, planTitle: title, detailsVisible: true });
+    press("Back to today");
+    expect(titleField(scene()).text).toBe(title);
+
+    handoff.dispose();
+    app.dispose();
+  });
+
+  test("composed Unicode title edits survive viewport changes and the two-screen journey", () => {
+    const app = createFrameworkFeelRuntime();
+    const handoff = installHostHandoff({ app });
+    const scene = (): DisplayListScene => JSON.parse(handoff.lastScene()!);
+    const press = (label: string): void => {
+      handoff.dispatch("TAP", JSON.stringify(tapForText(scene(), label).payload));
+    };
+
+    expect(titleField(scene())).toMatchObject({ text: "Release day", focused: false });
+    handoff.dispatch("TAP", JSON.stringify(tapForTitle(scene()).payload));
+    expect(titleField(scene()).focused).toBe(true);
+    expect(titleField(scene()).sessionId).toBeGreaterThan(0);
+
+    const edit = (text: string, composing: { start: number; end: number } | null): void => {
+      const field = titleField(scene());
+      handoff.dispatch("TEXT_EDIT", JSON.stringify({
+        id: field.id,
+        sessionId: field.sessionId,
+        baseRevision: field.revision,
+        text,
+        selection: { base: text.length, extent: text.length },
+        composing,
+      }));
+      expect(titleField(scene()).text).toBe(text);
+      expect(app.exportState().states.today).toMatchObject({ planTitle: text });
+    };
+
+    edit("か", { start: 0, end: 1 });
+    edit("かな", { start: 0, end: 2 });
+    const title = "かな 🎉 Cafe\u0301";
+    edit(title, null);
+
+    handoff.dispatch("VIEWPORT", JSON.stringify({ width: 360, height: 640 }));
+    expect(scene()).toMatchObject({ designWidth: 360, contentHeight: 640 });
+    expect(titleField(scene())).toMatchObject({ text: title, x: 40, w: 280 });
+    const fieldBeforeNavigation = titleField(scene());
+    const staleEdit = JSON.stringify({
+      id: fieldBeforeNavigation.id,
+      sessionId: fieldBeforeNavigation.sessionId,
+      baseRevision: fieldBeforeNavigation.revision,
+      text: "A late callback",
+      selection: { base: 15, extent: 15 },
+      composing: null,
+    });
+
+    press("Complete task");
+    press("View progress");
+    expect(app.route()).toBe("progress");
+    expect(scene().ops.some((op) => op.op === "text" && op.text === title)).toBe(true);
+    expect(scene().ops.some((op) => op.op === "text-input")).toBe(false);
+    expect(app.exportState().states.progress).toMatchObject({ completed: 1, planTitle: title });
+
+    const lastGood = handoff.lastScene();
+    expect(() => handoff.dispatch("TEXT_EDIT", staleEdit)).toThrow();
+    expect(handoff.lastScene()).toBe(lastGood);
+    press("Show details");
+    press("Back to today");
+    expect(titleField(scene())).toMatchObject({ text: title, focused: false });
+    expect(app.exportState().states).toEqual({
+      today: { completed: 1, planTitle: title },
+      progress: { completed: 1, planTitle: title, detailsVisible: true },
+    });
+
+    // Empty is an intentional edit, not the missing-field compatibility case.
+    handoff.dispatch("TAP", JSON.stringify(tapForTitle(scene()).payload));
+    edit("", null);
+
     handoff.dispose();
     app.dispose();
   });

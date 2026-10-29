@@ -17,7 +17,10 @@
  *    phone; a fired long-press suppresses that press's tap — hosts own
  *    that rule), "TENUN_RESTORE" restores a snapshot and commits. Verb
  *    comparison is case-insensitive because display-list regions carry
- *    lowercase "tap"/"long-press" and hosts echo them verbatim.
+ *    lowercase "tap"/"long-press" and hosts echo them verbatim. "TEXT_EDIT",
+ *    "TEXT_BLUR", and "TEXT_SUBMIT" also commit authoritative widget input
+ *    state. A stale edit republishes authority for host resynchronization
+ *    before its typed rejection propagates.
  *  - When the application exposes onStateInvalidation (async action
  *    settlement), the handoff commits a fresh scene out-of-band too —
  *    state that changes without a dispatch still reaches the host.
@@ -36,6 +39,7 @@
  */
 
 import type { DisplayListScene, LayoutViewport } from "./display-list";
+import { TextInputError } from "./text-input";
 
 /** Anything the handoff can drive: ApplicationRuntime, or a wrapper that
  *  composes one with application chrome and still honors the contract. */
@@ -124,8 +128,18 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       }
       return JSON.stringify({ route: app.route() });
     }
-    app.dispatch(normalized, payload);
-    if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE") commit();
+    const textInput = normalized === "TEXT_EDIT" || normalized === "TEXT_BLUR" || normalized === "TEXT_SUBMIT";
+    try {
+      app.dispatch(normalized, payload);
+    } catch (error) {
+      // A delayed InputConnection/DOM callback may lose the revision race.
+      // Re-publish authority so the host can replace its optimistic edit, then
+      // retain the typed rejection instead of silently treating it as accepted.
+      if (textInput && error instanceof TextInputError &&
+          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) commit();
+      throw error;
+    }
+    if (normalized === "TAP" || normalized === "LONG-PRESS" || normalized === "TENUN_RESTORE" || textInput) commit();
     return JSON.stringify({ route: app.route() });
   };
 

@@ -3,7 +3,7 @@ import {
   SEMANTIC_COLOR_SLOTS, ThemeContractError, bakeThemeScene, colorSlot,
   defineColorPalette, type ColorRef, type ColorSlot, type SemanticDisplayListScene,
   type SemanticDisplayOp,
-  type ThemeContractErrorCode, type ThemePalette,
+  type ThemeContractErrorCode, type ThemePalette, type TextInputOp,
 } from "../src/index";
 
 // Compile-time checks: secondary paint fields must retain semantic references.
@@ -111,6 +111,39 @@ describe("TN-143 palette validation", () => {
 });
 
 describe("TN-143 commit-time baking", () => {
+  test("required text-input descriptors preserve non-color state with independent range copies", () => {
+    const input: TextInputOp = { op: "text-input", id: "title", x: 10, y: 20, w: 300, h: 72,
+      text: "か😀", selection: { base: 3, extent: 1 }, composing: { start: 0, end: 1 },
+      focused: true, sessionId: 4, revision: 2, keyboardType: "text", returnAction: "done",
+      readOnly: false, label: "Title" };
+    const source = { ...scene(), ops: [...scene().ops, input] };
+    const result = bakeThemeScene(source, palette());
+    const baked = result.ops.at(-1)!;
+    expect(baked).toEqual(input);
+    expect(baked).not.toBe(input);
+    if (baked.op !== "text-input") throw new Error("Required input descriptor was lost");
+    expect(baked.selection).not.toBe(input.selection);
+    expect(baked.composing).not.toBe(input.composing);
+    expectCode(() => bakeThemeScene({ ...source, ops: [{ ...input, sessionId: 0 }] }, palette()), "INVALID_SCENE");
+  });
+
+  test("text clipping is explicitly classified, validated, and copied when baking themes", () => {
+    const clip = { x: 12, y: 2, w: 66, h: 68 };
+    const source = { ...scene(), ops: [{ op: "text" as const, x: 12, y: 42, text: "WWWWWW",
+      size: 17, weight: 400, color: colorSlot("onSurface"), clip }] };
+    const result = bakeThemeScene(source, palette());
+    const text = result.ops[0]!;
+    expect(text).toMatchObject({ color: "#202024", clip });
+    if (text.op !== "text") throw new Error("Text operation was lost");
+    expect(text.clip).not.toBe(clip);
+    text.clip!.w = 2;
+    expect(clip.w).toBe(66);
+    for (const invalid of [null, { ...clip, x: NaN }, { ...clip, y: Infinity },
+      { ...clip, w: -1 }, { ...clip, h: -1 }]) {
+      expectCode(() => bakeThemeScene({ ...source, ops: [{ ...source.ops[0], clip: invalid }] } as unknown as SemanticDisplayListScene, palette()), "INVALID_SCENE");
+    }
+  });
+
   test("every color field resolves while geometry, fixed anchors, text and taps survive", () => {
     const source = scene();
     const colors = palette();
@@ -142,8 +175,8 @@ describe("TN-143 commit-time baking", () => {
     const lightSnapshot = JSON.stringify(light);
     const dark = bakeThemeScene(source, palette({ background: "#101014", primary: "#99BBFF", onSurface: "#FAFAFC" }));
     expect(dark.background).toBe("#101014");
-    expect(dark.ops[4].color).toBe("#99BBFF");
-    expect(dark.ops[2].color).toBe("#FAFAFC");
+    expect(dark.ops[4]).toMatchObject({ color: "#99BBFF" });
+    expect(dark.ops[2]).toMatchObject({ color: "#FAFAFC" });
     expect(JSON.stringify(source)).toBe(original);
     expect(JSON.stringify(light)).toBe(lightSnapshot);
     expect(dark.ops[0]).not.toBe(source.ops[0]);

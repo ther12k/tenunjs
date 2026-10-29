@@ -70,11 +70,14 @@ partially unblocked by ADR-0023):
    exercises. Valdi stays engineering reference material; Flutter is the
    benchmark for the experience.
 
-   TN-157 is the first implementation slice: bounded layout in the current
-   TypeScript lowering, an explicit runtime viewport update, and the small
-   Day Plan application. Automatic host viewport delivery, ordinary-widget
-   theme integration, editing, independent scrolling, and host-evaluated
-   transitions remain separate capability slices before TN-155 closes.
+   TN-157 delivered bounded layout in the current TypeScript lowering and
+   the small Day Plan application; TN-158 delivered automatic logical-unit
+   viewport updates in the browser and Android hosts. TN-160 adds the
+   controlled single-line TextField and native editing-session path to
+   that application. Ordinary-widget theme integration, independent
+   scrolling, host-evaluated transitions, and the complete browser/Android
+   journey remain required before TN-155 closes. The scoped prototype
+   editing implementation does not close the broader TN-075–TN-081 tracks.
 
 Rule of application: overlay items must still declare their issue
 dependencies and land through the normal gate discipline; the overlay

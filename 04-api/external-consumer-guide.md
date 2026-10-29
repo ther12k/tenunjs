@@ -75,7 +75,8 @@ Dependency-set precision — what is local and what is not:
 
 The fixture is a task-list-shaped authoring and compilation exercise,
 deliberately input-less — it is not a functional task-entry application
-(the public text-input widget is TN-079).
+(the later TN-160 TextField is exercised by Day Plan; this packaging
+rehearsal keeps its original input-less fixture).
 
 ```sh
 bun run typecheck      # tsc --noEmit, BOTH jsx: react-jsx and react-jsxdev
@@ -125,7 +126,7 @@ would make a rehearsal pass while preserving the underlying product gap.
 | Resolve and package an **arbitrary external application entry** into a host-consumable artifact | `bundle-lib.ts:16` compiles a hard-coded gallery entry; `device-entry.ts:2` imports the example-private `GalleryRuntime` | TN-023 (runtime-compatible bundle/bytecode compiler, status: ready/not implemented) |
 | Supply an external application to the **browser preview** (today a fixed shell with hard-wired screens) | `examples/gallery-preview/index.html:41` loads a fixed `./preview.js`; `runtime.ts` hard-wires the 16 gallery screens; no generic "load this app bundle" entry | TN-042 (renderer-neutral display list); its integration relationship to TN-023 should be made explicit when either is scheduled |
 | Make the **runtime/lowering functionality available outside `examples/`** as a public contract — **partially closed**: the scene model + `layoutScreen` lowering are now public in `@tenunjs/widgets` (TN-133 extraction slice; this fixture's `scripts/produce-scene.ts` emits a host-consumable scene from tarballs only, digest-checked in CI). Still example-side: execution/orchestration (`GalleryRuntime`), snapshot restore, `runApp` host binding | lowering now public; execution/orchestration still lacks an owner-recorded public contract | TN-133 (owns the contract; the row shrinks as its slices land) |
-| Public **text-input widget** | `packages/widgets/src/index.ts` exports no input widget; the rehearsal app is input-less like the monorepo's own todo-list example | TN-079 (text-field/form widgets) |
+| Public **text-input widget** — narrow prototype now implemented | `@tenunjs/widgets` exports TN-160's controlled single-line TextField; Day Plan exercises its browser/Android adapter path. This rehearsal remains input-less and therefore supplies no editing evidence. | TN-160 (single-line slice); TN-079 and related M4 issues retain broader forms/platform responsibilities |
 
 Consequence: an external app can currently be **installed, authored,
 type-checked, and compiled** entirely from package artifacts, but it

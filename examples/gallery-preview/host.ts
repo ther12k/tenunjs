@@ -18,6 +18,7 @@
  * host's SceneContractException panel): the offending scene is not painted.
  */
 import { CanvasPreviewRenderer, sceneContractError } from "./renderer";
+import { BrowserTextInput } from "./text-input";
 import type { DisplayListScene } from "../ui-kit/src/display-list";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#preview");
@@ -29,6 +30,17 @@ if (!canvas || !statusEl || !routeEl || !bundleEl) throw new Error("host shell i
 const renderer = new CanvasPreviewRenderer(canvas);
 let scrollY = 0;
 let scene: DisplayListScene | null = null;
+const textInput = new BrowserTextInput({ canvas, dispatch: invoke, scene: () => scene, onError: fail });
+let textSyncQueued = false;
+
+function queueTextSync(): void {
+  if (textSyncQueued) return;
+  textSyncQueued = true;
+  queueMicrotask(() => {
+    textSyncQueued = false;
+    textInput.sync(scene, scrollY);
+  });
+}
 
 function fail(message: string): void {
   statusEl.className = "status error";
@@ -69,6 +81,9 @@ function paint(): void {
   scene = candidate;
   setStatus(`scene committed (${candidate.ops.length} ops)`);
   paint();
+  // Platform focus/IME work must happen after application dispatch returns,
+  // not reenter it from inside the native-style commit callback.
+  queueTextSync();
 };
 
 // TN-152 gesture parity with the Android host: a hold past the timeout
@@ -125,6 +140,7 @@ canvas.addEventListener("pointermove", (event) => {
     Math.min(renderer.maxScroll(scene), scrollY + delta / (canvas.clientWidth / scene.designWidth)),
   );
   paint();
+  textInput.sync(scene, scrollY);
 });
 canvas.addEventListener("pointerup", (event) => {
   cancelHoldTimer();
@@ -169,6 +185,7 @@ function deliverViewport(): boolean {
   }
   viewportNegotiated = true;
   viewportSupported = true;
+  textInput.sync(scene, scrollY);
   return true;
 }
 
@@ -186,22 +203,32 @@ window.addEventListener("resize", () => {
   paint();
 });
 
-function dispatch(action: string, payloadJson: string): string {
+function invoke(action: string, payloadJson: string): string {
   const fn = (window as unknown as Record<string, unknown>)["__tenun_dispatch_action"];
   if (typeof fn !== "function") {
-    fail("host: bundle did not install __tenun_dispatch_action");
-    return "";
+    throw new Error("host: bundle did not install __tenun_dispatch_action");
   }
+  const result = (fn as (a: string, p: string) => string)(action, payloadJson);
+  const route = JSON.parse(result) as { route?: string };
+  routeEl.textContent = route.route ?? "?";
+  return result;
+}
+
+function dispatch(action: string, payloadJson: string): string {
   try {
-    const result = (fn as (a: string, p: string) => string)(action, payloadJson);
-    const route = JSON.parse(result) as { route?: string };
-    routeEl.textContent = route.route ?? "?";
-    return result;
+    return invoke(action, payloadJson);
   } catch (error) {
     fail(`host: dispatch "${action}" failed: ${(error as Error).message}`);
     return "";
+  } finally {
+    textInput.sync(scene, scrollY);
   }
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) textInput.blur();
+});
+window.addEventListener("beforeunload", () => textInput.dispose());
 
 // Dev/test hooks, mirroring the device surface: drive the protocol and
 // read the last committed scene without pointer math.
@@ -213,6 +240,7 @@ function dispatch(action: string, payloadJson: string): string {
     if (!scene) return;
     scrollY = Math.max(0, Math.min(renderer.maxScroll(scene), y));
     paint();
+    textInput.sync(scene, scrollY);
   },
 };
 

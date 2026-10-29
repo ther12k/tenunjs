@@ -1,44 +1,48 @@
 import { defineScreen, type ScreenActionContext } from "@tenunjs/core";
-import { AppBar, Button, Card, Column, Expanded, Row, Scaffold, Text } from "@tenunjs/widgets";
-import { navigatePlan, PLAN_TASKS } from "../plan";
+import { AppBar, Button, Card, Column, Expanded, Row, Scaffold, Text, TextField } from "@tenunjs/widgets";
+import { checkedPlanTitle, defaultPlanTitle, navigatePlan, PLAN_TASKS } from "../plan";
 
 export interface TodayState {
   completed: number;
+  planTitle?: string;
 }
 
 export const TodayScreen = defineScreen({
   name: "Today",
-  initialState: (): TodayState => ({ completed: 0 }),
+  initialState: (): TodayState => ({ completed: 0, planTitle: defaultPlanTitle }),
   actions: {
+    changePlanTitle({ state, input }: ScreenActionContext<TodayState, string>) {
+      state.planTitle = checkedPlanTitle(input);
+    },
     completeTask({ state }: ScreenActionContext<TodayState>) {
       state.completed = Math.min(PLAN_TASKS.length, state.completed + 1);
     },
     viewProgress({ state, services }: ScreenActionContext<TodayState>) {
-      navigatePlan(services, "progress", state.completed);
+      navigatePlan(services, "progress", {
+        completed: state.completed,
+        planTitle: state.planTitle === undefined ? defaultPlanTitle : state.planTitle,
+      });
     },
   },
   view({ state, actions }) {
     return (
       <Scaffold appBar={<AppBar title="Day Plan" />}>
         <Column padding="lg" gap="md" align="stretch">
-          <Row gap="md" align="stretch">
-            <Expanded>
-              <Card padding="md" radius="md" background="surfaceRaised">
-                <Column gap="xs">
-                  <Text variant="caption">Plan</Text>
-                  <Text variant="title">Release day</Text>
-                </Column>
-              </Card>
-            </Expanded>
-            <Expanded>
-              <Card padding="md" radius="md" background="surfaceRaised">
-                <Column gap="xs">
-                  <Text variant="caption">Completed</Text>
-                  <Text variant="title">{state.completed} / {PLAN_TASKS.length}</Text>
-                </Column>
-              </Card>
-            </Expanded>
-          </Row>
+          <Card padding="md" radius="md" background="surfaceRaised">
+            <Column gap="sm" align="stretch">
+              <TextField
+                id="plan-title"
+                label="Plan title"
+                placeholder="Name this plan"
+                value={state.planTitle === undefined ? defaultPlanTitle : state.planTitle}
+                onChanged={actions.changePlanTitle}
+              />
+              <Row gap="sm">
+                <Text variant="caption">Completed</Text>
+                <Text variant="caption">{state.completed} / {PLAN_TASKS.length}</Text>
+              </Row>
+            </Column>
+          </Card>
 
           <Expanded>
             <Card padding="md" radius="lg" background="surfaceRaised">

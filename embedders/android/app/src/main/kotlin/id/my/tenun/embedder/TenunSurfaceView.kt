@@ -27,6 +27,7 @@ import org.json.JSONObject
 private fun DisplayListScene.Op.isFixed(): Boolean = when (this) {
     is DisplayListScene.Op.RectOp -> rect.fixed
     is DisplayListScene.Op.TextOp -> text.fixed
+    is DisplayListScene.Op.TextInputOp -> input.fixed
     is DisplayListScene.Op.CircleOp -> fixed
     is DisplayListScene.Op.RingOp -> fixed
     is DisplayListScene.Op.LineOp -> fixed
@@ -126,6 +127,9 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     var engine: TenunEngine? = null
         set(value) {
+            // A platform connection belongs to one engine, even if the next
+            // bundle happens to allocate the same numeric session ID.
+            endDisplayTextInput(notifyRuntime = false)
             field = value
             // TN-134: dispatch evidence is per-engine. Without this reset
             // the first-successful-dispatch hook fired once per VIEW
@@ -147,6 +151,16 @@ class TenunSurfaceView @JvmOverloads constructor(
     val titleField = EditableFieldState()
     val detailsField = EditableFieldState()
     val entries = mutableListOf<String>()
+
+    private val textInputSession = TextInputSessionState()
+    private var textInputConnection: DisplayListInputConnection? = null
+    private var acceptsTextInput = true
+
+    private data class TextEditResponse(
+        val previous: TextInputDescriptor,
+        val proposed: TextInputValue,
+        val accepted: Boolean
+    )
 
     // Button label taken from the committed scene's button node, so a
     // JavaScript-only label change is what renderScene draws.
@@ -282,6 +296,26 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         isSurfaceValid = false
+        endDisplayTextInput(notifyRuntime = true)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        acceptsTextInput = hasWindowFocus
+        if (!hasWindowFocus) endDisplayTextInput(notifyRuntime = true)
+        else sceneHolder.current?.let { adoptDisplayTextInput(it) }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        acceptsTextInput = true
+    }
+
+    override fun onDetachedFromWindow() {
+        acceptsTextInput = false
+        cancelLongPressTimer()
+        endDisplayTextInput(notifyRuntime = true)
+        super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -333,7 +367,32 @@ class TenunSurfaceView @JvmOverloads constructor(
         imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+    override fun onCheckIsTextEditor(): Boolean = if (sceneHolder.current != null) {
+        textInputSession.current != null && engine?.isDisposed == false
+    } else engine?.isDisposed == false
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (sceneHolder.current != null) {
+            val input = textInputSession.current ?: return null
+            val token = textInputSession.token() ?: return null
+            val owner = engine ?: return null
+            if (!isCurrentTextInput(owner, token)) return null
+            textInputConnection?.invalidate()
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+            outAttrs.initialSelStart = input.selection.base
+            outAttrs.initialSelEnd = input.selection.extent
+            outAttrs.hintText = input.label
+            val connection = DisplayListInputConnection(
+                this, token, input,
+                isCurrent = { isCurrentTextInput(owner, token) },
+                onEdit = { value -> dispatchTextEdit(owner, token, value) },
+                onCommand = { action -> dispatchTextCommand(owner, token, action) }
+            )
+            textInputConnection = connection
+            return connection
+        }
+        // The reference notes application retains its independent legacy path.
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE
 
@@ -371,6 +430,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     // directly (instead of being routed through the IME session) is the
     // discriminating signal for IME delivery issues.
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (sceneHolder.current != null && event != null && textInputConnection?.sendKeyEvent(event) == true) return true
         Log.d(TAG, "view onKeyDown keyCode=$keyCode")
         return super.onKeyDown(keyCode, event)
     }
@@ -396,20 +456,35 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     fun syncFromScene(sceneJson: String) {
+        syncFromScene(sceneJson, editResponse = null)
+    }
+
+    private fun syncFromScene(sceneJson: String, editResponse: TextEditResponse?): Boolean {
         // Display-list scenes (gallery device bundle) take priority; the
         // legacy notes path stays authoritative for "root"-tree scenes.
         // A scene the host cannot render WHOLE (unsupported version or op
         // kind) is a compatibility failure: SceneHolder keeps the last
         // committed scene atomically — never a partial interface.
         when (sceneHolder.apply(sceneJson)) {
-            SceneHolder.Outcome.APPLIED -> return
-            SceneHolder.Outcome.REJECTED ->
+            SceneHolder.Outcome.APPLIED -> {
+                adoptDisplayTextInput(sceneHolder.current!!, editResponse)
+                return true
+            }
+            SceneHolder.Outcome.REJECTED -> {
                 Log.e(
                     TAG,
                     "scene rejected (${sceneHolder.lastRejection}); " +
                         if (sceneHolder.current != null) "keeping last committed scene" else "no committed scene: incompatible-bundle state"
                 )
-            SceneHolder.Outcome.NOT_A_DISPLAY_LIST -> sceneHolder.clear()
+                // The whole previous scene remains authoritative, including
+                // its platform editing value after an unaccepted local edit.
+                sceneHolder.current?.let { adoptDisplayTextInput(it, editResponse?.copy(accepted = false)) }
+                return false
+            }
+            SceneHolder.Outcome.NOT_A_DISPLAY_LIST -> {
+                endDisplayTextInput(notifyRuntime = false)
+                sceneHolder.clear()
+            }
         }
         try {
             val root = JSONObject(sceneJson)
@@ -447,6 +522,103 @@ class TenunSurfaceView @JvmOverloads constructor(
             }
         } catch (e: Exception) {
             // Ignored, preserve local state
+        }
+        return true
+    }
+
+    private fun inputMethodManager(): InputMethodManager? =
+        context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+
+    private fun isCurrentTextInput(owner: TenunEngine, token: TextInputSessionState.Token): Boolean =
+        acceptsTextInput && engine === owner && !owner.isDisposed && textInputSession.accepts(token)
+
+    /** Called only after native dispatch returns; never from tenun_host_call. */
+    private fun adoptDisplayTextInput(scene: DisplayListScene, editResponse: TextEditResponse? = null) {
+        val owner = engine?.takeUnless { it.isDisposed }
+        val input = if (acceptsTextInput) scene.ops.filterIsInstance<DisplayListScene.Op.TextInputOp>()
+            .firstOrNull { it.input.focused && !it.input.readOnly }?.input else null
+        val previous = textInputSession.current
+        val ownEdit = editResponse?.let { it.accepted && input?.acknowledgesEdit(it.previous, it.proposed) == true } ?: false
+        // A rejected edit may leave the committed descriptor unchanged while
+        // the IME has already mutated its own local composition. A controlled
+        // transformation likewise is not an acknowledgement of that edit.
+        val restart = textInputSession.adopt(owner, input, ownEdit, forceRestart = editResponse != null && !ownEdit)
+        if (restart) {
+            textInputConnection?.invalidate()
+            textInputConnection = null
+        }
+        val active = textInputSession.current
+        if (active == null) {
+            if (restart) {
+                inputMethodManager()?.hideSoftInputFromWindow(windowToken, 0)
+                inputMethodManager()?.restartInput(this)
+            }
+            return
+        }
+        textInputConnection?.applyAuthoritative(active)
+        if (restart && hasWindowFocus()) {
+            requestFocus()
+            inputMethodManager()?.restartInput(this)
+            showKeyboard()
+        }
+        if (previous?.text != active.text || previous?.selection != active.selection || previous?.composing != active.composing || restart) {
+            inputMethodManager()?.updateSelection(
+                this, active.selection.base, active.selection.extent,
+                active.composing?.start ?: -1, active.composing?.end ?: -1
+            )
+        }
+    }
+
+    private fun dispatchTextEdit(owner: TenunEngine, token: TextInputSessionState.Token, value: TextInputValue): Boolean {
+        if (!isCurrentTextInput(owner, token)) return false
+        val input = textInputSession.current ?: return false
+        val payload = input.eventIdentity()
+            .put("text", value.text)
+            .put("selection", JSONObject().put("base", value.selection.base).put("extent", value.selection.extent))
+            .put("composing", value.composing?.let { JSONObject().put("start", it.start).put("end", it.end) } ?: JSONObject.NULL)
+        return dispatchTextEvent(owner, "TEXT_EDIT", textInputEventJson(payload), TextEditResponse(input, value, accepted = false))
+    }
+
+    private fun dispatchTextCommand(owner: TenunEngine, token: TextInputSessionState.Token, action: String): Boolean {
+        if (!isCurrentTextInput(owner, token)) return false
+        val input = textInputSession.current ?: return false
+        return dispatchTextEvent(owner, action, textInputEventJson(input.eventIdentity()))
+    }
+
+    private fun dispatchTextEvent(owner: TenunEngine, action: String, payload: String, editResponse: TextEditResponse? = null): Boolean {
+        return try {
+            val result = owner.dispatchActionResult(action, payload)
+            if (engine !== owner || owner.isDisposed) return false
+            // A rejection is still followed by an authoritative resync; the
+            // connection must not retain its unaccepted local edit.
+            val acceptedScene = syncFromScene(owner.getLatestScene(), editResponse?.copy(accepted = result != null))
+            redraw()
+            result != null && acceptedScene
+        } catch (e: Exception) {
+            Log.w(TAG, "text-input $action failed: ${e.message}")
+            endDisplayTextInput(notifyRuntime = false)
+            false
+        }
+    }
+
+    private fun endDisplayTextInput(notifyRuntime: Boolean) {
+        val input = textInputSession.current
+        val owner = engine
+        val hadInput = input != null || textInputConnection != null
+        textInputSession.invalidate()
+        textInputConnection?.invalidate()
+        textInputConnection = null
+        if (hadInput) inputMethodManager()?.hideSoftInputFromWindow(windowToken, 0)
+        if (notifyRuntime && input != null && owner != null && !owner.isDisposed) {
+            try {
+                owner.dispatchActionResult("TEXT_BLUR", textInputEventJson(input.eventIdentity()))
+                // Keep the authoritative paint scene, while this lifecycle
+                // transition remains in charge of whether editing is active.
+                sceneHolder.apply(owner.getLatestScene())
+                redraw()
+            } catch (e: Exception) {
+                Log.w(TAG, "text-input detach failed: ${e.message}")
+            }
         }
     }
 
@@ -713,8 +885,20 @@ class TenunSurfaceView @JvmOverloads constructor(
                     val measured = textPaint.measureText(t.text)
                     drawX = t.x + Math.max(0f, (t.width - measured) / 2f)
                 }
-                canvas.drawText(t.text, drawX, t.y + dy, textPaint)
+                val clip = t.clip
+                if (clip == null) {
+                    canvas.drawText(t.text, drawX, t.y + dy, textPaint)
+                } else {
+                    val saved = canvas.save()
+                    try {
+                        canvas.clipRect(clip.x, clip.y + dy, clip.x + clip.w, clip.y + dy + clip.h)
+                        canvas.drawText(t.text, drawX, t.y + dy, textPaint)
+                    } finally {
+                        canvas.restoreToCount(saved)
+                    }
+                }
             }
+            is DisplayListScene.Op.TextInputOp -> Unit // Session metadata; normal ops paint it.
         }
     }
 

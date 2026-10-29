@@ -30,7 +30,8 @@ A runnable example — every widget below exists today:
 **Structural widgets** (`@tenunjs/widgets`) — layout and interaction:
 `Scaffold`, `AppBar`, `Column`, `Row`, `Text`, `Button`, `Card`,
 `SizedBox`, `Center`, `Stack`, `Positioned`, `Expanded`, `GestureDetector`,
-`Container`, `Icon`, `Spacer`, `Wrap`. These mirror Flutter's layout
+`Container`, `Icon`, `Spacer`, `Wrap`, and the controlled single-line
+`TextField`. These mirror Flutter's layout
 vocabulary; see [Migrating from Flutter](flutter-migration.md) for the
 widget-by-widget mapping and the deliberate divergences (`gap` instead of
 spacer children, one `Button` with variants, flat `Container` decoration).
@@ -42,6 +43,10 @@ top of the structural tier: `Avatar`, `Chip`, `Switch`, `Checkbox`,
 `FAB`, `IconButton`, `Carousel`, `ProgressRing`, `ProgressBar`,
 `SegmentedButton`, `PageIndicator`, `StarRating`, `Sparkline`, `Badge`,
 `HeroCard`, `Bubble`, `Divider`.
+
+The ui-kit's `TextField` is the older visual focus-ring component. Import
+the editable widget from `@tenunjs/widgets`; the two have different props
+and the ui-kit component has not silently changed behavior.
 
 **Canvas escape hatch** (`CanvasBox` from the ui-kit) — the `CustomPaint`
 equivalent for genuinely hand-drawn visuals; its paint closure emits plain
@@ -152,11 +157,63 @@ emits a plain-JSON scene consumed by the prototype hosts:
 }
 ```
 
-Ops are the seven drawing primitives (rect, outline, text, circle, ring,
-line, gradient); taps are hit regions whose payload ids index a callback
-table rebuilt on every render. Hosts stay dumb painter/dispatchers — no
-widget knowledge crosses the boundary, which is why the structural tier
-could grow without touching the Android prototype.
+Ops include seven drawing primitives (rect, outline, text, circle, ring,
+line, gradient) and, for editable fields, the nonpainting `text-input`
+descriptor. Taps are hit regions whose payload ids index a callback table
+rebuilt on every render. Hosts paint scene primitives and supply platform
+input services from explicit descriptors; they do not evaluate TSX widgets.
+
+## Controlled single-line TextField (TN-160)
+
+Use the public widget inside a screen driven by `ApplicationRuntime`:
+
+```tsx
+import { TextField } from '@tenunjs/widgets';
+
+// Inside view({ state, actions }); the action copies its string input
+// into controller state synchronously.
+<TextField
+  id="plan-title"
+  label="Plan title"
+  placeholder="Name this plan"
+  value={state.planTitle}
+  onChanged={actions.changePlanTitle}
+/>
+```
+
+| Prop | Meaning |
+| --- | --- |
+| `id: string` | Stable, nonempty, unique within the active screen. Do not derive it from tap order. |
+| `value: string` | Authoritative single-line controller value. CR/LF are rejected; text is not silently normalized. |
+| `onChanged(value: string): void` | Echo the proposed string into controller state synchronously to accept it. A transformed or unchanged controlled value is reconciled back to the host. |
+| `label?: string` | Painted label and host editor label; default empty. |
+| `placeholder?: string` | Painted when `value` is empty; never substitutes for the controlled string. |
+| `readOnly?: boolean` | Default false. Read-only fields cannot activate an editing session. |
+| `onSubmitted?: () => void` | Called when the current session submits; submission ends that session. |
+
+A tap opens a session with the caret at the end. Native keyboard selection,
+replacement, and composition update the ordinary widget; the runtime owns
+transient UTF-16 ranges, session IDs, and revisions. Applications neither
+serialize those values nor open host keyboards themselves. Selection-only
+updates do not call `onChanged`. Viewport changes retain an active session;
+route changes, removal, read-only transitions, restore, and disposal retire
+it. Focus activation requires `ApplicationRuntime`; a raw `layoutScreen`
+tap without its delegate fails with `TEXT_INPUT_RUNTIME_REQUIRED`.
+
+The browser host supplies a transparent native input and Android supplies
+an InputConnection. Older hosts reject the required `text-input` scene op;
+an application using the widget needs a matching host update. See the
+[text-input contract](../02-architecture/text-and-ime.md) for the exact
+event/rejection rules, and [Day Plan](../examples/framework-feel/README.md)
+for a complete application consumer.
+
+This is single-line prototype editing. Pointer caret placement, selection
+handles, shaped/bidirectional caret geometry, secure entry, autofill,
+multiline forms, full focus traversal, and accessible virtual controls
+remain outside this slice. Field text is hard-clipped to its own box;
+independent scrolling and general clipping are separate work. The field
+uses the current theme's paired surface/text values; TN-068 still owns
+semantic widget color slots, inherited scopes, and runtime theme switching.
 
 ## Finite viewports and framework re-layout (TN-157)
 
@@ -199,11 +256,10 @@ or supplying both initial `viewport` and `designWidth` fail with
 fail with `INVALID_CONSTRAINT`; zero-sized widget boxes remain valid.
 
 The [Day Plan foundation](../examples/framework-feel/README.md) exercises
-this API with ordinary TSX screens and one custom visual. **Automatic
-browser/Android viewport delivery is still a TN-155 follow-on.** Current
-hosts repaint/scale a scene when their surface changes size; explicit
-runtime-size tests do not certify that host-resize behavior. No new host
-dispatch verb or scene-wire version is introduced here.
+this API with ordinary TSX screens and one custom visual. TN-158 connects
+the runtime to automatic browser/Android viewport delivery, described
+below. Explicit runtime-size tests establish the layout contract; host
+delivery has its own adapter and integration checks.
 
 ## Automatic host viewport delivery (TN-158)
 
@@ -275,6 +331,8 @@ application viewport height and are not IME-inset aware.
 Drawn controls are not automatically accessible controls. The display
 list paints glyphs and hit rectangles; no accessibility tree, content
 descriptions, or virtual view hierarchy crosses the host boundary yet.
-Interactive regions are currently reachable only by pointer. Full
-accessibility (a virtual hierarchy with actions per region) is tracked
-future work, not an implied capability of this API.
+Interactive regions are generally activated by pointer. The focused
+TextField additionally participates in native keyboard/IME input, but this
+does not supply virtual accessible controls or a full keyboard traversal
+tree. Full accessibility (a virtual hierarchy with actions per region) is
+tracked future work, not an implied capability of this API.
