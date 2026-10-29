@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-170: Deliver runtime theme switching and palette-derived themes (TN-155 slice 6)"
 summary: "ApplicationRuntime.setTheme swaps the application-owned theme through the invalidation channel (palette switch updates the next frame, sessions/state/input preserved); paletteTheme derives a full role config from a TN-143 semantic palette; Day Plan demonstrates light/dark runtime switching."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-170"
 milestone: "M4"
 priority: "P1"
@@ -72,3 +72,16 @@ ordinary widgets consume.
 - Persisted theme preference across restarts (storage seam exists in
   examples/theme-contract; app-level persistence is a Day Plan concern
   if pursued later).
+
+## Status note (2026-10-29, closed)
+
+Implemented and published in one session. Fixed in PR #255 (commit 754b31a):
+setTheme through the invalidation channel with preserved sessions/state/
+viewport/input and typed INVALID_THEME failures; resolveRoles honoring the
+six previously hardcoded roles when declared (existing apps unchanged);
+paletteTheme bridging TN-143 semantic palettes to every ordinary-widget
+role; Day Plan light/dark toggle with retained journey state. Evidence:
+8 widget tests + the Day Plan journey test, 605-test suite, typecheck,
+full run_android_test.sh with the parity gate, and all eight CI gates
+green including the device gate.
+
