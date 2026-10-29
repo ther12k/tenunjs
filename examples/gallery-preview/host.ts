@@ -98,6 +98,8 @@ let holdTimer: ReturnType<typeof setTimeout> | null = null;
 let holdFired = false;
 let downX = 0;
 let downY = 0;
+// TN-161: the scroll region a drag is driving (null = whole-scene scroll).
+let activeScrollRegion: string | null = null;
 
 function cancelHoldTimer(): void {
   if (holdTimer !== null) {
@@ -106,6 +108,29 @@ function cancelHoldTimer(): void {
   }
 }
 
+/** Routes a scroll delta: inside a region that region scrolls (clamped);
+ *  outside, the whole scene scrolls as before. Paint-only, never layout. */
+function applyScrollDelta(deltaPx: number): void {
+  if (!scene) return;
+  const scale = canvas.clientWidth / scene.designWidth;
+  if (activeScrollRegion !== null) {
+    const current = renderer.regionOffset(activeScrollRegion);
+    renderer.setRegionOffset(scene, activeScrollRegion, current + deltaPx / scale);
+  } else {
+    scrollY = Math.max(0, Math.min(renderer.maxScroll(scene), scrollY + deltaPx / scale));
+  }
+  paint();
+  textInput.sync(scene, scrollY);
+}
+
+canvas.addEventListener("wheel", (event) => {
+  if (!scene) return;
+  activeScrollRegion = renderer.regionAt(scene, event.clientX, event.clientY, scrollY)?.id ?? null;
+  event.preventDefault();
+  applyScrollDelta(event.deltaY);
+  activeScrollRegion = null;
+}, { passive: false });
+
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
   pointerY = event.clientY;
@@ -113,6 +138,11 @@ canvas.addEventListener("pointerdown", (event) => {
   holdFired = false;
   downX = event.clientX;
   downY = event.clientY;
+  // TN-161: the region under the DOWN point owns this gesture — drags
+  // scroll that region; taps inside it resolve against its content.
+  activeScrollRegion = scene
+    ? (renderer.regionAt(scene, event.clientX, event.clientY, scrollY)?.id ?? null)
+    : null;
   cancelHoldTimer();
   holdTimer = setTimeout(() => {
     holdTimer = null;
@@ -135,12 +165,7 @@ canvas.addEventListener("pointermove", (event) => {
     cancelHoldTimer();
   }
   pointerY = event.clientY;
-  scrollY = Math.max(
-    0,
-    Math.min(renderer.maxScroll(scene), scrollY + delta / (canvas.clientWidth / scene.designWidth)),
-  );
-  paint();
-  textInput.sync(scene, scrollY);
+  applyScrollDelta(delta);
 });
 canvas.addEventListener("pointerup", (event) => {
   cancelHoldTimer();

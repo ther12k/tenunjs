@@ -44,6 +44,7 @@ const KNOWN_OP_KINDS: ReadonlySet<string> = new Set([
   "line",
   "gradient",
   "text-input",
+  "scroll-region",
 ]);
 
 /**
@@ -95,6 +96,77 @@ export function sceneContractError(scene: DisplayListScene): string | null {
       inputIds.add(field.id);
       if (field.focused && hasFocusedInput) return "more than one focused text input";
       if (field.focused) hasFocusedInput = true;
+    }
+    if (kind === "scroll-region") {
+      const region = op as { id?: unknown; x?: unknown; y?: unknown; w?: unknown; h?: unknown; contentHeight?: unknown; ops?: unknown };
+      if (typeof region.id !== "string" || region.id.length === 0) {
+        return `scroll region at ops[${index}] has no id`;
+      }
+      for (const key of ["x", "y", "w", "h", "contentHeight"] as const) {
+        if (typeof region[key] !== "number" || !Number.isFinite(region[key] as number)) {
+          return `scroll region "${region.id}" has invalid ${key}`;
+        }
+      }
+      if (!Array.isArray(region.ops)) {
+        return `scroll region "${region.id}" ops is not an array`;
+      }
+      for (let child = 0; child < region.ops.length; child++) {
+        const nested = region.ops[child] as { op?: string } | null;
+        if (!nested || typeof nested !== "object") {
+          return `scroll region "${region.id}" ops[${child}] is not an object`;
+        }
+        if (nested.op === "scroll-region") {
+          return `nested scroll regions are not supported ("${region.id}")`;
+        }
+        if (!KNOWN_OP_KINDS.has(nested.op as string)) {
+          return `unknown op kind "${nested.op}" in scroll region "${region.id}"`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * TN-161 unified tap resolution across scene and scroll-region coordinates.
+ * Taps tagged with a region id (tap.scroll) resolve in that region's CONTENT
+ * space: their viewport position is the region's viewport box (which itself
+ * scrolls with the scene) plus the region's own paint offset. Untagged taps
+ * keep the scene rule (y - scrollY, fixed anchors honored). One reverse scan
+ * keeps topmost-wins across BOTH kinds — an overlay painted after a region
+ * still wins. Returns the tap's index in scene.taps, or null.
+ */
+export function hitTestTapsWithRegions(
+  taps: ReadonlyArray<SerializedTap>,
+  regions: ReadonlyArray<Extract<DisplayOp, { op: "scroll-region" }>>,
+  regionOffsets: ReadonlyMap<string, number>,
+  designX: number,
+  viewportY: number,
+  visibleHeight: number,
+  scrollY: number,
+  action?: SerializedTap["action"]
+): number | null {
+  const regionById = new Map(regions.map((region) => [region.id, region]));
+  for (let index = taps.length - 1; index >= 0; index--) {
+    const tap = taps[index]!;
+    if (action !== undefined && tap.action !== action) continue;
+    if (tap.scroll === undefined) {
+      const y = tap.fixed ? tap.y + anchorOffsetForTest(tap, visibleHeight) : tap.y - scrollY;
+      if (tap.x <= designX && designX <= tap.x + tap.w && y <= viewportY && viewportY <= y + tap.h) {
+        return index;
+      }
+      continue;
+    }
+    const region = regionById.get(tap.scroll);
+    if (!region) continue; // stale tag: scene changed; not hittable
+    const regionViewportTop = region.y - scrollY;
+    if (designX < region.x || designX > region.x + region.w) continue;
+    if (viewportY < regionViewportTop || viewportY > regionViewportTop + region.h) continue;
+    const offset = regionOffsets.get(region.id) ?? 0;
+    const contentY = viewportY - regionViewportTop + offset;
+    if (tap.x <= designX - region.x && designX - region.x <= tap.x + tap.w &&
+        tap.y <= contentY && contentY <= tap.y + tap.h) {
+      return index;
     }
   }
   return null;
@@ -164,6 +236,8 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
   private readonly context: CanvasRenderingContext2D;
   private scale = 1;
   private designWidth = 720;
+  /** TN-161 per-region paint offsets (host-owned scroll state, keyed by region id). */
+  private readonly regionOffsets = new Map<string, number>();
   /** Scene contract version this renderer understands (mirrors the Android host). */
   static readonly SUPPORTED_SCENE_VERSION = 1;
 
@@ -214,7 +288,23 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     ctx.rect(0, scrollY, scene.designWidth, visibleHeight);
     ctx.clip();
     for (const op of scene.ops) {
-      if (!op.fixed) this.paint(ctx, op);
+      if (op.fixed) continue;
+      if (op.op === "scroll-region") {
+        // TN-161: the region's viewport box (already in scene coordinates,
+        // so it scrolls with the scene) clips its content; the region's own
+        // paint offset translates it. Scrolling changes paint only.
+        const offset = Math.min(Math.max(this.regionOffsets.get(op.id) ?? 0, 0),
+          Math.max(0, op.contentHeight - op.h));
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(op.x, op.y, op.w, op.h);
+        ctx.clip();
+        ctx.translate(0, -offset);
+        for (const nested of op.ops) this.paint(ctx, nested);
+        ctx.restore();
+        continue;
+      }
+      this.paint(ctx, op);
     }
     ctx.restore();
 
@@ -236,14 +326,53 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     if (sceneContractError(scene) !== null) return null;
     const rect = this.canvas.getBoundingClientRect();
     const scale = rect.width / scene.designWidth;
-    return hitTestTaps(
+    return hitTestTapsWithRegions(
       scene.taps,
+      this.scrollRegions(scene),
+      this.regionOffsets,
       (clientX - rect.left) / scale,
       (clientY - rect.top) / scale,
       rect.height / scale,
       scrollY,
       action
     );
+  }
+
+  /** TN-161 validated scroll regions of a scene, in paint order. */
+  scrollRegions(scene: DisplayListScene): Extract<DisplayOp, { op: "scroll-region" }>[] {
+    if (sceneContractError(scene) !== null) return [];
+    return scene.ops.filter((op): op is Extract<DisplayOp, { op: "scroll-region" }> => op.op === "scroll-region");
+  }
+
+  /** Topmost scroll region whose viewport box contains the client point. */
+  regionAt(scene: DisplayListScene, clientX: number, clientY: number, scrollY: number):
+      Extract<DisplayOp, { op: "scroll-region" }> | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const scale = rect.width / scene.designWidth;
+    const designX = (clientX - rect.left) / scale;
+    const viewportY = (clientY - rect.top) / scale;
+    let hit: Extract<DisplayOp, { op: "scroll-region" }> | null = null;
+    for (const region of this.scrollRegions(scene)) {
+      const top = region.y - scrollY;
+      if (designX >= region.x && designX <= region.x + region.w &&
+          viewportY >= top && viewportY <= top + region.h) {
+        hit = region; // later regions paint above earlier ones
+      }
+    }
+    return hit;
+  }
+
+  regionOffset(id: string): number {
+    return this.regionOffsets.get(id) ?? 0;
+  }
+
+  /** Clamps into [0, contentHeight - viewport], stores, returns the clamped value. */
+  setRegionOffset(scene: DisplayListScene, id: string, value: number): number {
+    const region = this.scrollRegions(scene).find((candidate) => candidate.id === id);
+    if (!region) return 0;
+    const clamped = Math.min(Math.max(value, 0), Math.max(0, region.contentHeight - region.h));
+    this.regionOffsets.set(id, clamped);
+    return clamped;
   }
 
   maxScroll(scene: DisplayListScene): number {

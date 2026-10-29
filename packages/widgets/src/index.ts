@@ -10,6 +10,7 @@
 
 import { HostWidgetKind } from "@tenunjs/protocol";
 import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
+import { ScrollViewKind } from "./display-list";
 
 export * from "./structural";
 export * from "./display-list";
@@ -110,6 +111,38 @@ export interface RowProps {
 
 export function Row(props: RowProps): WidgetNode {
   return jsx(HostWidgetKind.ROW, props);
+}
+
+export interface ScrollViewProps {
+  /**
+   * Stable region identity across re-renders (hosts key scroll offsets by
+   * it). Omitting it derives the id from the viewport box: stable while the
+   * region keeps its geometry, reset when it moves or resizes.
+   */
+  id?: string;
+  padding?: string | number;
+  gap?: string | number;
+  children?: WidgetChild;
+}
+
+/**
+ * TN-161: an independently scrolling vertical viewport. The parent's
+ * bounded allocation becomes the viewport; content lays out under an
+ * unbounded main axis (TN-156's frozen semantics) and keeps its intrinsic
+ * size — scrolling changes the paint offset only, never layout. Scenes
+ * using it require a scroll-aware host (older hosts reject them visibly).
+ */
+export function ScrollView(props: ScrollViewProps): WidgetNode {
+  // Symbol-kind widgets construct their node directly (the jsx() gate
+  // accepts function components and HostWidgetKind strings only) — the
+  // same pattern as TextField.
+  const { children, ...rest } = props;
+  return {
+    kind: ScrollViewKind,
+    key: null,
+    props: rest,
+    children: (Array.isArray(children) ? children : children ? [children] : []),
+  } as unknown as WidgetNode;
 }
 
 export interface TextProps {

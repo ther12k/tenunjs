@@ -79,13 +79,13 @@ status: accepted
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
 | 04-api/external-consumer-guide.md | 5a95464af0a9426c2edab968824967480e72f4bbed899760a181c0068e086af0 |
-| 04-api/flutter-migration.md | d19e849c63b0af9163f2d212095be925ce0e50935f084eba4e9d452688c7cae8 |
+| 04-api/flutter-migration.md | fcf7f9141e6e150ba4e6a10d35fc44634157ceb28a9d21e2fcacd29ce0415aef |
 | 04-api/index.md | 421cc7b890ea8ef4767f6a0221a5c0dd5365aa5206293863cef7612dca0d1e18 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
-| 04-api/widgets-and-styling.md | 196e4d070e6a519c5fd6538f2c7df73c0f9d81c0d82c7741b1df0c50f714e4d3 |
+| 04-api/widgets-and-styling.md | 8c8c0ab54fe5e731552b1b8afa3e7d98ab5cb5b5d3135538f5ef82e2c2fe3add |
 | 05-delivery/definition-of-done.md | 17adc84f6703efedcde2aaecaf79c1f9946cb6a3c603e70949cde46f584fefe3 |
 | 05-delivery/dependency-graph.md | af2323a75df499ec9d1c58c9c6ea5d3e7a114b8f8fbfed29216ff8130a94c777 |
 | 05-delivery/github-setup.md | 9988283c92ed14677e71efcec3de569f37c90eeac7ea69ab52eea55f6f3fc437 |
@@ -95,7 +95,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 1fe4e3515909c047ccfbe04d21f131866f3b98dae7b670699ea445f73d7a79c3 |
+| 06-issues/index.md | 9b9fe49be76485251890eea5f648701ce2e781d31acd73b908a261402aa9cbde |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -264,6 +264,7 @@ status: accepted
 | 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
 | 06-issues/tn-159-harden-native-ble-lifecycle-and-connect-ux.md | 7f270b309c824427b85832c16fcf67061ddc5185513a824819c98e88e39e8050 |
 | 06-issues/tn-160-deliver-controlled-widget-text-input.md | beda45559081b4c5c462f6320febf3d53871a3001702d3b60e504aa1ff322439 |
+| 06-issues/tn-161-deliver-independent-scroll-regions.md | 1304d77ecb8dbb37d5771fea1ef5b5430f258440988df3e0ddb716e0dd5ae914 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

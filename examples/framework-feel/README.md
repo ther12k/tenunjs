@@ -18,7 +18,7 @@ title through the ordinary `TextField` widget and host editing adapters.
 | Shared host entry | One IIFE bundle uses the public commit/dispatch contract for both the generic browser host and QuickJS. |
 | Automatic browser/Android viewport delivery | Implemented (TN-158): the generic browser host delivers canvas CSS-pixel bounds on boot and resize; the Android `SurfaceView` delivers density-independent logical bounds on surface changes and engine swaps. Both negotiate once — a bundle whose handoff has no `setViewport` answers `UNKNOWN_ACTION` and keeps its own design-width scaling. |
 | Controlled single-line editing through widgets | TN-160 implements the plan-title field, guarded runtime sessions, browser native input, and Android InputConnection. Live Android soft-keyboard/composition evidence for this TSX application remains part of the milestone journey. |
-| Independent scroll viewport | Pending. The three-task checklist currently uses a fixed layout. |
+| Independent scroll viewport | Implemented (TN-161): the Today checklist is a `ScrollView` — bounded viewport, intrinsic content, host-owned scroll offsets; the scene carries a `scroll-region` op both hosts render and hit-test. |
 | Host-evaluated animation and route transitions | Pending. The ring changes with state and navigation switches immediately. |
 | Semantic widget colors, inherited themes, runtime switching | TN-068 remains the owner. This foundation uses the existing single-theme `defineTheme` API. |
 

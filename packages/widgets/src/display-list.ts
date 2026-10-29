@@ -215,7 +215,30 @@ export interface GradientOp extends FixedPosition {
   shadow?: number;
 }
 
-export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp | TextInputOp;
+export type DisplayOp = RectOp | OutlineOp | TextOp | CircleOp | RingOp | LineOp | GradientOp | TextInputOp | ScrollRegionOp;
+
+/**
+ * TN-161 independent scroll region: a bounded viewport box with content
+ * that laid out under an UNBOUNDED main axis (the frozen TN-156 scroll
+ * semantics). Children ops and any taps carrying the region's id are in
+ * the region's CONTENT space; the host scrolls by changing this region's
+ * paint offset only — never layout. Scenes that use this op require a
+ * host that knows it: older hosts reject the scene visibly (unknown op
+ * kind), which is exactly the pairing rule.
+ */
+export interface ScrollRegionOp {
+  readonly op: "scroll-region";
+  /** Stable paint-state key: app-supplied, else derived from the viewport box. */
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  /** Viewport size in scene units. */
+  readonly w: number;
+  readonly h: number;
+  /** Laid-out content extent along the unbounded axis. */
+  readonly contentHeight: number;
+  readonly ops: readonly DisplayOp[];
+}
 
 /**
  * Hit region gesture kinds a host can dispatch back. "long-press" is
@@ -232,6 +255,8 @@ export interface SerializedTap extends FixedPosition {
   h: number;
   action: TapRegionAction;
   payload: { id: number };
+  /** TN-161: set when the region lives in this scroll region's CONTENT space. */
+  scroll?: string;
 }
 
 export interface DisplayListScene {
@@ -276,6 +301,7 @@ interface InternalContext extends RenderContext {
  * untouched).
  */
 export const Canvas = Symbol.for("tenun.preview.canvas");
+export const ScrollViewKind = Symbol.for("tenun.widgets.scroll-view");
 
 /**
  * Virtual theme-scope kind — the kit's answer to Flutter's `Theme` widget:
@@ -743,6 +769,44 @@ function flexLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints, ax
   return { frame, children };
 }
 
+function scrollLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints): NodeLayout {
+  // TN-156 frozen scroll semantics: the container's box is the VIEWPORT —
+  // bounded by the parent — while content lays out under an UNBOUNDED main
+  // axis and keeps its intrinsic size. Overflow is preserved; nothing is
+  // clamped, shrunk, or re-measured to fit.
+  const pad = paddingOf(node.props, 0);
+  const gap = gapOf(node.props);
+  const inner = inset(bounds, pad);
+  const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
+  for (const kid of kids) {
+    if (kid.kind === ScrollViewKind) {
+      throw new LayoutError("INVALID_CONSTRAINT", "Nested ScrollView is not part of this scroll contract yet");
+    }
+  }
+  if (!Number.isFinite(bounds.maxH)) {
+    // A viewport that does not exist cannot scroll: an unbounded parent
+    // allocation is a contract error, not a silent content-height column
+    // (Flutter's unbounded-ListView behavior — fail-visible, never an
+    // accident of the layout).
+    throw new LayoutError("UNBOUNDED_FLEX", "ScrollView requires a bounded main axis (e.g. inside Expanded)");
+  }
+  const frames = kids.map((kid) => measure(ctx, kid, { minW: 0, maxW: inner.maxW, minH: 0, maxH: Infinity }));
+  const gaps = nonnegative(gap * Math.max(kids.length - 1, 0), "combined gaps");
+  const naturalMain = nonnegative(frames.reduce((sum, frame) => sum + frame.h, 0) + gaps, "content height");
+  const naturalCross = Math.max(...frames.map((frame) => frame.w), 0);
+  const viewportW = Number.isFinite(inner.maxW) ? inner.maxW : naturalCross;
+  const viewportH = Number.isFinite(inner.maxH) ? inner.maxH : naturalMain;
+  const frame = constrain({ w: viewportW + pad * 2, h: viewportH + pad * 2 }, bounds);
+  let cursor = pad;
+  const children = kids.map((kid, index) => {
+    const child = frames[index]!;
+    const placement = { kid, frame: child, x: pad, y: cursor };
+    cursor += child.h + gap;
+    return placement;
+  });
+  return { frame, children };
+}
+
 function stackLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints): NodeLayout {
   const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
   const baseIndex = kids.findIndex((kid) => kid.kind !== PositionedKind);
@@ -834,6 +898,7 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
     }, bounds);
   }
   if (kind === StackKind) return stackLayout(ctx, node, bounds).frame;
+  if (kind === ScrollViewKind) return scrollLayout(ctx, node, bounds).frame;
   if (kind === WrapKind) {
     const flow = layoutWrapChildren(ctx, node, bounds.maxW);
     return constrain({ w: flow.width, h: flow.height }, bounds);
@@ -1045,6 +1110,36 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     placeChildren(ctx, stackLayout(ctx, node, bounds), x, y);
     return h;
   }
+  if (kind === ScrollViewKind) {
+    const layout = scrollLayout(ctx, node, bounds);
+    const regionId = typeof props.id === "string" && props.id.length > 0
+      ? props.id
+      : `scroll@${x},${y},${w},${h}`;
+    // Children paint into a NESTED ops list at the content origin: their
+    // coordinates become content-space by construction, and the taps they
+    // register are tagged with the region id so hosts hit-test them with
+    // this region's offset. tapRuns stays shared — payload ids are global.
+    const outerOps = ctx.ops;
+    const outerTaps = ctx.tapRegions;
+    ctx.ops = [];
+    ctx.tapRegions = [];
+    let nestedOps: DisplayOp[] = [];
+    let nestedTaps: SerializedTap[] = [];
+    try {
+      placeChildren(ctx, layout, 0, 0);
+      nestedOps = ctx.ops as DisplayOp[];
+      nestedTaps = ctx.tapRegions;
+    } finally {
+      ctx.ops = outerOps;
+      ctx.tapRegions = outerTaps;
+    }
+    const contentHeight = layout.children.length > 0
+      ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(props, 0)
+      : 0;
+    for (const tap of nestedTaps) outerTaps.push({ ...tap, scroll: regionId });
+    outerOps.push({ op: "scroll-region", id: regionId, x, y, w, h, contentHeight, ops: nestedOps });
+    return h;
+  }
   if (kind === ExpandedKind || kind === PositionedKind) {
     placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
     return h;
@@ -1251,6 +1346,11 @@ function offsetOp(
   dy: number,
   defaults: FixedPosition = {}
 ): DisplayOp {
+  if (op.op === "scroll-region") {
+    // Only the viewport box translates; nested ops are content-space by
+    // construction and must not shift with the region's position.
+    return { ...op, x: op.x + dx, y: op.y + dy };
+  }
   const explicitlyFixed = op.fixed !== undefined;
   const fixed = op.fixed ?? defaults.fixed === true;
   const anchor = op.anchor ?? (!explicitlyFixed && fixed ? defaults.anchor : undefined);

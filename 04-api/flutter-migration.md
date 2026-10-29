@@ -68,7 +68,7 @@ its API is distinct from the controlled editing widget.
 | `showDialog` | `AlertDialog` | overlay; place last |
 | `ScaffoldMessenger` / `SnackBar` | `SnackBar` | screen state owns visibility |
 | `ListTile` | `ListTile` | leading/title/subtitle/trailing |
-| `ListView` | `Column` | prototype: the whole scene scrolls; independent scroll regions and virtualization are the intended replacement (TN-155) |
+| `ListView` | `ScrollView` | TN-161: bounded viewport + unbounded content axis (the frozen TN-156 semantics); wrap in `Expanded` inside a bounded parent. Virtualization is future work |
 | `Image` / `Image.network` | — | no image op yet (host capability, tracked) |
 | animations | — | deterministic scenes; animation is future work |
 | `CustomPainter` | `CanvasBox paint=` | same escape hatch |
