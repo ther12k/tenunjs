@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-169: Deliver host-evaluated route transitions (TN-155 slice 5)"
 summary: "Navigation commits carry an optional transition descriptor; hosts interpolate between the previous and new scene on their own frame clock, and Android drives transition frames on a dedicated thread so JS stalls cannot freeze motion."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-169"
 milestone: "M4"
 priority: "P1"
@@ -78,3 +78,18 @@ host-owned paint offsets rather than the native scroll engine.
   layout-affecting animated properties (TN-086/TN-087 stay open).
 - Route lifecycle beyond the existing retained sessions (TN-063).
 - Moving ordinary repaint off the main thread.
+
+## Status note (2026-10-29, closed)
+
+Implemented and published in one session. Fixed in PR #254 (commits
+a850338..36087c7): the optional `scene.transition` block with the shared
+normalize/validate/easing helpers; `navigate(name, { transition })`
+stamping exactly the first rendered commit; browser rAF interpolation
+(slide/fade, mid-transition cut); Android frames on a dedicated animation
+HandlerThread under a paint lock, with `SceneTransitionEvaluator` pure and
+JVM-tested; Day Plan slides forward/backward. Evidence: 6 runtime + 4
+browser + 7 JVM tests, `RouteTransitionTest` on the device gate (frames
+advance while the main thread is blocked 300 ms, then settle; malformed
+blocks reject with the settled scene authoritative), parity gate carrying
+the block through real QuickJS, and all eight CI gates green.
+
