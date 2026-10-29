@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-167: Refuse same-engine reentry visibly instead of deadlocking"
 summary: "A host service that calls back into its own engine from inside tenun_host_call runs on the thread holding the non-recursive engine mutex — today that deadlocks the app; the bridge must reject the inner call visibly."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-167"
 milestone: "M1"
 priority: "P1"
@@ -61,3 +61,15 @@ the app.
   mutex). If a capability genuinely needs engine state mid-callback, the
   answer is a follow-up design, not silent reentry.
 - The Rust spike adapter's separate stale-destroy defect (spike-only).
+
+## Status note (2026-10-29, closed)
+
+Implemented and published in one session. Fixed in PR #252 (commit e66971a):
+all five mutex-taking entries refuse same-engine reentry with a WARN
+(dispatch and dispatch_result return NULL, set-host-call-handler and
+destroy no-op, the JNI get-latest-scene wrapper returns the empty-scene
+string); the outer entry completes and the engine stays usable. C
+engine-loop section 18 reproduces the exact reentry, asserts both
+refusals and post-refusal usability under a watchdog, and all eight CI
+gates are green including the device gate.
+
