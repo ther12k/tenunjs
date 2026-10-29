@@ -84,6 +84,10 @@ class PolytronBleService(
     private var stopRetries = 0
     /** Bumped per submission; a late watchdog whose seq no longer matches is a no-op. */
     private var writeSeq = 0L
+    /** TN-162: attributes each completion callback to the submission that
+     *  produced it — a late callback for a watchdog-abandoned write must
+     *  never confirm (or clear the STOP latch for) the current command. */
+    private val ledger = GattWriteLedger()
     /** Latched while a user-requested STOP has not been confirmed written —
      *  survives an unexpected drop so the STOP is delivered after reconnect.
      *  Explicit connect()/disconnect() clear it: a fresh session is fresh intent. */
@@ -372,6 +376,7 @@ class PolytronBleService(
         statCh = null
         writing = false
         inFlight = null
+        ledger.reset()
         synchronized(queue) {
             queue.clear()
             if (stopLatch) queue.addLast("STOP")
@@ -419,6 +424,7 @@ class PolytronBleService(
                     writing = false
                     inFlight = null
                     writeSeq++
+                    ledger.reset() // TN-162: the dropped link's callbacks are void
                     synchronized(queue) {
                         queue.clear()
                         if (stopLatch) queue.addLast("STOP")
@@ -524,19 +530,33 @@ class PolytronBleService(
 
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
             if (g !== gatt) return
-            val cmd = inFlight
             mainHandler.post {
                 if (g !== gatt) return@post
                 writeSeq++ // any pending watchdog for this submission is void now
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    handleWriteFailure(cmd)
-                    return@post
+                when (val completion = ledger.complete()) {
+                    is GattWriteLedger.Completion.Current -> {
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            handleWriteFailure(completion.cmd)
+                            return@post
+                        }
+                        if (completion.cmd == "STOP") stopLatch = false // STOP confirmed on air
+                        stopRetries = 0
+                        writing = false
+                        inFlight = null
+                        mainHandler.postDelayed({ drain() }, WRITE_GAP_MS)
+                    }
+                    is GattWriteLedger.Completion.Abandoned ->
+                        // TN-162: a late completion for a submission the
+                        // watchdog already gave up on. It proves the
+                        // transport responds, but it must NEVER confirm the
+                        // current command — the pre-TN-162 code read the
+                        // current in-flight command here and cleared the
+                        // STOP latch for a STOP that was never written. The
+                        // current submission settles on its own callback or
+                        // its own watchdog.
+                        Log.i(TAG, "late GATT write completion ignored (abandoned submission)")
+                    GattWriteLedger.Completion.None -> Unit // spurious callback
                 }
-                if (cmd == "STOP") stopLatch = false // STOP confirmed on air
-                stopRetries = 0
-                writing = false
-                inFlight = null
-                mainHandler.postDelayed({ drain() }, WRITE_GAP_MS)
             }
         }
     }
@@ -615,6 +635,7 @@ class PolytronBleService(
         val cmd = synchronized(queue) { queue.pollFirst() } ?: return
         writing = true
         inFlight = cmd
+        ledger.begin(cmd)
         val ok = try {
             cmdCh?.value = cmd.toByteArray(StandardCharsets.UTF_8)
             cmdCh != null && gatt?.writeCharacteristic(cmdCh) == true
@@ -625,15 +646,23 @@ class PolytronBleService(
         if (!ok) {
             // The command never left the phone — handleWriteFailure decides
             // between bounded STOP resubmission and dropping with an ERR.
+            // No completion callback can arrive for a never-submitted write.
+            ledger.abandon()
             handleWriteFailure(cmd)
             return
         }
+        // The completion callback for THIS submission is now owed.
+        ledger.markSubmitted()
         val seq = ++writeSeq
         mainHandler.postDelayed({
             if (writeSeq != seq || !writing) return@postDelayed
             // The completion callback never arrived: recover the transport
             // instead of blocking every later command (including STOP) forever.
+            // TN-162: the abandoned submission KEEPS its ledger slot — the
+            // stack may still deliver its late callback, which must consume
+            // the slot without confirming anything.
             writeSeq++
+            ledger.abandon()
             notifyLine("ERR penulisan timeout — cek sambungan")
             handleWriteFailure(inFlight)
         }, WRITE_WATCHDOG_MS)
@@ -687,6 +716,7 @@ class PolytronBleService(
         writing = false
         inFlight = null
         writeSeq++
+        ledger.reset()
         synchronized(queue) { queue.clear() }
     }
 

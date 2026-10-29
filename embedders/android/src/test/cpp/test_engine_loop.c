@@ -823,6 +823,49 @@ int main(int argc, char** argv) {
       CHECK(strstr(ok_scene, "\"ok\":1") != NULL, "budgets do not disturb a healthy bundle");
       tenun_android_engine_destroy(ok_engine);
     }
+
+    /* (e) TN-164: the budget bounds the WHOLE entry — handler plus the
+     * job drain together. Chained busy jobs must not out-run the entry
+     * budget by re-arming per job (the production probe measured 61 busy
+     * jobs holding one dispatch for 6.6 s against the 5 s default). The
+     * interrupted drain keeps the last committed scene, and the engine
+     * stays usable — a later entry arms a fresh budget and finishes the
+     * remaining jobs (bounded progress across entries). */
+    tenun_test_time_budget_ms = 400;
+    {
+      const char* busy_jobs_js =
+          "tenun_commit('{\"v\":1}');"
+          "globalThis.__tenun_dispatch_action = function(a) {"
+          " if (a === 'KICK') {"
+          "  for (var i = 0; i < 60; i++)"
+          "   Promise.resolve().then(function(){"
+          "    var until = Date.now() + 60;"
+          "    while (Date.now() < until) {}"
+          "   });"
+          "  Promise.resolve().then(function(){ tenun_commit('{\"v\":\"settled\"}'); });"
+          " }"
+          " return 'ok';"
+          "};";
+      tenun_android_engine* busy_engine =
+          tenun_android_engine_create((const uint8_t*)busy_jobs_js, strlen(busy_jobs_js));
+      CHECK(busy_engine != NULL, "busy-jobs bundle boots");
+      if (busy_engine) {
+        char* busy_scene = tenun_android_engine_dispatch(busy_engine, "KICK", "{}");
+        CHECK(busy_scene != NULL && strstr(busy_scene, "\"v\":1") != NULL,
+              "over-budget drain keeps the last committed scene (entry-scoped budget)");
+        CHECK(busy_scene == NULL || strstr(busy_scene, "settled") == NULL,
+              "the post-drain commit is NOT reached inside the bounded entry");
+        free(busy_scene);
+        tenun_test_time_budget_ms = 0;
+        char* later = tenun_android_engine_dispatch(busy_engine, "NOOP", "{}");
+        CHECK(later != NULL, "engine stays usable after an interrupted drain");
+        CHECK(later != NULL && strstr(later, "settled") != NULL,
+              "a later entry with a fresh budget finishes the remaining jobs");
+        free(later);
+        tenun_android_engine_destroy(busy_engine);
+      }
+    }
+    tenun_test_time_budget_ms = 0;
   }
 #else
   printf("SKIPPED: TN-136 bounded-eval cases need TENUN_TEST_INJECTION (NDK builds exclude them)\n");
@@ -1040,6 +1083,54 @@ int main(int argc, char** argv) {
       free(scene_null);
 
       tenun_android_engine_destroy(host_eng);
+    }
+  }
+
+  /* 17. TN-163: the restore acknowledgement channel. The engine-swap
+   * gate sends TENUN_RESTORE through dispatch_result and refuses the
+   * swap on NULL. NULL must mean "handler threw" there, while the
+   * LEGACY channel still returns the last scene — that asymmetry is
+   * exactly what the pre-TN-163 defect exploited (the throw was
+   * invisible to the Kotlin catch, and the swap happened anyway). */
+  printf("== 17. TN-163 restore acknowledgement channel ==\n");
+  {
+    const char* bad_restore_js =
+        "tenun_commit('{\"v\":1}');"
+        "globalThis.__tenun_dispatch_action = function(a) {"
+        " if (a === 'TENUN_RESTORE') throw new Error('bad-restore');"
+        " return '{\"route\":\"x\"}';"
+        "};";
+    tenun_android_engine* bad_engine =
+        tenun_android_engine_create((const uint8_t*)bad_restore_js, strlen(bad_restore_js));
+    CHECK(bad_engine != NULL, "throwing-restore bundle boots");
+    if (bad_engine) {
+      char* legacy = tenun_android_engine_dispatch(bad_engine, "TENUN_RESTORE", "{}");
+      CHECK(legacy != NULL && strstr(legacy, "\"v\":1") != NULL,
+            "legacy channel still returns the last scene on a thrown restore");
+      free(legacy);
+      char* reply = tenun_android_engine_dispatch_result(bad_engine, "TENUN_RESTORE", "{}");
+      CHECK(reply == NULL, "result channel returns NULL when the restore handler throws");
+      free(reply);
+      tenun_android_engine_destroy(bad_engine);
+    }
+
+    const char* good_restore_js =
+        "tenun_commit('{\"v\":1}');"
+        "globalThis.__tenun_dispatch_action = function(a) {"
+        " if (a === 'TENUN_RESTORE') tenun_commit('{\"v\":2}');"
+        " return '{\"route\":\"today\"}';"
+        "};";
+    tenun_android_engine* good_engine =
+        tenun_android_engine_create((const uint8_t*)good_restore_js, strlen(good_restore_js));
+    CHECK(good_engine != NULL, "succeeding-restore bundle boots");
+    if (good_engine) {
+      char* reply = tenun_android_engine_dispatch_result(good_engine, "TENUN_RESTORE", "{}");
+      CHECK(reply != NULL && strstr(reply, "today") != NULL,
+            "result channel returns the route reply on a successful restore");
+      free(reply);
+      const char* scene = tenun_android_engine_get_scene(good_engine);
+      CHECK(strstr(scene, "\"v\":2") != NULL, "successful restore committed its scene");
+      tenun_android_engine_destroy(good_engine);
     }
   }
 

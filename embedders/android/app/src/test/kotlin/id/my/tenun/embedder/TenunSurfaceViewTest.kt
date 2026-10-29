@@ -146,6 +146,36 @@ class TenunSurfaceViewTest {
     }
 
     @Test
+    fun testScrollRegionChildPaintTransform_tn165() {
+        // Mirrors TenunSurfaceView.paintDisplayListOp (kept in sync by hand;
+        // the view itself cannot be instantiated on the JVM): after clipping
+        // to the region's scene box, children paint translated by
+        // (region.x, region.y - offset). Pre-TN-165 the origin was missing —
+        // a region at (20,100) painted its first rows at scene (0,0),
+        // outside its own clip: invisible content whose taps still hit.
+        data class Region(val x: Float, val y: Float, val w: Float, val h: Float, val contentHeight: Float)
+        data class Child(val x: Float, val y: Float, val w: Float, val h: Float)
+
+        fun paintedRect(region: Region, child: Child, offset: Float, withOrigin: Boolean): Pair<Float, Float>? {
+            val px = (if (withOrigin) region.x else 0f) + child.x
+            val py = (if (withOrigin) region.y else 0f) + child.y - offset
+            val visible = px < region.x + region.w && px + child.w > region.x &&
+                py < region.y + region.h && py + child.h > region.y
+            return if (visible) px to py else null
+        }
+
+        val region = Region(20f, 100f, 280f, 200f, 1000f)
+        val firstRow = Child(0f, 0f, 280f, 64f)
+
+        // The pre-TN-165 shape paints the first row at (0,0) — clipped away.
+        assertNull(paintedRect(region, firstRow, offset = 0f, withOrigin = false))
+        // With the origin, the first row starts AT the region box.
+        assertEquals(20f to 100f, paintedRect(region, firstRow, offset = 0f, withOrigin = true))
+        // Scrolling by 40 moves the same first row up by exactly the offset.
+        assertEquals(20f to 60f, paintedRect(region, firstRow, offset = 40f, withOrigin = true))
+    }
+
+    @Test
     fun testEmojiTextRoundTrip() {
         val field = EditableFieldState()
         field.commit("Note 😀")

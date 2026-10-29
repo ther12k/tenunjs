@@ -314,7 +314,19 @@ class MainActivity : Activity() {
 
         return try {
             if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema) && exported != null && exported.length > 2) {
-                candidate.dispatchAction("TENUN_RESTORE", exported)
+                // TN-163: the restore rides the RESULT channel. A thrown
+                // restore (rejected snapshot) yields a NULL reply there,
+                // while the legacy scene channel swallows the throw and
+                // returns normally — which is how the swap used to proceed
+                // on top of a failed restore. An unacknowledged restore
+                // refuses the swap: the running application keeps its
+                // engine and its state instead of booting empty.
+                val acknowledged = candidate.dispatchActionResult("TENUN_RESTORE", exported)
+                if (acknowledged.isNullOrBlank()) {
+                    Log.w(TAG, "OTA bundle v${metadata.sequence} restore was not acknowledged; keeping the current app")
+                    try { candidate.destroy() } catch (ignored: Exception) {}
+                    return false
+                }
             } else {
                 Log.i(TAG, "state schema ${oldStateSchema} -> ${newStateSchema}: restarting with clean state")
             }
@@ -462,7 +474,15 @@ class MainActivity : Activity() {
 
         try {
             if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema) && exported != null && exported.length > 2) {
-                candidate.dispatchAction("TENUN_RESTORE", exported)
+                // TN-163: same acknowledgement gate as the OTA apply (see
+                // applyOtaUpdate) — an unacknowledged restore refuses the
+                // swap instead of activating a candidate with empty state.
+                val acknowledged = candidate.dispatchActionResult("TENUN_RESTORE", exported)
+                if (acknowledged.isNullOrBlank()) {
+                    Log.w(TAG, "hot reload restore was not acknowledged; keeping current bundle")
+                    try { candidate.destroy() } catch (ignored: Exception) {}
+                    return
+                }
             }
             engine = candidate
             surfaceView?.engine = candidate
