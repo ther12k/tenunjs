@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-168: Harden ScrollView child normalization and theme-baker nested ops"
 summary: "ScrollView silently drops nested-array children (empty region, no diagnostic); the theme baker passes sparse-array holes through scroll-region ops untouched and throws a raw TypeError on a non-array ops field."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-168"
 milestone: "M4"
 priority: "P2"
@@ -56,3 +56,13 @@ family as TN-166's nested-content gaps):
 - Any change to scene wire format or host validation (hosts already
   reject the malformed scenes fail-visibly — this moves the failure to
   the producing boundary).
+
+## Status note (2026-10-29, closed)
+
+Implemented and published in one session. Fixed in PR #253: ScrollView
+flattens nested-array children and drops null/undefined entries; the
+theme baker's scroll-region branch validates op.ops with a typed
+ThemeContractError and traverses children so sparse holes fail at bake
+time with the region-attributed diagnostic. Widgets tests pin both
+behaviors; all eight CI gates green including the device gate.
+
