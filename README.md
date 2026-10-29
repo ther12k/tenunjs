@@ -86,6 +86,33 @@ cd embedders/android
 ./gradlew :app:assembleDebug
 ```
 
+### The headline demo — Day Plan
+
+[Day Plan](examples/framework-feel/README.md) is the end-to-end
+framework-feel application ([TN-155](06-issues/tn-155-framework-feel-milestone-app.md)):
+two screens of ordinary TSX widgets with bounded nested layout under
+resize, an editable title through the real input path, an independently
+scrolling checklist, host-evaluated route transitions, runtime light/dark
+theme switching, and one custom-drawn progress ring — one codebase
+running unchanged in the browser host, the Android embedder's QuickJS,
+and the CI device gate.
+
+```sh
+# Browser: build the shared bundle and serve the repository root
+bun examples/framework-feel/scripts/build-host.ts \
+  examples/framework-feel/.out/framework-feel-app.js
+python3 -m http.server 8898 --bind 127.0.0.1
+# open http://127.0.0.1:8898/examples/gallery-preview/host.html?bundle=/examples/framework-feel/.out/framework-feel-app.js
+```
+
+CI proves the same bytes on Android: the engine-loop gate replays the
+identical action script in real QuickJS and compares scenes
+structurally, and the device gate's `FrameworkFeelJourneyTest` boots the
+same compiled bundle and drives the full journey — taps, the route
+transition, the theme toggle, title editing through the InputConnection,
+and checklist scrolling — through real `MotionEvent`s on the production
+surface.
+
 ## How the framework is designed
 
 ```text
@@ -141,13 +168,14 @@ the vendored QuickJS inside the Android embedder (`verify:android` CI gate),
 render through the native display-list painter on Android Canvas, dispatch
 tap/long-press gestures from `MotionEvent`s, and talk to real hardware — the
 [Polytron Wash](examples/polytron/README.md) companion app drives a BLE GATT
-washer controller entirely from TSX with no WebView. The full planned stack —
+washer controller entirely from TSX with no WebView. The framework-feel
+milestone is delivered: [Day Plan](examples/framework-feel/README.md)
+([TN-155](06-issues/tn-155-framework-feel-milestone-app.md)) demonstrates
+the promised experience end to end on every available host — see
+"The headline demo" above. The full planned stack —
 shared C++/Rust engine, direct Skia rendering, iOS embedder, complete widget
 layer — is tracked through the [milestones](05-delivery/milestones.md) and
-the [current sequencing overlay](05-delivery/roadmap.md); the next intended
-milestone is a small end-to-end application that demonstrates the framework
-experience this README promises
-([TN-155](06-issues/tn-155-framework-feel-milestone-app.md)). Exact
+the [current sequencing overlay](05-delivery/roadmap.md). Exact
 capabilities and evidence boundaries:
 [framework positioning](02-architecture/framework-positioning.md),
 [TN-132](06-issues/tn-132-installed-android-run-acceptance.md).
