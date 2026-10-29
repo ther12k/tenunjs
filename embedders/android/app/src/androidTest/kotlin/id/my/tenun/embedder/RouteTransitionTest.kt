@@ -72,17 +72,19 @@ class RouteTransitionTest {
     fun malformedTransitionBlocksAreRejectedAndTheSettledSceneStays() {
         val view = TenunSurfaceView(instrumentation.targetContext)
         instrumentation.runOnMainSync {
-            assertTrue(view.syncFromScene(scene("A-route")))
+            view.syncFromScene(scene("A-route"))
+            assertEquals("A-route", labelOf(view))
             for (bad in listOf(
                 """{"kind":"zoom","direction":"forward","durationMs":200}""",
                 """{"kind":"fade","direction":"sideways","durationMs":200}""",
                 """{"kind":"fade","direction":"forward","durationMs":0}"""
             )) {
                 // SceneHolder rejects a contract-violating candidate whole:
-                // the call reports rejection and the settled scene stays
-                // authoritative — fail-visible, never a partial render.
-                assertFalse("malformed transition must reject the scene: $bad", view.syncFromScene(scene("Bad", bad)))
-                assertEquals("A-route", labelOf(view))
+                // the settled scene stays authoritative — fail-visible,
+                // never a partial render of the malformed route.
+                view.syncFromScene(scene("Bad", bad))
+                assertEquals("malformed transition kept the settled scene: $bad", "A-route", labelOf(view))
+                assertNull(view.committedSceneForTest().first!!.transition)
             }
             assertFalse(view.isTransitionActiveForTest)
         }
