@@ -117,6 +117,14 @@ struct tenun_android_engine {
   /* TN-154: Host Service Bridge handler and context */
   tenun_host_call_fn host_call_handler;
   void* host_call_opaque;
+  /* TN-167: set only by the thread holding `lock` while JS can call out
+   * through tenun_host_call; read by every public entry BEFORE it
+   * attempts the (non-recursive) lock. A host service that synchronously
+   * re-enters its own engine runs on the same thread and would deadlock
+   * on the second lock — instead the inner call is refused with a WARN.
+   * Cross-thread callers never observe it set for THEIR thread; they
+   * keep ordinary lock contention. */
+  atomic_int in_entry;
 #if defined(__ANDROID__) || defined(ANDROID)
   JavaVM* jvm;
   jobject j_host_handler;
@@ -269,6 +277,7 @@ static tenun_android_engine* tenun_android_engine_create_internal(
   }
 
   pthread_mutex_init(&engine->lock, NULL);
+  atomic_init(&engine->in_entry, 0);
   engine->host_call_handler = handler;
   engine->host_call_opaque = opaque ? opaque : engine;
 #if defined(__ANDROID__) || defined(ANDROID)
@@ -479,8 +488,14 @@ static char* tenun_run_dispatch_handler(tenun_android_engine* engine, const char
 
 char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* action, const char* payload_json) {
   if (!engine || !engine->ctx || !action) return NULL;
+  if (atomic_load(&engine->in_entry)) {
+    TENUN_LOG_WARN("tenun dispatch action=%s refused: same-engine reentry from inside a host-service callback",
+                   action);
+    return NULL;
+  }
 
   pthread_mutex_lock(&engine->lock);
+  atomic_store(&engine->in_entry, 1);
 
   /* TN-164: one budget for the WHOLE entry — the handler and the job
    * drain below share it; neither re-arms. */
@@ -492,6 +507,7 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
   tenun_drain_pending_jobs(engine);
 
   char* scene_copy = engine->current_scene ? strdup(engine->current_scene) : strdup("{}");
+  atomic_store(&engine->in_entry, 0);
   pthread_mutex_unlock(&engine->lock);
 
   return scene_copy;
@@ -499,8 +515,14 @@ char* tenun_android_engine_dispatch(tenun_android_engine* engine, const char* ac
 
 char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const char* action, const char* payload_json) {
   if (!engine || !engine->ctx || !action) return NULL;
+  if (atomic_load(&engine->in_entry)) {
+    TENUN_LOG_WARN("tenun dispatch-result action=%s refused: same-engine reentry from inside a host-service callback",
+                   action);
+    return NULL;
+  }
 
   pthread_mutex_lock(&engine->lock);
+  atomic_store(&engine->in_entry, 1);
 
   /* TN-164: one budget for the whole entry (handler + drain). */
   engine->js_deadline_ms = tenun_now_ms() + tenun_time_budget_ms();
@@ -517,6 +539,7 @@ char* tenun_android_engine_dispatch_result(tenun_android_engine* engine, const c
   if (result != NULL) {
     tenun_drain_pending_jobs(engine);
   }
+  atomic_store(&engine->in_entry, 0);
   pthread_mutex_unlock(&engine->lock);
 
   return result;
@@ -529,6 +552,10 @@ const char* tenun_android_engine_get_scene(const tenun_android_engine* engine) {
 
 void tenun_android_engine_set_host_call_handler(tenun_android_engine* engine, tenun_host_call_fn handler, void* opaque) {
   if (!engine) return;
+  if (atomic_load(&engine->in_entry)) {
+    TENUN_LOG_WARN("tenun set-host-call-handler refused: same-engine reentry from inside a host-service callback");
+    return;
+  }
   pthread_mutex_lock(&engine->lock);
   engine->host_call_handler = handler;
   engine->host_call_opaque = opaque;
@@ -537,6 +564,14 @@ void tenun_android_engine_set_host_call_handler(tenun_android_engine* engine, te
 
 void tenun_android_engine_destroy(tenun_android_engine* engine) {
   if (!engine) return;
+  if (atomic_load(&engine->in_entry)) {
+    /* TN-167: destroying the engine from inside its own callback would
+     * both deadlock on the held mutex and free the runtime under the
+     * running interpreter. Refuse; the owner destroys it after the
+     * entry returns. */
+    TENUN_LOG_WARN("tenun destroy refused: same-engine reentry from inside a host-service callback");
+    return;
+  }
 
   pthread_mutex_lock(&engine->lock);
 #if defined(__ANDROID__) || defined(ANDROID)
@@ -793,6 +828,12 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestS
   (void)thiz;
   tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
   if (!engine) return tenun_jni_new_string(env, "{}");
+  if (atomic_load(&engine->in_entry)) {
+    /* TN-167: a service reading the current scene from inside its own
+     * callback would deadlock on the mutex the outer entry holds. */
+    TENUN_LOG_WARN("tenun get-latest-scene refused: same-engine reentry from inside a host-service callback");
+    return tenun_jni_new_string(env, "{}");
+  }
 
   pthread_mutex_lock(&engine->lock);
   const char* scene = tenun_android_engine_get_scene(engine);
