@@ -1,5 +1,5 @@
 import { defineScreen, type ScreenActionContext } from "@tenunjs/core";
-import { AppBar, Button, Card, Column, Expanded, Row, Scaffold, Text, TextField } from "@tenunjs/widgets";
+import { AppBar, Button, Card, Column, Expanded, Row, Scaffold, ScrollView, Text, TextField } from "@tenunjs/widgets";
 import { checkedPlanTitle, defaultPlanTitle, navigatePlan, PLAN_TASKS } from "../plan";
 
 export interface TodayState {
@@ -48,33 +48,39 @@ export const TodayScreen = defineScreen({
             <Card padding="md" radius="lg" background="surfaceRaised">
               <Column gap="md" align="stretch">
                 <Text variant="title">Today's checklist</Text>
+                {/* TN-161: the checklist is an independent scroll region —
+                    the viewport is this card's bounded share of the screen;
+                    the task list lays out under an unbounded main axis and
+                    keeps its intrinsic height when it outgrows the card. */}
                 <Expanded>
-                  <Row gap="md" align="stretch">
-                    <Expanded flex={2}>
-                      <Column gap="sm" align="stretch">
-                        {PLAN_TASKS.map((task, index) => (
-                          <Card key={task} padding="sm" radius="sm" background="surface">
-                            <Column gap="xs">
-                              <Text>{task}</Text>
-                              <Text variant="caption">
-                                {index < state.completed ? "Done" : "Ready"}
-                              </Text>
-                            </Column>
-                          </Card>
-                        ))}
-                      </Column>
-                    </Expanded>
-                    <Expanded>
-                      <Card padding="sm" radius="sm" background="surface">
-                        <Column gap="sm">
-                          <Text variant="title">Next</Text>
-                          <Text>{state.completed === PLAN_TASKS.length
-                            ? "The checklist is complete. Inspect your progress."
-                            : "Finish one task, then inspect your progress."}</Text>
+                  <ScrollView id="today-checklist">
+                    <Row gap="md" align="stretch">
+                      <Expanded flex={2}>
+                        <Column gap="sm" align="stretch">
+                          {PLAN_TASKS.map((task, index) => (
+                            <Card key={task} padding="sm" radius="sm" background="surface">
+                              <Column gap="xs">
+                                <Text>{task}</Text>
+                                <Text variant="caption">
+                                  {index < state.completed ? "Done" : "Ready"}
+                                </Text>
+                              </Column>
+                            </Card>
+                          ))}
                         </Column>
-                      </Card>
-                    </Expanded>
-                  </Row>
+                      </Expanded>
+                      <Expanded>
+                        <Card padding="sm" radius="sm" background="surface">
+                          <Column gap="sm">
+                            <Text variant="title">Next</Text>
+                            <Text>{state.completed === PLAN_TASKS.length
+                              ? "The checklist is complete. Inspect your progress."
+                              : "Finish one task, then inspect your progress."}</Text>
+                          </Column>
+                        </Card>
+                      </Expanded>
+                    </Row>
+                  </ScrollView>
                 </Expanded>
               </Column>
             </Card>

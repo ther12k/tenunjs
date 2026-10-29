@@ -83,7 +83,8 @@ type NonColorField = "op" | "x" | "y" | "w" | "h" | "r" | "shadow" |
   "width" | "text" | "size" | "weight" | "align" | "cx" | "cy" | "progress" |
   "x1" | "y1" | "x2" | "y2" | "fixed" | "anchor" | "anchorSize" |
   "id" | "selection" | "composing" | "focused" | "sessionId" | "revision" |
-  "keyboardType" | "returnAction" | "readOnly" | "label" | "clip";
+  "keyboardType" | "returnAction" | "readOnly" | "label" | "clip" |
+  "contentHeight" | "ops";
 type AllKeys<T> = T extends unknown ? keyof T : never;
 type AssertNever<T extends never> = T;
 // Every new host field must be classified so color literals cannot slip through.
@@ -122,48 +123,56 @@ function resolve(ref: ColorRef, palette: ThemePalette, field: string): string {
 }
 
 // A new operation kind needs an explicit bake path; unchecked inputs still fail.
-function unknownOperation(_op: never, index: number): never {
-  throw new ThemeContractError("INVALID_SCENE", `Unknown operation at ${index}`);
+function unknownOperation(_op: never, at: number | string): never {
+  throw new ThemeContractError("INVALID_SCENE", `Unknown operation at ${at}`);
 }
 
-function bakeOp(op: SemanticDisplayOp, palette: ThemePalette, index: number): DisplayOp {
+function bakeOp(op: SemanticDisplayOp, palette: ThemePalette, at: number | string): DisplayOp {
+  const where = typeof at === "number" ? `ops[${at}]` : at;
   if (!isRecord(op)) {
-    throw new ThemeContractError("INVALID_SCENE", `Invalid operation at ${index}`);
+    throw new ThemeContractError("INVALID_SCENE", `Invalid operation at ${where}`);
   }
-  const at = `ops[${index}]`;
   switch (op.op) {
     case "text-input":
       try {
         return validateTextInputOp(op);
       } catch (error) {
         if (error instanceof TextInputError) {
-          throw new ThemeContractError("INVALID_SCENE", `${at}: ${error.message}`);
+          throw new ThemeContractError("INVALID_SCENE", `${where}: ${error.message}`);
         }
         throw error;
       }
     case "gradient":
-      return { ...op, color: resolve(op.color, palette, `${at}.color`),
-        colorTo: resolve(op.colorTo, palette, `${at}.colorTo`) };
+      return { ...op, color: resolve(op.color, palette, `${where}.color`),
+        colorTo: resolve(op.colorTo, palette, `${where}.colorTo`) };
     case "ring": {
       const { track, ...rest } = op;
-      const result = { ...rest, color: resolve(op.color, palette, `${at}.color`) };
+      const result = { ...rest, color: resolve(op.color, palette, `${where}.color`) };
       return track === undefined ? result :
-        { ...result, track: resolve(track, palette, `${at}.track`) };
+        { ...result, track: resolve(track, palette, `${where}.track`) };
     }
     case "text": {
-      const color = resolve(op.color, palette, `${at}.color`);
+      const color = resolve(op.color, palette, `${where}.color`);
       if (op.clip === undefined) return { ...op, color };
       try {
         return { ...op, color, clip: validateTextClip(op.clip) };
       } catch (error) {
-        if (error instanceof LayoutError) throw new ThemeContractError("INVALID_SCENE", `${at}.clip: ${error.message}`);
+        if (error instanceof LayoutError) throw new ThemeContractError("INVALID_SCENE", `${where}.clip: ${error.message}`);
         throw error;
       }
     }
     case "rect": case "outline": case "circle": case "line":
-      return { ...op, color: resolve(op.color, palette, `${at}.color`) };
+      return { ...op, color: resolve(op.color, palette, `${where}.color`) };
+    case "scroll-region":
+      // A colorless container: only its children carry color references, and
+      // they bake recursively with the region's id as the diagnostic prefix.
+      // (The mapped semantic type does not recurse, so nested ops arrive
+      // typed as their semantic shapes by construction.)
+      return { ...op,
+        ops: (op.ops as readonly SemanticDisplayOp[]).map((nested, child) =>
+          bakeOp(nested, palette, `${where}.scroll-region[${op.id}][${child}]`)) };
     default:
-      return unknownOperation(op, index);
+      return unknownOperation(op, where);
   }
 }
 

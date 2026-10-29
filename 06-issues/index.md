@@ -273,3 +273,4 @@ of that experience become the priority over gallery expansion.
 | [TN-158](tn-158-deliver-host-viewport-with-negotiation.md) | P1 | TN-157 | Deliver host viewport automatically with negotiation |
 | [TN-159](tn-159-harden-native-ble-lifecycle-and-connect-ux.md) | P0 | TN-154 | Harden native BLE lifecycle and connect UX (review follow-ups) |
 | [TN-160](tn-160-deliver-controlled-widget-text-input.md) | P0 | TN-158 | Deliver controlled widget text input and the Day Plan editing path |
+| [TN-161](tn-161-deliver-independent-scroll-regions.md) | P1 | TN-156, TN-157 | Deliver independent scroll regions |

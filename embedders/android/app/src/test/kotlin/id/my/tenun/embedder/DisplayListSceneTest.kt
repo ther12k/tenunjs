@@ -236,5 +236,56 @@ class DisplayListSceneTest {
         // The legacy tree keeps its null path (TN-132 stays authoritative).
         assertNull(DisplayListScene.parse("""{ "root": { "type": "column", "children": [] } }"""))
     }
-}
 
+    @Test
+    fun scrollRegionParsesWithNestedOpsAndTaggedTaps() {
+        val sceneJson = """
+        { "tenun": "display-list", "version": 1, "designWidth": 300, "contentHeight": 500,
+          "background": "#101014",
+          "ops": [
+            { "op": "scroll-region", "id": "list", "x": 0, "y": 24, "w": 300, "h": 412,
+              "contentHeight": 856,
+              "ops": [
+                { "op": "rect", "x": 0, "y": 0, "w": 300, "h": 64, "r": 8, "color": "#1E1E1E" },
+                { "op": "text", "x": 16, "y": 40, "text": "task 0", "size": 16, "weight": 400, "color": "#FFFFFF" }
+              ] }
+          ],
+          "taps": [
+            { "x": 0, "y": 0, "w": 300, "h": 64, "action": "tap", "payload": { "id": 0 }, "scroll": "list" },
+            { "x": 0, "y": 436, "w": 300, "h": 64, "action": "tap", "payload": { "id": 1 } }
+          ] }
+        """.trimIndent()
+        val scene = DisplayListScene.parse(sceneJson)
+        assertNotNull(scene)
+        val region = scene!!.ops[0] as DisplayListScene.Op.ScrollRegionOp
+        assertEquals("list", region.id)
+        assertEquals(412f, region.h)
+        assertEquals(856f, region.contentHeight)
+        assertEquals(2, region.ops.size)
+        assertEquals("list", scene.taps[0].scroll)
+        assertNull(scene.taps[1].scroll)
+    }
+
+    @Test
+    fun nestedScrollRegionsAreAContractViolation() {
+        val sceneJson = """
+        { "tenun": "display-list", "version": 1, "designWidth": 100, "contentHeight": 100,
+          "background": "#101014",
+          "ops": [
+            { "op": "scroll-region", "id": "outer", "x": 0, "y": 0, "w": 100, "h": 100,
+              "contentHeight": 200,
+              "ops": [
+                { "op": "scroll-region", "id": "inner", "x": 0, "y": 0, "w": 100, "h": 50,
+                  "contentHeight": 100, "ops": [] }
+              ] }
+          ],
+          "taps": [] }
+        """.trimIndent()
+        try {
+            DisplayListScene.parse(sceneJson)
+            fail("nested scroll regions must be rejected")
+        } catch (e: SceneContractException) {
+            assertTrue(e.message!!.contains("nested scroll regions"))
+        }
+    }
+}

@@ -31,6 +31,7 @@ private fun DisplayListScene.Op.isFixed(): Boolean = when (this) {
     is DisplayListScene.Op.CircleOp -> fixed
     is DisplayListScene.Op.RingOp -> fixed
     is DisplayListScene.Op.LineOp -> fixed
+    is DisplayListScene.Op.ScrollRegionOp -> false // region boxes belong to the scene layer
 }
 
 class EditableFieldState {
@@ -647,6 +648,39 @@ class TenunSurfaceView @JvmOverloads constructor(
      * region (TN-148 — a fired long-press suppresses that press's tap).
      * The committed scene after the dispatch is what gets drawn.
      */
+    /** TN-161: the region under a touch point, or null for whole-scene scroll. */
+    private var activeScrollRegion: DisplayListScene.Op.ScrollRegionOp? = null
+
+    private fun scrollRegionUnder(x: Float, y: Float): DisplayListScene.Op.ScrollRegionOp? {
+        val dl = sceneHolder.current ?: return null
+        val designX = x / dlScale
+        val viewportY = y / dlScale
+        var hit: DisplayListScene.Op.ScrollRegionOp? = null
+        for (op in dl.ops) {
+            if (op is DisplayListScene.Op.ScrollRegionOp) {
+                val top = op.y - scrollY
+                if (designX >= op.x && designX <= op.x + op.w &&
+                    viewportY >= top && viewportY <= top + op.h
+                ) {
+                    hit = op // later regions paint above earlier ones
+                }
+            }
+        }
+        return hit
+    }
+
+    /** Routes a scroll delta: an active region scrolls itself (clamped);
+     *  otherwise the whole scene scrolls as before. Paint-only, never layout. */
+    private fun scrollBy(delta: Float) {
+        val region = activeScrollRegion
+        if (region != null) {
+            val max = (region.contentHeight - region.h).coerceAtLeast(0f)
+            regionOffsets[region.id] = ((regionOffsets[region.id] ?: 0f) + delta).coerceIn(0f, max)
+        } else {
+            scrollY = (scrollY + delta).coerceIn(0f, maxScroll)
+        }
+    }
+
     private fun onDisplayListTouch(event: MotionEvent): Boolean {
         sceneHolder.current ?: return false
         when (event.action) {
@@ -656,6 +690,8 @@ class TenunSurfaceView @JvmOverloads constructor(
                 touchLastY = event.y
                 isScrolling = false
                 longPressFired = false
+                // TN-161: the region under the DOWN point owns this gesture.
+                activeScrollRegion = scrollRegionUnder(event.x, event.y)
                 scheduleLongPress(event.x, event.y)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -672,7 +708,7 @@ class TenunSurfaceView @JvmOverloads constructor(
                     cancelLongPressTimer()
                 }
                 if (isScrolling) {
-                    scrollY = (scrollY + dy / dlScale).coerceIn(0f, maxScroll)
+                    scrollBy(dy / dlScale)
                     redraw()
                 }
             }
@@ -720,13 +756,29 @@ class TenunSurfaceView @JvmOverloads constructor(
         val designX = x / dlScale
         val viewportY = y / dlScale
         val visibleHeight = height / dlScale
-        // Topmost painted region wins: ops paint in order, so
-        // the LAST containing region is the one the user sees —
-        // required for overlays (modal drawer scrim over
-        // content). Fixed overlays use viewport coordinates;
-        // ordinary content is translated by the current scroll.
-        val hit = dl.taps.lastOrNull {
-            it.action == action && it.contains(designX, viewportY, visibleHeight, scrollY)
+        // Topmost painted region wins: the LAST containing region is the
+        // one the user sees — required for overlays. TN-161: taps tagged
+        // with a scroll region resolve in that region's CONTENT space (the
+        // region's viewport box scrolls with the scene; its own paint
+        // offset translates content). One reverse scan keeps topmost-wins
+        // across both kinds.
+        val regions = HashMap<String, DisplayListScene.Op.ScrollRegionOp>()
+        for (op in dl.ops) {
+            if (op is DisplayListScene.Op.ScrollRegionOp) regions[op.id] = op
+        }
+        val hit = dl.taps.lastOrNull { tap ->
+            if (tap.action != action) return@lastOrNull false
+            if (tap.scroll == null) {
+                return@lastOrNull tap.contains(designX, viewportY, visibleHeight, scrollY)
+            }
+            val region = regions[tap.scroll] ?: return@lastOrNull false
+            val regionTop = region.y - scrollY
+            if (designX < region.x || designX > region.x + region.w) return@lastOrNull false
+            if (viewportY < regionTop || viewportY > regionTop + region.h) return@lastOrNull false
+            val contentY = viewportY - regionTop + regionOffset(region)
+            val contentX = designX - region.x
+            contentX >= tap.x && contentX <= tap.x + tap.w &&
+                contentY >= tap.y && contentY <= tap.y + tap.h
         }
         if (hit == null) return false
         val eng = engine ?: return false
@@ -787,10 +839,15 @@ class TenunSurfaceView @JvmOverloads constructor(
         canvas.drawColor(Color.parseColor(dl.background))
         canvas.save()
         canvas.scale(dlScale, dlScale)
-        canvas.clipRect(0f, scrollY, dl.designWidth, scrollY + visibleHeight)
+        // TN-161 review fix (P1 #3): the clip is established in VIEWPORT
+        // space BEFORE the content translate. Canvas fixes a clip in device
+        // space when applied — clipping to [scrollY, scrollY+visible] and
+        // then translating blanked the top scrollY units and could hide the
+        // whole scrolling layer.
+        canvas.clipRect(0f, 0f, dl.designWidth, visibleHeight)
         canvas.translate(0f, -scrollY)
         for (op in dl.ops) {
-            if (!op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+            if (!op.isFixed()) paintDisplayListOp(canvas, op, visibleHeight)
         }
         canvas.restore()
 
@@ -801,6 +858,31 @@ class TenunSurfaceView @JvmOverloads constructor(
             if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
         }
         canvas.restore()
+    }
+
+    /** TN-161 per-region paint offsets — host-owned scroll state, keyed by region id. */
+    private val regionOffsets = HashMap<String, Float>()
+
+    private fun regionOffset(region: DisplayListScene.Op.ScrollRegionOp): Float {
+        val max = (region.contentHeight - region.h).coerceAtLeast(0f)
+        return (regionOffsets[region.id] ?: 0f).coerceIn(0f, max)
+    }
+
+    /** TN-161 scroll-region-aware dispatch into paintDisplayOp. */
+    private fun paintDisplayListOp(canvas: Canvas, op: DisplayListScene.Op, visibleHeight: Float) {
+        if (op is DisplayListScene.Op.ScrollRegionOp) {
+            // The region's viewport box (already in scene coordinates, so it
+            // scrolls with the scene) clips its content; the region's own
+            // paint offset translates it. Scrolling changes paint only.
+            val offset = regionOffset(op)
+            canvas.save()
+            canvas.clipRect(op.x, op.y, op.x + op.w, op.y + op.h)
+            canvas.translate(0f, -offset)
+            for (nested in op.ops) paintDisplayOp(canvas, nested, visibleHeight)
+            canvas.restore()
+            return
+        }
+        paintDisplayOp(canvas, op, visibleHeight)
     }
 
     private fun anchorOffset(anchor: String?, anchorSize: Float?, visibleHeight: Float): Float {
@@ -814,6 +896,8 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     private fun paintDisplayOp(canvas: Canvas, op: DisplayListScene.Op, visibleHeight: Float) {
         when (op) {
+            // Scroll regions only reach paintDisplayListOp, never here.
+            is DisplayListScene.Op.ScrollRegionOp -> return
             is DisplayListScene.Op.RectOp -> {
                 val r = op.rect
                 val dy = if (r.fixed) anchorOffset(r.anchor, r.anchorSize, visibleHeight) else 0f

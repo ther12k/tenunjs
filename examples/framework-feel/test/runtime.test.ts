@@ -286,3 +286,25 @@ describe("Day Plan host viewport delivery (TN-158)", () => {
     app.dispose();
   });
 });
+
+describe("Day Plan independent scrolling (TN-161)", () => {
+  test("the checklist is a bounded scroll region; footer stays pinned in viewport space", () => {
+    const app = createFrameworkFeelRuntime();
+    const scene = app.render().scene;
+    const region = scene.ops.find((op) => op.op === "scroll-region");
+    expect(region).toBeDefined();
+    expect(region!.id).toBe("today-checklist");
+    expect(region!.h).toBeLessThan(1000); // bounded share, not the whole scene
+    expect(region!.ops.length).toBeGreaterThan(0); // checklist content nested
+    // Footer buttons remain top-level, untagged, pinned at the bottom.
+    const footer = scene.taps.filter((t) => !t.scroll);
+    expect(footer.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...footer.map((t) => t.y + t.h))).toBeCloseTo(1000 - 24);
+    // Viewport changes re-bound the region; state survives.
+    app.setViewport({ width: 480, height: 840 });
+    const resized = app.render().scene.ops.find((op) => op.op === "scroll-region")!;
+    expect(resized.h).toBeLessThan(region!.h);
+    expect(JSON.stringify(resized)).toContain("Review layout"); // task content nested
+    app.dispose();
+  });
+});

@@ -297,6 +297,32 @@ Semantics:
   payload degrades to the handoff's `{}` and surfaces inside the runtime
   as `INVALID_VIEWPORT` — never a silent ignore.
 
+## Independent scroll regions (TN-161)
+
+`ScrollView` from `@tenunjs/widgets` is an independently scrolling vertical
+viewport implementing the frozen TN-156 semantics:
+
+- **The parent's bounded allocation becomes the viewport.** Wrap it in
+  `Expanded` inside a bounded parent; an unbounded main axis fails visibly
+  (`UNBOUNDED_FLEX`), matching Flutter's unbounded-ListView error rather
+  than silently becoming a content-height column. Nested `ScrollView`s are
+  rejected as outside this contract.
+- **Content keeps intrinsic height.** Children lay out under an unbounded
+  main axis; overflow is preserved — never clamped, shrunk, or re-measured.
+  Scrolling changes the paint offset only, never layout.
+- **The scene carries a `scroll-region` op**: viewport box, content height,
+  and children in content space. Taps inside the region are tagged with its
+  id and hit-test against the region's offset. **A scene using this op
+  requires a scroll-aware host** — older hosts reject the whole scene
+  visibly (unknown op kind), the same pairing rule as `text-input`.
+  Scenes without `ScrollView` are unchanged.
+- **Hosts own scroll state**, keyed by the region's stable id (app-supplied,
+  or derived from the viewport box when omitted). The browser host scrolls
+  a region on wheel/drag inside its box; the Android `SurfaceView` routes
+  touch drags to the region under the DOWN point. Both clamp to
+  `[0, contentHeight - viewportHeight]` and keep whole-scene scrolling for
+  points outside any region.
+
 ## Host compatibility contract
 
 Three version identities exist and none implies the others:
