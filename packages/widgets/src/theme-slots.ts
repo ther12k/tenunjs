@@ -163,14 +163,26 @@ function bakeOp(op: SemanticDisplayOp, palette: ThemePalette, at: number | strin
     }
     case "rect": case "outline": case "circle": case "line":
       return { ...op, color: resolve(op.color, palette, `${where}.color`) };
-    case "scroll-region":
+    case "scroll-region": {
       // A colorless container: only its children carry color references, and
       // they bake recursively with the region's id as the diagnostic prefix.
       // (The mapped semantic type does not recurse, so nested ops arrive
-      // typed as their semantic shapes by construction.)
-      return { ...op,
-        ops: (op.ops as readonly SemanticDisplayOp[]).map((nested, child) =>
-          bakeOp(nested, palette, `${where}.scroll-region[${op.id}][${child}]`)) };
+      // typed as their semantic shapes by construction.) TN-168: a non-array
+      // ops field is a typed contract error (was a bare TypeError from
+      // null.map), and children are traversed so sparse-array HOLES reach
+      // bakeOp's isRecord check — Array.prototype.map skips holes, which
+      // silently passed them into the baked scene.
+      if (!Array.isArray(op.ops)) {
+        throw new ThemeContractError("INVALID_SCENE",
+          `${where}.scroll-region[${op.id}].ops is not an array`);
+      }
+      const baked = new Array<DisplayOp>(op.ops.length);
+      for (let child = 0; child < op.ops.length; child++) {
+        baked[child] = bakeOp(op.ops[child] as SemanticDisplayOp, palette,
+          `${where}.scroll-region[${op.id}][${child}]`);
+      }
+      return { ...op, ops: baked };
+    }
     default:
       return unknownOperation(op, where);
   }

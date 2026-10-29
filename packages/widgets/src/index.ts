@@ -141,8 +141,28 @@ export function ScrollView(props: ScrollViewProps): WidgetNode {
     kind: ScrollViewKind,
     key: null,
     props: rest,
-    children: (Array.isArray(children) ? children : children ? [children] : []),
+    // TN-168: TSX composition naturally produces children={[list]} (an
+    // array wrapping the real child array); kept verbatim, the inner
+    // array reached layout as one non-node element and the region
+    // rendered silently empty. Flatten nested arrays; null/undefined
+    // entries (conditional children) are dropped.
+    children: flattenScrollChildren(children),
   } as unknown as WidgetNode;
+}
+
+function flattenScrollChildren(children: ScrollViewProps["children"]): WidgetChild[] {
+  if (children === undefined || children === null) return [];
+  if (!Array.isArray(children)) return [children];
+  const flattened: WidgetChild[] = [];
+  const walk = (items: readonly unknown[]): void => {
+    for (const item of items) {
+      if (item === undefined || item === null) continue;
+      if (Array.isArray(item)) walk(item);
+      else flattened.push(item as WidgetChild);
+    }
+  };
+  walk(children);
+  return flattened;
 }
 
 export interface TextProps {
