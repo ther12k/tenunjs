@@ -92,6 +92,10 @@ Bun.serve({
       const html = fs.readFileSync(path.join(here, "index.html"), "utf8");
       return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
+    if (pathname === "/preview" || pathname === "/preview.html") {
+      const html = fs.readFileSync(path.join(here, "preview.html"), "utf8");
+      return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
     if (pathname === "/preview.js") {
       const js = (await build()) ?? lastBundle;
       if (js == null) return new Response("// build failed — see server console\n", { status: 500 });

@@ -8,7 +8,7 @@ import {
   type WashReply,
   type WashStatus,
 } from "../protocol";
-import { ChoiceRow, ListRow, SensorRow, SettingRow } from "../widgets";
+import { ChoiceRow, LinkHeader, ListRow, WaveFillCard, SettingRow } from "../widgets";
 
 /**
  * Settings: everything "SET …" reaches on the device — duration/tuning
@@ -22,6 +22,8 @@ import { ChoiceRow, ListRow, SensorRow, SettingRow } from "../widgets";
 export interface SettingsState {
   link: BleLinkState;
   status: WashStatus | null;
+  /** Receive time (ms) of the last ST: — header freshness label. */
+  statusAt: number | null;
   /** Latest device values ("SET k v" lines), newest-wins. */
   values: Record<string, string>;
   snack: WashReply | null;
@@ -33,6 +35,7 @@ export const SettingsScreen = defineScreen({
   initialState: (): SettingsState => ({
     link: { supported: false, connecting: false, connected: false, name: null },
     status: null,
+    statusAt: null,
     values: {},
     snack: null,
   }),
@@ -47,6 +50,25 @@ export const SettingsScreen = defineScreen({
     status: defineAction<SettingsState, WashStatus | null>({
       run({ input, state }) {
         (state as unknown as SettingsState).status = input;
+      },
+    }),
+    statusAt: defineAction<SettingsState, number | null>({
+      run({ input, state }) {
+        (state as unknown as SettingsState).statusAt = input;
+      },
+    }),
+    connect: defineAction<SettingsState, void>({
+      run({ state, services }) {
+        const s = state as unknown as SettingsState;
+        s.link = { ...s.link, connecting: true };
+        const svc = services as { ble?: { connect(): Promise<boolean> } };
+        void svc.ble?.connect();
+      },
+    }),
+    disconnect: defineAction<SettingsState, void>({
+      run({ services }) {
+        const svc = services as { ble?: { disconnect(): void } };
+        svc.ble?.disconnect();
       },
     }),
     settings: defineAction<SettingsState, Record<string, string>>({
@@ -127,10 +149,17 @@ export const SettingsScreen = defineScreen({
     const offline = !s.link.connected;
     const spinMotorIdx = s.values.SPINMOTOR === "B" ? 1 : s.values.SPINMOTOR === "A" ? 0 : -1;
     const waterPct = s.status?.waterPct ?? null;
+    const now = Date.now();
+    const staleFor = offline || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
     // Everyday durations above calibration above motor tuning — the
     // common controls must not be a scroll away.
     const everyday = SETTING_DEFS.filter((d) => !d.advanced);
     const advanced = SETTING_DEFS.filter((d) => d.advanced);
+
+    const headerPress = () => {
+      if (s.link.connected || s.link.connecting) actions.disconnect();
+      else actions.connect();
+    };
 
     const settingRows = (defs: readonly (typeof SETTING_DEFS[number])[]) =>
       defs.map((def) => (
@@ -148,8 +177,20 @@ export const SettingsScreen = defineScreen({
     return (
       <Scaffold>
         <Column padding="md" gap="lg">
+          <LinkHeader
+            title="Setelan"
+            supported={s.link.supported}
+            connected={s.link.connected}
+            connecting={s.link.connecting}
+            phase={s.link.phase}
+            name={s.link.name}
+            statusAgeS={s.statusAt === null ? null : staleFor}
+            stale={false}
+            onPress={headerPress}
+          />
+
           <Column gap="sm">
-            <Text variant="label">MESIN</Text>
+            <Text variant="label">Mesin</Text>
             <ChoiceRow
               label="Motor peras"
               sub={spinMotorIdx < 0 ? (offline ? "tersimpan di mesin" : "belum dimuat") : `aktif: MOTOR ${s.values.SPINMOTOR}`}
@@ -169,19 +210,19 @@ export const SettingsScreen = defineScreen({
           </Column>
 
           <Column gap="sm">
-            <Text variant="label">DURASI</Text>
+            <Text variant="label">Durasi</Text>
             {settingRows(everyday)}
           </Column>
 
           <Column gap="sm">
-            <Text variant="label">SENSOR AIR</Text>
-            <SensorRow
+            <Text variant="label">Sensor air</Text>
+            <WaveFillCard
               pct={waterPct}
               caption={
                 waterPct === null
                   ? offline
                     ? "offline · belum terbaca"
-                    : "belum terbaca"
+                    : "sensor belum terkalibrasi"
                   : "level air dalam tangki"
               }
             />
@@ -210,7 +251,7 @@ export const SettingsScreen = defineScreen({
           </Column>
 
           <Column gap="sm">
-            <Text variant="label">LANJUTAN</Text>
+            <Text variant="label">Lanjutan</Text>
             {settingRows(advanced)}
           </Column>
 

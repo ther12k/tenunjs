@@ -6,6 +6,10 @@ import { describe, expect, test } from "bun:test";
  * does — BLE_LINK/BLE_LINE/SAVE_PROGRAM dispatches against the committed
  * display-list scenes. The module is imported once (module cache) after the
  * fake host bridge is installed.
+ *
+ * 2026-10-30 redesign: the fixed bottom connection band is GONE — the
+ * connection control is the LinkHeader row at the top of every screen
+ * (in-content, non-fixed). The nav bar is the only fixed chrome.
  */
 
 const host = globalThis as Record<string, unknown>;
@@ -61,8 +65,16 @@ function sceneOf(t: DeviceTest): {
 const texts = (scene: ReturnType<typeof sceneOf>): string =>
   scene.ops.filter((op) => op.op === "text").map((op) => op.text ?? "").join("\n");
 
-const bannerTap = (scene: ReturnType<typeof sceneOf>) =>
-  scene.taps.find((tap) => tap.fixed && tap.anchor === "bottom" && tap.anchorSize === 100);
+/** The LinkHeader connection row's tap payload: the (non-fixed) tap region
+ *  containing the given header label ("SAMBUNGKAN", "Terhubung · …"). */
+const headerTap = (scene: ReturnType<typeof sceneOf>, label: string): unknown => {
+  const op = scene.ops.find((o) => o.op === "text" && (o.text ?? "").startsWith(label));
+  if (!op) return null;
+  const tap = scene.taps.find(
+    (t) => !t.fixed && op.x >= t.x && op.x <= t.x + t.w && op.y >= t.y && op.y <= t.y + t.h,
+  );
+  return tap?.payload ?? null;
+};
 
 const tapIdForText = (scene: ReturnType<typeof sceneOf>, label: string): unknown => {
   const op = scene.ops.find((o) => o.op === "text" && o.text === label);
@@ -81,35 +93,50 @@ describe("native polytron entry", () => {
     expect(raw.tenun).toBe("display-list");
   });
 
-  test("offline connect strip shows on EVERY tab with a 44px target", async () => {
+  test("the nav bar is the ONLY fixed chrome — no bottom connection band", async () => {
     const t = await bootEntry();
     for (const route of ["home", "programs", "controls", "settings"]) {
       t.dispatch("NAVIGATE", JSON.stringify({ route }));
       const scene = sceneOf(t);
-      expect(texts(scene)).toContain("SAMBUNGKAN KE MESIN CUCI");
-      const banner = bannerTap(scene);
-      expect(banner).toBeDefined();
-      expect(banner!.h).toBe(44); // ≥40px wet-hands minimum
-      // Flush alignment: full-width band sitting directly on the nav bar.
-      expect(banner!.x).toBe(0);
-      expect(banner!.w).toBe(scene.designWidth);
-      expect(banner!.anchorSize).toBe(56 + 44); // no gap above the nav
+      const fixed = scene.taps.filter((tap) => tap.fixed);
+      expect(fixed.length).toBe(4); // the four nav tabs, nothing else
+      const tabW = scene.designWidth / 4;
+      for (const tap of fixed) {
+        expect(tap.anchorSize).toBe(56); // nav bar only (strip removed)
+        expect(tap.w).toBe(tabW);
+        expect(tap.x % tabW).toBe(0); // tab columns
+      }
     }
   });
 
-  test("strip phases render — MENCARI, then MESIN TERDETEKSI when the advert is seen", async () => {
+  test("the connection header row shows on EVERY tab with a ≥40px target", async () => {
+    const t = await bootEntry();
+    for (const route of ["home", "programs", "controls", "settings"]) {
+      t.dispatch("NAVIGATE", JSON.stringify({ route }));
+      const scene = sceneOf(t);
+      expect(texts(scene)).toContain("Tidak tersambung");
+      expect(texts(scene)).toContain("SAMBUNGKAN");
+      const tap = headerTap(scene, "SAMBUNGKAN");
+      expect(tap).not.toBeNull();
+      // The header tap region is the row band: h 42 (wet-hands ≥40px).
+      const region = scene.taps.find((tr) => tr.payload === tap);
+      expect(region!.h).toBeGreaterThanOrEqual(40);
+      expect(region!.w).toBe(scene.designWidth - 28); // full content width
+    }
+  });
+
+  test("header phases render — Mencari, Mesin terdeteksi, Menyambung ulang", async () => {
     const t = await bootEntry();
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: true, phase: "scanning" }));
     let scene = sceneOf(t);
-    expect(texts(scene)).toContain("MENCARI MESIN CUCI");
+    expect(texts(scene)).toContain("Mencari mesin…");
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: true, phase: "found", name: "Polytron Wash" }));
     scene = sceneOf(t);
-    expect(texts(scene)).toContain("MESIN TERDETEKSI"); // advert seen = ESP BLE is ON
-    expect(texts(scene)).toContain("MENYAMBUNG");
     // "the ESP's Bluetooth is on" is exactly what the user must be told
-    expect(texts(scene)).toContain("Bluetooth mesin AKTIF");
+    expect(texts(scene)).toContain("Mesin terdeteksi — menyambung…");
+    expect(texts(scene)).toContain("BATALKAN"); // in-progress is cancellable
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: true, phase: "reconnecting" }));
-    expect(texts(sceneOf(t))).toContain("MENYAMBUNG ULANG KE MESIN CUCI");
+    expect(texts(sceneOf(t))).toContain("Menyambung ulang…");
   });
 
   test("native-shaped failure releases the MENYAMBUNG lock and retry works", async () => {
@@ -117,32 +144,31 @@ describe("native polytron entry", () => {
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: false })); // reset
     t.dispatch("NAVIGATE", JSON.stringify({ route: "settings" }));
     const before = connects;
-    t.dispatch("TAP", JSON.stringify(bannerTap(sceneOf(t))!.payload));
+    t.dispatch("TAP", JSON.stringify(headerTap(sceneOf(t), "SAMBUNGKAN")));
     expect(connects).toBe(before + 1);
-    expect(texts(sceneOf(t))).toContain("MENCARI MESIN CUCI…"); // optimistic phase
+    expect(texts(sceneOf(t))).toContain("Menyambung…"); // optimistic lock
     // Exact native failure shape: notifyLink(false, name) — NO connecting
     // field. Before terminal normalization this left MENYAMBUNG forever.
     t.dispatch("BLE_LINE", JSON.stringify({ line: "ERR bluetooth mati — nyalakan Bluetooth" }));
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, name: "" }));
     const after = sceneOf(t);
-    expect(texts(after)).toContain("SAMBUNGKAN KE MESIN CUCI"); // lock released
-    t.dispatch("TAP", JSON.stringify(bannerTap(after)!.payload)); // retry is possible
+    expect(texts(after)).toContain("SAMBUNGKAN"); // lock released
+    t.dispatch("TAP", JSON.stringify(headerTap(after, "SAMBUNGKAN"))); // retry is possible
     expect(connects).toBe(before + 2);
   });
 
-  test("connected strip persists on every tab and tapping it disconnects", async () => {
+  test("connected header persists on every tab and tapping it disconnects", async () => {
     const t = await bootEntry();
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: false }));
     t.dispatch("BLE_LINK", JSON.stringify({ connected: true, name: "Polytron Wash" }));
     for (const route of ["home", "programs", "controls", "settings"]) {
       t.dispatch("NAVIGATE", JSON.stringify({ route }));
       const scene = sceneOf(t);
-      expect(texts(scene)).toContain("● Polytron Wash"); // identity always visible
-      const strip = bannerTap(scene);
-      expect(strip).toBeDefined();
+      expect(texts(scene)).toContain("Terhubung · Polytron Wash"); // identity always visible
+      expect(headerTap(scene, "Terhubung")).not.toBeNull();
     }
     const before = disconnects;
-    t.dispatch("TAP", JSON.stringify(bannerTap(sceneOf(t))!.payload));
+    t.dispatch("TAP", JSON.stringify(headerTap(sceneOf(t), "Terhubung")));
     expect(disconnects).toBe(before + 1);
   });
 
@@ -151,8 +177,8 @@ describe("native polytron entry", () => {
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: false }));
     t.dispatch("BLE_LINK", JSON.stringify({ connected: true, name: "Polytron Wash" }));
     expect(bleWrites).toContain("GET:ALL");
-    t.dispatch("NAVIGATE", JSON.stringify({ route: "home" })); // CUCI lives on Home
-    const cucci = tapIdForText(sceneOf(t), "CUCI");
+    t.dispatch("NAVIGATE", JSON.stringify({ route: "home" })); // the grid lives on Home
+    const cucci = tapIdForText(sceneOf(t), "Cuci");
     t.dispatch("TAP", JSON.stringify(cucci)); // user fires before the ack lands
     t.dispatch("BLE_LINE", JSON.stringify({ line: "OK 14 settings follow" }));
     t.dispatch("BLE_LINE", JSON.stringify({ line: "OK WASH 600 s" }));

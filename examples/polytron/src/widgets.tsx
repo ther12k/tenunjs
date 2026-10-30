@@ -1,12 +1,13 @@
 import type { WidgetNode } from "@tenunjs/jsx-runtime";
 import type { DisplayOp } from "@tenunjs/widgets";
 import { CanvasBox, textWidth } from "@tenunjs-examples/ui-kit";
+import { fmtDurationS, type ProgramStep } from "./protocol";
 
 /**
- * Polytron Wash visual system — the v4 LCD design language (deep-teal
- * board, outline function cards, drawn stroke icons, orange page dot,
- * red STOP) rebuilt for a phone: brighter text ramp than the LCD (390px
- * at arm's length), one accent, no emoji in the canvas.
+ * Polytron Wash visual system — the calm light design language
+ * (2026-10-30 redesign): white cards on a blue-gray canvas, teal accent,
+ * navy program hero, wave water meter, ring cycle hero, red STOP.
+ * "Calm control. Clear status."
  *
  * COORDINATE CONTRACT: paint() draws in BOX-LOCAL coordinates — (0,0) is
  * the box's own top-left and origin.w its width. The layout engine offsets
@@ -17,28 +18,38 @@ import { CanvasBox, textWidth } from "@tenunjs-examples/ui-kit";
 /* ----------------------------- design tokens ---------------------------- */
 
 const C = {
-  card: "#101C26",
-  cardOk: "#0E241C",
-  cardWarn: "#231A0E",
-  line: "#24333F",
-  lineStrong: "#33475A",
-  track: "#1A2833",
-  txt: "#EAF3FC",
-  dim: "#9DB2C7",
-  faint: "#6E8496",
-  off: "#586D7E",
-  acc: "#00B7FD",
-  /** Filled-button blue — white text reaches ~5.5:1 on it (the bright
-   *  accent stays for borders/icons/text-on-dark only). */
-  accDeep: "#046FA4",
-  red: "#E8354A",
-  redDark: "#B32B3D",
-  redFaint: "#8B6468",
-  green: "#00FF80",
-  amber: "#FCB518",
-  orange: "#FF9F45",
-  aqua: "#00FFC8",
-  purple: "#BB86FC",
+  card: "#FFFFFF",
+  bg: "#EFF3F6",
+  line: "#E4EBF0",
+  lineStrong: "#C9D7E0",
+  track: "#E4EDF2",
+  txt: "#182E38",
+  dim: "#5F7A8C",
+  faint: "#8AA3B2",
+  off: "#A9BCC7",
+  acc: "#0E9F8C", // teal
+  accDeep: "#0B7F70", // filled buttons (white text)
+  accSoft: "#DFF3EE",
+  accLine: "#9AD8CD",
+  navy: "#143A56",
+  navyDim: "#9FC0D8",
+  navyDim2: "#C3D8E6",
+  red: "#E5484D",
+  redDark: "#C93A40",
+  redSoft: "#FDECEC",
+  redLine: "#F0C6C8",
+  redFaint: "#C98A8E",
+  green: "#17A673",
+  greenSoft: "#E3F5EC",
+  greenLine: "#BCE4D2",
+  amber: "#F5A524",
+  amberSoft: "#FFF4E0",
+  blue: "#2E90FA",
+  blueSoft: "#E3F1FD",
+  water: "#3FB6E8",
+  waterTrack: "#DCF1FA",
+  purple: "#7C5CE0",
+  chipBg: "#F0F4F7",
 } as const;
 
 /* -------------------------------- icons --------------------------------- */
@@ -51,9 +62,9 @@ function mixHex(a: string, b: string, t: number): string {
 }
 
 /**
- * HA-style activity spinner: a tail of dots orbiting (cx,cy), head bright
- * in the accent, fading into the card. Phase advances with the wall clock
- * — the runtime's animation heartbeat repaints the scene, and each repaint
+ * Activity spinner: a tail of dots orbiting (cx,cy), head bright in the
+ * accent, fading into the card. Phase advances with the wall clock — the
+ * runtime's animation heartbeat repaints the scene, and each repaint
  * reads the current phase, so the orbit turns ~4 revolutions / 8 s.
  */
 function orbitSpinner(
@@ -92,7 +103,27 @@ export type IconKind =
   | "clock"
   | "tub"
   | "motorA"
-  | "motorB";
+  | "motorB"
+  | "check"
+  | "play"
+  | "close";
+
+/** Firmware mode token → the icon that represents it on chips/cards. */
+export function modeIcon(mode: string): FunctionIcon {
+  switch (mode) {
+    case "WASH":
+    case "RINSE":
+      return "wash";
+    case "SPIN":
+      return "spin";
+    case "DRAIN":
+      return "drain";
+    case "FILL":
+      return "droplet";
+    default:
+      return "clock"; // WAIT and anything unknown
+  }
+}
 
 /**
  * Stroke-drawn icon vocabulary — every glyph in the app comes from here,
@@ -163,8 +194,18 @@ export function drawIcon(
     put({ op: "circle", cx: cx + s * 0.3, cy: cy - s * 0.15, r: s * 0.2 + 0.8, color });
     put({ op: "circle", cx: cx - s * 0.05, cy: cy - s * 0.55, r: s * 0.1 + 0.6, color });
     wave(cy + s * 0.45, s * 0.22);
+  } else if (kind === "check") {
+    line(cx - s * 0.8, cy + s * 0.05, cx - s * 0.15, cy + s * 0.65, 3.5);
+    line(cx - s * 0.15, cy + s * 0.65, cx + s * 0.85, cy - s * 0.6, 3.5);
+  } else if (kind === "play") {
+    line(cx - s * 0.5, cy - s * 0.8, cx + s * 0.7, cy, 3.5);
+    line(cx + s * 0.7, cy, cx - s * 0.5, cy + s * 0.8, 3.5);
+    line(cx - s * 0.5, cy - s * 0.8, cx - s * 0.5, cy + s * 0.8, 3.5);
+  } else if (kind === "close") {
+    line(cx - s * 0.6, cy - s * 0.6, cx + s * 0.6, cy + s * 0.6, 3);
+    line(cx + s * 0.6, cy - s * 0.6, cx - s * 0.6, cy + s * 0.6, 3);
   } else {
-    // motorA / motorB — the LCD's drum-with-letter glyph
+    // motorA / motorB — the drum-with-letter glyph
     put({ op: "ring", cx, cy, r: s - 1, width: 3, color, progress: 1 });
     put({
       op: "text",
@@ -180,79 +221,397 @@ export function drawIcon(
   }
 }
 
-/* ------------------------------ status strip ----------------------------- */
+/* ------------------------------ link header ------------------------------ */
 
-/** The LCD's SIAP band as a phone strip: status headline + right value,
- *  thin progress track only when there is real progress, caption below.
- *  `spin` swaps the status dot for an orbiting activity spinner (machine
- *  running / waiting for its first status) — HA loop-card semantics. */
-export function StatusStrip(props: {
-  status: string;
-  accent: string;
-  /** 0..1, or null when there is nothing honest to show. */
-  pct: number | null;
-  right?: string;
-  caption?: string;
-  spin?: boolean;
-  onPress?: () => void;
+const PHASE_LABELS: Record<string, string> = {
+  scanning: "Mencari mesin…",
+  found: "Mesin terdeteksi — menyambung…",
+  reconnecting: "Menyambung ulang…",
+};
+
+/**
+ * The screen title + THE connection control, at the top of every tab —
+ * the mockup's "Polytron Wash / ● Terhubung · Data 1 dtk lalu" header.
+ * The row underneath the title is the one tappable connection surface:
+ * offline → connect, connecting → cancel, connected → disconnect.
+ */
+export function LinkHeader(props: {
+  title: string;
+  supported: boolean;
+  connected: boolean;
+  connecting: boolean;
+  phase?: string | null;
+  name: string | null;
+  /** Seconds since the last ST: line; null = none received yet. */
+  statusAgeS: number | null;
+  /** Connected but the machine went quiet past the staleness budget. */
+  stale: boolean;
+  onPress: () => void;
 }): WidgetNode {
-  const h = 86;
+  const h = 76;
   return CanvasBox({
     height: h,
     paint: (origin, put, tap) => {
       const w = origin.w;
-      put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
-      // No caption and no progress: center the headline row in the card —
-      // top-aligning it left the lower half dead (the OFFLINE hero looked
-      // half-empty).
-      const bare = props.caption === undefined && props.pct === null;
-      const cy = bare ? Math.round(h / 2) : 25;
-      if (props.spin) {
-        orbitSpinner(put, 20, cy, props.accent, Date.now());
-      } else {
-        put({ op: "circle", cx: 20, cy, r: 5, color: props.accent });
-      }
-      const rightBudget = props.right
-        ? textWidth(props.right, 15) + (props.onPress ? 42 : 26)
-        : props.onPress
-          ? 34
-          : 18;
       put({
         op: "text",
-        x: 37,
-        y: cy + 5,
-        text: truncate(props.status, 15, w - 37 - rightBudget - 12),
-        size: 15,
+        x: 2,
+        y: 30,
+        text: props.title,
+        size: 22,
         weight: 800,
         color: C.txt,
       });
-      if (props.right) {
-        const rx = props.onPress
-          ? w - 30 - textWidth(props.right, 15)
-          : w - 18 - textWidth(props.right, 15);
+      // --- link row (the tappable connection control) ---
+      const rowY = 56;
+      let dot = C.faint;
+      let label: string;
+      let labelColor = C.dim;
+      let right: string | null = null;
+      let rightColor = C.faint;
+      let spinning = false;
+      if (!props.supported) {
+        label = "Bluetooth tidak tersedia di perangkat ini";
+      } else if (props.connecting) {
+        dot = C.amber;
+        spinning = true;
+        label = PHASE_LABELS[props.phase ?? ""] ?? "Menyambung…";
+        right = "BATALKAN";
+        rightColor = C.red;
+      } else if (props.connected) {
+        dot = props.stale ? C.amber : C.green;
+        label = `Terhubung · ${props.name ?? "mesin cuci"}`;
+        if (props.stale) {
+          right = `beku ${props.statusAgeS ?? 0}s`;
+          rightColor = C.amber;
+        } else if (props.statusAgeS === null) {
+          right = "menunggu data…";
+        } else {
+          right = `Data ${props.statusAgeS}s lalu`;
+        }
+        labelColor = C.txt;
+      } else {
+        dot = C.red;
+        label = "Tidak tersambung";
+        right = "SAMBUNGKAN";
+        rightColor = C.acc;
+      }
+      if (spinning) orbitSpinner(put, 22, rowY, dot, Date.now());
+      else put({ op: "circle", cx: 22, cy: rowY, r: 5, color: dot });
+      put({
+        op: "text",
+        x: 38,
+        y: rowY + 5,
+        text: truncate(label, 13.5, w - 38 - (right ? textWidth(right, 11.5) + 30 : 16)),
+        size: 13.5,
+        weight: props.connected || props.connecting ? 700 : 600,
+        color: labelColor,
+      });
+      if (right) {
         put({
           op: "text",
-          x: rx,
-          y: cy + 5,
-          text: props.right,
-          size: 15,
+          x: w - 16 - textWidth(right, 11.5),
+          y: rowY + 5,
+          text: right,
+          size: 11.5,
           weight: 800,
-          color: props.accent,
+          color: rightColor,
+        });
+      }
+      // Unsupported radios get an informational row, not a dead tap.
+      if (props.supported) tap({ x: 0, y: 34, w, h: 42 }, props.onPress);
+    },
+  });
+}
+
+/* ------------------------------ banner card ------------------------------ */
+
+const TONES = {
+  ok: { bg: C.greenSoft, line: C.greenLine, fg: C.green },
+  acc: { bg: C.accSoft, line: C.accLine, fg: C.acc },
+  warn: { bg: C.amberSoft, line: "#F0D9AC", fg: C.amber },
+  info: { bg: C.blueSoft, line: "#BED9F7", fg: C.blue },
+} as const;
+
+/** Soft status banner — "Siap mencuci", "Mencuci · 08:42", staleness… */
+export function BannerCard(props: {
+  icon: IconKind;
+  tone: keyof typeof TONES;
+  title: string;
+  sub?: string;
+  onPress?: () => void;
+}): WidgetNode {
+  const h = props.sub ? 68 : 56;
+  const tone = TONES[props.tone];
+  return CanvasBox({
+    height: h,
+    paint: (origin, put, tap) => {
+      const w = origin.w;
+      const cy = h / 2;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: tone.bg });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: tone.line, width: 1 });
+      put({ op: "circle", cx: 28, cy, r: 13, color: tone.fg });
+      drawIcon(props.icon, 28, cy, 7.5, put, "#FFFFFF");
+      const titleX = 52;
+      const chev = props.onPress ? 22 : 0;
+      if (props.sub) {
+        put({
+          op: "text",
+          x: titleX,
+          y: cy - 3,
+          text: truncate(props.title, 14, w - titleX - chev - 14),
+          size: 14,
+          weight: 800,
+          color: C.txt,
+        });
+        put({
+          op: "text",
+          x: titleX,
+          y: cy + 15,
+          text: truncate(props.sub, 11, w - titleX - chev - 14),
+          size: 11,
+          weight: 400,
+          color: C.dim,
+        });
+      } else {
+        put({
+          op: "text",
+          x: titleX,
+          y: cy + 5,
+          text: truncate(props.title, 14.5, w - titleX - chev - 14),
+          size: 14.5,
+          weight: 800,
+          color: C.txt,
         });
       }
       if (props.onPress) {
-        drawIcon("chevR", w - 16, cy, 7, put, C.dim);
+        drawIcon("chevR", w - 16, cy, 7, put, tone.fg);
         tap({ x: 0, y: 0, w, h }, props.onPress);
       }
-      const capY = props.pct === null ? 58 : 74;
+    },
+  });
+}
+
+/* ----------------------------- program hero ------------------------------ */
+
+/** The navy "PROGRAM TERSIMPAN" hero card with the teal Mulai button. */
+export function ProgramHero(props: {
+  name: string;
+  meta: string;
+  state: "idle" | "pending" | "locked" | "busy";
+  onStart?: () => void;
+  /** Opens the Programs tab editor for this slot. */
+  onEdit?: () => void;
+}): WidgetNode {
+  const h = 138;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put, tap) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.navy });
+      put({ op: "text", x: 20, y: 28, text: "PROGRAM TERSIMPAN", size: 10.5, weight: 700, color: C.navyDim });
+      const nameW = props.onEdit ? w - 20 - textWidth("Ubah", 12) - 44 : w - 40;
+      put({
+        op: "text",
+        x: 20,
+        y: 54,
+        text: truncate(props.name, 19, nameW),
+        size: 19,
+        weight: 800,
+        color: "#FFFFFF",
+      });
+      if (props.onEdit) {
+        put({ op: "text", x: w - 16 - textWidth("Ubah", 12), y: 54, text: "Ubah", size: 12, weight: 700, color: "#7FD4C6" });
+        tap({ x: w - 30 - textWidth("Ubah", 12), y: 36, w: textWidth("Ubah", 12) + 28, h: 34 }, props.onEdit);
+      }
+      put({ op: "text", x: 20, y: 74, text: truncate(props.meta, 12, w - 40), size: 12, weight: 400, color: C.navyDim2 });
+      const bx = 20;
+      const bw = w - 40;
+      const by = 88;
+      const bh = 38;
+      if (props.state === "locked") {
+        drawIcon("lock", bx + 14, by + bh / 2, 6, put, C.navyDim);
+        put({
+          op: "text",
+          x: bx + 30,
+          y: by + bh / 2 + 5,
+          text: "sambungkan untuk menjalankan",
+          size: 12,
+          weight: 600,
+          color: C.navyDim,
+        });
+        return;
+      }
+      const pending = props.state === "pending";
+      const busy = props.state === "busy";
+      if (pending || busy) {
+        put({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 12, color: busy ? "#3D5E78" : C.acc, width: 1.5 });
+      } else {
+        put({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 12, color: C.acc });
+      }
+      const label = busy ? "MESIN SEDANG BERJALAN" : pending ? "MEMULAI…" : "Mulai program";
+      const tw = textWidth(label, 13.5);
+      if (!pending && !busy) drawIcon("play", bx + bw / 2 - tw / 2 - 12, by + bh / 2, 6.5, put, "#FFFFFF");
+      put({
+        op: "text",
+        x: bx,
+        y: by + bh / 2 + 5,
+        text: label,
+        size: 13.5,
+        weight: 800,
+        color: busy ? "#7E9BB2" : pending ? C.acc : "#FFFFFF",
+        align: "center",
+        width: bw,
+      });
+      if (props.state === "idle" && props.onStart) tap({ x: bx, y: by - 4, w: bw, h: bh + 8 }, props.onStart);
+    },
+  });
+}
+
+/* ----------------------------- progress ring ----------------------------- */
+
+/** The cycle hero: big ring (track + progress), time inside, pct below. */
+export function ProgressRingCard(props: {
+  /** Big center line — "8:42" remaining, or a status word. */
+  time: string;
+  caption: string;
+  /** 0..1; null draws an empty ring (honest "no progress yet"). */
+  pct: number | null;
+  accent: string;
+}): WidgetNode {
+  const h = 236;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 20, color: C.card });
+      const cx = w / 2;
+      const cy = 108;
+      const r = 68;
+      const pct = props.pct === null ? 0 : Math.max(0, Math.min(1, props.pct));
+      put({ op: "ring", cx, cy, r, width: 10, color: props.accent, progress: pct, track: C.track });
+      put({
+        op: "text",
+        x: 0,
+        y: cy + 2,
+        text: props.time,
+        size: 34,
+        weight: 800,
+        color: C.txt,
+        align: "center",
+        width: w,
+      });
+      put({
+        op: "text",
+        x: 0,
+        y: cy + 26,
+        text: props.caption,
+        size: 11.5,
+        weight: 400,
+        color: C.dim,
+        align: "center",
+        width: w,
+      });
       if (props.pct !== null) {
-        const trackW = w - 36;
-        put({ op: "rect", x: 18, y: 45, w: trackW, h: 6, r: 3, color: C.track });
-        const pct = Math.max(0, Math.min(1, props.pct));
-        if (pct > 0) put({ op: "rect", x: 18, y: 45, w: Math.max(10, trackW * pct), h: 6, r: 3, color: props.accent });
+        put({
+          op: "text",
+          x: 0,
+          y: cy + 50,
+          text: `${Math.round(props.pct * 100)}%`,
+          size: 14,
+          weight: 800,
+          color: props.accent,
+          align: "center",
+          width: w,
+        });
+      }
+    },
+  });
+}
+
+/* ------------------------------- step chips ------------------------------ */
+
+/** The program's step timeline — icon circles joined by a line, current
+ *  step highlighted (the mockup's Cuci → Buang → Peras chain). */
+export function StepChips(props: {
+  steps: ReadonlyArray<{ label: string; icon: IconKind; color: string; active: boolean }>;
+}): WidgetNode {
+  const h = 62;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      const n = props.steps.length;
+      if (n === 0) return;
+      const cw = Math.min(76, (w - 16) / n);
+      const total = cw * n;
+      const x0 = (w - total) / 2;
+      const cy = 24;
+      props.steps.forEach((step, i) => {
+        const cx = x0 + cw * i + cw / 2;
+        if (i < n - 1) {
+          put({ op: "line", x1: cx + 18, y1: cy, x2: cx + cw - 18, y2: cy, color: C.line, width: 2 });
+        }
+        if (step.active) {
+          put({ op: "circle", cx, cy, r: 17, color: withAlpha(step.color, 0x26) });
+          put({ op: "ring", cx, cy, r: 17, width: 2, color: step.color, progress: 1 });
+        } else {
+          put({ op: "circle", cx, cy, r: 17, color: C.chipBg });
+        }
+        drawIcon(step.icon, cx, cy, 8, put, step.active ? step.color : C.faint);
+        put({
+          op: "text",
+          x: cx - cw / 2,
+          y: 56,
+          text: truncate(step.label, 10, cw - 4),
+          size: 10,
+          weight: step.active ? 800 : 500,
+          color: step.active ? step.color : C.dim,
+          align: "center",
+          width: cw,
+        });
+      });
+    },
+  });
+}
+
+/* ------------------------------ water meter ------------------------------ */
+
+/** "Ketinggian air" card with the wave-fill bar (the mockup's 65% tile). */
+export function WaveFillCard(props: { pct: number | null; caption?: string }): WidgetNode {
+  const h = props.caption ? 96 : 82;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
+      drawIcon("droplet", 30, 26, 12, put, props.pct !== null ? C.water : C.faint);
+      put({ op: "text", x: 52, y: 31, text: "Ketinggian air", size: 13.5, weight: 700, color: C.txt });
+      const label = props.pct === null ? "?" : `${props.pct}%`;
+      put({
+        op: "text",
+        x: w - 18 - textWidth(label, 19),
+        y: 34,
+        text: label,
+        size: 19,
+        weight: 800,
+        color: props.pct === null ? C.faint : C.txt,
+      });
+      const bx = 18;
+      const bw = w - 36;
+      const by = h - (props.caption ? 38 : 24);
+      const bh = 14;
+      put({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 7, color: C.waterTrack });
+      if (props.pct !== null) {
+        const pct = Math.max(0, Math.min(100, props.pct)) / 100;
+        const fw = Math.max(bh, bw * pct);
+        put({ op: "rect", x: bx, y: by, w: fw, h: bh, r: 7, color: C.water });
+        // Wave crest: two circles riding the fill's right edge.
+        put({ op: "circle", cx: bx + fw - 4, cy: by + bh / 2, r: bh / 2 + 1.5, color: C.water });
+        put({ op: "circle", cx: bx + fw - 14, cy: by + bh / 2 - 2.5, r: bh / 2 - 1, color: C.water });
       }
       if (props.caption) {
-        put({ op: "text", x: 18, y: capY, text: props.caption, size: 11.5, weight: 400, color: C.dim, width: w - 36 });
+        put({ op: "text", x: 18, y: h - 8, text: truncate(props.caption, 10.5, w - 36), size: 10.5, weight: 400, color: C.dim });
       }
     },
   });
@@ -272,15 +631,14 @@ export interface FunctionDef {
   onPress?: () => void;
 }
 
-/** LCD icon grid: every function in one 3-column grid — no paging, all
- *  six actions visible and one tap away on the first phone screen. */
+/** Six-function icon grid — white tiles, per-function color, one tap. */
 export function FunctionGrid(props: {
   functions: ReadonlyArray<FunctionDef>;
 }): WidgetNode {
   const cols = 3;
   const gap = 10;
   const rows = Math.ceil(props.functions.length / cols);
-  const tileH = 116;
+  const tileH = 106;
   const h = rows * tileH + (rows - 1) * gap;
   return CanvasBox({
     height: h,
@@ -290,44 +648,42 @@ export function FunctionGrid(props: {
         const x = (i % cols) * (w + gap);
         const y = Math.floor(i / cols) * (tileH + gap);
         const enabled = !item.disabled;
-        const border = !enabled ? C.line : item.active || item.pending ? item.color : C.lineStrong;
+        const highlighted = enabled && (item.active || item.pending);
+        if (highlighted) put({ op: "rect", x, y, w, h: tileH, r: 16, color: withAlpha(item.color, 0x14) });
         put({
           op: "outline",
           x,
           y,
           w,
           h: tileH,
-          r: 14,
-          color: border,
-          width: !enabled ? 1.5 : item.active || item.pending ? 2.5 : 2,
+          r: 16,
+          color: !enabled ? C.line : highlighted ? item.color : C.line,
+          width: highlighted ? 2 : 1.5,
         });
-        drawIcon(item.icon, x + w / 2, y + 36, 15, put, enabled ? item.color : "#4E6272");
+        drawIcon(item.icon, x + w / 2, y + 34, 14, put, enabled ? item.color : "#B4C4CE");
         put({
           op: "text",
           x: x + 4,
-          y: y + 80,
+          y: y + 74,
           text: item.label,
-          size: 13.5,
+          size: 13,
           weight: 800,
-          color: enabled ? C.txt : "#6E8496",
+          color: enabled ? C.txt : "#9DB2C7",
           align: "center",
           width: w - 8,
         });
-        // Offline the lock chip already says "disabled" — the caption
-        // keeps the useful last-run info instead of a third "offline"
-        // mention on the same screen.
         put({
           op: "text",
           x: x + 4,
-          y: y + 99,
-          text: item.pending ? "MENGIRIM…" : item.active ? "BERJALAN" : (item.sub ?? "sentuh"),
+          y: y + 92,
+          text: item.pending ? "MENGIRIM…" : item.active ? "BERJALAN" : (item.sub ?? ""),
           size: 10,
-          weight: item.pending || item.active ? 800 : 500,
-          color: item.pending || item.active ? item.color : item.disabled ? "#586D7E" : C.dim,
+          weight: item.pending || item.active ? 800 : 400,
+          color: item.pending || item.active ? item.color : C.faint,
           align: "center",
           width: w - 8,
         });
-        if (item.disabled) drawIcon("lock", x + w - 13, y + 13, 5, put, "#586D7E");
+        if (item.disabled) drawIcon("lock", x + w - 13, y + 13, 5, put, "#B4C4CE");
         if (enabled && item.onPress) tap({ x, y, w, h: tileH }, item.onPress);
       });
     },
@@ -336,23 +692,31 @@ export function FunctionGrid(props: {
 
 /* -------------------------------- stop bar ------------------------------- */
 
-/** Full-width safety stop — filled red when armed, quiet outline offline. */
-export function StopBar(props: { disabled?: boolean; pending?: boolean; onPress?: () => void }): WidgetNode {
-  const h = 52;
+/** Full-width safety stop. Idle = soft red outline; running = solid red;
+ *  offline = quiet locked; pending = dark red "stopping". */
+export function StopBar(props: {
+  disabled?: boolean;
+  pending?: boolean;
+  /** Machine is running — the button turns solid red (mockup 03/04). */
+  emphasis?: boolean;
+  onPress?: () => void;
+}): WidgetNode {
+  const h = 54;
   return CanvasBox({
     height: h,
     paint: (origin, put, tap) => {
       const w = origin.w;
+      const label = props.pending ? "MENGHENTIKAN…" : "STOP MESIN";
       if (props.disabled) {
-        put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: "#5A2A33", width: 1.5 });
-        const tw = textWidth("STOP", 15);
-        drawIcon("lock", w / 2 - tw / 2 - 22, h / 2, 6, put, C.redFaint);
+        put({ op: "outline", x: 0, y: 0, w, h, r: 16, color: C.redLine, width: 1.5 });
+        const tw = textWidth(label, 14.5);
+        drawIcon("lock", w / 2 - tw / 2 - 18, h / 2, 6, put, C.redFaint);
         put({
           op: "text",
           x: 0,
           y: h / 2 + 5,
-          text: "STOP",
-          size: 15,
+          text: label,
+          size: 14.5,
           weight: 800,
           color: C.redFaint,
           align: "center",
@@ -360,18 +724,25 @@ export function StopBar(props: { disabled?: boolean; pending?: boolean; onPress?
         });
         return;
       }
-      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: props.pending ? C.redDark : C.red });
-      const label = props.pending ? "MENGHENTIKAN…" : "STOP";
-      const tw = textWidth(label, 17);
-      if (!props.pending) drawIcon("stop", w / 2 - tw / 2 - 16, h / 2, 6, put, "#FFFFFF");
+      if (props.pending) {
+        put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.redDark });
+      } else if (props.emphasis) {
+        put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.red });
+      } else {
+        put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.redSoft });
+        put({ op: "outline", x: 0, y: 0, w, h, r: 16, color: C.red, width: 1.5 });
+      }
+      const solid = props.pending || props.emphasis;
+      const tw = textWidth(label, 15.5);
+      if (!props.pending) drawIcon("stop", w / 2 - tw / 2 - 18, h / 2, 6.5, put, solid ? "#FFFFFF" : C.red);
       put({
         op: "text",
         x: 0,
-        y: h / 2 + 6,
+        y: h / 2 + 5.5,
         text: label,
-        size: 17,
+        size: 15.5,
         weight: 800,
-        color: "#FFFFFF",
+        color: solid ? "#FFFFFF" : C.red,
         align: "center",
         width: w,
       });
@@ -405,14 +776,13 @@ export function ListRow(props: ListRowProps): WidgetNode {
     paint: (origin, put, tap) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
       const x0 = props.icon ? 54 : 18;
-      // Right-edge reserve for the tallest right-side element — label
-      // and sub truncate against it instead of running under the pill.
       let rightEdge = w - 18;
       if (props.pill) rightEdge = w - 16 - (textWidth(props.pill.label, 11) + 30) - 10;
       else if (props.locked !== undefined) rightEdge = w - 34 - textWidth(props.locked, 10) - 8;
       else if (props.value !== undefined) rightEdge = w - 18 - textWidth(props.value, 16) - 8;
-      if (props.icon) drawIcon(props.icon, 30, 30, 12, put, props.iconColor ?? C.dim);
+      if (props.icon) drawIcon(props.icon, 30, 30, 12, put, props.iconColor ?? C.faint);
       put({
         op: "text",
         x: x0,
@@ -432,8 +802,6 @@ export function ListRow(props: ListRowProps): WidgetNode {
         if (props.pill.busy) {
           put({ op: "outline", x: bx, y: 10, w: bw, h: 40, r: 20, color: C.acc, width: 1.5 });
         } else {
-          // Deep-accent fill + white text: the label used to vanish at
-          // 1:1 (cyan on cyan).
           put({ op: "rect", x: bx, y: 10, w: bw, h: 40, r: 20, color: C.accDeep });
         }
         put({
@@ -475,8 +843,8 @@ export function ListRow(props: ListRowProps): WidgetNode {
   });
 }
 
-/** Relay row — icon + name left, state chip right (ON tinted, OFF outline,
- *  unknown a quiet dash). */
+/** Relay row — icon + name left, ● Aktif / ● Nonaktif right (the mockup's
+ *  "Indikator, bukan tombol" list). */
 export function RelayRow(props: {
   icon: IconKind;
   iconColor: string;
@@ -489,7 +857,8 @@ export function RelayRow(props: {
     paint: (origin, put) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
-      drawIcon(props.icon, 30, 28, 12, put, props.on === true ? props.iconColor : "#4E6272");
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
+      drawIcon(props.icon, 30, 28, 12, put, props.on === true ? props.iconColor : "#B4C4CE");
       put({
         op: "text",
         x: 54,
@@ -497,46 +866,33 @@ export function RelayRow(props: {
         text: props.label,
         size: 13.5,
         weight: 700,
-        color: props.on === true ? C.txt : "#9DB2C7",
+        color: props.on === true ? C.txt : C.dim,
       });
-      const chipX = w - 16 - 56;
+      const stateX = w - 18;
       if (props.on === null) {
         put({
           op: "text",
-          x: chipX,
+          x: stateX,
           y: 33,
           text: "—",
-          size: 15,
+          size: 14,
           weight: 800,
           color: C.faint,
-          align: "center",
-          width: 56,
-        });
-      } else if (props.on) {
-        put({ op: "rect", x: chipX, y: 14, w: 56, h: 28, r: 14, color: withAlpha(props.iconColor, 0x33) });
-        put({
-          op: "text",
-          x: chipX,
-          y: 32,
-          text: "ON",
-          size: 11.5,
-          weight: 800,
-          color: props.iconColor,
-          align: "center",
-          width: 56,
+          align: "right",
+          width: 40,
         });
       } else {
-        put({ op: "outline", x: chipX, y: 14, w: 56, h: 28, r: 14, color: C.lineStrong, width: 1.5 });
+        const text = props.on ? "Aktif" : "Nonaktif";
+        const color = props.on ? C.green : C.faint;
+        put({ op: "circle", cx: stateX - textWidth(text, 12.5) - 12, cy: 29, r: 4.5, color });
         put({
           op: "text",
-          x: chipX,
-          y: 32,
-          text: "OFF",
-          size: 11.5,
-          weight: 800,
-          color: C.dim,
-          align: "center",
-          width: 56,
+          x: stateX - textWidth(text, 12.5),
+          y: 33,
+          text,
+          size: 12.5,
+          weight: 700,
+          color,
         });
       }
     },
@@ -564,6 +920,7 @@ export function SettingRow(props: {
     paint: (origin, put, tap) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
       put({
         op: "text",
         x: 18,
@@ -571,10 +928,10 @@ export function SettingRow(props: {
         text: truncate(props.label, 13.5, w - sw - 44),
         size: 13.5,
         weight: 700,
-        color: props.disabled ? "#9DB2C7" : C.txt,
+        color: props.disabled ? C.dim : C.txt,
       });
       if (props.sub) {
-        put({ op: "text", x: 18, y: 46, text: props.sub, size: 10.5, weight: 400, color: C.dim });
+        put({ op: "text", x: 18, y: 46, text: props.sub, size: 10.5, weight: 400, color: C.faint });
       }
       if (props.disabled || props.unloaded) {
         const note = props.disabled ? "tersimpan" : "belum dimuat";
@@ -591,7 +948,7 @@ export function SettingRow(props: {
         return;
       }
       const sx = w - 16 - sw;
-      put({ op: "outline", x: sx, y: 8, w: sw, h: 48, r: 24, color: C.lineStrong, width: 1.5 });
+      put({ op: "outline", x: sx, y: 8, w: sw, h: 48, r: 24, color: C.line, width: 1.5 });
       const third = sw / 3;
       put({
         op: "text",
@@ -650,6 +1007,7 @@ export function ChoiceRow(props: {
     paint: (origin, put, tap) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
       const total = props.options.length * pw + (props.options.length - 1) * 8;
       put({
         op: "text",
@@ -678,7 +1036,7 @@ export function ChoiceRow(props: {
         if (props.disabled) {
           put({ op: "outline", x, y: 10, w: pw, h: 40, r: 20, color: C.line, width: 1.5 });
         } else if (sel) {
-          put({ op: "rect", x, y: 10, w: pw, h: 40, r: 20, color: withAlpha(C.acc, 0x2E) });
+          put({ op: "rect", x, y: 10, w: pw, h: 40, r: 20, color: C.accSoft });
           put({ op: "outline", x, y: 10, w: pw, h: 40, r: 20, color: C.acc, width: 1.5 });
         } else {
           put({ op: "outline", x, y: 10, w: pw, h: 40, r: 20, color: C.lineStrong, width: 1.5 });
@@ -690,7 +1048,7 @@ export function ChoiceRow(props: {
           text: opt,
           size: 11.5,
           weight: 800,
-          color: props.disabled ? C.faint : sel ? C.acc : C.dim,
+          color: props.disabled ? C.faint : sel ? C.accDeep : C.dim,
           align: "center",
           width: pw,
         });
@@ -706,8 +1064,8 @@ export function ChoiceRow(props: {
 /* ------------------------------ program card ----------------------------- */
 
 /** Program slot card: colored spine, name + human summary line, an
- *  [edit] [MULAI] action pair right-aligned on the name row, a locked
- *  note when offline, and a quiet disabled pill while the machine runs.
+ *  [Ubah] [MULAI] action pair, a locked note when offline, and a quiet
+ *  disabled pill while the machine runs.
  *  state: idle | pending | locked | busy (busy = machine running). */
 export function ProgramCard(props: {
   name: string;
@@ -724,12 +1082,11 @@ export function ProgramCard(props: {
     paint: (origin, put, tap) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 16, color: C.line, width: 1 });
       put({ op: "rect", x: 12, y: 14, w: 5, h: h - 28, r: 3, color: props.color });
       const nameX = props.icon ? 58 : 30;
       if (props.icon) drawIcon(props.icon, 38, 36, 13, put, props.color);
       put({ op: "text", x: nameX, y: 34, text: props.name, size: 16, weight: 800, color: C.txt });
-      // The summary spans the full card width below the action row —
-      // "Cuci 10 mnt · Buang 30 dtk · Peras 5 mnt" no longer clips.
       put({
         op: "text",
         x: nameX,
@@ -757,8 +1114,6 @@ export function ProgramCard(props: {
       const bw = tw + 32;
       const bx = w - 16 - bw;
       if (props.state === "busy") {
-        // Machine running: visible but inert — the strip above says to
-        // STOP on Home first; the buttons must not invite a tap.
         put({ op: "outline", x: bx, y: 18, w: bw, h: 44, r: 22, color: C.line, width: 1.5 });
         put({
           op: "text",
@@ -791,70 +1146,151 @@ export function ProgramCard(props: {
       });
       if (props.state === "idle" && props.onStart) tap({ x: bx, y: 16, w: bw, h: 48 }, props.onStart);
       if (props.onEdit) {
-        const ew = textWidth("edit", 11);
+        const ew = textWidth("Ubah", 11);
         put({
           op: "text",
           x: bx - 16 - ew,
           y: 43,
-          text: "edit",
+          text: "Ubah",
           size: 11,
           weight: 700,
           color: C.acc,
         });
-        // 44px-tall region — the old 28px target was under every
-        // touch-target guideline for a machine-room phone.
         tap({ x: bx - 16 - ew - 14, y: 18, w: ew + 28, h: 44 }, props.onEdit);
       }
     },
   });
 }
 
-/* ------------------------------ water sensor ----------------------------- */
+/* ------------------------------- step editor ----------------------------- */
 
-/** Sensor air row: droplet + label + caption left, meter right. The meter
- *  narrows on small canvases and the label truncates against it — the old
- *  fixed 150px meter overlapped "SENSOR AIR" at 320px. */
-export function SensorRow(props: { pct: number | null; caption: string }): WidgetNode {
-  const h = 62;
+const ADD_MODES: ReadonlyArray<string> = ["WASH", "RINSE", "DRAIN", "FILL", "SPIN"];
+
+/** The visual program editor (mockup screen 02): numbered step rows with
+ *  duration steppers, quick-add chips (they wrap to a second row instead
+ *  of being dropped on narrow screens), the duration estimate and the
+ *  save/cancel pair. Pure canvas — no native text dialog needed. */
+export function StepEditor(props: {
+  slotName: string;
+  steps: ReadonlyArray<ProgramStep>;
+  onBump: (index: number, dir: 1 | -1) => void;
+  onRemove: (index: number) => void;
+  onAdd: (mode: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}): WidgetNode {
+  const rowH = 58;
+  const headerH = 44;
+  const addH = 98; // two chip rows (see the wrap loop below)
+  const estH = 64;
+  const saveH = 92;
+  const h = headerH + props.steps.length * rowH + addH + estH + saveH + 8;
   return CanvasBox({
     height: h,
-    paint: (origin, put) => {
+    paint: (origin, put, tap) => {
       const w = origin.w;
-      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
-      const meterW = Math.min(150, Math.max(112, w * 0.44));
-      const mx = w - 18 - meterW - 6;
-      const labelEdge = mx - 10;
-      drawIcon("droplet", 30, 31, 13, put, props.pct !== null ? C.aqua : "#4E6272");
-      put({ op: "text", x: 54, y: 28, text: truncate("SENSOR AIR", 13.5, labelEdge - 54), size: 13.5, weight: 700, color: C.txt });
-      put({
-        op: "text",
-        x: 54,
-        y: 47,
-        text: truncate(props.caption, 10.5, labelEdge - 54),
-        size: 10.5,
-        weight: 400,
-        color: C.dim,
+      let y = 0;
+      // Header: slot name + Batal
+      put({ op: "text", x: 2, y: y + 24, text: `Edit · ${props.slotName}`, size: 15, weight: 800, color: C.txt });
+      const cx = textWidth("Batal", 12.5);
+      put({ op: "text", x: w - 16 - cx, y: y + 24, text: "Batal", size: 12.5, weight: 700, color: C.red });
+      tap({ x: w - 26 - cx, y, w: cx + 20, h: 40 }, props.onCancel);
+      y += headerH;
+      // Step rows
+      props.steps.forEach((step, i) => {
+        const ry = y + i * rowH;
+        put({ op: "rect", x: 0, y: ry, w, h: rowH - 8, r: 14, color: C.card });
+        put({ op: "outline", x: 0, y: ry, w, h: rowH - 8, r: 14, color: C.line, width: 1 });
+        // number badge
+        put({ op: "circle", cx: 26, cy: ry + (rowH - 8) / 2, r: 11, color: C.accSoft });
+        put({
+          op: "text",
+          x: 26 - 11,
+          y: ry + (rowH - 8) / 2 + 4,
+          text: String(i + 1).padStart(2, "0"),
+          size: 9.5,
+          weight: 800,
+          color: C.accDeep,
+          align: "center",
+          width: 22,
+        });
+        const icon = modeIcon(step.mode);
+        drawIcon(icon, 54, ry + (rowH - 8) / 2, 10, put, modeColorLocal(step.mode));
+        const sw = 118;
+        const nameEdge = w - 24 - sw - 34;
+        put({
+          op: "text",
+          x: 74,
+          y: ry + 23,
+          text: truncate(modeLabelLocal(step.mode), 13, nameEdge - 74),
+          size: 13,
+          weight: 700,
+          color: C.txt,
+        });
+        put({ op: "text", x: 74, y: ry + 40, text: `langkah ${i + 1}`, size: 9.5, weight: 400, color: C.faint });
+        // stepper pill
+        const sx = w - 24 - sw;
+        const sy = ry + (rowH - 8) / 2 - 17;
+        put({ op: "outline", x: sx, y: sy, w: sw, h: 34, r: 17, color: C.lineStrong, width: 1.5 });
+        const third = sw / 3;
+        put({ op: "text", x: sx, y: sy + 22, text: "−", size: 16, weight: 700, color: C.dim, align: "center", width: third });
+        put({
+          op: "text",
+          x: sx + third,
+          y: sy + 21,
+          text: fmtDurationS(step.s),
+          size: 11.5,
+          weight: 800,
+          color: C.acc,
+          align: "center",
+          width: third,
+        });
+        put({ op: "text", x: sx + third * 2, y: sy + 22, text: "+", size: 16, weight: 700, color: C.dim, align: "center", width: third });
+        tap({ x: sx, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, -1));
+        tap({ x: sx + sw / 2, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, 1));
+        // remove ✕
+        drawIcon("close", w - 12, ry + (rowH - 8) / 2, 5.5, put, C.redFaint);
+        tap({ x: w - 24, y: sy - 4, w: 24, h: 42 }, () => props.onRemove(i));
       });
-      put({ op: "outline", x: mx, y: 16, w: meterW, h: 28, r: 9, color: C.lineStrong, width: 2 });
-      put({ op: "rect", x: mx + meterW + 2, y: 24, w: 4, h: 12, r: 2, color: C.lineStrong });
-      put({ op: "rect", x: mx + 3.5, y: 19.5, w: meterW - 7, h: 21, r: 6, color: C.track });
-      if (props.pct !== null) {
-        const pct = Math.max(0, Math.min(100, props.pct));
-        const fw = Math.max(6, (meterW - 7) * (pct / 100));
-        put({ op: "rect", x: mx + 3.5, y: 19.5, w: fw, h: 21, r: 6, color: pct < 20 ? C.amber : C.aqua });
-      }
-      const label = props.pct === null ? "?" : `${props.pct}%`;
-      const tw = Math.min(textWidth(label, 12), meterW - 16);
-      put({ op: "rect", x: mx + meterW / 2 - (tw + 12) / 2, y: 21, w: tw + 12, h: 18, r: 9, color: C.card });
+      y += props.steps.length * rowH;
+      // Quick-add chips — wrap to the next row when the line runs out;
+      // the budget (addH) holds two rows, which fits every supported width.
+      put({ op: "text", x: 2, y: y + 26, text: "Tambah tahap", size: 11, weight: 600, color: C.dim });
+      let ax = 2 + textWidth("Tambah tahap", 11) + 14;
+      let chipY = y;
+      ADD_MODES.forEach((mode) => {
+        const label = `+ ${modeLabelLocal(mode)}`;
+        const bwid = textWidth(label, 10.5) + 20;
+        if (ax + bwid > w) {
+          ax = 2;
+          chipY += 44;
+        }
+        put({ op: "outline", x: ax, y: chipY + 8, w: bwid, h: 34, r: 17, color: C.accLine, width: 1.5 });
+        put({ op: "text", x: ax, y: chipY + 29, text: label, size: 10.5, weight: 700, color: C.accDeep, align: "center", width: bwid });
+        tap({ x: ax, y: chipY + 5, w: bwid, h: 40 }, () => props.onAdd(mode));
+        ax += bwid + 8;
+      });
+      y += addH;
+      // Estimate card
+      const totalS = props.steps.reduce((acc, st) => acc + st.s, 0);
+      put({ op: "rect", x: 0, y, w, h: estH - 8, r: 14, color: C.blueSoft });
+      drawIcon("clock", 28, y + (estH - 8) / 2, 10, put, C.blue);
+      put({ op: "text", x: 50, y: y + 24, text: "Estimasi durasi", size: 11, weight: 400, color: C.dim });
       put({
         op: "text",
-        x: mx + meterW / 2 - tw / 2,
-        y: 34,
-        text: label,
-        size: 12,
+        x: 50,
+        y: y + 44,
+        text: `±${fmtDurationS(totalS)}`,
+        size: 16,
         weight: 800,
-        color: props.pct === null ? C.faint : C.txt,
+        color: C.txt,
       });
+      put({ op: "text", x: 50 + textWidth(`±${fmtDurationS(totalS)}`, 16) + 10, y: y + 44, text: `· ${props.steps.length} tahap`, size: 11, weight: 400, color: C.dim });
+      y += estH;
+      // Save
+      put({ op: "rect", x: 0, y: y + 4, w, h: 48, r: 14, color: C.accDeep });
+      put({ op: "text", x: 0, y: y + 33, text: "Simpan program", size: 14.5, weight: 800, color: "#FFFFFF", align: "center", width: w });
+      tap({ x: 0, y, w, h: 56 }, props.onSave);
     },
   });
 }
@@ -883,7 +1319,7 @@ export function ActivityList(props: {
           text: "belum ada aktivitas",
           size: 12,
           weight: 400,
-          color: "#7E93A6",
+          color: C.faint,
           align: "center",
           width: origin.w,
         });
@@ -903,7 +1339,7 @@ export function ActivityList(props: {
           text: truncate(row.line, 13, origin.w - 34 - 48),
           size: 13,
           weight: 500,
-          color: "#CFDCE8",
+          color: C.txt,
         });
         const time = fmtHM(row.t);
         put({
@@ -913,7 +1349,7 @@ export function ActivityList(props: {
           text: time,
           size: 10.5,
           weight: 400,
-          color: "#7E93A6",
+          color: C.faint,
         });
       });
     },
@@ -921,6 +1357,32 @@ export function ActivityList(props: {
 }
 
 /* -------------------------------- helpers -------------------------------- */
+
+/** Local mode label (kept local to avoid a widgets→protocol cycle risk;
+ *  protocol is pure so the import above is safe — this covers editor UI). */
+function modeLabelLocal(mode: string): string {
+  const labels: Record<string, string> = {
+    WASH: "Cuci",
+    SPIN: "Peras",
+    DRAIN: "Buang",
+    FILL: "Isi",
+    WAIT: "Tunggu",
+    RINSE: "Bilas",
+  };
+  return labels[mode] ?? mode;
+}
+
+function modeColorLocal(mode: string): string {
+  const colors: Record<string, string> = {
+    WASH: "#0E9F8C",
+    DRAIN: "#2E90FA",
+    FILL: "#17A673",
+    SPIN: "#7C5CE0",
+    WAIT: "#F5A524",
+    RINSE: "#0E9F8C",
+  };
+  return colors[mode] ?? C.dim;
+}
 
 /** "x mnt lalu" for quick-action sub labels (client-side last-run). */
 export function fmtAgo(t: number | undefined, now: number): string {

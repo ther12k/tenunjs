@@ -78,8 +78,16 @@ const nativeBleBridge: BleSeam = {
         "connect",
         "{}"
       );
-      return res === "true" || res === "1";
+      const ok = res === "true" || res === "1";
+      if (!ok) {
+        // Host refused synchronously (no adapter etc.) and no event will
+        // follow — release the connecting lock ourselves, whoever called
+        // (header row on any tab).
+        app.linkPush({ connected: false, connecting: false, phase: null });
+      }
+      return ok;
     }
+    app.linkPush({ connected: false, connecting: false, phase: null });
     return false;
   },
   disconnect: () => {
@@ -165,7 +173,9 @@ const appWithNavBar = {
     const w = scene.designWidth;
     const tabW = w / TABS.length;
 
-    // 1. Background for bottom navigation
+    // Fixed bottom chrome = the light nav bar ONLY. The connection
+    // control moved to the LinkHeader at the top of every screen (the
+    // 2026-10-30 redesign) — one surface, in content, on every tab.
     scene.ops.push({
       op: "rect",
       x: 0,
@@ -173,7 +183,7 @@ const appWithNavBar = {
       w,
       h: BAR_H,
       r: 0,
-      color: "#081110",
+      color: "#FFFFFF",
       fixed: true,
       anchor: "bottom",
       anchorSize: BAR_H,
@@ -185,19 +195,19 @@ const appWithNavBar = {
       y1: 0,
       x2: w,
       y2: 0,
-      color: "#182624",
+      color: "#E4EBF0",
       width: 1,
       fixed: true,
       anchor: "bottom",
       anchorSize: BAR_H,
     });
 
-    // 2. Tabs
+    // Tabs
     TABS.forEach((tab, i) => {
       const active = tab.route === currentRoute;
       const tabX = i * tabW;
       const textX = tabX + tabW / 2;
-      const color = active ? "#39D2C0" : "#6E8883";
+      const color = active ? "#0E9F8C" : "#8AA3B2";
 
       // Icon
       scene.ops.push({
@@ -222,7 +232,7 @@ const appWithNavBar = {
         y: 42,
         text: tab.label,
         size: 11,
-        weight: active ? 600 : 400,
+        weight: active ? 700 : 400,
         color,
         align: "center",
         width: 0,
@@ -248,150 +258,6 @@ const appWithNavBar = {
         app.navigate(tab.route);
       });
     });
-
-    // 3. THE connection control — one persistent band on every tab, FULL
-    //    WIDTH and FLUSH against the bottom navigation (no inset, no gap):
-    //    it reads as the nav bar's status row, not a floating button. It is
-    //    always visible: disconnected (why + connect), in progress (phase,
-    //    tappable to cancel), connected (device name, tappable to
-    //    disconnect), and connected-but-silent (DATA BEKU warning). The
-    //    scene has no shell header here, so this band IS the header status
-    //    the user asked for: one place that always answers "what is wrong
-    //    right now" and "is the machine's Bluetooth actually on".
-    // Layout anchor math: with anchor="bottom", a region's offset is
-    // visibleHeight - anchorSize + y, so with anchorSize = BAR_H + STRIP_H
-    // the 44px band sits at [visibleHeight - 100, visibleHeight - 56],
-    // touching the nav bar exactly.
-    // app.link() — NOT exportState().states.home, which only exists while
-    // Home is mounted; the band must know the link on every tab.
-    const linkState = app.link();
-    const STRIP_H = 44;
-    const STRIP_ANCHOR_SIZE = BAR_H + STRIP_H; // 100 — flush, no gap
-    const STRIP_Y = 0; // top of the 100px bottom zone: [vh-100, vh-56]
-
-    let bg = "#163430";
-    let fg = "#39D2C0";
-    let line1 = "";
-    let line2 = "";
-    let stripTap: (() => void) | null = null;
-    if (!linkState.supported) {
-      bg = "#101917";
-      fg = "#6E8883";
-      line1 = "BLUETOOTH TIDAK DIDUKUNG";
-      line2 = "perangkat ini tidak punya Bluetooth LE";
-    } else if (linkState.connected) {
-      const staleFor = app.statusAt() === null ? null : Math.max(0, Math.round((Date.now() - app.statusAt()!) / 1000));
-      if (staleFor !== null && staleFor > 15) {
-        bg = "#3B2E12";
-        fg = "#FCB518";
-        line1 = "DATA MESIN BEKU";
-        line2 = `tidak ada kabar ${staleFor}s — dekati mesin · tekan utk putus`;
-      } else {
-        bg = "#0E3B2E";
-        fg = "#7CE8C5";
-        line1 = `● ${linkState.name ?? "MESIN CUCI"}`;
-        line2 = "terhubung · tekan untuk memutuskan";
-      }
-      stripTap = () => nativeBleBridge.disconnect();
-    } else if (linkState.connecting) {
-      bg = "#1C3A36";
-      line1 =
-        linkState.phase === "scanning"
-          ? "MENCARI MESIN CUCI…"
-          : linkState.phase === "found"
-            ? "MESIN TERDETEKSI · MENYAMBUNG…"
-            : linkState.phase === "reconnecting"
-              ? "MENYAMBUNG ULANG KE MESIN CUCI…"
-              : "MENYAMBUNG KE MESIN CUCI…";
-      line2 =
-        linkState.phase === "found"
-          ? "Bluetooth mesin AKTIF — sedang membuka sambungan"
-          : "tekan untuk membatalkan";
-      stripTap = () => nativeBleBridge.disconnect();
-    } else {
-      line1 = "⚡ SAMBUNGKAN KE MESIN CUCI";
-      line2 = linkState.reason ? linkState.reason : "nyalakan mesin & Bluetooth ponsel";
-      stripTap = () => {
-        app.linkPush({ connecting: true, phase: "scanning" });
-        void nativeBleBridge.connect().then(
-          (ok) => {
-            // Host refused synchronously (no adapter etc.) and no event will
-            // follow — release the connecting lock ourselves.
-            if (!ok) app.linkPush({ connected: false, connecting: false, phase: null });
-          },
-          () => app.linkPush({ connected: false, connecting: false, phase: null }),
-        );
-      };
-    }
-
-    scene.ops.push({
-      op: "rect",
-      x: 0,
-      y: STRIP_Y,
-      w,
-      h: STRIP_H,
-      r: 0,
-      color: bg,
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: STRIP_ANCHOR_SIZE,
-    });
-    // Top border shared with the nav bar's own border: one continuous edge.
-    scene.ops.push({
-      op: "line",
-      x1: 0,
-      y1: 0.5,
-      x2: w,
-      y2: 0.5,
-      color: "#182624",
-      width: 1,
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: STRIP_ANCHOR_SIZE,
-    });
-    scene.ops.push({
-      op: "text",
-      x: 18,
-      y: STRIP_Y + 18,
-      text: line1,
-      size: 12,
-      weight: 700,
-      color: fg,
-      align: "left",
-      width: 0,
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: STRIP_ANCHOR_SIZE,
-    });
-    scene.ops.push({
-      op: "text",
-      x: 18,
-      y: STRIP_Y + 34,
-      text: line2,
-      size: 10,
-      weight: 400,
-      color: fg,
-      align: "left",
-      width: 0,
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: STRIP_ANCHOR_SIZE,
-    });
-    if (stripTap) {
-      const stripTapId = res.tapRuns.length;
-      scene.taps.push({
-        x: 0,
-        y: STRIP_Y,
-        w,
-        h: STRIP_H,
-        action: "tap",
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: STRIP_ANCHOR_SIZE,
-        payload: { id: stripTapId },
-      });
-      res.tapRuns.push(stripTap);
-    }
 
     return res;
   },
