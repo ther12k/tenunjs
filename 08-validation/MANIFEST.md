@@ -195,7 +195,7 @@ status: accepted
 | 06-issues/tn-088-implement-overlay-dialog-sheet-toast-and-modal-focus-behavior.md | 8b4198801947f24860ad8a3eb9aa71d9c229bf16a24f6c8a0cd6606c2d5bf88b |
 | 06-issues/tn-089-implement-semantics-node-model-and-scene-projection.md | fd5346b31f0d059370f72b1dacad65f2e188d9dd79f87d1a6719d655eae6e15a |
 | 06-issues/tn-090-implement-ios-voiceover-bridge-and-focus-synchronization.md | c4973a077803542a0ed7688a9c1cb7e791fbe6d43d954dbede62ce3c9baa302b |
-| 06-issues/tn-091-implement-android-talkback-bridge-and-focus-synchronization.md | aab32405b53aaf5cc46abfd7ba97c28d87fd727776a12826687fdb6f896e42e7 |
+| 06-issues/tn-091-implement-android-talkback-bridge-and-focus-synchronization.md | 8614ae510bdaf9e8f2959c86e458358658d2275eaa8327396004e70909182098 |
 | 06-issues/tn-092-implement-text-scaling-high-contrast-inputs-and-reduced-motion-policy.md | ddd229f7bec7e3f706b81703afa925ae33c5b174f1e689d9f85c62eebd550a96 |
 | 06-issues/tn-093-implement-locale-rtl-bidi-layout-and-localized-resource-hooks.md | 1e7e708b08e29d29fe9f580d953d707b118488c9942f0dc9e2d8dbf0665916fe |
 | 06-issues/tn-094-specify-platform-view-lifecycle-and-composition-contract.md | 1a81b48865c5ae8fb1cbe75d3cc93ce4646cc5926392bf5a66636c447eb05086 |
@@ -284,6 +284,7 @@ status: accepted
 | 06-issues/tn-177-gatt-completion-watchdog-attribution.md | 57c5e6bbea3481f8bf75cb6540d354b7e6045b90aaa201c9918ab1b0f84aad50 |
 | 06-issues/tn-178-release-dev-reload-separation.md | 4948f80a17c2b2cfc7e87d224f7611b19a172a85eb7506d017f9670e43589b70 |
 | 06-issues/tn-179-scene-semantics-wire-v1.md | 0bb7acb9a11a9ddff64c736ca122905b935e5c8a697203874357b3661950bf4a |
+| 06-issues/tn-180-android-accessibility-node-provider-bridge.md | 9cb375fc3c95cd945fd9503f6b7fc77c37650eed5c89fe8c6e2f68aeffdf6214 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
