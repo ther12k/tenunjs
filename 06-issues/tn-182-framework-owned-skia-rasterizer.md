@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-182: Framework-owned Skia rasterizer for display-list scenes"
 summary: "engine/render/skia-host paints the exact display-list wire contract through skia-safe — every op kind pixel-tested in cargo test, fail-visible validation, and a C ABI for the future Android surface. ADR-0026 stage 2."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-182"
 milestone: "M4"
 priority: "P1"
@@ -51,3 +51,16 @@ contract.
   (ADR-0026 stage 3, needs measured stage-2 parity on the device gate).
 - Elevation shadows (Skia image filters at stage 3).
 - A pinned framework font / CJK coverage (TN-160 decision at stage 3).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #265 (with the CI
+link-deps follow-up): engine/render/skia-host paints the display-list
+wire contract through skia-safe — every op kind pixel-tested (12 cargo
+tests incl. ring progress sweep, scroll clipping, designWidth scaling,
+C ABI round-trip with fail-closed buffer checks), fail-visible
+validation, no dynamic freetype/fontconfig on dev machines (CI installs
+the dev libs where skia-bindings builds from source). Wired into the
+verify-rust CI gate; 8/8 green. Stage 3 (Android JNI surface + GPU Skia
+surfaces + render thread) is gated on measured stage-2 parity per
+ADR-0019.
