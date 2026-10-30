@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-173: Adopt ColorRef props in ordinary widgets with commit-time resolution"
 summary: "TN-068's widget-adoption slice: color props accept colorSlot() refs, the lowering retains slot identity to the commit boundary, slot-level theme scopes narrow descendants only, and the runtime bakes refs against the active palette before any host sees a scene."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-173"
 milestone: "M4"
 priority: "P1"
@@ -74,3 +74,18 @@ resolution" as this issue's own. Today the slot vocabulary (`colorSlot`,
 - Spacing/typography/locale/scale context tokens (TN-068 remainder).
 - Button/Chrome variant colors (role-driven defaults stay; explicit
   refs on those props can follow the same funnel in a later pass).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #258 (commit
+b8ae065): Card.background and Text.color accept colorSlot() refs; the
+lowering retains slot identity to the commit boundary and layoutScreen's
+palette option bakes there (scroll-region recursion included) while
+returning the semantic scene; ThemeScopeBox narrows slots for
+descendants only (and no longer drops the slots prop); the runtime
+carries a slot palette with setPalette invalidation and exposes
+semanticScene; hosts stay literal-only with fail-visible guards. 8 new
+tests including byte-identical ref≡literal scenes and runtime palette
+swaps; 614-test suite; all eight CI gates green including the device
+gate.
+
