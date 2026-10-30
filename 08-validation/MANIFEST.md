@@ -73,6 +73,7 @@ status: accepted
 | 03-decisions/adr-0023-android-device-unblocks-android-half-evidence.md | 705502479067cd4581b7c92072439b6bcf588eea122829de1978a3ebeb49149a |
 | 03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md | 1f1a0b7d89c0d297f6a1359d9562c0c9a37bfa6e589d45b25d37d16e414ecc35 |
 | 03-decisions/adr-0025-scene-semantics-wire-v1.md | 7b16a0cda20347a39bef78dc41327426d34a73b1de664248a6b55d7e53ab81a4 |
+| 03-decisions/adr-0026-staged-skia-adoption.md | f9da28ccac0a4a97f0a9f3ca2a18d107387c06a34090811d342e73c9e5f1b446 |
 | 03-decisions/index.md | c8cdc83e9f41b6c1adbd21c13a7650e39a86b2fa618a7aed16db2ee473b43e01 |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
@@ -286,6 +287,7 @@ status: accepted
 | 06-issues/tn-179-scene-semantics-wire-v1.md | 0bb7acb9a11a9ddff64c736ca122905b935e5c8a697203874357b3661950bf4a |
 | 06-issues/tn-180-android-accessibility-node-provider-bridge.md | 46f7929c72c2477f9f153d341b45acfae2e0db07e28f3366791153147fb16dc0 |
 | 06-issues/tn-181-gpu-hardware-canvas-rasterization.md | 42b84b546db21e34a85c9b1a1710c95495e6f0f1efe2ea147d5f6d5978c31a22 |
+| 06-issues/tn-182-framework-owned-skia-rasterizer.md | 70d685fc042dbea34bbfa8fe6a984e35628c08ad165809130e2d475ffa9deda0 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
