@@ -107,6 +107,61 @@ describe("theme-driven spacing, radius, and typography tokens (TN-174)", () => {
     expect(radii).toContain(9);  // sibling outside scopes → theme
   });
 
+  test("scoped typography sizes the box the parent allocates (TN-175)", () => {
+    const app = new ApplicationRuntime({
+      screens: { s: defineScreen({ name: "S", initialState: () => ({}), actions: {},
+        view: () => Column({ children: [
+          ThemeScopeBox({ scheme: {}, tokens: { typography: { body: { size: 60, lineHeight: 80 } } },
+            children: [Text({ variant: "body", children: "Scoped" })] }),
+          Card({ padding: 0, children: [Text({ children: "Sibling" })] }),
+        ] }) }) },
+      initial: "s", theme: defineTheme(base), viewport,
+    });
+    const scene = app.render().scene;
+    // The 80-unit line must claim its height: the sibling card starts at or
+    // below it (pre-fix it started at y=24, under the painted 62.4 baseline).
+    expect(firstRect(scene).y).toBe(80);
+    expect(scene.contentHeight).toBeGreaterThanOrEqual(80);
+  });
+
+  test("scoped spacing widens the measured box the parent allocates (TN-175)", () => {
+    const siblingY = (md: number): number => {
+      const scene = layout(defineTheme(base),
+        Column({ children: [
+          ThemeScopeBox({ scheme: {}, tokens: { spacing: { md } },
+            children: [Column({ padding: "md", children: [Text({ children: "Scoped" })] })] }),
+          Card({ children: [] }),
+        ] })).scene;
+      return firstRect(scene).y;
+    };
+    // Inner Column padding rides the scoped md token; its frame (24 + 2*md)
+    // is what the outer Column allocates, so the sibling shifts with it.
+    expect(siblingY(16)).toBe(56); // 24 + 2*16, the builtin md
+    expect(siblingY(64) - siblingY(16)).toBe(96); // (64-16)*2
+  });
+
+  test("malformed scoped tokens fail visibly at layout time (TN-175)", () => {
+    expect(() => layout(defineTheme(base),
+      Column({ children: [ThemeScopeBox({ scheme: {}, tokens: { spacing: { md: -4 } }, children: [
+        Column({ padding: "md", children: [] }),
+      ] })] }))).toThrow(/tokens\.spacing\.md/);
+    expect(() => layout(defineTheme(base),
+      Column({ children: [ThemeScopeBox({ scheme: {}, tokens: { radius: { md: Number.NaN } }, children: [
+        Card({ radius: "md", children: [] }),
+      ] })] }))).toThrow(/tokens\.radius\.md/);
+    expect(() => layout(defineTheme(base),
+      Column({ children: [ThemeScopeBox({ scheme: {}, tokens: { typography: { body: { size: 17, lineHeight: 0 } } }, children: [
+        Text({ children: "x" }),
+      ] })] }))).toThrow(/tokens\.typography\.body/);
+  });
+
+  test("implicit body variant honors the scoped body token (TN-175)", () => {
+    const scene = layout(defineTheme(base),
+      ThemeScopeBox({ scheme: {}, tokens: { typography: { body: { size: 60, lineHeight: 80 } } },
+        children: [Text({ children: "Scoped" })] })).scene;
+    expect(textOp(scene).size).toBe(60); // pre-fix: stayed at the theme's 17
+  });
+
   test("setTheme with changed tokens re-renders changed geometry, state preserved", () => {
     const screen = defineScreen({
       name: "S",

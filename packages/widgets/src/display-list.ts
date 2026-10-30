@@ -620,6 +620,60 @@ function finitePositive(value: unknown, where: string): number {
   return value;
 }
 
+/** Shared entry validation for theme and ThemeScope typography blocks. */
+function validateTypographyEntry(entry: unknown, where: string): void {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be an object`);
+  }
+  finitePositive((entry as { size?: unknown }).size, `${where}.size`);
+  if ((entry as { lineHeight?: unknown }).lineHeight !== undefined) {
+    finitePositive((entry as { lineHeight?: unknown }).lineHeight, `${where}.lineHeight`);
+  }
+  const w = (entry as { weight?: unknown }).weight;
+  if (w !== undefined && w !== "bold" && w !== "normal" &&
+      !(typeof w === "number" && Number.isFinite(w))) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where}.weight must be a finite number or 'normal'/'bold'`);
+  }
+}
+
+/**
+ * TN-175: validates and pushes a ThemeScope token overlay. Scope entries
+ * obey the SAME rules as theme blocks (finite nonnegative spacing/radius,
+ * positive finite typography size/lineHeight) so malformed values fail at
+ * layout time instead of reaching hosts — previously only the ROOT theme
+ * was validated. Returns whether a scope was pushed.
+ */
+function pushTokenScope(ctx: InternalContext, raw: unknown): boolean {
+  if (raw === undefined || raw === null || typeof raw !== "object") return false;
+  const scope = raw as TokenScope;
+  if (scope.spacing !== undefined) {
+    if (typeof scope.spacing !== "object" || scope.spacing === null || Array.isArray(scope.spacing)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.spacing must be an object");
+    }
+    for (const [key, value] of Object.entries(scope.spacing)) {
+      finiteNonnegative(value, `ThemeScope tokens.spacing.${key}`);
+    }
+  }
+  if (scope.radius !== undefined) {
+    if (typeof scope.radius !== "object" || scope.radius === null || Array.isArray(scope.radius)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.radius must be an object");
+    }
+    for (const [key, value] of Object.entries(scope.radius)) {
+      finiteNonnegative(value, `ThemeScope tokens.radius.${key}`);
+    }
+  }
+  if (scope.typography !== undefined) {
+    if (typeof scope.typography !== "object" || scope.typography === null || Array.isArray(scope.typography)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.typography must be an object");
+    }
+    for (const [variant, entry] of Object.entries(scope.typography)) {
+      validateTypographyEntry(entry, `ThemeScope tokens.typography.${variant}`);
+    }
+  }
+  ctx.tokenScopes.push(scope);
+  return true;
+}
+
 function buildTokenSet(theme: ThemeConfig): TokenSet {
   const spacing: Record<string, number> = { ...SPACING };
   if (theme.spacing !== undefined) {
@@ -645,9 +699,7 @@ function buildTokenSet(theme: ThemeConfig): TokenSet {
       throw new LayoutError("INVALID_THEME_TOKEN", "theme.typography must be an object");
     }
     for (const [variant, entry] of Object.entries(theme.typography)) {
-      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-        throw new LayoutError("INVALID_THEME_TOKEN", `theme.typography.${variant} must be an object`);
-      }
+      validateTypographyEntry(entry, `theme.typography.${variant}`);
       const size = finitePositive((entry as { size?: unknown }).size, `theme.typography.${variant}.size`);
       let lineHeight: number;
       if ((entry as { lineHeight?: unknown }).lineHeight !== undefined) {
@@ -664,10 +716,8 @@ function buildTokenSet(theme: ThemeConfig): TokenSet {
         weight = 400;
       } else if (w === undefined) {
         weight = TYPOGRAPHY[variant]?.weight ?? 400;
-      } else if (typeof w === "number" && Number.isFinite(w)) {
-        weight = w;
       } else {
-        throw new LayoutError("INVALID_THEME_TOKEN", `theme.typography.${variant}.weight must be a finite number or 'normal'/'bold'`);
+        weight = w as number;
       }
       typography[variant] = { size, lineHeight, weight };
     }
@@ -702,22 +752,24 @@ function radius(ctx: InternalContext, value: unknown, fallback: number): number 
 }
 
 function typography(ctx: InternalContext, variant: unknown): Typography {
-  if (typeof variant === "string") {
-    for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
-      const scoped = ctx.tokenScopes[index]!.typography?.[variant];
-      if (scoped !== undefined) {
-        const weight = scoped.weight === "bold" ? 700 : scoped.weight === "normal" ? 400 : (scoped.weight ?? 400);
-        const lineHeight = scoped.lineHeight ?? Math.round(scoped.size * 1.3);
-        return {
-          size: scoped.size,
-          lineHeight,
-          weight,
-        };
-      }
+  // TN-175: an omitted variant resolves the effective "body" token through
+  // the scope chain too — previously the implicit default bypassed scopes
+  // and jumped straight to the theme's body entry.
+  const name = typeof variant === "string" ? variant : "body";
+  for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
+    const scoped = ctx.tokenScopes[index]!.typography?.[name];
+    if (scoped !== undefined) {
+      const weight = scoped.weight === "bold" ? 700 : scoped.weight === "normal" ? 400 : (scoped.weight ?? 400);
+      const lineHeight = scoped.lineHeight ?? Math.round(scoped.size * 1.3);
+      return {
+        size: scoped.size,
+        lineHeight,
+        weight,
+      };
     }
-    const themed = ctx.tokens.typography[variant];
-    if (themed !== undefined) return themed;
   }
+  const themed = ctx.tokens.typography[name];
+  if (themed !== undefined) return themed;
   return ctx.tokens.typography.body!;
 }
 
@@ -1155,7 +1207,19 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
   if (kind === Canvas) {
     return constrain({ w: dimension(props, "width") ?? bounds.maxW, h: dimension(props, "height") ?? 0 }, bounds);
   }
-  if (kind === ThemeScope) return decorationLayout(ctx, node, bounds).frame;
+  if (kind === ThemeScope) {
+    // TN-175: measurement resolves tokens through the scope too — the
+    // frame reported to the PARENT must be the frame the scoped subtree
+    // actually occupies. Previously only place() pushed the scope, so a
+    // scoped lineHeight/padding inflated painting without inflating the
+    // allocated box (sibling overlap, wrong contentHeight/scroll extent).
+    const pushed = pushTokenScope(ctx, props.tokens);
+    try {
+      return decorationLayout(ctx, node, bounds).frame;
+    } finally {
+      if (pushed) ctx.tokenScopes.pop();
+    }
+  }
   if (kind === SizedBoxKind) {
     const own = withDimensions(bounds, props);
     const frames = childNodes(node).map((kid) => measure(ctx, kid, own));
@@ -1363,8 +1427,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     const pushed = slotOverlay !== undefined && slotOverlay !== null && typeof slotOverlay === "object";
     if (pushed) ctx.slotScopes.push(slotOverlay);
     const tokenScope = props.tokens as TokenScope | undefined;
-    const pushedTokens = tokenScope !== undefined && tokenScope !== null && typeof tokenScope === "object";
-    if (pushedTokens) ctx.tokenScopes.push(tokenScope);
+    const pushedTokens = pushTokenScope(ctx, tokenScope);
     const scoped: InternalContext = {
       ...ctx,
       palette: merged,
