@@ -289,6 +289,7 @@ status: accepted
 | 06-issues/tn-181-gpu-hardware-canvas-rasterization.md | 42b84b546db21e34a85c9b1a1710c95495e6f0f1efe2ea147d5f6d5978c31a22 |
 | 06-issues/tn-182-framework-owned-skia-rasterizer.md | 20ddae500f605fc9a6585a5ba25b21633825965f208dfa8a61367ee4363ce121 |
 | 06-issues/tn-183-android-canvas-fallback-and-transition-scroll.md | 75f0393f9ad856730ab55652fe811fedd22ba590d9de02178981d663f88f4bc1 |
+| 06-issues/tn-184-skia-host-scene-parity.md | a96fcf728c7021aea6e57719c50949936e8df22f545b8dfda0109a2105d08596 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
