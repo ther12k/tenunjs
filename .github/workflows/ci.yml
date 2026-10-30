@@ -37,6 +37,10 @@ jobs:
           components: clippy, rustfmt
       - name: Resolve gcc include dir for bindgen
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(gcc -print-file-name=include)" >> "$GITHUB_ENV"
+      # skia-bindings links freetype/fontconfig when no prebuilt matches
+      # the runner (engine/render/skia-host, TN-182).
+      - name: Install Skia link dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       - name: fmt + clippy + test
         run: ./.github/scripts/verify-rust.sh
 
