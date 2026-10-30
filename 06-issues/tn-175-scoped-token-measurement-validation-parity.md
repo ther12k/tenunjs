@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-175: Scoped tokens must apply to measurement, validation, and the implicit body variant"
 summary: "TN-174's scope overlays only reached place(): the measure pass allocated boxes with OUTER tokens (sibling overlap, wrong contentHeight), scoped token values bypassed root validation entirely (NaN radius serialized as null), and Text without an explicit variant ignored scoped body typography."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-175"
 milestone: "M4"
 priority: "P1"
@@ -62,3 +62,18 @@ allocated:
 
 - Locale/scale/platform context (unchanged TN-068 remainder).
 - Any change to theme-level token semantics (TN-174 is frozen).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #260 (commit
+6c00d32): measurement and placement now resolve tokens through the same
+scope stack (pushTokenScope validates and pushes in both passes,
+exception-safe); scope entries obey the theme's INVALID_THEME_TOKEN
+rules verbatim; and an omitted Text variant resolves the effective body
+token through the scope chain. Evidence: 4 new regression tests in
+packages/widgets/test/theme-tokens.test.ts (sibling y=80 under an
+80-lineHeight scope — was 24; scoped-spacing shift 96; malformed scoped
+spacing/radius/typography throw typed errors — scoped NaN radius
+previously serialized as r:null; implicit body text picks up the scoped
+size 60 — was 17), 624/0 suite, typecheck clean, manifest PASS, 8/8 CI
+gates on the PR head.

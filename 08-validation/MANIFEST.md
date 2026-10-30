@@ -278,7 +278,7 @@ status: accepted
 | 06-issues/tn-172-fix-spike-adapter-stale-destroy-recycling.md | 1e04da3b10ebe8200e29ae7bfe7e4e8abd106f5005b0130df71ac5c93dd8c61e |
 | 06-issues/tn-173-adopt-colorref-props-with-commit-time-resolution.md | 99fc10ec5c4875abaf8f0d8d36f613684074fa2b4dfee54184b699808952de59 |
 | 06-issues/tn-174-theme-driven-spacing-radius-typography-tokens.md | 0730b5c2bd8c3c46d3e592d82cf2c30297246326b3612c7c24793327052c54c5 |
-| 06-issues/tn-175-scoped-token-measurement-validation-parity.md | 3fd64f1992e00e2e4950b59fb5ff07b30aa754c5be42825cd52850ade156297e |
+| 06-issues/tn-175-scoped-token-measurement-validation-parity.md | 8f21121e69159bc31a02ca1194b308501ab77cbedf635e8f03eb2eeebcc33062 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
