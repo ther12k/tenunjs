@@ -139,7 +139,7 @@ export const ProgramsScreen = defineScreen({
         };
       },
     }),
-    stepRemove: defineAction<ProgramsState, number>({
+    stepRemove: defineAction<ProgramsState, { index: number }>({
       run({ input, state }) {
         const s = state as unknown as ProgramsState;
         if (!s.editing) return;

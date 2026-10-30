@@ -91,7 +91,7 @@ function orbitSpinner(
   }
 }
 
-export type FunctionIcon = "wash" | "spin" | "drain" | "droplet" | "waves" | "wavesSlash";
+export type FunctionIcon = "wash" | "spin" | "drain" | "droplet" | "waves" | "wavesSlash" | "clock";
 
 export type IconKind =
   | FunctionIcon
@@ -264,11 +264,11 @@ export function LinkHeader(props: {
       });
       // --- link row (the tappable connection control) ---
       const rowY = 56;
-      let dot = C.faint;
+      let dot: string = C.faint;
       let label: string;
-      let labelColor = C.dim;
+      let labelColor: string = C.dim;
       let right: string | null = null;
-      let rightColor = C.faint;
+      let rightColor: string = C.faint;
       let spinning = false;
       if (!props.supported) {
         label = "Bluetooth tidak tersedia di perangkat ini";
@@ -870,16 +870,17 @@ export function RelayRow(props: {
       });
       const stateX = w - 18;
       if (props.on === null) {
+        // Right-flush at the row edge (the scene align contract is
+        // left/center only — the sibling branch below computes x the
+        // same way with textWidth).
         put({
           op: "text",
-          x: stateX,
+          x: stateX - textWidth("—", 14),
           y: 33,
           text: "—",
           size: 14,
           weight: 800,
           color: C.faint,
-          align: "right",
-          width: 40,
         });
       } else {
         const text = props.on ? "Aktif" : "Nonaktif";
