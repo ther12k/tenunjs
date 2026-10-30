@@ -227,7 +227,12 @@ class SkiaHostParityTest {
         )
         scene(
             "fixed bottom overlay",
-            """{"op":"rect","x":0,"y":420,"w":320,"h":60,"r":0,"color":"#FF8800","fixed":true,"anchor":"bottom","anchorSize":60}""",
+            // Authoring contract: op.y is a position INSIDE the anchored
+            // region — anchorSize 60 + y 0 pins the band to
+            // visibleHeight - 60 = 420..480 (the browser twin's
+            // anchorOffset + my own desktop fixture agree; the first CI
+            // run caught a y:420 fixture violating this).
+            """{"op":"rect","x":0,"y":0,"w":320,"h":60,"r":0,"color":"#FF8800","fixed":true,"anchor":"bottom","anchorSize":60}""",
             Anchor(160, 450, "anchored band", ::isOrange),
             Anchor(160, 100, "body stays background", ::isBackground),
         )
