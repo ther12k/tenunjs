@@ -9,11 +9,12 @@
  */
 
 import { HostWidgetKind } from "@tenunjs/protocol";
-import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
+import { jsx, type FunctionWidget, type WidgetChild, type WidgetKind, type WidgetNode } from "@tenunjs/jsx-runtime";
 import { ScrollViewKind } from "./display-list";
 import type { CardSemantics } from "./display-list";
 import type { ColorRef } from "./theme-slots";
 
+export type { FunctionWidget, WidgetChild, WidgetKind, WidgetNode };
 export * from "./structural";
 export * from "./display-list";
 export * from "./app-runtime";

@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-068: Implement theme tokens and inherited widget context"
 summary: "Typed colors, spacing, radius, typography, locale, scale, and platform values flow predictably."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-068"
 milestone: "M4"
 priority: "P1"
@@ -193,4 +193,23 @@ drive layout metrics instead of being dead config; custom typography
 variants can be declared; `ThemeScopeBox` accepts `tokens` narrowing
 descendants only; and runtime `setTheme` updates geometry on the next
 frame. Still open here: locale, scale, and platform context values.
+
+## Status note (2026-10-31, closed)
+
+Closed via PR #269: the final locale, scale, and platform context values
+and inherited widget context flow are delivered.
+- `WidgetContext`: carries `theme`, `tokens`, `palette`, `slotPalette`, `locale`,
+  `textScale`, and `platform` ("android" | "ios" | "web").
+- Function widgets receive `(props, context: WidgetContext)` and can access it
+  ambiently via `currentWidgetContext()`.
+- `layoutScreen` options take `locale`, `textScale`, `platform` with fail-closed
+  validation; `ThemeScopeBox` narrows them for descendants only with inner scopes
+  winning and unoverridden values inheriting.
+- `textScale` scales typography size, line height, text wraps, and button geometry
+  predictably across measurement and placement.
+- `ApplicationRuntime`: options, getters, and dynamic setters (`setLocale`,
+  `setTextScale`, `setPlatform`) trigger stale invalidation and commit updated scenes.
+- 8 new unit tests in `packages/widgets/test/inherited-context.test.ts` (644 bun tests passing;
+  clean verify:ts and verify-consumer.sh).
+
 

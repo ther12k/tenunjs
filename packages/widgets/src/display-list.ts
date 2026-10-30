@@ -53,6 +53,48 @@ export type LayoutErrorCode =
   | "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX"
   | "INVALID_TRANSITION" | "INVALID_COLOR_REF" | "INVALID_THEME_TOKEN";
 
+/** Supported target platform tags for platform-adaptive UI context (TN-068). */
+export type PlatformKind = "android" | "ios" | "web";
+
+/** Validate a locale tag; non-empty string required. */
+export function validateLocale(value: unknown, where = "locale"): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+/** Validate textScale factor; positive finite number required. */
+export function validateTextScale(value: unknown, where = "textScale"): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a positive finite number`);
+  }
+  return value;
+}
+
+/** Validate platform tag; "android" | "ios" | "web" required. */
+export function validatePlatform(value: unknown, where = "platform"): PlatformKind {
+  if (value !== "android" && value !== "ios" && value !== "web") {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be "android", "ios", or "web"`);
+  }
+  return value;
+}
+
+/**
+ * Inherited environment and theme context available to widgets during layout (TN-068).
+ * Function components receive this as a second parameter and can access it ambiently
+ * via currentWidgetContext().
+ */
+export interface WidgetContext {
+  readonly theme: ThemeConfig;
+  readonly tokens: TokenSet;
+  readonly palette: SchemeRoles;
+  readonly slotPalette?: ThemePalette;
+  readonly locale: string;
+  readonly textScale: number;
+  readonly platform: PlatformKind;
+}
+
 /* ------------------------------------------------------------------ *
  * TN-173: color-slot refs in ordinary widget props. The vocabulary    *
  * (ColorRef/ThemePalette) is OWNED by theme-slots.ts; this import is  *
@@ -495,6 +537,12 @@ interface InternalContext extends RenderContext {
   tokens: TokenSet;
   /** TN-174: active token-scope overlays, outermost first (ThemeScope.tokens). */
   tokenScopes: Array<TokenScope>;
+  /** TN-068: current inherited locale tag (e.g. "en-US", "id-ID"). */
+  locale: string;
+  /** TN-068: current inherited text/font scale factor (default 1.0). */
+  textScale: number;
+  /** TN-068: current target platform environment ("android" | "ios" | "web"). */
+  platform: PlatformKind;
   /** TN-179: the scene's accessibility semantics projection. */
   semantics: SemanticNode[];
   /** TN-179: >0 while descendant text is absorbed by an interactive
@@ -528,7 +576,7 @@ export const ThemeScope = Symbol.for("tenun.preview.theme-scope");
 
 export interface ThemeScopeProps {
   /** Role overrides merged over the ambient palette. */
-  scheme: Partial<SchemeRoles>;
+  scheme?: Partial<SchemeRoles>;
   /**
    * TN-173: slot-level overrides merged over the layout palette for
    * DESCENDANTS ONLY — ColorRef props inside the scope resolve against
@@ -543,6 +591,12 @@ export interface ThemeScopeProps {
    * theme's token blocks, then the built-in scales.
    */
   tokens?: TokenScope;
+  /** TN-068: subtree locale override. Unoverridden inherits from parent scope. */
+  locale?: string;
+  /** TN-068: subtree textScale override factor (e.g. 1.25). Unoverridden inherits from parent scope. */
+  textScale?: number;
+  /** TN-068: subtree platform override ("android" | "ios" | "web"). Unoverridden inherits from parent scope. */
+  platform?: PlatformKind;
   children?: WidgetChild;
 }
 
@@ -556,9 +610,12 @@ export function ThemeScopeBox(props: ThemeScopeProps): WidgetNode {
     kind: ThemeScope,
     key: null,
     props: {
-      scheme: props.scheme,
+      ...(props.scheme !== undefined ? { scheme: props.scheme } : {}),
       ...(props.slots !== undefined ? { slots: props.slots } : {}),
       ...(props.tokens !== undefined ? { tokens: props.tokens } : {}),
+      ...(props.locale !== undefined ? { locale: props.locale } : {}),
+      ...(props.textScale !== undefined ? { textScale: props.textScale } : {}),
+      ...(props.platform !== undefined ? { platform: props.platform } : {}),
     },
     children: (props as { children?: WidgetChild[] }).children ?? [],
   } as unknown as WidgetNode;
@@ -768,7 +825,7 @@ function pushTokenScope(ctx: InternalContext, raw: unknown): boolean {
   return true;
 }
 
-function buildTokenSet(theme: ThemeConfig): TokenSet {
+export function buildTokenSet(theme: ThemeConfig): TokenSet {
   const spacing: Record<string, number> = { ...SPACING };
   if (theme.spacing !== undefined) {
     if (typeof theme.spacing !== "object" || theme.spacing === null || Array.isArray(theme.spacing)) {
@@ -850,21 +907,31 @@ function typography(ctx: InternalContext, variant: unknown): Typography {
   // the scope chain too — previously the implicit default bypassed scopes
   // and jumped straight to the theme's body entry.
   const name = typeof variant === "string" ? variant : "body";
+  let resolved: Typography | undefined;
   for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
     const scoped = ctx.tokenScopes[index]!.typography?.[name];
     if (scoped !== undefined) {
       const weight = scoped.weight === "bold" ? 700 : scoped.weight === "normal" ? 400 : (scoped.weight ?? 400);
       const lineHeight = scoped.lineHeight ?? Math.round(scoped.size * 1.3);
-      return {
+      resolved = {
         size: scoped.size,
         lineHeight,
         weight,
       };
+      break;
     }
   }
-  const themed = ctx.tokens.typography[name];
-  if (themed !== undefined) return themed;
-  return ctx.tokens.typography.body!;
+  if (!resolved) {
+    const themed = ctx.tokens.typography[name];
+    resolved = themed !== undefined ? themed : ctx.tokens.typography.body!;
+  }
+  // TN-068: textScale multiplies font size and line height predictably.
+  if (ctx.textScale === 1.0) return resolved;
+  return {
+    size: Math.round(resolved.size * ctx.textScale * 100) / 100,
+    lineHeight: Math.round(resolved.lineHeight * ctx.textScale * 100) / 100,
+    weight: resolved.weight,
+  };
 }
 
 /** ---------- text metrics (approximate, prototype-grade) ---------- */
@@ -947,22 +1014,68 @@ function childNodes(node: AnyNode): AnyNode[] {
   return result;
 }
 
+let activeWidgetContext: WidgetContext | null = null;
+
+/**
+ * Access the active inherited widget/theme context (TN-068).
+ * Throws if called outside of widget execution.
+ */
+export function currentWidgetContext(): WidgetContext {
+  if (!activeWidgetContext) {
+    throw new LayoutError("INVALID_CONSTRAINT", "currentWidgetContext() can only be called while rendering a widget");
+  }
+  return activeWidgetContext;
+}
+
+/**
+ * Executes a function within the specified ambient WidgetContext (TN-068).
+ */
+export function withWidgetContext<T>(context: WidgetContext, fn: () => T): T {
+  const prev = activeWidgetContext;
+  activeWidgetContext = context;
+  try {
+    return fn();
+  } finally {
+    activeWidgetContext = prev;
+  }
+}
+
+function makeWidgetContext(ctx: InternalContext): WidgetContext {
+  return Object.freeze({
+    theme: ctx.theme,
+    tokens: ctx.tokens,
+    palette: ctx.palette,
+    slotPalette: ctx.slotPalette,
+    locale: ctx.locale,
+    textScale: ctx.textScale,
+    platform: ctx.platform,
+  });
+}
+
 /**
  * Invokes a function-component node. buildNode moves `children` out of
  * props onto the node, so the call hands them back the way JSX would.
  * Callers go through resolveOnce/resolveNode so each node's component
  * runs at most once per render (see InternalContext.componentCache).
+ * Function widgets receive (props, context) and can call currentWidgetContext().
  */
-function callComponent(node: AnyNode): AnyNode {
-  const fn = node.kind as (props: Record<string, unknown>) => WidgetNode;
-  return asNode(fn({ ...node.props, children: node.children }));
+function callComponent(ctx: InternalContext, node: AnyNode): AnyNode {
+  const fn = node.kind as (props: Record<string, unknown>, context: WidgetContext) => WidgetNode;
+  const prev = activeWidgetContext;
+  const widgetCtx = makeWidgetContext(ctx);
+  activeWidgetContext = widgetCtx;
+  try {
+    return asNode(fn({ ...node.props, children: node.children }, widgetCtx));
+  } finally {
+    activeWidgetContext = prev;
+  }
 }
 
 /** Memoized single invocation of a node's component within one render. */
 function resolveOnce(ctx: InternalContext, node: AnyNode): AnyNode {
   let resolved = ctx.componentCache.get(node);
   if (!resolved) {
-    resolved = callComponent(node);
+    resolved = callComponent(ctx, node);
     ctx.componentCache.set(node, resolved);
   }
   return resolved;
@@ -1308,10 +1421,19 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
     // scoped lineHeight/padding inflated painting without inflating the
     // allocated box (sibling overlap, wrong contentHeight/scroll extent).
     const pushed = pushTokenScope(ctx, props.tokens);
+    const prevLocale = ctx.locale;
+    const prevTextScale = ctx.textScale;
+    const prevPlatform = ctx.platform;
+    if (props.locale !== undefined) ctx.locale = validateLocale(props.locale, "ThemeScope locale");
+    if (props.textScale !== undefined) ctx.textScale = validateTextScale(props.textScale, "ThemeScope textScale");
+    if (props.platform !== undefined) ctx.platform = validatePlatform(props.platform, "ThemeScope platform");
     try {
       return decorationLayout(ctx, node, bounds).frame;
     } finally {
       if (pushed) ctx.tokenScopes.pop();
+      ctx.locale = prevLocale;
+      ctx.textScale = prevTextScale;
+      ctx.platform = prevPlatform;
     }
   }
   if (kind === SizedBoxKind) {
@@ -1353,7 +1475,7 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
     }
     case "button": {
       const label = textContent(node) || "Button";
-      return constrain({ w: Math.max(96, textWidth(label, TYPOGRAPHY.body!.size) + 48), h: 64 }, bounds);
+      return constrain({ w: Math.max(96, textWidth(label, typography(ctx, "body").size) + 48), h: 64 }, bounds);
     }
     case "card": return decorationLayout(ctx, node, bounds, paddingOf(ctx, props, 16), spacing(ctx, "sm", 8)).frame;
     case "column": return flexLayout(ctx, node, bounds, "column").frame;
@@ -1535,10 +1657,22 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     if (pushed) ctx.slotScopes.push(slotOverlay);
     const tokenScope = props.tokens as TokenScope | undefined;
     const pushedTokens = pushTokenScope(ctx, tokenScope);
+    const locale = props.locale !== undefined
+      ? validateLocale(props.locale, "ThemeScope locale")
+      : ctx.locale;
+    const textScale = props.textScale !== undefined
+      ? validateTextScale(props.textScale, "ThemeScope textScale")
+      : ctx.textScale;
+    const platform = props.platform !== undefined
+      ? validatePlatform(props.platform, "ThemeScope platform")
+      : ctx.platform;
     const scoped: InternalContext = {
       ...ctx,
       palette: merged,
       theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
+      locale,
+      textScale,
+      platform,
     };
     try {
       placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
@@ -1724,7 +1858,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       return h;
     }
     case "button": {
-      const ty = TYPOGRAPHY.body!;
+      const ty = typography(ctx, "body");
       const label = textContent(node) || "Button";
       const variant = typeof props.variant === "string" ? props.variant : "primary";
       const palette = ctx.theme.colors ?? {};
@@ -2121,6 +2255,12 @@ export interface LayoutOptions {
    * byte-identical to before.
    */
   palette?: ThemePalette;
+  /** TN-068: ambient locale tag (default "en-US"). */
+  locale?: string;
+  /** TN-068: ambient textScale factor (positive finite number, default 1.0). */
+  textScale?: number;
+  /** TN-068: target platform environment (default "android"). */
+  platform?: PlatformKind;
 }
 
 export function layoutScreen(
@@ -2135,6 +2275,15 @@ export function layoutScreen(
   if (!Number.isFinite(designWidth) || designWidth <= 0) {
     throw new LayoutError("INVALID_VIEWPORT", "Design width must be a positive finite number");
   }
+  const locale = options?.locale !== undefined
+    ? validateLocale(options.locale, "options.locale")
+    : "en-US";
+  const textScale = options?.textScale !== undefined
+    ? validateTextScale(options.textScale, "options.textScale")
+    : 1.0;
+  const platform = options?.platform !== undefined
+    ? validatePlatform(options.platform, "options.platform")
+    : "android";
   const ctx: InternalContext = {
     theme,
     designWidth,
@@ -2143,6 +2292,9 @@ export function layoutScreen(
     slotScopes: [],
     tokens: buildTokenSet(theme),
     tokenScopes: [],
+    locale,
+    textScale,
+    platform,
     usedRefs: false,
     ops: [],
     tapRegions: [],
