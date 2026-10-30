@@ -72,6 +72,7 @@ status: accepted
 | 03-decisions/adr-0022-m0-gates-blocked-on-device-availability.md | 4a115de9285c3f4b4ad2a917fc9037302633dc7e5a940efa72aadfb431383440 |
 | 03-decisions/adr-0023-android-device-unblocks-android-half-evidence.md | 705502479067cd4581b7c92072439b6bcf588eea122829de1978a3ebeb49149a |
 | 03-decisions/adr-0024-semantic-color-slots-before-widget-freeze.md | 1f1a0b7d89c0d297f6a1359d9562c0c9a37bfa6e589d45b25d37d16e414ecc35 |
+| 03-decisions/adr-0025-scene-semantics-wire-v1.md | 7b16a0cda20347a39bef78dc41327426d34a73b1de664248a6b55d7e53ab81a4 |
 | 03-decisions/index.md | c8cdc83e9f41b6c1adbd21c13a7650e39a86b2fa618a7aed16db2ee473b43e01 |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
@@ -282,6 +283,7 @@ status: accepted
 | 06-issues/tn-176-jni-host-handler-reentry-guard.md | a6a393d8c76ca90790dbd73ba3273adc86f379a8f8613a5a5adde24224811ba3 |
 | 06-issues/tn-177-gatt-completion-watchdog-attribution.md | 57c5e6bbea3481f8bf75cb6540d354b7e6045b90aaa201c9918ab1b0f84aad50 |
 | 06-issues/tn-178-release-dev-reload-separation.md | 4948f80a17c2b2cfc7e87d224f7611b19a172a85eb7506d017f9670e43589b70 |
+| 06-issues/tn-179-scene-semantics-wire-v1.md | 0bb7acb9a11a9ddff64c736ca122905b935e5c8a697203874357b3661950bf4a |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

@@ -34,8 +34,8 @@ export type WidgetPropSchema = Readonly<Record<string, PropRule>>;
  * "root" carries framework-internal props such as theme/navigation).
  */
 export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
-  "text": { variant: { type: "string" }, color: { type: ["string", "object"] } },
-  "button": { variant: { type: "string" }, onPress: { type: "function" } },
+  "text": { variant: { type: "string" }, color: { type: ["string", "object"] }, semanticsId: { type: "string" } },
+  "button": { variant: { type: "string" }, onPress: { type: "function" }, semanticsId: { type: "string" } },
   "column": {
     padding: { type: ["string", "number"] },
     gap: { type: ["string", "number"] },
@@ -55,7 +55,7 @@ export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
     elevation: { type: "boolean" },
     semantics: { type: "object" },
   },
-  "app-bar": { title: { type: "string", required: true }, onMenu: { type: "function" } },
+  "app-bar": { title: { type: "string", required: true }, onMenu: { type: "function" }, semanticsId: { type: "string" } },
   "input": {
     field: { type: "string" },
     value: { type: "string" },

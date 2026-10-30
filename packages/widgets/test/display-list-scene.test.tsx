@@ -13,7 +13,7 @@
  *     and non-node children fail the same way the original did).
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { jsx, jsxs } from "@tenunjs/jsx-runtime";
 import {
@@ -74,6 +74,20 @@ function golden(name: string): string {
   return readFileSync(join(import.meta.dir, "fixtures/display-list", `${name}.json`), "utf-8");
 }
 
+/**
+ * Deliberate wire-contract changes regenerate the fixtures from this same
+ * file: `UPDATE_GOLDEN=1 bun test display-list-scene` rewrites the JSON
+ * from the trees below (review the diff — a golden that changed without a
+ * contract change is the regression this suite exists to catch).
+ */
+function expectGolden(name: string, json: string): void {
+  if (process.env.UPDATE_GOLDEN === "1") {
+    writeFileSync(join(import.meta.dir, "fixtures/display-list", `${name}.json`), json);
+    return;
+  }
+  expect(json).toBe(golden(name));
+}
+
 function sceneJsonOf(tree: never): string {
   const { scene } = layoutScreen(theme as never, tree, 720);
   return JSON.stringify(scene, null, 2) + "\n";
@@ -81,15 +95,15 @@ function sceneJsonOf(tree: never): string {
 
 describe("TN-133 extraction: golden equivalence with the original implementation", () => {
   test("structural tree (scaffold/app-bar/buttons/taps) matches the pre-move golden byte-for-byte", () => {
-    expect(sceneJsonOf(structuralTree as never)).toBe(golden("structural"));
+    expectGolden("structural", sceneJsonOf(structuralTree as never));
   });
 
   test("theme-scope + wrapped text matches the pre-move golden byte-for-byte", () => {
-    expect(sceneJsonOf(textWrapTree)).toBe(golden("text-wrap"));
+    expectGolden("text-wrap", sceneJsonOf(textWrapTree));
   });
 
   test("canvas emit closure matches the pre-move golden byte-for-byte", () => {
-    expect(sceneJsonOf(canvasTree)).toBe(golden("canvas"));
+    expectGolden("canvas", sceneJsonOf(canvasTree));
   });
 
   test("scene contract shape is host-consumable (tenun marker, version 1, ops, taps)", () => {

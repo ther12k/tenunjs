@@ -13,5 +13,9 @@
       "color": "#7C4DFF"
     }
   ],
-  "taps": []
+  "taps": [],
+  "semantics": {
+    "semanticsVersion": 1,
+    "nodes": []
+  }
 }
