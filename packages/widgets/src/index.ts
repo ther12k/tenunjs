@@ -40,8 +40,8 @@ export interface ThemeSpacing {
 
 export interface ThemeTypography {
   size: number;
-  lineHeight: number;
-  weight?: number;
+  lineHeight?: number;
+  weight?: number | "normal" | "bold";
 }
 
 export interface ThemeConfig {
