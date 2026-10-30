@@ -19,7 +19,7 @@ export interface SourceLocation {
   columnNumber?: number;
 }
 
-export type FunctionWidget<P = any> = (props: P) => WidgetNode<any> | null;
+export type FunctionWidget<P = any, C = any> = (props: P, context?: C) => WidgetNode<any> | null;
 
 /**
  * Virtual node marker for JSX fragments. Distinct from every

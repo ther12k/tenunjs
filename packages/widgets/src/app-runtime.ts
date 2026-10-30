@@ -52,8 +52,12 @@
  */
 
 import type { ScreenDefinition } from "@tenunjs/core";
-import { LayoutError, layoutScreen, normalizeSceneTransition, validateLayoutViewport } from "./display-list";
-import type { DisplayListScene, LayoutViewport, SceneTransition, SceneTransitionRequest } from "./display-list";
+import type { WidgetNode } from "@tenunjs/jsx-runtime";
+import {
+  LayoutError, buildTokenSet, layoutScreen, normalizeSceneTransition, resolveRoles,
+  validateLayoutViewport, validateLocale, validatePlatform, validateTextScale, withWidgetContext,
+} from "./display-list";
+import type { DisplayListScene, LayoutViewport, PlatformKind, SceneTransition, SceneTransitionRequest, WidgetContext } from "./display-list";
 import type { ThemeConfig } from "./index";
 import type { ThemePalette } from "./theme-slots";
 import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
@@ -101,6 +105,12 @@ export interface ApplicationRuntimeOptions {
   readonly palette?: ThemePalette;
   /** Merged into every action context (e.g. a navigate callback). */
   readonly services?: ApplicationServices;
+  /** TN-068: initial ambient locale tag (default "en-US"). */
+  readonly locale?: string;
+  /** TN-068: initial ambient textScale factor (default 1.0). */
+  readonly textScale?: number;
+  /** TN-068: initial target platform environment (default "android"). */
+  readonly platform?: PlatformKind;
   /** Legacy design width with unbounded root height; mutually exclusive with viewport. */
   readonly designWidth?: number;
   /** Finite root constraints in design units; copied before the first screen mounts. */
@@ -192,6 +202,9 @@ export class ApplicationRuntime {
   private readonly screens: Record<string, ScreenDefinition<any, any>>;
   private theme: ThemeConfig;
   private slotPalette: ThemePalette | undefined;
+  private locale: string;
+  private textScale: number;
+  private platform: PlatformKind;
   private readonly services: ApplicationServices;
   private readonly designWidth: number | undefined;
   private viewport: Readonly<LayoutViewport> | undefined;
@@ -232,6 +245,15 @@ export class ApplicationRuntime {
     this.screens = options.screens;
     this.theme = options.theme;
     this.slotPalette = options.palette;
+    this.locale = options.locale !== undefined
+      ? validateLocale(options.locale, "runtime options.locale")
+      : "en-US";
+    this.textScale = options.textScale !== undefined
+      ? validateTextScale(options.textScale, "runtime options.textScale")
+      : 1.0;
+    this.platform = options.platform !== undefined
+      ? validatePlatform(options.platform, "runtime options.platform")
+      : "android";
     this.services = { ...(options.services ?? {}) };
     this.designWidth = options.designWidth;
     this.viewport = viewport;
@@ -310,6 +332,55 @@ export class ApplicationRuntime {
     this.notifyStale();
   }
 
+  /** Current inherited locale tag (TN-068). */
+  getLocale(): string {
+    return this.locale;
+  }
+
+  /** Sets the ambient locale and triggers invalidation (TN-068). */
+  setLocale(locale: string): void {
+    this.assertLive();
+    this.locale = validateLocale(locale, "setLocale");
+    this.notifyStale();
+  }
+
+  /** Current inherited textScale factor (TN-068). */
+  getTextScale(): number {
+    return this.textScale;
+  }
+
+  /** Sets the ambient textScale and triggers invalidation (TN-068). */
+  setTextScale(scale: number): void {
+    this.assertLive();
+    this.textScale = validateTextScale(scale, "setTextScale");
+    this.notifyStale();
+  }
+
+  /** Current target platform (TN-068). */
+  getPlatform(): PlatformKind {
+    return this.platform;
+  }
+
+  /** Sets the target platform and triggers invalidation (TN-068). */
+  setPlatform(platform: PlatformKind): void {
+    this.assertLive();
+    this.platform = validatePlatform(platform, "setPlatform");
+    this.notifyStale();
+  }
+
+  /** Current inherited root widget context (TN-068). */
+  getWidgetContext(): WidgetContext {
+    return Object.freeze({
+      theme: this.theme,
+      tokens: buildTokenSet(this.theme),
+      palette: resolveRoles(this.theme),
+      slotPalette: this.slotPalette,
+      locale: this.locale,
+      textScale: this.textScale,
+      platform: this.platform,
+    });
+  }
+
   /**
    * TN-169 burst semantics: a navigation inside one dispatch may commit
    * MORE THAN ONE scene (the out-of-band invalidation commit for channel
@@ -374,10 +445,13 @@ export class ApplicationRuntime {
     this.assertLive();
     const session = this.sessions.get(this.current) ?? this.mount(this.current);
     this.sessions.set(this.current, session);
-    const tree = this.screens[session.name]!.view({
-      state: session.state,
-      actions: session.actions,
-    }) as ReturnType<ScreenDefinition<any, any>["view"]>;
+    const rootCtx = this.getWidgetContext();
+    const tree = withWidgetContext(rootCtx, () =>
+      (this.screens[session.name]!.view as (context: unknown, widgetContext?: WidgetContext) => WidgetNode)({
+        state: session.state,
+        actions: session.actions,
+      }, rootCtx)
+    ) as ReturnType<ScreenDefinition<any, any>["view"]>;
     if (tree === null || tree === undefined) {
       throw new ApplicationRuntimeError(
         "INVALID_VIEW",
@@ -387,7 +461,12 @@ export class ApplicationRuntime {
     const { scene, semanticScene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
       active: this.activeTextInput,
       focus: (id) => this.focusTextInput(id),
-    }, { palette: this.slotPalette });
+    }, {
+      palette: this.slotPalette,
+      locale: this.locale,
+      textScale: this.textScale,
+      platform: this.platform,
+    });
     // Adopt the whole rendered field table only after layout succeeded. A
     // removed/read-only field ends its activation; ordinary rerenders keep it.
     this.textFields = new Map(textFields.map((binding) => [binding.props.id, binding]));

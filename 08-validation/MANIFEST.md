@@ -173,7 +173,7 @@ status: accepted
 | 06-issues/tn-065-implement-android-back-and-ios-interactive-navigation-hooks.md | 1dc307c58bd09debe7bc99f4dda70d93f74db7f87bef66e7582ccb07f45b4b7c |
 | 06-issues/tn-066-implement-versioned-navigation-and-controller-state-restoration.md | d05278f2271d12b6ca69550679242ed3bc4307e10f705bd34375a85f61945e29 |
 | 06-issues/tn-067-close-controller-action-navigation-gate.md | 9453d771eca4d0833086fbeaea108f8886f2f99be86498bccf7315a8c74bf9ab |
-| 06-issues/tn-068-implement-theme-tokens-and-inherited-widget-context.md | 6682786afc53140037c8c1c9b67e8b62a99fb5eb64df2dd7afb27ec892db1a3f |
+| 06-issues/tn-068-implement-theme-tokens-and-inherited-widget-context.md | 8bc4f493162b89cd282218fda35a5e6453f0eaf9a60c446106bc68449cf9f2cc |
 | 06-issues/tn-069-implement-view-text-fragment-and-spacer-host-widgets.md | ce9eb0e5469d97933304146472b99f7a8291f9369fa19af4f3c3fc61d1cf75e9 |
 | 06-issues/tn-070-implement-row-column-expanded-and-flexible-widgets.md | 795a37e6e97abc45bca2c3da57fdb77b78eab16817fd02373880bd6e6a571c07 |
 | 06-issues/tn-071-implement-stack-positioned-align-and-center-widgets.md | d3f762ef52b8293a64fbbb8b79b4caf88cdb7d896859ce625c5f40381b357761 |
