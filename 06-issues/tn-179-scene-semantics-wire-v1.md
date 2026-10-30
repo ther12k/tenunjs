@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-179: Scene semantics wire v1 — accessibility projection on the display-list scene"
 summary: "Every committed scene carries scene.semantics: one node per semantically meaningful widget whose activations reference the existing tap-run table, so platform accessibility services can drive the identical actions touch drives. The host-side bridge (TalkBack) is a separate issue."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-179"
 milestone: "M4"
 priority: "P1"
@@ -59,3 +59,23 @@ decides the wire; this issue delivers it.
 - RTL/bidi ordering and locale-aware labels (TN-068 context remainder).
 - Focus management policy (modal traps, restoration) — extends a future
   version.
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #262 (commits
+137a760 + the consumer-digest follow-up): scene.semantics
+{semanticsVersion: 1, nodes} rides every atomic commit (optional field,
+scene.transition precedent); Text/Button/TextField/GestureDetector/
+opted-in Card/AppBar/scroll content emit per ADR-0025 with decorative
+paint absent and absorbed text suppressed; activations reference the
+existing tap-run table (the activation-equals-touch roundtrip is tested
+through installHostHandoff); the projection is a pure function of the
+scene (a scene-carried generation was removed pre-merge when it broke
+byte-determinism between identical layouts). Card.semantics is typed and
+live. Evidence: 9 tests in packages/widgets/test/semantics.test.ts,
+goldens regenerated via the documented UPDATE_GOLDEN=1 path (additive
+diff), consumer scene-digest fixture regenerated with the independence
+and host-contract legs re-verified, 633/0 suite, typecheck clean, full
+run_android_test.sh green including framework-feel structural parity
+(20 scenes, script host / real QuickJS), 8/8 CI gates. Next slice: the
+Android TalkBack bridge (TN-091) builds on this contract.
