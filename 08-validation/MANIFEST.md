@@ -258,7 +258,7 @@ status: accepted
 | 06-issues/tn-152-carry-long-press-through-browser-hosts.md | dead2f43c94169bb42aa6f7c86fccac038b80461b7f0185784ebe7132c1ade54 |
 | 06-issues/tn-153-run-controller-load-on-fresh-mounts.md | 0563aa8c04817c6363ea734636ebc7a81e8dcc430d3b42c4004f151c40de0cee |
 | 06-issues/tn-154-native-polytron-wash-milestone-validation-app.md | 2c664091f76d9f42975d402f4568113e312ef4e93a04d784558ee7f05e72f4af |
-| 06-issues/tn-155-framework-feel-milestone-app.md | 07fec8d5c7fde3c44a2aec1ad74db905295b3052acc5b66afcac9c1578a996c1 |
+| 06-issues/tn-155-framework-feel-milestone-app.md | 547be93f718ff7f4a9d773ffbf970eecc5cb921e25a9d7691a6fcd767c8ec546 |
 | 06-issues/tn-156-freeze-public-layout-semantics-contract.md | 6320d3cdf12ea3b935cc7003878d6df786cbe4ad371b4283a6f096414304fa83 |
 | 06-issues/tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md | 87bd03fc3931048d3e532bb335e24fbfbbf931f2cc417e1fa97da85f56c20ac5 |
 | 06-issues/tn-158-deliver-host-viewport-with-negotiation.md | 47bcddbc862ceb8611213a32ba5eb67143b07c328abbdbb0b029648c10716713 |
@@ -274,6 +274,7 @@ status: accepted
 | 06-issues/tn-168-harden-scrollview-children-and-theme-baker-nested-ops.md | d2c7867defc56647964cad669bf762d7b0596db3b706fa393c19697968095f50 |
 | 06-issues/tn-169-deliver-host-evaluated-route-transitions.md | b616364a896846fc3b4c28cc740456b4542bb302877dac24e9475bd5f1fd9b86 |
 | 06-issues/tn-170-deliver-runtime-theme-switching-and-palette-themes.md | b361b174e1cad5855b449e223913bbcc6087b5890f115471a39480dff7a2c1c5 |
+| 06-issues/tn-171-deliver-device-journey-and-readme-recording.md | f9037fcb5818e5b9233f5b3f7715a06216390ace38046138853e10d99ef9f23a |
 <<<<<<< HEAD
 =======
 >>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))
@@ -287,7 +288,7 @@ status: accepted
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |
 | CONTRIBUTING.md | 4c0cace7528d2660fe223bc5dae2cb666515c7e75668727af7bec34851b42884 |
-| README.md | 7e4767a330adeff54811604a1a36c59c61b38cc32e03d8698416960ab481d131 |
+| README.md | af125d4740565ed373a824ee82ed0469bac6665e72cc3929a1ea10067933f4c2 |
 | index.md | f1952fc49182e6d5132d3e733c0d025d5881b63ceeb18353d5e595d30b8524af |
 | log.md | 176396687e309073cb61eafeefd618dc27602cfea5f23f7c98722ac767c6a862 |
 | references/technology-notes.md | 5cc47a642063b773c9b1d31fde3ce1125a13192d2e0a2ec82211a701b6b0bfe7 |

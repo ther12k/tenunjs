@@ -170,13 +170,18 @@ remains separate.
 
 `DisplayListTextInputTest` belongs to the installed instrumentation suite
 and drives these real Android editing APIs through the production
-JNI/QuickJS transport. Its bundle is a small contract fixture: this test
-does not drive a live soft keyboard or render the Day Plan TSX journey.
-The Day Plan engine-loop replay supplies shared-application scene parity;
-TN-155 still requires live Android editing/composition and rendering
-evidence for that application. Full shaping, pointer caret placement,
-selection handles, secure entry, autofill, keyboard-inset coordination,
-and accessibility are outside this single-line slice.
+JNI/QuickJS transport. Its bundle is a small contract fixture; the Day
+Plan TSX journey is driven separately: `FrameworkFeelJourneyTest` boots
+the SAME compiled Day Plan bundle (committed as an androidTest asset,
+rebuilt from `examples/framework-feel`) and completes the full user
+journey through real `MotionEvent`s and the InputConnection — taps, the
+host-evaluated route transition (settling under the animation thread),
+the runtime theme toggle, plan-title editing, and checklist scrolling —
+on the CI device gate. Neither test drives a LIVE soft keyboard; that
+physical-IME evidence boundary stays recorded with ADR-0019. Full
+shaping, pointer caret placement, selection handles, secure entry,
+autofill, keyboard-inset coordination, and accessibility are outside
+this single-line slice.
 
 ## 6. Dev hot reload (prototype)
 

@@ -13,17 +13,21 @@ title through the ordinary `TextField` widget and host editing adapters.
 | --- | --- |
 | Ordinary `Scaffold`, `AppBar`, `Card`, `Column`, `Row`, `Expanded`, `Button`, `Text`, and `TextField` composition | Implemented in Today and Progress. |
 | Bounded layout under explicit viewport changes | Runtime tests cover 720×1000, 480×840, and 1000×720; nested flex panels and footer placement respond to the supplied bounds. |
-| Two screens and retained action state | Implemented through `ApplicationRuntime`; complete a task, inspect progress, show details, return, and revisit. Navigation is immediate. |
+| Two screens and retained action state | Implemented through `ApplicationRuntime`; complete a task, inspect progress, show details, return, and revisit. Navigation carries a host-evaluated transition. |
 | Custom drawing | One `CanvasBox` draws the progress ring and its numeric annotation. Ordinary interface elements remain widgets. |
 | Shared host entry | One IIFE bundle uses the public commit/dispatch contract for both the generic browser host and QuickJS. |
 | Automatic browser/Android viewport delivery | Implemented (TN-158): the generic browser host delivers canvas CSS-pixel bounds on boot and resize; the Android `SurfaceView` delivers density-independent logical bounds on surface changes and engine swaps. Both negotiate once — a bundle whose handoff has no `setViewport` answers `UNKNOWN_ACTION` and keeps its own design-width scaling. |
-| Controlled single-line editing through widgets | TN-160 implements the plan-title field, guarded runtime sessions, browser native input, and Android InputConnection. Live Android soft-keyboard/composition evidence for this TSX application remains part of the milestone journey. |
+| Controlled single-line editing through widgets | TN-160 implements the plan-title field, guarded runtime sessions, browser native input, and Android InputConnection. The device journey edits the title through the InputConnection; live soft-keyboard/composition evidence for this TSX application stays recorded with ADR-0019. |
 | Independent scroll viewport | Implemented (TN-161): the Today checklist is a `ScrollView` — bounded viewport, intrinsic content, host-owned scroll offsets; the scene carries a `scroll-region` op both hosts render and hit-test. |
-| Host-evaluated animation and route transitions | Pending. The ring changes with state and navigation switches immediately. |
-| Semantic widget colors, inherited themes, runtime switching | TN-068 remains the owner. This foundation uses the existing single-theme `defineTheme` API. |
+| Host-evaluated animation and route transitions | Implemented (TN-169): navigations carry an optional `transition` block; both hosts interpolate on their own frame clock (Android on a dedicated animation thread — frames advance while the main thread is blocked). |
+| Semantic widget colors, inherited themes, runtime switching | Implemented (TN-170): light/dark semantic palettes via `paletteTheme`, runtime `setTheme` through the invalidation channel, retained journey state across swaps. TN-068 keeps the deeper token work (ColorRef widget adoption, spacing/typography context). |
+| Same-code device journey | Implemented (TN-171): the CI device gate boots this compiled bundle in the production embedder and completes the journey through real `MotionEvent`s and the InputConnection (`FrameworkFeelJourneyTest`). |
 
-TN-155 stays open until its complete browser/Android journey and required
-evidence exist. This foundation is not yet the README's headline demo.
+TN-155's seven requirements are implemented with evidence on every
+available host; Day Plan is the README's headline demo. Font/CJK coverage
+and the live soft-keyboard journey remain recorded pre-demonstration
+limitations (TN-160/TN-171 notes; ADR-0019 owns the physical-device
+boundary).
 
 ## Run the application tests
 

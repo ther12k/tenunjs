@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-155: Framework-feel milestone app — the end-to-end Flutter-inspired experience"
 summary: "One small TSX application that demonstrates the promised framework experience end to end: nested layout, editable text, independent scrolling, route transition with animation, direct Skia drawing, and the same code on every available embedder."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-155"
 milestone: "M4"
 priority: "P0"
@@ -46,11 +46,11 @@ application journey and host evidence below are complete.
 | --- | --- |
 | Bounded framework layout and Day Plan foundation | [TN-157](tn-157-adopt-bounded-typescript-layout-for-framework-feel-app.md): ordinary two-screen TSX app, explicit runtime viewport inputs, custom drawing, shared-bundle execution. |
 | Host viewport delivery | [TN-158](tn-158-deliver-host-viewport-with-negotiation.md), closed: compatible input negotiation, logical units, initial dimensions and resize updates in browser and Android. Scaling a previous scene does not count as re-layout. |
-| Ordinary semantic widget themes | TN-068, retaining its dependencies and ADR-0024 responsibilities. |
+| Ordinary semantic widget themes | Runtime switching slice delivered by [TN-170](tn-170-deliver-runtime-theme-switching-and-palette-themes.md) (`setTheme` invalidation, `paletteTheme`, extended role matching, Day Plan light/dark). TN-068 retains its dependencies and the deeper token work (ColorRef widget adoption, spacing/typography/locale/scale context). |
 | Editable widget and IME path | [TN-160](tn-160-deliver-controlled-widget-text-input.md), in progress: controlled single-line TextField, guarded sessions, browser/Android adapters, and the Day Plan title. Live Android IME journey evidence remains required; broader TN-076/TN-078/TN-079/TN-081 scope stays open. |
 | Independent list viewport | TN-083/TN-084, with gesture arbitration from TN-082. |
 | Host-evaluated route transition and animation | [TN-169](tn-169-deliver-host-evaluated-route-transitions.md), closed: navigation commits carry an optional `transition` block; both hosts interpolate between the settled and incoming scene on their own frame clock (Android on a dedicated animation thread — frames advance while the main thread is blocked), with the shared easing curve and the Day Plan slide. The broader animation-graph tracks TN-048/TN-086/TN-087 and route lifecycle TN-063 stay open. |
-| Final parity journey and README recording | TN-155 closure: complete all seven requirements on the available hosts, then capture the real application. |
+| Final parity journey and README recording | [TN-171](tn-171-deliver-device-journey-and-readme-recording.md): the same-code device journey through the production Android surface (`FrameworkFeelJourneyTest`) and the README headline-demo recording. |
 
 TN-157 adopts the frozen semantics in the already executable TypeScript
 lowering. It does not close the broader TN-070/TN-071/TN-072 widget tracks
@@ -107,3 +107,18 @@ widgets that demonstrates, in one codebase:
 - [Scrolling and animation](../02-architecture/scrolling-animation.md)
 - [Text and IME](../02-architecture/text-and-ime.md)
 - TN-154 (native platform substrate, closed)
+
+## Status note (2026-10-30, closed)
+
+All seven requirements are implemented with evidence on every available
+host, delivered slice by slice: TN-157 (bounded layout + Day Plan
+foundation), TN-158 (host viewport delivery), TN-160 (controlled text
+editing), TN-161 (independent scroll regions), TN-169 (host-evaluated
+route transitions), TN-170 (semantic palettes with runtime switching),
+and TN-171 (same-code device journey + README recording; the browser and
+QuickJS structural parity gates ran throughout). Day Plan is the
+README's headline demo. Recorded limitations that stay open elsewhere:
+font/CJK coverage and narrow-overflow polish (TN-160 notes), the live
+soft-keyboard journey (ADR-0019 physical-device boundary), and TN-068's
+deeper token work (ColorRef widget adoption, spacing/typography/locale/
+scale context).

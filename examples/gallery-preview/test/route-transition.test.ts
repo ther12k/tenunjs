@@ -121,6 +121,27 @@ describe("browser host-evaluated route transitions (TN-169)", () => {
     expect(texts).toContain("B-route");
   });
 
+  test("an equal-content transition commit continues the burst instead of restarting", () => {
+    const { canvas, ops } = recordingCanvas(300, 500);
+    const pump = framePump();
+    const renderer = new CanvasPreviewRenderer(canvas, { raf: pump.raf, cancelRaf: pump.cancel, now: pump.now });
+    renderer.render(sceneWith("A-route"), 0);
+    renderer.render(sceneWith("B-route", { kind: "slide", direction: "forward", durationMs: 240 }), 0);
+    pump.advance(120); // halfway: incoming scene sits at ~half width
+    ops.length = 0;
+    // The dispatch-return commit of the same navigation burst: identical
+    // content, still stamped. The clock keeps running — no restart.
+    renderer.render(sceneWith("B-route", { kind: "slide", direction: "forward", durationMs: 240 }), 0);
+    pump.advance(60); // 180/240 total: continuation leaves ~19 units; a restart would sit at ~281.
+    const bText = ops.filter((o) => o.kind === "text" && o.text === "B-route");
+    expect(bText.length).toBeGreaterThan(0);
+    const maxX = Math.max(...bText.map((o) => o.a ?? 0));
+    expect(maxX).toBeLessThan(100);
+    pump.advance(240); // settle
+    const final = ops.filter((o) => o.kind === "text" && o.text === "B-route");
+    expect(final.length).toBeGreaterThan(0);
+  });
+
   test("a plain commit mid-transition cuts to the new scene", () => {
     const { canvas, ops } = recordingCanvas(300, 500);
     const pump = framePump();
