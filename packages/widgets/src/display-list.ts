@@ -295,6 +295,85 @@ export interface SerializedTap extends FixedPosition {
   scroll?: string;
 }
 
+/** ---------- TN-179: accessibility semantics wire contract ---------- */
+
+/** Canonical semantic roles (ADR-0025; mapped per-platform by hosts). */
+export type SemanticRole =
+  | "button"
+  | "text"
+  | "header"
+  | "textfield"
+  | "container"
+  | "generic"
+  | "group" // grouping container (ARIA group): children announced together
+  | "alert"; // live-region announcement (ARIA alert)
+
+/**
+ * A platform accessibility activation, expressed as the SAME tap-run verb
+ * the scene's gesture table already carries: "press" dispatches TAP and
+ * "long-press" dispatches LONG-PRESS with the node's tap id, so an
+ * accessibility activation runs the identical application action a touch
+ * runs (accessibility-requirements.md:10,16). No new dispatch verb exists.
+ */
+export type SemanticAction = "press" | "long-press" | "focus";
+
+export interface SemanticState {
+  focused?: boolean;
+  readOnly?: boolean;
+  checked?: boolean | "mixed";
+  disabled?: boolean;
+}
+
+/**
+ * One semantic node in the scene's accessibility projection. Decorative
+ * paint (rects, outlines, gradients, rings) never emits a node; visual
+ * text absorbed by an interactive parent (a Button's label, a
+ * GestureDetector's caption) does not double-emit.
+ */
+export interface SemanticNode extends FixedPosition {
+  /** Stable paint-state key: app-supplied, else derived from the bounds
+   *  (stable while the node keeps its geometry — the ScrollView id rule). */
+  id: string;
+  role: SemanticRole;
+  /** Primary announcement text (a widget's visible label/caption). */
+  label?: string;
+  /** Current value (a text field's text). */
+  value?: string;
+  /** Secondary description (placeholder/purpose). */
+  hint?: string;
+  state?: SemanticState;
+  bounds: { x: number; y: number; w: number; h: number };
+  /** Gesture activations this node accepts; each references a tap-run id
+   *  in scene.taps (hosts echo it through the existing TAP/LONG-PRESS
+   *  dispatch). Absent on purely static nodes. */
+  actions?: { name: SemanticAction; tapId: number }[];
+  /** Set when the node lives in this scroll region's CONTENT space. */
+  scroll?: string;
+  /** Announce changes to this node through platform live regions. */
+  liveRegion?: boolean;
+}
+
+/**
+ * The semantics projection riding an atomic scene commit (TN-179). The
+ * projection is a pure function of the scene: hosts pair stable node ids
+ * with their OWN commit counter (the generation) to restore accessibility
+ * focus across swaps — a scene-carried counter would make identical
+ * layouts differ byte-wise and break host-parity gates.
+ */
+export interface SceneSemantics {
+  semanticsVersion: 1;
+  nodes: SemanticNode[];
+}
+
+/** Card's explicit semantics opt-in (TN-179) — decorative by default. */
+export interface CardSemantics {
+  id?: string;
+  label?: string;
+  hint?: string;
+  role?: "container" | "generic" | "group" | "alert";
+  liveRegion?: boolean;
+}
+
 export interface DisplayListScene {
   tenun: "display-list";
   version: 1;
@@ -303,6 +382,15 @@ export interface DisplayListScene {
   background: string;
   ops: DisplayOp[];
   taps: SerializedTap[];
+  /**
+   * TN-179: the accessibility semantics projection of this scene — one
+   * node per semantically meaningful widget (decorative paint never
+   * appears). Optional and ignored by hosts that predate it (an unknown
+   * top-level field, the scene.transition precedent): hosts that DO know
+   * it map nodes onto platform accessibility services. Never part of
+   * state snapshots.
+   */
+  semantics?: SceneSemantics;
   /**
    * TN-169: host-evaluated route transition. Present on exactly the first
    * scene committed after a navigation that requested one; hosts animate
@@ -407,6 +495,12 @@ interface InternalContext extends RenderContext {
   tokens: TokenSet;
   /** TN-174: active token-scope overlays, outermost first (ThemeScope.tokens). */
   tokenScopes: Array<TokenScope>;
+  /** TN-179: the scene's accessibility semantics projection. */
+  semantics: SemanticNode[];
+  /** TN-179: >0 while descendant text is absorbed by an interactive
+   * parent's own node (Button label, GestureDetector caption) — the Text
+   * lowering suppresses its own node then. */
+  absorbedText: number;
   /**
    * Per-render function-component resolutions. measure and place walk the
    * tree separately; without this cache every component would be INVOKED
@@ -1351,14 +1445,27 @@ function placeTextField(ctx: InternalContext, rawProps: unknown, x: number, y: n
       y1: textTop, y2: Math.min(y + h, baseline + 2), width: 1, color: C.primary });
   }
   ctx.ops.push(descriptor);
+  let focusTapId: number | undefined;
   if (!props.readOnly) {
-    addTap(ctx, x, y, w, h, () => {
+    focusTapId = addTap(ctx, x, y, w, h, () => {
       if (!ctx.textInput) {
         throw new TextInputError("TEXT_INPUT_RUNTIME_REQUIRED", "Editable TextField focus requires ApplicationRuntime");
       }
       ctx.textInput.focus(props.id);
     });
   }
+  // TN-179: the field is one editable node — value is the controlled text,
+  // state carries focus/readOnly, and the focus action references the same
+  // tap-run id a touch uses (hosts echo it as an ordinary TAP).
+  ctx.semantics.push({
+    id: props.id,
+    role: "textfield",
+    value: descriptor.text,
+    hint: props.label ?? props.placeholder,
+    state: { focused: descriptor.focused, readOnly: props.readOnly === true },
+    bounds: { x, y, w, h },
+    ...(focusTapId !== undefined ? { actions: [{ name: "focus" as const, tapId: focusTapId }] } : {}),
+  });
 }
 
 /**
@@ -1472,22 +1579,32 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     // this region's offset. tapRuns stays shared — payload ids are global.
     const outerOps = ctx.ops;
     const outerTaps = ctx.tapRegions;
+    const outerSemantics = ctx.semantics;
     ctx.ops = [];
     ctx.tapRegions = [];
+    ctx.semantics = [];
     let nestedOps: DisplayOp[] = [];
     let nestedTaps: SerializedTap[] = [];
+    let nestedSemantics: SemanticNode[] = [];
     try {
       placeChildren(ctx, layout, 0, 0);
       nestedOps = ctx.ops as DisplayOp[];
       nestedTaps = ctx.tapRegions;
+      nestedSemantics = ctx.semantics;
     } finally {
       ctx.ops = outerOps;
       ctx.tapRegions = outerTaps;
+      ctx.semantics = outerSemantics;
     }
     const contentHeight = layout.children.length > 0
       ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(ctx, props, 0)
       : 0;
     for (const tap of nestedTaps) outerTaps.push({ ...tap, scroll: regionId });
+    // TN-179: content-space semantic nodes carry the region tag exactly as
+    // their taps do — hosts resolve their bounds against the scroll offset.
+    for (const sem of nestedSemantics) {
+      outerSemantics.push({ ...sem, scroll: regionId });
+    }
     outerOps.push({ op: "scroll-region", id: regionId, x, y, w, h, contentHeight, ops: nestedOps });
     return h;
   }
@@ -1496,11 +1613,30 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     return h;
   }
   if (kind === GestureDetectorKind) {
-    placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+    // TN-179: descendant text is absorbed into this node's label.
+    ctx.absorbedText++;
+    try {
+      placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+    } finally {
+      ctx.absorbedText--;
+    }
     // Gesture geometry is the assigned box, including tight flex dimensions.
-    if (typeof props.onTap === "function") addTap(ctx, x, y, w, h, props.onTap as () => void);
+    const actions: { name: SemanticAction; tapId: number }[] = [];
+    if (typeof props.onTap === "function") {
+      actions.push({ name: "press", tapId: addTap(ctx, x, y, w, h, props.onTap as () => void) });
+    }
     if (typeof props.onLongPress === "function") {
-      addTap(ctx, x, y, w, h, props.onLongPress as () => void, "long-press");
+      actions.push({ name: "long-press", tapId: addTap(ctx, x, y, w, h, props.onLongPress as () => void, "long-press") });
+    }
+    if (actions.length > 0 || props.semanticsLabel !== undefined) {
+      const label = typeof props.semanticsLabel === "string" ? props.semanticsLabel : deepTextContent(node);
+      ctx.semantics.push({
+        id: semanticId(props.semanticsId, { x, y, w, h }),
+        role: "generic",
+        ...(label.length > 0 ? { label } : {}),
+        bounds: { x, y, w, h },
+        ...(actions.length > 0 ? { actions } : {}),
+      });
     }
     return h;
   }
@@ -1571,6 +1707,20 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
           color: roleColor(ctx, props.color) ?? ctx.theme.colors?.text ?? "#F2F2F7",
         });
       });
+      // TN-179: static text announces itself; heading variants map to the
+      // header role. Absorbed text (inside an interactive parent's node)
+      // suppresses this — no double announcement.
+      if (ctx.absorbedText === 0) {
+        const text = textContent(node);
+        if (text.length > 0) {
+          ctx.semantics.push({
+            id: semanticId(props.semanticsId, { x, y, w, h }),
+            role: props.variant === "title" || props.variant === "headline" || props.variant === "display" ? "header" : "text",
+            label: text,
+            bounds: { x, y, w, h },
+          });
+        }
+      }
       return h;
     }
     case "button": {
@@ -1621,7 +1771,25 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
         color: labelColor,
       });
       if (typeof props.onPress === "function") {
-        addTap(ctx, x, y, w, h, props.onPress as () => void);
+        const tapId = addTap(ctx, x, y, w, h, props.onPress as () => void);
+        // TN-179: a button's label is its text content, absorbed into one
+        // actionable node — the press action carries the tap-run id a host
+        // echoes through the ordinary TAP dispatch.
+        ctx.semantics.push({
+          id: semanticId(props.semanticsId, { x, y, w, h }),
+          role: "button",
+          label,
+          bounds: { x, y, w, h },
+          actions: [{ name: "press", tapId }],
+        });
+      } else {
+        ctx.semantics.push({
+          id: semanticId(props.semanticsId, { x, y, w, h }),
+          role: "button",
+          label,
+          state: { disabled: true },
+          bounds: { x, y, w, h },
+        });
       }
       return h;
     }
@@ -1635,6 +1803,21 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
         ...(elevated ? { shadow: 12 } : {}),
       });
       placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing(ctx, "sm", 8)), x, y);
+      // TN-179: a Card is decorative unless it opts in — the previously
+      // dead `semantics` prop now emits an explicit container node (the
+      // architecture's "meaningful canvas content provides explicit
+      // semantics" rule; children still announce individually).
+      const sem = props.semantics as CardSemantics | undefined;
+      if (sem !== undefined && sem !== null && typeof sem === "object") {
+        ctx.semantics.push({
+          id: semanticId(sem.id, { x, y, w, h }),
+          role: sem.role ?? "container",
+          ...(typeof sem.label === "string" ? { label: sem.label } : {}),
+          ...(typeof sem.hint === "string" ? { hint: sem.hint } : {}),
+          ...(sem.liveRegion === true || sem.role === "alert" ? { liveRegion: true } : {}),
+          bounds: { x, y, w, h },
+        });
+      }
       return h;
     }
     case "column":
@@ -1647,9 +1830,10 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       // Optional leading burger — the M3 modal-drawer affordance.
       const hasMenu = typeof props.onMenu === "function";
       const titleX = hasMenu ? 100 : 40;
+      let menuTapId: number | undefined;
       if (hasMenu) {
         ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: 34, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
-        addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu as () => void);
+        menuTapId = addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu as () => void);
       }
       const title = typeof props.title === "string" ? props.title : "";
       ctx.ops.push({
@@ -1672,6 +1856,25 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
         color: ctx.theme.colors?.outlineVariant ?? "#26262F",
         width: 2,
       });
+      // TN-179: the bar announces its title as a header landmark; the
+      // optional menu affordance is its own actionable node.
+      if (title.length > 0) {
+        ctx.semantics.push({
+          id: semanticId(props.semanticsId, { x: x + titleX, y, w: Math.max(w - titleX, 0), h }),
+          role: "header",
+          label: title,
+          bounds: { x: x + titleX, y, w: Math.max(w - titleX, 0), h },
+        });
+      }
+      if (menuTapId !== undefined) {
+        ctx.semantics.push({
+          id: `${semanticId(props.semanticsId, { x, y, w, h })}#menu`,
+          role: "button",
+          label: "Menu",
+          bounds: { x: x + 12, y: y + 12, w: 72, h: 72 },
+          actions: [{ name: "press", tapId: menuTapId }],
+        });
+      }
       return h;
     }
     case "spacer":
@@ -1857,6 +2060,24 @@ function crossAlignOf(props: Record<string, unknown>, fallback: CrossAlign): Cro
 
 /** ---------- context / entry ---------- */
 
+/** TN-179: app-supplied stable semantic id, else the bounds-derived key
+ *  (stable while the node keeps its geometry — the ScrollView id rule). */
+function semanticId(id: unknown, b: { x: number; y: number; w: number; h: number }): string {
+  if (typeof id === "string" && id.length > 0) return id;
+  return `sem@${b.x},${b.y},${b.w},${b.h}`;
+}
+
+/** TN-179: deep visible text of a subtree, for interactive parents that
+ *  absorb descendant labels into their own node. */
+function deepTextContent(node: AnyNode): string {
+  let out = "";
+  for (const child of node.children) {
+    if (typeof child === "string" || typeof child === "number") out += String(child);
+    else if (isWidgetNode(child)) out += deepTextContent(asNode(child));
+  }
+  return out;
+}
+
 function addTap(
   ctx: InternalContext,
   x: number,
@@ -1868,7 +2089,7 @@ function addTap(
   fixed = false,
   anchor?: FixedAnchor,
   anchorSize?: number
-): void {
+): number {
   const id = ctx.tapRuns.length;
   ctx.tapRuns.push(run);
   ctx.tapRegions.push({
@@ -1882,6 +2103,7 @@ function addTap(
     ...(fixed && anchor ? { anchor } : {}),
     ...(fixed && anchorSize !== undefined ? { anchorSize } : {}),
   });
+  return id;
 }
 
 /**
@@ -1925,6 +2147,8 @@ export function layoutScreen(
     ops: [],
     tapRegions: [],
     tapRuns: [],
+    semantics: [],
+    absorbedText: 0,
     textFields: [],
     textFieldIds: new Set(),
     textInput,
@@ -1938,6 +2162,12 @@ export function layoutScreen(
         background: theme.colors?.surface ?? "#101014",
         ops: ctx.ops,
         taps: ctx.tapRegions,
+        // TN-179: the semantics projection rides every atomic commit and
+        // is a pure function of the scene (host-side generations).
+        semantics: {
+          semanticsVersion: 1 as const,
+          nodes: ctx.semantics,
+        },
       };
     },
   };

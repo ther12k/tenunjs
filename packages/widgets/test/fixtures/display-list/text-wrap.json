@@ -33,5 +33,32 @@
       "color": "#F2F2F7"
     }
   ],
-  "taps": []
+  "taps": [],
+  "semantics": {
+    "semanticsVersion": 1,
+    "nodes": [
+      {
+        "id": "sem@0,0,694.96,48",
+        "role": "text",
+        "label": "Scoped color text that is long enough to require wrapping across multiple lines in the seven hundred twenty pixel design width.",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "w": 694.96,
+          "h": 48
+        }
+      },
+      {
+        "id": "sem@0,56,47.6,24",
+        "role": "text",
+        "label": "plain",
+        "bounds": {
+          "x": 0,
+          "y": 56,
+          "w": 47.6,
+          "h": 24
+        }
+      }
+    ]
+  }
 }

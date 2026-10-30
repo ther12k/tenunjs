@@ -167,11 +167,18 @@ export interface GestureDetectorProps {
   /** Runs when the host dispatches the region's "tap" (release in-region). */
   onTap?: () => void;
   /**
-   * Runs when the host dispatches the region's "long-press" (hold past
-   * the host threshold; a fired long-press suppresses that press's
+   * Runs when the host dispatches the region's "long-press" (hold past the
+   * host threshold; a fired long-press suppresses that press's
    * tap). TN-148.
    */
   onLongPress?: () => void;
+  /** TN-179: stable semantic id for accessibility focus (bounds-derived by default). */
+  semanticsId?: string;
+  /**
+   * TN-179: explicit announcement label. Defaults to the subtree's visible
+   * text (absorbed — descendant Text nodes do not announce separately).
+   */
+  semanticsLabel?: string;
   child?: WidgetChild;
   children?: WidgetChild;
 }

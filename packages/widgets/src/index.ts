@@ -11,6 +11,7 @@
 import { HostWidgetKind } from "@tenunjs/protocol";
 import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
 import { ScrollViewKind } from "./display-list";
+import type { CardSemantics } from "./display-list";
 import type { ColorRef } from "./theme-slots";
 
 export * from "./structural";
@@ -80,6 +81,8 @@ export interface AppBarProps {
   title: string;
   /** Leading burger; the M3 modal-drawer affordance. */
   onMenu?: () => void;
+  /** TN-179: stable semantic id for the header landmark (bounds-derived by default). */
+  semanticsId?: string;
 }
 
 export function AppBar(props: AppBarProps): WidgetNode {
@@ -170,6 +173,8 @@ export interface TextProps {
   variant?: "body" | "title" | "display" | string;
   /** Role name, literal, or a colorSlot() ref baked at the commit boundary (TN-173). */
   color?: string | ColorRef;
+  /** TN-179: stable semantic id for accessibility focus (bounds-derived by default). */
+  semanticsId?: string;
   children?: WidgetChild;
 }
 
@@ -184,6 +189,8 @@ export interface ButtonProps {
    */
   variant?: "primary" | "secondary" | "tonal" | "text" | "danger";
   onPress?: () => void;
+  /** TN-179: stable semantic id for accessibility focus (bounds-derived by default). */
+  semanticsId?: string;
   children?: WidgetChild;
 }
 
@@ -198,7 +205,11 @@ export interface CardProps {
   background?: string | ColorRef;
   /** Elevated cards paint layered elevation under the surface. */
   elevation?: boolean;
-  semantics?: Record<string, unknown>;
+  /**
+   * TN-179: explicit semantics opt-in — a Card is decorative unless this
+   * is present (label/hint/liveRegion ride the scene's semantics block).
+   */
+  semantics?: CardSemantics;
   children?: WidgetChild;
 }
 
