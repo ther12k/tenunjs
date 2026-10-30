@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-183: Android canvas null-fallback and route-transition scroll parity"
 summary: "Two Android host render defects from the 2026-10-30 review: lockDrawCanvas missed SurfaceHolder's null-return rejection shape (blank surface on GPU-less configs), and route transitions dropped the scroll offset — a scrolled page snapped to its top the instant the animation started."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-183"
 milestone: "M4"
 priority: "P1"
@@ -70,3 +70,14 @@ suddenly applied. The browser twin never had this bug:
 - Pixel-diff evidence of the painted offset (the shared
   `renderDisplayListOps` body is the settled renderer's own pass; the
   device journeys exercise it on a real surface).
+
+## Status note (2026-10-30, closed)
+
+Fixed in PR #266: the software fallback now covers both rejection shapes
+(`lockHardwareCanvas() ?: lockCanvas()`), `RouteTransitionState`
+snapshots `scrollY` at begin and both transition layers paint under it
+(the browser-twin rule), fixed overlays stay viewport-pinned, and the
+scroll extent is recomputed at commit time. Device evidence:
+`RouteTransitionTest.transitionSnapshotsTheScrollOffsetItsLayersPaintUnder`
+— a huge drag clamps to exactly 1520 (extent at commit), scrolls to 400,
+the in-flight transition snapshots 400, then settles; 8/8 CI gates.
