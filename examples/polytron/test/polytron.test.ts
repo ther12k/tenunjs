@@ -175,53 +175,85 @@ describe("WasherRuntime screens", () => {
   test("offline home keeps washer controls visible and disabled", () => {
     const runtime = new WasherRuntime(); // no host services: unsupported
     let texts = sceneTexts(runtime).join("\n");
-    // Connection state lives in the shell header's link pill — the
-    // canvas never prints a Bluetooth banner.
+    // Connection state lives in the LinkHeader row — the canvas never
+    // prints an all-caps Bluetooth banner.
     expect(texts).not.toContain("BLUETOOTH");
-    expect(texts).toContain("OFFLINE"); // strip reports state once
-    expect(texts).toContain("CUCI");
-    expect(texts).toContain("PERAS");
-    expect(texts).toContain("STOP");
-    expect(tapIdFor(runtime, "CUCI")).toBe(-1);
-    expect(tapIdFor(runtime, "STOP")).toBe(-1);
+    expect(texts).toContain("Bluetooth tidak tersedia");
+    expect(texts).toContain("Cuci");
+    expect(texts).toContain("Peras");
+    expect(texts).toContain("STOP MESIN");
+    expect(tapIdFor(runtime, "Cuci")).toBe(-1);
+    expect(tapIdFor(runtime, "STOP MESIN")).toBe(-1);
+    expect(runtime.render().scene.taps).toHaveLength(0); // nothing tappable at all
 
     const supported = new WasherRuntime({ ble: fakeBle().seam });
     texts = sceneTexts(supported).join("\n");
-    expect(texts).not.toContain("SAMBUNGKAN"); // connect moved to the header
-    expect(texts).toContain("OFFLINE");
-    expect(texts).toContain("CUCI");
-    expect(texts).toContain("PERAS");
+    expect(texts).toContain("Tidak tersambung");
+    expect(texts).toContain("SAMBUNGKAN"); // the header row offers the connect tap
+    expect(texts).toContain("Cuci");
+    expect(texts).toContain("Peras");
     expect(texts).toContain("belum pernah"); // offline cards keep the useful sub, lock says disabled
     expect(texts).toContain("belum ada aktivitas");
-    expect(tapIdFor(supported, "CUCI")).toBe(-1);
-    expect(tapIdFor(supported, "STOP")).toBe(-1);
-    expect(supported.render().scene.taps).toHaveLength(0); // nothing tappable offline
+    expect(tapIdFor(supported, "Cuci")).toBe(-1);
+    expect(tapIdFor(supported, "STOP MESIN")).toBe(-1);
+    // Exactly ONE tappable surface offline: the header connect row.
+    expect(supported.render().scene.taps).toHaveLength(1);
   });
 
-  test("connected home shows the slim strip + six-function icon grid, no program grid", () => {
+  test("idle home shows the six-function icon grid and the navy program hero", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W63");
+    runtime.lineIn("SET PROG0 WASH:600, DRAIN:30, SPIN:300");
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Siap mencuci"); // green banner
+    expect(texts).toContain("PROGRAM TERSIMPAN"); // navy hero card
+    expect(texts).toContain("Mulai program"); // teal hero button
+    expect(texts).toContain("±16 mnt · 3 tahap"); // hero meta from the tokens
+    expect(texts).toContain("Fungsi mesin");
+    expect(texts).toContain("STOP MESIN");
+    expect(texts).toContain("Aktivitas terakhir");
+    expect(texts).not.toContain("Sisa waktu"); // ring only while running
+    // The whole grid is on the first screen: primary pair AND the
+    // last-pair functions are all tappable without paging.
+    for (const fn of ["Cuci", "Peras", "Buang", "Isi", "Bilas", "Bilas ND"]) {
+      expect(tapIdFor(runtime, fn)).toBeGreaterThanOrEqual(0);
+    }
+    expect(tapIdFor(runtime, "Mulai program")).toBeGreaterThanOrEqual(0);
+    assertSceneWithinBounds(runtime);
+  });
+
+  test("running home shows the ring hero, step chips and solid STOP", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true, name: "Polytron Wash" });
     runtime.lineIn("ST:WASH|NORMAL|2/5|120|480|1010|142|W63");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("WASH · LANGKAH 2/5"); // strip status line
-    expect(texts).toContain("SISA 8:00"); // strip right value
-    expect(texts).toContain("berlalu 2:00 · NORMAL"); // strip caption
-    expect(texts).toContain("FUNGSI MESIN");
-    expect(texts).toContain("STOP");
-    expect(texts).toContain("AKTIVITAS TERBARU");
-    expect(texts).not.toContain("MULAI PROGRAM");
-    expect(texts).not.toContain("Progress");
-    // The whole grid is on the first screen: primary pair AND the
-    // last-pair functions are all tappable without paging.
-    for (const fn of ["CUCI", "PERAS", "BUANG", "ISI", "BILAS", "BILAS ND"]) {
-      expect(tapIdFor(runtime, fn)).toBeGreaterThanOrEqual(0);
-    }
-    const scene = runtime.render().scene;
-    const stopOp = scene.ops.find((op) => op.op === "text" && op.text === "STOP");
-    // First-viewport reachability on the SMALLEST supported phone: a
-    // 320×640 viewport leaves a ~561-unit canvas under the shell header.
-    expect(stopOp?.y).toBeLessThan(540);
+    expect(texts).toContain("Sedang mencuci"); // header title
+    expect(texts).toContain("Sisa waktu"); // ring caption
+    expect(texts).toContain("8:00"); // remaining inside the ring
+    expect(texts).toContain("20%"); // elapsed/total
+    expect(texts).toContain("Tahap 2 dari 5"); // stage banner sub
+    expect(texts).toContain("Cuci"); // current-mode chip / banner title
+    expect(texts).toContain("Ketinggian air"); // water wave card
+    expect(texts).toContain("63%");
+    expect(texts).toContain("Fungsi lain terkunci selama proses");
+    expect(texts).not.toContain("Mulai program"); // hero hidden while running
+    // Grid hidden while running — the ring replaced it (mockup 03).
+    expect(tapIdFor(runtime, "Peras")).toBe(-1);
+    expect(tapIdFor(runtime, "STOP MESIN")).toBeGreaterThanOrEqual(0);
     assertSceneWithinBounds(runtime);
+  });
+
+  test("running a known slot lights the full step timeline with the active step", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
+    runtime.lineIn("SET PROG0 WASH:600, DRAIN:30, SPIN:300");
+    runtime.lineIn("ST:WASH|CEPAT|2/3|630|30|1000|142|W63");
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Tahap 2 dari 3 · CEPAT");
+    // All three step labels from the parsed tokens render as chips.
+    expect(texts).toContain("Buang");
+    expect(texts).toContain("Peras");
   });
 
   test("ST chatter stays out of the activity feed; commands and replies land", () => {
@@ -236,13 +268,14 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("Cuci dimulai (10 mnt)");
   });
 
-  test("finished cycles show SELESAI in the strip", () => {
+  test("finished cycles show the completion banner and unlock the grid", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:IDLE|DONE NORMAL|0/0|0|0|0000|180|W0");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("SELESAI — NORMAL");
-    expect(texts).toContain("siklus selesai");
+    expect(texts).toContain("Siklus selesai"); // header title + banner
+    expect(texts).toContain("Siklus selesai · NORMAL"); // banner names the program
+    expect(tapIdFor(runtime, "Cuci")).toBeGreaterThanOrEqual(0); // grid back, enabled
   });
 
   test("SET lines stream to Settings and Programs", () => {
@@ -264,11 +297,12 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("TUB CLEAN");
   });
 
-  test("tap CUCI writes WASH; the reply lands in Recent Activity", () => {
+  test("tap Cuci writes WASH; the reply lands in Recent Activity", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
-    const tapId = tapIdFor(runtime, "CUCI");
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10"); // idle → grid visible
+    const tapId = tapIdFor(runtime, "Cuci");
     expect(tapId).toBeGreaterThanOrEqual(0);
     runtime.tap(tapId);
     runtime.lineIn("OK WASH 600 s");
@@ -283,8 +317,8 @@ describe("WasherRuntime screens", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
-    runtime.lineIn("ST:SPIN|CEPAT|1/2|10|290|0100|180|W80"); // already running
-    const tapId = tapIdFor(runtime, "CUCI");
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W80"); // idle → grid visible
+    const tapId = tapIdFor(runtime, "Cuci");
     expect(tapId).toBeGreaterThanOrEqual(0);
     runtime.tap(tapId);
     runtime.lineIn("BUSY - STOP first");
@@ -297,29 +331,31 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     for (const [route, visible] of [
       ["programs", ["CEPAT", "NORMAL", "KUSTOM", "TUB CLEAN", "tersimpan di mesin"]],
-      ["controls", ["MOTOR A", "SENSOR AIR", "offline"]],
-      ["settings", ["DURASI", "LANJUTAN", "Motor peras", "Jam LCD", "SENSOR AIR", "tersimpan"]],
+      ["controls", ["Motor A", "Ketinggian air", "offline"]],
+      ["settings", ["Durasi", "Lanjutan", "Motor peras", "Jam LCD", "Sensor air", "tersimpan"]],
     ] as const) {
       runtime.navigate(route);
       const texts = sceneTexts(runtime).join("\n");
       expect(texts).not.toContain("BLUETOOTH"); // header owns connection state
       for (const label of visible) expect(texts).toContain(label);
-      expect(runtime.render().scene.taps).toHaveLength(0); // no unsafe taps; connect lives in the header
+      // No unsafe taps; the ONLY offline tap is the header connect row.
+      expect(runtime.render().scene.taps).toHaveLength(1);
       assertSceneWithinBounds(runtime);
     }
   });
 
-  test("Controls tab shows live relays, AIR and mode", () => {
+  test("Controls tab shows live relays, the water wave and the running banner", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true });
     runtime.navigate("controls");
     runtime.lineIn("ST:WASH|NORMAL|1/1|10|590|1000|142|W63");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("MOTOR A");
-    expect(texts).toContain("ON");
-    expect(texts).toContain("MOTOR B");
+    expect(texts).toContain("Motor A");
+    expect(texts).toContain("Aktif"); // relay state wording
+    expect(texts).toContain("Motor B");
+    expect(texts).toContain("Nonaktif");
     expect(texts).toContain("63%");
-    expect(texts).toContain("WASH");
+    expect(texts).toContain("Mencuci · 9:50"); // running banner with remaining
   });
 
   test("settings steppers clamp to the firmware range and send immediately", () => {
@@ -369,20 +405,28 @@ describe("WasherRuntime screens", () => {
     expect(sceneTexts(noClock).join("\n")).toContain("waktu host tidak");
   });
 
-  test("program overlay on the Programs tab resolves into a SET PROG write", async () => {
+  test("the canvas step editor resolves edits into a SET PROG write", () => {
     const ble = fakeBle();
-    const runtime = new WasherRuntime({
-      ble: ble.seam,
-      editProgram: (_slot, current) => Promise.resolve(current ? `${current}, WAIT:60` : null),
-    });
+    const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.navigate("programs");
     runtime.lineIn("SET PROG0 WASH:600");
-    const tapId = tapIdFor(runtime, "edit");
+    const tapId = tapIdFor(runtime, "Ubah");
     expect(tapId).toBeGreaterThanOrEqual(0);
     runtime.tap(tapId);
-    await new Promise((r) => setTimeout(r, 0)); // overlay promise settles
-    expect(ble.writes).toEqual(["SET PROG0 WASH:600, WAIT:60"]);
+    // The editor opens pre-filled with the machine's tokens.
+    let texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Edit · CEPAT");
+    expect(texts).toContain("Cuci");
+    expect(texts).toContain("Estimasi durasi");
+    expect(texts).toContain("10 mnt");
+    expect(texts).toContain("Simpan program");
+    // Bump the duration 600 → 630 and save.
+    runtime.tap(tapIdFor(runtime, "+"));
+    runtime.tap(tapIdFor(runtime, "Simpan program"));
+    expect(ble.writes).toEqual(["SET PROG0 WASH:630"]);
+    texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("Cuci 11 mnt"); // optimistic cache shows the edit
     runtime.dispose(); // the ack never arrives in this test
   });
 
@@ -391,7 +435,7 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.navigate("controls");
-    const tapId = tapIdFor(runtime, "STOP");
+    const tapId = tapIdFor(runtime, "STOP MESIN");
     expect(tapId).toBeGreaterThanOrEqual(0);
     runtime.tap(tapId);
     runtime.navigate("settings"); // user walks away mid-command
@@ -405,9 +449,10 @@ describe("WasherRuntime screens", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
-    const cucci = tapIdFor(runtime, "CUCI");
-    runtime.tap(cucci); // no reply yet → CUCI still "mengirim…"
-    const stop = tapIdFor(runtime, "STOP");
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10"); // idle → grid visible
+    const cucci = tapIdFor(runtime, "Cuci");
+    runtime.tap(cucci); // no reply yet → Cuci still pending
+    const stop = tapIdFor(runtime, "STOP MESIN");
     expect(stop).toBeGreaterThanOrEqual(0);
     runtime.tap(stop); // safety command must fire anyway
     expect(ble.writes).toEqual(["WASH", "STOP"]);
@@ -447,30 +492,30 @@ describe("WasherRuntime screens", () => {
     expect(ble.writes).toEqual(["SET WASHMIN 11", "SET WASHMIN 11"]);
   });
 
-  test("a rejected program edit rolls the cached tokens back", async () => {
+  test("a rejected program edit rolls the cached tokens back", () => {
     const ble = fakeBle();
-    const runtime = new WasherRuntime({
-      ble: ble.seam,
-      editProgram: (_slot, current) => Promise.resolve(current ? `${current}, WAIT:60` : null),
-    });
+    const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.navigate("programs");
     runtime.lineIn("SET PROG0 WASH:600");
-    runtime.tap(tapIdFor(runtime, "edit"));
-    await new Promise((r) => setTimeout(r, 0)); // overlay promise settles → SET fires
-    expect(ble.writes).toEqual(["SET PROG0 WASH:600, WAIT:60"]);
+    runtime.tap(tapIdFor(runtime, "Ubah")); // open the canvas editor
+    runtime.tap(tapIdFor(runtime, "+")); // 600 → 630
+    runtime.tap(tapIdFor(runtime, "Simpan program"));
+    expect(ble.writes).toEqual(["SET PROG0 WASH:630"]);
+    // Optimistic window: the edited summary shows before the reply.
+    expect(sceneTexts(runtime).join("\n")).toContain("Cuci 11 mnt");
     runtime.lineIn("BUSY - STOP first");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).not.toContain("Tunggu 1 mnt"); // optimistic step gone
+    expect(texts).not.toContain("Cuci 11 mnt"); // optimistic edit gone
     expect(texts).toContain("Cuci 10 mnt"); // machine's stored program intact
-    runtime.dispose();
   });
 
   test("quiet GET:ALL ack settles only itself — cannot steal a user reply", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10"); // idle → grid visible
     runtime.send("GET:ALL", { quiet: true });
-    runtime.tap(tapIdFor(runtime, "CUCI")); // user fires before the ack lands
+    runtime.tap(tapIdFor(runtime, "Cuci")); // user fires before the ack lands
     runtime.lineIn("OK 14 settings follow"); // GET's own ack
     runtime.lineIn("OK WASH 600 s"); // WASH's reply — must reach WASH
     const texts = sceneTexts(runtime).join("\n");
@@ -483,8 +528,8 @@ describe("WasherRuntime screens", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
-    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
-    runtime.tap(tapIdFor(runtime, "CUCI")); // Home sends WASH, no reply yet
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|142|W63"); // idle → grid visible
+    runtime.tap(tapIdFor(runtime, "Cuci")); // Home sends WASH, no reply yet
     runtime.navigate("controls");
     runtime.tap(tapIdFor(runtime, "KIRIM")); // Controls sends WATER meanwhile
     // Serial wire answers in order: this reply settles WASH (the front).
@@ -498,7 +543,7 @@ describe("WasherRuntime screens", () => {
     expect(sceneTexts(runtime).join("\n")).toContain("WATER raw 433"); // Controls got its own reply
     // Home's single-flight guard is free again
     runtime.navigate("home");
-    runtime.tap(tapIdFor(runtime, "PERAS"));
+    runtime.tap(tapIdFor(runtime, "Peras"));
     expect(ble.writes).toEqual(["WASH", "WATER", "SPIN"]);
   });
 
@@ -507,10 +552,10 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
-    runtime.tap(tapIdFor(runtime, "CUCI")); // write ok, reply never comes
+    runtime.tap(tapIdFor(runtime, "Cuci")); // write ok, reply never comes
     runtime.linkPush({ connected: false }); // link drops mid-command
     runtime.linkPush({ connected: true });
-    const again = tapIdFor(runtime, "CUCI");
+    const again = tapIdFor(runtime, "Cuci");
     expect(again).toBeGreaterThanOrEqual(0); // un-stuck: tappable again
     runtime.tap(again);
     expect(ble.writes).toEqual(["WASH", "WASH"]);
@@ -536,13 +581,13 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true, name: "Polytron Wash" });
     let texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("MENUNGGU STATUS");
-    expect(texts).toContain("menunggu status pertama dari mesin");
-    expect(texts).not.toContain("SIAP MENCUCI");
+    expect(texts).toContain("Menunggu status…");
+    expect(texts).toContain("menunggu kabar pertama dari mesin");
+    expect(texts).not.toContain("Siap mencuci");
     runtime.navigate("controls");
     texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("MENUNGGU STATUS");
-    expect(texts).not.toContain("IDLE");
+    expect(texts).toContain("Menunggu status…");
+    expect(texts).not.toContain("Siap");
     expect(texts).toContain("belum terbaca"); // unknown ≠ "belum dikalibrasi"
   });
 
@@ -553,14 +598,14 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
     runtime.navigate("programs");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("SEDANG BERJALAN"); // strip explains WHY
+    expect(texts).toContain("Mesin sedang berjalan"); // banner explains WHY
     expect(texts).toContain("MULAI"); // label still visible…
     expect(tapIdFor(runtime, "MULAI")).toBe(-1); // …but inert, matching the guidance
-    expect(tapIdFor(runtime, "edit")).toBe(-1);
+    expect(tapIdFor(runtime, "Ubah")).toBe(-1);
     expect(ble.writes).toEqual([]);
   });
 
-  test("while a cycle runs, tapping StatusStrip on Programs or Controls jumps to Home", () => {
+  test("while a cycle runs, tapping the running banner on Programs or Controls jumps to Home", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
@@ -569,18 +614,18 @@ describe("WasherRuntime screens", () => {
 
     runtime.navigate("programs");
     expect(runtime.route()).toBe("programs");
-    // The running StatusStrip is tappable (h=86)
-    const progStripTap = runtime.render().scene.taps.find((t) => t.h === 86);
-    expect(progStripTap).toBeDefined();
-    const tapId = (progStripTap!.payload as { id: number }).id;
+    // The running banner card is tappable (h=68 with sub)
+    const progBannerTap = runtime.render().scene.taps.find((t) => t.h === 68);
+    expect(progBannerTap).toBeDefined();
+    const tapId = (progBannerTap!.payload as { id: number }).id;
     runtime.tap(tapId);
     expect(runtime.route()).toBe("home"); // navigated back to Home
 
     runtime.navigate("controls");
     expect(runtime.route()).toBe("controls");
-    const ctrlStripTap = runtime.render().scene.taps.find((t) => t.h === 86);
-    expect(ctrlStripTap).toBeDefined();
-    const ctrlTapId = (ctrlStripTap!.payload as { id: number }).id;
+    const ctrlBannerTap = runtime.render().scene.taps.find((t) => t.h === 68);
+    expect(ctrlBannerTap).toBeDefined();
+    const ctrlTapId = (ctrlBannerTap!.payload as { id: number }).id;
     runtime.tap(ctrlTapId);
     expect(runtime.route()).toBe("home");
   });
@@ -605,12 +650,13 @@ describe("WasherRuntime screens", () => {
     };
     const runtime = new WasherRuntime({ ble: seam });
     runtime.linkPush({ connected: true });
-    runtime.tap(tapIdFor(runtime, "CUCI"));
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10"); // idle → grid visible
+    runtime.tap(tapIdFor(runtime, "Cuci"));
     await new Promise((r) => setTimeout(r, 0)); // write result settles
     const texts = sceneTexts(runtime).join("\n");
     expect(texts).toContain("ERR kirim gagal"); // feed explains it
-    expect(texts).not.toContain("mengirim…"); // pending cleared — later commands unblocked
-    runtime.tap(tapIdFor(runtime, "CUCI")); // retry works again
+    expect(texts).not.toContain("MENGIRIM"); // pending cleared — later commands unblocked
+    runtime.tap(tapIdFor(runtime, "Cuci")); // retry works again
     expect(ble.writes).toEqual(["WASH", "WASH"]);
   });
 
@@ -620,9 +666,9 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("ST:WASH|NORMAL|2/5|120|480|1000|142|W63");
     runtime.linkPush({ connected: false });
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("OFFLINE");
-    expect(texts).not.toContain("LANGKAH 2/5");
-    expect(texts).not.toContain("8:00"); // strip back to idle
+    expect(texts).toContain("Tidak tersambung"); // header back to offline
+    expect(texts).not.toContain("Sisa waktu"); // ring gone
+    expect(texts).not.toContain("8:00"); // cycle numbers gone
   });
 
   test("a native-shaped failure event (no connecting field) releases the connecting lock", () => {
@@ -666,7 +712,7 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
-    runtime.tap(tapIdFor(runtime, "STOP"));
+    runtime.tap(tapIdFor(runtime, "STOP MESIN"));
     expect(ble.writes).toContain("STOP");
     runtime.linkPush({ connected: false, name: "" });
     const texts = sceneTexts(runtime).join("\n");
@@ -674,7 +720,7 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("cek mesin");
   });
 
-  test("silent telemetry goes stale: DATA BEKU shown, starts gated, STOP stays armed", () => {
+  test("silent telemetry goes stale: frozen-data banner shown, starts gated, STOP stays armed", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
@@ -685,19 +731,19 @@ describe("WasherRuntime screens", () => {
     try {
       expect(runtime.statusStale()).toBe(true);
       const texts = sceneTexts(runtime).join("\n");
-      expect(texts).toContain("DATA BEKU");
+      expect(texts).toContain("Data mesin beku");
       expect(texts).toContain("tidak diperbarui");
-      expect(tapIdFor(runtime, "CUCI")).toBe(-1); // new starts blocked…
-      expect(tapIdFor(runtime, "STOP")).toBeGreaterThanOrEqual(0); // …STOP never
+      expect(tapIdFor(runtime, "Cuci")).toBe(-1); // new starts blocked…
+      expect(tapIdFor(runtime, "STOP MESIN")).toBeGreaterThanOrEqual(0); // …STOP never
       runtime.navigate("controls");
-      expect(sceneTexts(runtime).join("\n")).toContain("DATA BEKU");
+      expect(sceneTexts(runtime).join("\n")).toContain("Data mesin beku");
     } finally {
       Date.now = realNow;
     }
     // Fresh telemetry un-stales immediately.
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
     expect(runtime.statusStale()).toBe(false);
-    expect(sceneTexts(runtime).join("\n")).not.toContain("DATA BEKU");
+    expect(sceneTexts(runtime).join("\n")).not.toContain("Data mesin beku");
   });
 
   test("offline Controls explains that app STOP needs a connection", () => {
@@ -711,28 +757,29 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("tombol fisik");
   });
 
-  test("running and waiting show the orbit spinner; idle shows a plain dot", () => {
+  test("connecting shows the orbit spinner in the header; connected shows a plain dot", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
-    runtime.linkPush({ connected: true });
-    const dotAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 5).length;
-    const orbitAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r > 1 && op.r < 4).length;
-    // waiting (connected, no status): spinner orbiting, no static dot
+    // Header-scoped: only circles inside the LinkHeader band count —
+    // function icons (spin/droplet glyphs) also draw small circles.
+    const dotAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 5 && op.cy < 90).length;
+    const orbitAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r > 1 && op.r < 4 && op.cy < 90).length;
+    // connecting: spinner orbiting, no static dot
+    runtime.linkPush({ connecting: true, phase: "scanning" });
     expect(dotAt()).toBe(0);
     expect(orbitAt()).toBeGreaterThanOrEqual(8);
-    // running: still spinning
-    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
-    expect(dotAt()).toBe(0);
-    expect(orbitAt()).toBeGreaterThanOrEqual(8);
-    // idle: static accent dot back
+    // connected idle: static green dot back, orbit gone
+    runtime.linkPush({ connected: true, name: "Polytron Wash" });
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
     expect(dotAt()).toBe(1);
+    expect(orbitAt()).toBe(0);
     // and the orbit phase actually advances with the clock
-    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    runtime.linkPush({ connected: false, name: "" });
+    runtime.linkPush({ connecting: true, phase: "scanning" });
     const realNow = Date.now;
     Date.now = () => 5_000_000;
-    const a = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3).map((op) => op.cy);
+    const a = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90).map((op) => op.cy);
     Date.now = () => 5_000_520; // ~4 head-steps later
-    const b = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3).map((op) => op.cy);
+    const b = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90).map((op) => op.cy);
     Date.now = realNow;
     expect(a).not.toEqual(b);
   });
@@ -742,7 +789,7 @@ describe("WasherRuntime screens", () => {
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|WASH 20min|11"); // a split-line fragment, as BLE chunks arrive
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("MENUNGGU STATUS"); // still honestly waiting
+    expect(texts).toContain("Menunggu status…"); // still honestly waiting
     expect(texts).not.toContain("ST:WASH|WASH 20min"); // not feed noise
   });
 
@@ -759,35 +806,32 @@ describe("WasherRuntime screens", () => {
     }
   });
 
-  test("320px: the strip status truncates before the right value — no overlap", () => {
+  test("320px: the header link label truncates before its right meta — no overlap", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam, designWidth: 320 });
-    runtime.linkPush({ connected: true });
-    runtime.lineIn("ST:IDLE|DONE SIKLUS PROGRAM SUPER PANJANG|0/0|0|0|0000|180|W63");
-    const strip = runtime.render().scene.ops.filter((op) => op.op === "text" && op.y < 60);
-    const status = strip.find((op) => op.text.startsWith("SELESAI"));
-    const right = strip.find((op) => op.text.startsWith("AIR"));
-    expect(status).toBeDefined();
+    runtime.linkPush({ connected: true, name: "Polytron Wash Super Long Name" });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W63");
+    const row = runtime.render().scene.ops.filter((op) => op.op === "text" && op.y > 60 && op.y < 90);
+    const label = row.find((op) => op.text.startsWith("Terhubung"));
+    const right = row.find((op) => op.text.startsWith("Data"));
+    expect(label).toBeDefined();
     expect(right).toBeDefined();
-    // Same budget StatusStrip truncates against (approx metrics, and the
-    // approximation OVER-estimates — safe side).
-    const budget = 320 - 37 - (textWidth(right!.text, 15) + 26);
-    expect(textWidth(status!.text, 15)).toBeLessThanOrEqual(budget + 1);
+    // The label truncates against the LinkHeader's right-meta budget.
+    expect(label!.x + textWidth(label!.text, 13.5)).toBeLessThanOrEqual(right!.x - 2);
     assertSceneWithinBounds(runtime);
   });
 
-  test("320px: the SENSOR AIR label clears the meter; nothing runs under a pill", () => {
+  test("320px: the water card label clears the % value; nothing runs under a pill", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam, designWidth: 320 });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
     runtime.navigate("settings");
     const scene = runtime.render().scene;
-    // The row label may itself truncate ("SENSOR A…") — that is the fix
-    // working; it must simply end before the battery meter starts.
-    const label = scene.ops.find((op) => op.op === "text" && op.text.startsWith("SENSOR A") && op.x > 40);
-    const meter = scene.ops.find((op) => op.op === "outline" && op.h === 28 && op.w >= 112 && op.w <= 150);
+    // The wave card: label left, % right — must not overlap at 320.
+    const label = scene.ops.find((op) => op.op === "text" && op.text === "Ketinggian air");
+    const pct = scene.ops.find((op) => op.op === "text" && op.text === "63%");
     expect(label).toBeDefined();
-    expect(meter).toBeDefined();
-    expect(label!.x + textWidth(label!.text, 13.5)).toBeLessThanOrEqual(meter!.x - 6);
+    expect(pct).toBeDefined();
+    expect(label!.x + textWidth(label!.text, 13.5)).toBeLessThanOrEqual(pct!.x - 4);
     // Calibration rows: label + sub truncate before their right pill.
     const kal = scene.ops.find((op) => op.op === "text" && op.text.startsWith("Kalibrasi"));
     const sub = scene.ops.find((op) => op.op === "text" && op.text.startsWith("isi ulang referensi"));

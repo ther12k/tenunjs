@@ -230,8 +230,8 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   /* 1. First scene commit: display list committed with Polytron UI chrome */
   const char* scene0 = tenun_android_engine_get_scene(engine);
   CHECK(strstr(scene0, "\"tenun\":\"display-list\"") != NULL, "First scene committed through native commit (display-list)");
-  CHECK(strstr(scene0, "\"text\":\"FUNGSI MESIN\"") != NULL, "Scene carries Polytron functions header");
-  CHECK(strstr(scene0, "\"text\":\"STOP\"") != NULL, "Scene carries STOP bar");
+  CHECK(strstr(scene0, "\"text\":\"Fungsi mesin\"") != NULL, "Scene carries Polytron functions header");
+  CHECK(strstr(scene0, "\"text\":\"STOP MESIN\"") != NULL, "Scene carries STOP bar");
   CHECK(strstr(scene0, "\"text\":\"Beranda\"") != NULL, "Scene carries Beranda bottom tab");
   CHECK(strstr(scene0, "\"text\":\"Program\"") != NULL, "Scene carries Program bottom tab");
 
@@ -257,7 +257,7 @@ static int run_polytron_bundle_checks(const char* asset_path) {
     /* Find STOP region inside the taps array (h: 52, w: 362 under theme spacing.md: 14) */
     const char* taps_start = strstr(scene_now, "\"taps\":");
     if (taps_start) {
-      const char* stop_tap = strstr(taps_start, "\"h\":52");
+      const char* stop_tap = strstr(taps_start, "\"h\":54");
       if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":362");
       if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":358");
       if (stop_tap) {
@@ -280,10 +280,11 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   }
 
   /* 3. Inbound BLE notifications from washer (telemetry status strip) */
-  char* scene_st = tenun_android_engine_dispatch(engine, "BLE_LINE", "ST:BILAS|0|1|10|290|1|120|65");
+  char* scene_st = tenun_android_engine_dispatch(engine, "BLE_LINE", "ST:BILAS|TEST|1/1|10|290|1000|120|W65");
   CHECK(scene_st != NULL, "BLE_LINE dispatch returned scene");
-  CHECK(strstr(scene_st, "BILAS · LANGKAH") != NULL, "Scene reflects live washer telemetry status BILAS");
-  CHECK(strstr(scene_st, "SISA 4:50") != NULL, "Scene reflects remaining duration 4:50 from telemetry");
+  CHECK(strstr(scene_st, "Sisa waktu") != NULL, "Scene shows the ring hero while running");
+  CHECK(strstr(scene_st, "4:50") != NULL, "Scene reflects remaining duration 4:50 from telemetry");
+  CHECK(strstr(scene_st, "Tahap 1 dari 1") != NULL, "Scene reflects the step banner from telemetry");
   free(scene_st);
 
   /* 4. Tab navigation to Programs */
@@ -294,7 +295,7 @@ static int run_polytron_bundle_checks(const char* asset_path) {
 
   /* 5. Return to Home */
   char* scene_home = tenun_android_engine_dispatch(engine, "NAVIGATE", "{\"route\":\"home\"}");
-  CHECK(scene_home != NULL && strstr(scene_home, "FUNGSI MESIN") != NULL, "Navigated back to Home");
+  CHECK(scene_home != NULL && strstr(scene_home, "Sisa waktu") != NULL, "Navigated back to Home (running hero)");
   free(scene_home);
 
   /* 6. Verify native timer dispatch drains scheduled timeouts */

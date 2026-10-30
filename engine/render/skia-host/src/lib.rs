@@ -19,6 +19,13 @@
 //! the hosts' second pass, emboldened weight >= 600, and centerline
 //! rings with round caps.
 //!
+//! Android (TN-185, ADR-0026 stage 3): the cdylib cross-compiles for
+//! arm64-v8a/x86_64 and accepts the HOST's typefaces through
+//! `tenun_skia_host_set_typefaces` — the device has no fontconfig
+//! default, so the embedder injects the system Roboto pair before
+//! rendering. Without injection the desktop fontconfig fallback keeps
+//! working.
+//!
 //! Known gap: `shadow` (elevation) values are not painted yet —
 //! elevation rendering moves to Skia image filters with the GPU stage
 //! (documented in ADR-0026).
@@ -27,7 +34,7 @@ use std::os::raw::{c_char, c_int};
 
 use skia_safe::{
     gradient_shader, AlphaType, BlendMode, Canvas, Color4f, ColorType, Font, FontMgr, ISize,
-    ImageInfo, Paint, PaintCap, PaintStyle, Point, RRect, Rect, TileMode, Vector,
+    ImageInfo, Paint, PaintCap, PaintStyle, Point, RRect, Rect, TileMode, Typeface, Vector,
 };
 
 // ---------------------------------------------------------------------------
@@ -391,6 +398,7 @@ pub fn render_scene(scene_json: &str, width: i32, height: i32) -> Result<Vec<u8>
     Ok(pixels)
 }
 
+#[derive(Clone)]
 struct Fonts {
     regular: Font,
     bold: Font,
@@ -409,7 +417,65 @@ impl Fonts {
     }
 }
 
+// Host-injected typefaces (TN-185): Android has no fontconfig default,
+// so the embedder passes the system font pair through the C ABI. The
+// BYTES are the global truth (Send+Sync); parsed typefaces cache
+// per-thread keyed by a generation counter so re-invalidation is a
+// fetch_add and repeated renders don't re-parse the TTFs.
+static INJECTED_FONT_BYTES: std::sync::Mutex<Option<InjectedFontBytes>> =
+    std::sync::Mutex::new(None);
+static FONT_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[derive(Clone)]
+struct InjectedFontBytes {
+    regular: Vec<u8>,
+    bold: Vec<u8>,
+}
+
+thread_local! {
+    static FONT_CACHE: std::cell::RefCell<Option<(u32, Fonts)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 fn default_fonts() -> Result<Fonts, RenderError> {
+    let generation = FONT_GENERATION.load(std::sync::atomic::Ordering::Acquire);
+    FONT_CACHE.with(|cache| {
+        if let Some((cached_generation, fonts)) = cache.borrow().as_ref() {
+            if *cached_generation == generation {
+                return Ok(fonts.clone());
+            }
+        }
+        let fonts = build_fonts()?;
+        *cache.borrow_mut() = Some((generation, fonts.clone()));
+        Ok(fonts)
+    })
+}
+
+fn build_fonts() -> Result<Fonts, RenderError> {
+    let injected = INJECTED_FONT_BYTES
+        .lock()
+        .expect("font bytes lock poisoned")
+        .as_ref()
+        .cloned();
+    let (regular, bold) = match injected {
+        Some(bytes) => (
+            typeface_from_bytes(&bytes.regular)?,
+            typeface_from_bytes(&bytes.bold)?,
+        ),
+        None => return system_fonts(),
+    };
+    Ok(fonts_from_typefaces(regular, bold))
+}
+
+/// Parses a typeface from raw TTF/OTF bytes through the default
+/// font manager (any instance can parse memory streams).
+fn typeface_from_bytes(data: &[u8]) -> Result<Typeface, RenderError> {
+    FontMgr::default()
+        .new_from_data(data, None)
+        .ok_or_else(|| RenderError("injected typeface bytes are not a valid font".into()))
+}
+
+fn system_fonts() -> Result<Fonts, RenderError> {
     let mgr = FontMgr::default();
     let regular = mgr
         .legacy_make_typeface(None, skia_safe::FontStyle::normal())
@@ -419,10 +485,14 @@ fn default_fonts() -> Result<Fonts, RenderError> {
         .ok_or_else(|| {
             RenderError("no bold system typeface available for text rendering".into())
         })?;
-    Ok(Fonts {
+    Ok(fonts_from_typefaces(regular, bold))
+}
+
+fn fonts_from_typefaces(regular: Typeface, bold: Typeface) -> Fonts {
+    Fonts {
         regular: Font::from_typeface(regular, 18.0),
         bold: Font::from_typeface(bold, 18.0),
-    })
+    }
 }
 
 /// Paints one op at a vertical offset [dy] (0 in the scrollable body and
@@ -729,6 +799,59 @@ pub unsafe extern "C" fn tenun_skia_render_scene(
         }
         Err(_) => -3,
     }
+}
+
+/// Supplies the typefaces text ops paint with (TN-185). Android has no
+/// fontconfig default inside the app process, so the embedder injects
+/// the system font pair (e.g. Roboto regular + bold) before rendering;
+/// desktop keeps its fontconfig fallback when nothing is injected.
+/// BOTH fonts are validated before either is stored; re-injection
+/// replaces the pair atomically (generation bump) and invalidates every
+/// thread's cache. Returns 0 on success, -1 on a lock failure, -2 when
+/// the regular bytes are not a font, -3 for the bold bytes.
+///
+/// # Safety
+/// `regular`/`bold` must be readable for `regular_len`/`bold_len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn tenun_skia_host_set_typefaces(
+    regular: *const u8,
+    regular_len: usize,
+    bold: *const u8,
+    bold_len: usize,
+) -> c_int {
+    if regular.is_null() || bold.is_null() {
+        return -2;
+    }
+    let regular_bytes = std::slice::from_raw_parts(regular, regular_len);
+    let bold_bytes = std::slice::from_raw_parts(bold, bold_len);
+    // Validate both BEFORE storing either — a half-applied pair would
+    // poison every later render on that generation.
+    if typeface_from_bytes(regular_bytes).is_err() {
+        return -2;
+    }
+    if typeface_from_bytes(bold_bytes).is_err() {
+        return -3;
+    }
+    match INJECTED_FONT_BYTES.lock() {
+        Ok(mut slot) => {
+            *slot = Some(InjectedFontBytes {
+                regular: regular_bytes.to_vec(),
+                bold: bold_bytes.to_vec(),
+            });
+            FONT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Release);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+/// Test isolation: drop injected typefaces and restore the system path.
+#[cfg(test)]
+fn clear_injected_typefaces_for_test() {
+    *INJECTED_FONT_BYTES
+        .lock()
+        .expect("font bytes lock poisoned") = None;
+    FONT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Release);
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,5 +1256,93 @@ mod tests {
             )
         };
         assert_eq!(rc, -2);
+    }
+
+    /// A discoverable regular+bold TTF pair on this machine, if any.
+    fn local_font_pair() -> Option<(Vec<u8>, Vec<u8>)> {
+        for (regular, bold) in [
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            ),
+            (
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            ),
+        ] {
+            if let (Ok(r), Ok(b)) = (std::fs::read(regular), std::fs::read(bold)) {
+                return Some((r, b));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn injected_typefaces_validate_and_paint() {
+        clear_injected_typefaces_for_test();
+        // Garbage is rejected whole, both slots, without poisoning the
+        // system fallback that keeps serving other renders.
+        let garbage = b"not a font at all".to_vec();
+        let rc = unsafe {
+            tenun_skia_host_set_typefaces(
+                garbage.as_ptr(),
+                garbage.len(),
+                garbage.as_ptr(),
+                garbage.len(),
+            )
+        };
+        assert_eq!(rc, -2, "garbage regular bytes rejected");
+        let regular = render(
+            "{\"op\":\"text\",\"x\":0,\"y\":50,\"text\":\"TENUN\",\"size\":30,\
+             \"weight\":400,\"color\":\"#FFFFFF\"}",
+        );
+        assert!(
+            ink(&regular, 0, 0, 100, 100) > 100,
+            "system fonts still serve"
+        );
+        let Some((regular_bytes, bold_bytes)) = local_font_pair() else {
+            clear_injected_typefaces_for_test();
+            return; // no local pair to prove the happy path with
+        };
+        let rc = unsafe {
+            tenun_skia_host_set_typefaces(
+                regular_bytes.as_ptr(),
+                regular_bytes.len(),
+                bold_bytes.as_ptr(),
+                bold_bytes.len(),
+            )
+        };
+        assert_eq!(rc, 0, "valid pair accepted");
+        // The injected pair renders, and bold still paints heavier ink
+        // through it (the TN-184 property holds under injection).
+        let regular_ink = ink(
+            &render(
+                "{\"op\":\"text\",\"x\":0,\"y\":50,\"text\":\"TENUN\",\"size\":30,\
+                 \"weight\":400,\"color\":\"#FFFFFF\"}",
+            ),
+            0,
+            0,
+            100,
+            100,
+        );
+        let bold_ink = ink(
+            &render(
+                "{\"op\":\"text\",\"x\":0,\"y\":50,\"text\":\"TENUN\",\"size\":30,\
+                 \"weight\":700,\"color\":\"#FFFFFF\"}",
+            ),
+            0,
+            0,
+            100,
+            100,
+        );
+        assert!(
+            regular_ink > 100,
+            "injected regular paints, got {regular_ink}"
+        );
+        assert!(
+            bold_ink > regular_ink,
+            "injected bold paints heavier ({bold_ink} > {regular_ink})"
+        );
+        clear_injected_typefaces_for_test();
     }
 }

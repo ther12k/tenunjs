@@ -1,28 +1,28 @@
 import { defineTheme } from "@tenunjs/widgets";
 
 /**
- * Polytron Wash theme — the v4 LCD designer palette (design/tft-ui-mockup
- * board in the polytronwash repo) with a phone-brighter text ramp:
- * near-black teal background, deep-blue program cards, cyan accent,
- * purple spin, green ok.
+ * Polytron Wash theme — the calm light design language (2026-10-30
+ * redesign, "Calm control. Clear status."): near-white blue-gray canvas,
+ * white cards, teal accent, navy program hero, red stop. One quiet system
+ * instead of the old dark LCD palette.
  */
 export const washerTheme = defineTheme({
   colors: {
-    background: "#081110",
-    surface: "#0C1720",
-    surfaceRaised: "#101C26",
-    accent: "#00B7FD", // cAcc — buttons, progress, WASH
-    primaryContainer: "#0B2C4A", // deep-blue program cards
-    onPrimaryContainer: "#EAF3FC",
-    secondaryContainer: "#2A2140", // purple-tinted selected state
-    onSecondaryContainer: "#E4D9FF",
-    outline: "#33475A", // cBrd
-    outlineVariant: "#24333F",
-    text: "#EAF3FC",
-    textDim: "#9DB2C7",
-    danger: "#E8354A",
-    success: "#00FF80", // cGood — FILL / ok
-    warning: "#FCB518", // cWarn — WAIT
+    background: "#EFF3F6",
+    surface: "#FFFFFF",
+    surfaceRaised: "#FFFFFF",
+    accent: "#0E9F8C", // teal — links, active states, progress
+    primaryContainer: "#143A56", // navy program hero card
+    onPrimaryContainer: "#F2F8FB",
+    secondaryContainer: "#DFF3EE", // teal tint (selected chips)
+    onSecondaryContainer: "#0B6B5D",
+    outline: "#D9E4EB",
+    outlineVariant: "#E7EEF3",
+    text: "#182E38",
+    textDim: "#5F7A8C",
+    danger: "#E5484D",
+    success: "#17A673",
+    warning: "#F5A524",
   },
   spacing: { sm: 8, md: 14, lg: 20 },
   typography: {
@@ -35,17 +35,18 @@ export const washerTheme = defineTheme({
   },
 });
 
-/** Cycle-mode accent colors — the LCD's mode language, one per mode token. */
+/** Cycle-mode accent colors — one per mode token, tuned for the light
+ *  canvas (dark enough for 3:1+ on white, still distinct from each other). */
 export const MODE_COLORS: Record<string, string> = {
-  WASH: "#00B7FD",
-  DRAIN: "#00FFC8",
-  FILL: "#00FF80",
-  SPIN: "#BB86FC",
-  WAIT: "#FCB518",
-  STOP: "#FF3838",
-  IDLE: "#9DB2C7",
+  WASH: "#0E9F8C", // teal — the wash waves
+  DRAIN: "#2E90FA", // blue — outflow
+  FILL: "#17A673", // green — inflow
+  SPIN: "#7C5CE0", // purple — spin
+  WAIT: "#F5A524", // amber — settle wait
+  STOP: "#E5484D",
+  IDLE: "#8AA3B2",
 };
 
 export function modeColor(mode: string): string {
-  return MODE_COLORS[mode] ?? "#EAF3FC";
+  return MODE_COLORS[mode] ?? "#5F7A8C";
 }

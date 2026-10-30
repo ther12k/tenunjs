@@ -241,6 +241,23 @@ echo "framework_restart_fatal_exceptions: ${RESTART_CRASHES:-0} (restart-window 
 
 echo "== 5. Build the APK and the instrumented test APK from the reviewed revision =="
 cd "$SCRIPT_DIR"
+# TN-185: the skia-host parity cdylib rides in jniLibs so the device gate
+# dual-renders committed scenes through both painters. Built for the
+# emulator's ABI (x86_64; rust-skia ships prebuilt android bindings, so
+# this takes seconds). TENUN_SKIP_SKIA_HOST=1 keeps local quick loops
+# working — the parity TEST then fails visibly on the gate, which is the
+# intended signal that the evidence path was skipped.
+if [ "${TENUN_SKIP_SKIA_HOST:-0}" != "1" ]; then
+  if ! ./tools/skia-host/build-android.sh x86_64-linux-android \
+      >"$OUT_DIR/skia_host_build.txt" 2>&1; then
+    tail -40 "$OUT_DIR/skia_host_build.txt"
+    env_fail "skia-host cross-build failed (rust/cargo-ndk/NDK environment)"
+  fi
+  tail -2 "$OUT_DIR/skia_host_build.txt"
+else
+  echo "TENUN_SKIP_SKIA_HOST=1: skia-host parity lib NOT built; SkiaHostParityTest will fail" \
+    >>"$OUT_DIR/environment.txt"
+fi
 if ! ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest >"$OUT_DIR/gradle_assemble.txt" 2>&1; then
   tail -60 "$OUT_DIR/gradle_assemble.txt"
   accept_fail ":app:assembleDebug / :app:assembleDebugAndroidTest failed"

@@ -227,7 +227,7 @@ export async function buildPolytronBundle(): Promise<BundleArtifact> {
   if (/^\s*(import|export)\s/m.test(code)) {
     code = `(function(){\n${code}\n})();`;
   }
-  smokeRun(code, "polytron_app.js", ['"text":"FUNGSI MESIN"', '"text":"STOP"']);
+  smokeRun(code, "polytron_app.js", ['"text":"Fungsi mesin"', '"text":"STOP MESIN"']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),

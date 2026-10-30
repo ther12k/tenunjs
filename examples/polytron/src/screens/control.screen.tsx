@@ -4,14 +4,13 @@ import { SnackBar } from "@tenunjs-examples/ui-kit";
 import type { BleLinkState } from "../runtime";
 import { fmtClock, type WashReply, type WashStatus } from "../protocol";
 import { modeColor } from "../theme";
-import { ListRow, RelayRow, SensorRow, StatusStrip, StopBar } from "../widgets";
+import { BannerCard, LinkHeader, ListRow, RelayRow, StopBar, WaveFillCard } from "../widgets";
 
 /**
- * Controls tab — live device reality: relay rows (MOTOR A/B, BUANG, ISI),
- * the mode strip, the battery-style AIR meter, STOP and the device info
- * probes (WATER raw, VER). Read-mostly by design: v4 exposes no
- * per-relay BLE switches; everything dangerous stays on Home.
- * Connection state lives in the shell header.
+ * Mesin tab — the mockup's screen 04: live device reality as read-only
+ * monitoring. Running banner (teal, tap → Home), the water wave card,
+ * the relay indicator list ("Indikator, bukan tombol"), device probes
+ * and the fresh-data caption. Everything dangerous stays on Home.
  */
 export interface ControlsState {
   link: BleLinkState;
@@ -73,6 +72,20 @@ export const ControlsScreen = defineScreen({
         (services as { navigate?: (route: string) => void }).navigate?.("home");
       },
     }),
+    connect: defineAction<ControlsState, void>({
+      run({ state, services }) {
+        const s = state as unknown as ControlsState;
+        s.link = { ...s.link, connecting: true };
+        const svc = services as { ble?: { connect(): Promise<boolean> } };
+        void svc.ble?.connect();
+      },
+    }),
+    disconnect: defineAction<ControlsState, void>({
+      run({ services }) {
+        const svc = services as { ble?: { disconnect(): void } };
+        svc.ble?.disconnect();
+      },
+    }),
     send1: defineAction<ControlsState, string>({
       run({ input, state, services }) {
         const s = state as unknown as ControlsState;
@@ -94,88 +107,91 @@ export const ControlsScreen = defineScreen({
     const staleFor =
       offline || waiting || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
     const stale = !offline && !waiting && staleFor > 15;
+    const running = st?.running === true;
 
     const relays: ReadonlyArray<{ icon: "motorA" | "motorB" | "drain" | "droplet"; name: string; on: boolean | null; color: string }> = [
-      { icon: "motorA", name: "MOTOR A", on: st ? st.motorA : null, color: "#00B7FD" },
-      { icon: "motorB", name: "MOTOR B", on: st ? st.motorB : null, color: "#BB86FC" },
-      { icon: "drain", name: "BUANG", on: st ? st.drain : null, color: "#00FFC8" },
-      { icon: "droplet", name: "ISI", on: st ? st.inlet : null, color: "#00FF80" },
+      { icon: "motorA", name: "Motor A", on: st ? st.motorA : null, color: "#0E9F8C" },
+      { icon: "motorB", name: "Motor B", on: st ? st.motorB : null, color: "#7C5CE0" },
+      { icon: "drain", name: "Buang", on: st ? st.drain : null, color: "#2E90FA" },
+      { icon: "droplet", name: "Isi", on: st ? st.inlet : null, color: "#17A673" },
     ];
-    const running = st?.running === true;
-    const water = st?.waterPct ?? null;
-    const total = (st?.elapsedS ?? 0) + (st?.remainS ?? 0);
-    const pct = running && total > 0 ? Math.min(1, st!.elapsedS / total) : null;
+
+    const headerPress = () => {
+      if (s.link.connected || s.link.connecting) actions.disconnect();
+      else actions.connect();
+    };
 
     return (
       <Scaffold>
         <Column padding="md" gap="lg">
-          <StatusStrip
-            status={
-              offline
-                ? "OFFLINE"
-                : waiting
-                  ? "MENUNGGU STATUS…"
-                  : stale
-                    ? `${st!.mode} · DATA BEKU`
-                    : running
-                      ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
-                      : st!.prog.startsWith("DONE")
-                        ? `SELESAI — ${st!.prog.replace(/^DONE /, "")}`
-                        : st!.mode
-            }
-            accent={offline || waiting ? "#9DB2C7" : stale ? "#FCB518" : running ? modeColor(st!.mode) : "#00B7FD"}
-            pct={pct}
-            right={stale ? `BEKU ${staleFor}s` : running ? `SISA ${fmtClock(st!.remainS ?? 0)}` : offline || waiting ? "—" : "SIAP"}
+          <LinkHeader
+            title="Mesin"
+            supported={s.link.supported}
+            connected={s.link.connected}
+            connecting={s.link.connecting}
+            phase={s.link.phase}
+            name={s.link.name}
+            statusAgeS={s.statusAt === null ? null : staleFor}
+            stale={stale}
+            onPress={headerPress}
+          />
+
+          {offline ? (
+            <BannerCard icon="power" tone="warn" title="Belum tersambung" sub="sambungkan di header atas untuk memantau" />
+          ) : waiting ? (
+            <BannerCard icon="clock" tone="info" title="Menunggu status…" sub="menunggu kabar pertama dari mesin" />
+          ) : stale ? (
+            <BannerCard icon="clock" tone="warn" title="Data mesin beku" sub={`tidak diperbarui ${staleFor}s — dekati mesin`} />
+          ) : running ? (
+            <BannerCard
+              icon="wash"
+              tone="acc"
+              title={`Mencuci · ${fmtClock(st!.remainS ?? 0)}`}
+              sub={`${st!.prog} · ketuk untuk ke Beranda`}
+              onPress={() => actions.goHome()}
+            />
+          ) : st!.prog.startsWith("DONE") ? (
+            <BannerCard icon="check" tone="ok" title={`Selesai · ${st!.prog.replace(/^DONE /, "")}`} />
+          ) : (
+            <BannerCard icon="check" tone="ok" title="Siap" sub={st!.prog || "mesin siap"} />
+          )}
+
+          <WaveFillCard
+            pct={st?.waterPct ?? null}
             caption={
-              offline
-                ? "offline · belum ada data"
-                : waiting
-                  ? "menunggu status pertama dari mesin"
-                  : stale
-                    ? `data mesin tidak diperbarui · terakhir ${staleFor} dtk lalu`
-                    : running
-                      ? `Ketuk untuk ke Home · ${st!.prog}`
-                      : st?.prog ?? "menunggu status pertama dari mesin"
+              st === null
+                ? offline
+                  ? "offline · belum terbaca"
+                  : "belum terbaca"
+                : st.waterPct == null
+                  ? "sensor belum terkalibrasi"
+                  : "level air dalam tangki"
             }
-            spin={waiting || running}
-            onPress={running ? () => actions.goHome() : undefined}
           />
 
           <Column gap="sm">
-            <Text variant="label">RELAI — INDIKATOR, BUKAN TOMBOL</Text>
+            <Text variant="label">Status relai</Text>
+            <Text variant="caption">Indikator, bukan tombol</Text>
             {relays.map((r) => (
               <RelayRow key={r.name} icon={r.icon} iconColor={r.color} label={r.name} on={r.on} />
             ))}
           </Column>
 
-          <Column gap="sm">
-            <Text variant="label">SENSOR</Text>
-            <SensorRow
-              pct={water}
-              caption={
-                water === null
-                  ? offline
-                    ? "offline · belum terbaca"
-                    : "belum terbaca"
-                  : "level air dalam tangki"
-              }
-            />
-          </Column>
-
           <StopBar
             disabled={offline}
             pending={s.pending === "STOP"}
+            emphasis={running}
             onPress={() => actions.send1("STOP")}
           />
           {offline ? (
-            <Text variant="label">STOP aplikasi butuh sambungan — gunakan tombol fisik di mesin</Text>
+            <Text variant="caption">STOP aplikasi butuh sambungan — gunakan tombol fisik di mesin</Text>
           ) : null}
 
           <Column gap="sm">
-            <Text variant="label">PERANGKAT</Text>
+            <Text variant="label">Diagnostik perangkat</Text>
             <ListRow
               icon="droplet"
-              iconColor="#00FFC8"
+              iconColor="#2E90FA"
               label="Cek air (raw)"
               sub="WATER — adc mentah + ema + pct"
               pill={
@@ -187,7 +203,7 @@ export const ControlsScreen = defineScreen({
             />
             <ListRow
               icon="power"
-              iconColor="#9DB2C7"
+              iconColor="#8AA3B2"
               label="Versi firmware"
               sub={`heap ${st?.heapKB ?? "—"} KB · ${s.link.name ?? "polytron"}`}
               pill={
@@ -197,6 +213,9 @@ export const ControlsScreen = defineScreen({
               }
               locked={offline ? "offline" : undefined}
             />
+            <Text variant="caption">
+              {offline ? "Data diperbarui —" : `Data diperbarui ${staleFor}s lalu`}
+            </Text>
           </Column>
 
           {s.snack ? (

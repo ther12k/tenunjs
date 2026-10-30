@@ -3,27 +3,42 @@ import { Column, Scaffold, Text } from "@tenunjs/widgets";
 import { SnackBar } from "@tenunjs-examples/ui-kit";
 import {
   ActivityList,
+  BannerCard,
   FunctionGrid,
-  StatusStrip,
+  LinkHeader,
+  ProgramHero,
+  ProgressRingCard,
   StopBar,
+  StepChips,
+  WaveFillCard,
   fmtAgo,
+  modeIcon,
   type FunctionDef,
 } from "../widgets";
 import type { BleLinkState, LogRow } from "../runtime";
-import { fmtActivityLine, fmtClock, type WashStatus } from "../protocol";
+import {
+  PROGRAM_SLOTS,
+  fmtActivityLine,
+  fmtClock,
+  fmtDurationS,
+  parseProgramSteps,
+  MODE_LABELS,
+  type WashStatus,
+} from "../protocol";
 import { modeColor } from "../theme";
 
 /**
- * Home — one phone screen, NO scrolling to reach the controls: a slim
- * status strip (status + SISA + thin progress — the minimized cycle
- * presentation), directly under it the six-function icon grid (every
- * action visible, no paging) and the red STOP. Programs live on the
- * Programs tab; activity trails below the fold.
+ * Home — the mockup's Beranda (01) and Proses aktif (03) as one screen:
+ *
+ *  idle     → status header, green "Siap mencuci" banner, navy PROGRAM
+ *             TERSIMPAN hero with the teal Mulai button, the six-function
+ *             grid, STOP, activity trail.
+ *  running  → status header ("Sedang mencuci"), the big ring hero
+ *             (Sisa waktu + %), the step chip timeline, the stage card,
+ *             the water wave card, "fungsi lain terkunci", solid STOP.
  *
  * The screen knows no Bluetooth: link/status/usage arrive as pushed
- * state, replies land in the activity feed. Connection state lives in
- * the shell header's link pill — no per-tab banner. Failed commands
- * surface as a snack right under STOP (the feed is below the fold).
+ * state; the LinkHeader row is the connect/cancel/disconnect control.
  */
 export interface HomeState {
   link: BleLinkState;
@@ -35,27 +50,29 @@ export interface HomeState {
   mayrun: boolean;
   rows: LogRow[];
   usage: Record<string, number>;
+  /** Machine-side values ("SET k v"), for the hero program card + chips. */
+  values: Record<string, string>;
   pending: string | null;
   /** Last FAILED command explanation, cleared by the next command. */
   err: string | null;
 }
 
 const FUNCTIONS: ReadonlyArray<FunctionDef & { cmd: string }> = [
-  { label: "CUCI", cmd: "WASH", icon: "wash", color: "#00B7FD" },
-  { label: "PERAS", cmd: "SPIN", icon: "spin", color: "#BB86FC" },
-  { label: "BUANG", cmd: "DRAIN", icon: "drain", color: "#00FFC8" },
-  { label: "ISI", cmd: "FILL", icon: "droplet", color: "#00FF80" },
-  { label: "BILAS", cmd: "RINSE", icon: "waves", color: "#38BDF8" },
-  { label: "BILAS ND", cmd: "RINSEND", icon: "wavesSlash", color: "#7DD3FC" },
+  { label: "Cuci", cmd: "WASH", icon: "wash", color: "#0E9F8C" },
+  { label: "Peras", cmd: "SPIN", icon: "spin", color: "#7C5CE0" },
+  { label: "Buang", cmd: "DRAIN", icon: "drain", color: "#2E90FA" },
+  { label: "Isi", cmd: "FILL", icon: "droplet", color: "#17A673" },
+  { label: "Bilas", cmd: "RINSE", icon: "waves", color: "#0EA5E9" },
+  { label: "Bilas ND", cmd: "RINSEND", icon: "wavesSlash", color: "#38BDF8" },
 ];
 
 /** Activity dot color by line kind (HA timeline semantics). */
 function rowColor(line: string): string {
-  if (line.startsWith(">")) return "#00B7FD";
-  if (line.startsWith("OK")) return "#00FF80";
-  if (line.startsWith("ERR")) return "#FF3838";
-  if (line.startsWith("BUSY")) return "#FCB518";
-  return "#9DB2C7";
+  if (line.startsWith(">")) return "#0E9F8C";
+  if (line.startsWith("OK")) return "#17A673";
+  if (line.startsWith("ERR")) return "#E5484D";
+  if (line.startsWith("BUSY")) return "#F5A524";
+  return "#8AA3B2";
 }
 
 export const HomeScreen = defineScreen({
@@ -68,6 +85,7 @@ export const HomeScreen = defineScreen({
     mayrun: false,
     rows: [],
     usage: {},
+    values: {},
     pending: null,
     err: null,
   }),
@@ -111,6 +129,11 @@ export const HomeScreen = defineScreen({
     usage: defineAction<HomeState, Record<string, number>>({
       run({ input, state }) {
         (state as unknown as HomeState).usage = input;
+      },
+    }),
+    settings: defineAction<HomeState, Record<string, string>>({
+      run({ input, state }) {
+        (state as unknown as HomeState).values = input;
       },
     }),
     /** Replies clear the matching pending tile; failures also surface as
@@ -164,56 +187,61 @@ export const HomeScreen = defineScreen({
     const st = s.status;
     const now = Date.now();
 
-    // The dashboard ALWAYS renders — no Web Bluetooth or no link just
-    // disables every control (HA look). Connected-but-no-status-yet is
-    // its own honest state: NEVER "ready" before the machine has spoken.
     const offline = !s.link.connected;
     const waiting = !offline && st === null;
-    // Frozen telemetry: still connected, but the machine stopped talking
-    // (ST: normally arrives 1 Hz). The picture below may be minutes old —
-    // show that and refuse NEW starts until data flows again.
     const staleFor = offline || waiting || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
     const stale = !offline && !waiting && staleFor > 15;
     const running = st?.running === true;
     const done = st !== null && !running && st.prog.startsWith("DONE");
     const total = (st?.elapsedS ?? 0) + (st?.remainS ?? 0);
     const pct = offline || waiting ? null : done ? 1 : running && total > 0 ? Math.min(1, st!.elapsedS / total) : null;
-    const accent = offline || waiting ? "#9DB2C7" : stale ? "#FCB518" : running ? modeColor(st!.mode) : done ? "#00FF80" : "#00B7FD";
-    const status = offline
-      ? "OFFLINE"
-      : waiting
-        ? "MENUNGGU STATUS…"
-        : stale
-          ? `${st!.mode} · DATA BEKU`
-          : running
-            ? `${st!.mode} · LANGKAH ${st!.step}/${st!.steps}`
-            : done
-              ? `SELESAI — ${st.prog.replace(/^DONE /, "")}`
-              : "SIAP MENCUCI";
-    const right = running
-      ? stale
-        ? `BEKU ${staleFor}s`
-        : `SISA ${fmtClock(st!.remainS ?? 0)}`
-      : waiting
-        ? "—"
-        : st?.waterPct != null
-          ? `AIR ${st.waterPct}%`
-          : offline
-            ? "—"
-            : "SIAP";
-    // Offline, the connection strip already explains the situation — the
-    // strip reports state ("OFFLINE") without repeating the connect instruction.
-    const caption = offline
-      ? undefined
-      : waiting
-        ? "menunggu status pertama dari mesin"
-        : stale
-          ? `data mesin tidak diperbarui · terakhir ${staleFor} dtk lalu`
-          : running
-            ? `berlalu ${fmtClock(st!.elapsedS ?? 0)} · ${st.prog}`
-            : done
-              ? "siklus selesai"
-              : "pilih fungsi di bawah · program ada di tab Programs";
+    const accent = offline || waiting ? "#8AA3B2" : stale ? "#F5A524" : running ? modeColor(st!.mode) : done ? "#17A673" : "#0E9F8C";
+
+    // --- link header data ---
+    const headerTitle = running ? "Sedang mencuci" : done ? "Siklus selesai" : "Polytron Wash";
+    const headerPress = () => {
+      if (s.link.connected || s.link.connecting) actions.disconnect();
+      else actions.connect();
+    };
+
+    // --- step chips: derive the program's sequence when it is a known slot ---
+    const slotIdx = st ? PROGRAM_SLOTS.findIndex((p) => st.prog.startsWith(p.name)) : -1;
+    const slotTokens = slotIdx >= 0 ? s.values[PROGRAM_SLOTS[slotIdx]!.key] : undefined;
+    const parsedSteps = slotTokens ? parseProgramSteps(slotTokens) : [];
+    const chips =
+      running && parsedSteps.length > 0
+        ? parsedSteps.map((ps, i) => ({
+            label: MODE_LABELS[ps.mode] ?? ps.mode,
+            icon: modeIcon(ps.mode),
+            color: modeColor(ps.mode),
+            active: i === st!.step - 1,
+          }))
+        : running
+          ? [
+              {
+                label: MODE_LABELS[st!.mode] ?? st!.mode,
+                icon: modeIcon(st!.mode),
+                color: modeColor(st!.mode),
+                active: true,
+              },
+            ]
+          : [];
+
+    // --- idle hero: first configured program slot ---
+    const heroIdx =
+      PROGRAM_SLOTS.findIndex((p) => (s.values[p.key] ?? "").trim().length > 0) >= 0
+        ? PROGRAM_SLOTS.findIndex((p) => (s.values[p.key] ?? "").trim().length > 0)
+        : 0;
+    const heroSlot = PROGRAM_SLOTS[heroIdx]!;
+    const heroTokens = s.values[heroSlot.key] ?? "";
+    const heroParsed = parseProgramSteps(heroTokens);
+    const heroTotalS = heroParsed.reduce((a, ps) => a + ps.s, 0);
+    const heroMeta =
+      heroParsed.length > 0
+        ? `±${fmtDurationS(heroTotalS)} · ${heroParsed.length} tahap`
+        : offline
+          ? "sambungkan untuk membaca"
+          : "belum dimuat";
 
     const activeCmd = running ? st!.mode : null;
     const functionCards: FunctionDef[] = FUNCTIONS.map((f) => ({
@@ -228,13 +256,16 @@ export const HomeScreen = defineScreen({
     return (
       <Scaffold>
         <Column padding="md" gap="lg">
-          <StatusStrip
-            status={status}
-            accent={accent}
-            pct={pct}
-            right={right}
-            caption={caption}
-            spin={waiting || running}
+          <LinkHeader
+            title={headerTitle}
+            supported={s.link.supported}
+            connected={s.link.connected}
+            connecting={s.link.connecting}
+            phase={s.link.phase}
+            name={s.link.name}
+            statusAgeS={s.statusAt === null ? null : staleFor}
+            stale={stale}
+            onPress={headerPress}
           />
 
           {s.mayrun ? (
@@ -245,22 +276,74 @@ export const HomeScreen = defineScreen({
             />
           ) : null}
 
-          <Column gap="sm">
-            <Text variant="label">FUNGSI MESIN</Text>
-            <FunctionGrid functions={functionCards} />
-            <StopBar
-              disabled={offline}
-              pending={s.pending === "STOP"}
-              onPress={() => actions.start("STOP")}
-            />
-          </Column>
+          {running && st ? (
+            <Column gap="lg">
+              <ProgressRingCard
+                time={fmtClock(st.remainS ?? 0)}
+                caption="Sisa waktu"
+                pct={pct}
+                accent={accent}
+              />
+              {chips.length > 0 ? <StepChips steps={chips} /> : null}
+              <BannerCard
+                icon={modeIcon(st.mode)}
+                tone="acc"
+                title={MODE_LABELS[st.mode] ?? st.mode}
+                sub={`Tahap ${st.step} dari ${st.steps}${parsedSteps.length > 0 ? ` · ${st.prog}` : ""}`}
+              />
+              <WaveFillCard
+                pct={st.waterPct}
+                caption={st.waterPct === null ? "sensor belum terkalibrasi" : "level air dalam tangki"}
+              />
+              <Text variant="label">Fungsi lain terkunci selama proses</Text>
+            </Column>
+          ) : (
+            <Column gap="lg">
+              {done && st ? (
+                <BannerCard icon="check" tone="ok" title={`Siklus selesai · ${st.prog.replace(/^DONE /, "")}`} />
+              ) : stale ? (
+                <BannerCard icon="clock" tone="warn" title="Data mesin beku" sub={`tidak diperbarui ${staleFor}s — dekati mesin`} />
+              ) : waiting ? (
+                <BannerCard icon="clock" tone="info" title="Menunggu status…" sub="menunggu kabar pertama dari mesin" />
+              ) : !offline ? (
+                <BannerCard icon="check" tone="ok" title="Siap mencuci" sub="Pilih program atau fungsi mesin" />
+              ) : null}
+
+              {stale ? null : (
+                <ProgramHero
+                  name={heroSlot.name}
+                  meta={heroMeta}
+                  state={
+                    offline
+                      ? "locked"
+                      : s.pending === `PROG ${heroIdx}`
+                        ? "pending"
+                        : "idle"
+                  }
+                  onStart={heroParsed.length > 0 ? () => actions.start(`PROG ${heroIdx}`) : undefined}
+                />
+              )}
+
+              <Column gap="sm">
+                <Text variant="label">Fungsi mesin</Text>
+                <FunctionGrid functions={functionCards} />
+              </Column>
+            </Column>
+          )}
+
+          <StopBar
+            disabled={offline}
+            pending={s.pending === "STOP"}
+            emphasis={running}
+            onPress={() => actions.start("STOP")}
+          />
 
           {s.err ? (
             <SnackBar message={s.err} actionLabel="OK" onAction={() => actions.clearErr()} />
           ) : null}
 
           <Column gap="sm">
-            <Text variant="label">AKTIVITAS TERBARU</Text>
+            <Text variant="label">Aktivitas terakhir</Text>
             <ActivityList
               rows={s.rows.map((r) => ({
                 t: r.t,
