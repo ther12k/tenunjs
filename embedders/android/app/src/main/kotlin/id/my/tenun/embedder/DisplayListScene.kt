@@ -38,6 +38,38 @@ data class SceneTransition(
     val direction: String
 )
 
+/**
+ * TN-179/ADR-0025: the accessibility semantics projection riding an
+ * atomic scene commit. One node per semantically meaningful widget;
+ * actions reference the SAME tap-run table touch uses (tapId → the
+ * ordinary "tap"/"long-press" dispatch).
+ */
+data class SceneSemantics(
+    val nodes: List<Node>
+) {
+    data class Node(
+        val id: String,
+        val role: String,
+        val label: String?,
+        val value: String?,
+        val hint: String?,
+        val focused: Boolean,
+        val readOnly: Boolean,
+        val disabled: Boolean,
+        val x: Float,
+        val y: Float,
+        val w: Float,
+        val h: Float,
+        /** Action "press"/"focus" tap id (buttons, fields), if any. */
+        val pressTapId: Int?,
+        /** Action "long-press" tap id, if any. */
+        val longPressTapId: Int?,
+        /** Non-null when the node lives in this scroll region's CONTENT space. */
+        val scroll: String?,
+        val liveRegion: Boolean
+    )
+}
+
 data class DisplayListScene(
     val designWidth: Float,
     val contentHeight: Float,
@@ -45,7 +77,9 @@ data class DisplayListScene(
     val ops: List<Op>,
     val taps: List<Tap>,
     /** TN-169: optional host-evaluated route transition; null on ordinary commits. */
-    val transition: SceneTransition? = null
+    val transition: SceneTransition? = null,
+    /** TN-179: optional semantics projection; null on pre-TN-179 scenes. */
+    val semantics: SceneSemantics? = null
 ) {
     /** Absolute scene-space clipping, currently emitted for editor text only. */
     data class Clip(val x: Float, val y: Float, val w: Float, val h: Float)
@@ -208,6 +242,83 @@ data class DisplayListScene(
             return Clip(number("x"), number("y"), number("w", true), number("h", true))
         }
 
+        /**
+         * TN-179: strict semantics parsing — once a scene DECLARES a
+         * semantics block, a malformed node is a contract violation
+         * (fail-visible, the ops rule); absent blocks (pre-TN-179 scenes)
+         * parse to null and change nothing.
+         */
+        private fun parseSemantics(json: JSONObject?): SceneSemantics? {
+            if (json == null) return null
+            val version = json.optInt("semanticsVersion", 0)
+            if (version != 1) {
+                throw SceneContractException(
+                    "scene semantics version $version exceeds host support (1); update the host APK"
+                )
+            }
+            val nodesJson = json.optJSONArray("nodes")
+                ?: throw SceneContractException("scene semantics is missing nodes")
+            val nodes = ArrayList<SceneSemantics.Node>(nodesJson.length())
+            val seenIds = HashSet<String>()
+            for (i in 0 until nodesJson.length()) {
+                val node = nodesJson.getJSONObject(i)
+                val id = node.optString("id", "")
+                if (id.isEmpty()) throw SceneContractException("semantic node ${i} is missing id")
+                if (!seenIds.add(id)) {
+                    throw SceneContractException("semantic node id \"$id\" appears more than once")
+                }
+                val role = node.optString("role", "")
+                if (role.isEmpty()) throw SceneContractException("semantic node \"$id\" is missing role")
+                var pressTapId: Int? = null
+                var longPressTapId: Int? = null
+                val actionsJson = node.optJSONArray("actions")
+                if (actionsJson != null) {
+                    for (a in 0 until actionsJson.length()) {
+                        val action = actionsJson.getJSONObject(a)
+                        val tapId = action.optInt("tapId", -1)
+                        if (tapId < 0) {
+                            throw SceneContractException("semantic node \"$id\" action is missing tapId")
+                        }
+                        when (action.optString("name")) {
+                            "press", "focus" -> pressTapId = tapId
+                            "long-press" -> longPressTapId = tapId
+                            else -> throw SceneContractException(
+                                "semantic node \"$id\" has unknown action \"${action.optString("name")}\""
+                            )
+                        }
+                    }
+                }
+                val state = node.optJSONObject("state")
+                val boundsJson = node.optJSONObject("bounds")
+                    ?: throw SceneContractException("semantic node \"$id\" is missing bounds")
+                fun geom(key: String): Float {
+                    val v = boundsJson.optDouble(key, Double.NaN)
+                    if (v.isNaN() || !v.isFinite()) {
+                        throw SceneContractException("semantic node \"$id\" bounds.$key must be finite")
+                    }
+                    return v.toFloat()
+                }
+                nodes.add(
+                    SceneSemantics.Node(
+                        id = id,
+                        role = role,
+                        label = node.optString("label", "").ifEmpty { null },
+                        value = node.optString("value", "").ifEmpty { null },
+                        hint = node.optString("hint", "").ifEmpty { null },
+                        focused = state?.optBoolean("focused", false) == true,
+                        readOnly = state?.optBoolean("readOnly", false) == true,
+                        disabled = state?.optBoolean("disabled", false) == true,
+                        x = geom("x"), y = geom("y"), w = geom("w"), h = geom("h"),
+                        pressTapId = pressTapId,
+                        longPressTapId = longPressTapId,
+                        scroll = if (node.has("scroll")) node.getString("scroll") else null,
+                        liveRegion = node.optBoolean("liveRegion", false)
+                    )
+                )
+            }
+            return SceneSemantics(nodes)
+        }
+
         fun parse(sceneJson: String): DisplayListScene? {
             // TN-140: once the scene DECLARES itself a display list, every
             // structural failure is a contract violation (thrown) — never a
@@ -260,7 +371,8 @@ data class DisplayListScene(
                     background = root.optString("background", "#101014"),
                     ops = ops,
                     taps = taps,
-                    transition = parseTransition(root.optJSONObject("transition"))
+                    transition = parseTransition(root.optJSONObject("transition")),
+                    semantics = parseSemantics(root.optJSONObject("semantics"))
                 )
             } catch (e: SceneContractException) {
                 // Contract violations must surface to the host, not fall

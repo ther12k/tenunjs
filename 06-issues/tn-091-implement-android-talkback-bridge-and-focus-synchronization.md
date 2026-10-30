@@ -146,3 +146,16 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## TN-180 slice note (2026-10-30)
+
+The bridge half is delivered by
+[TN-180](tn-180-android-accessibility-node-provider-bridge.md):
+`TenunSurfaceView` exposes `scene.semantics` (TN-179/ADR-0025) as
+Android virtual accessibility nodes — populated framework nodes with
+role/label/state/bounds, `ACTION_CLICK` dispatching the identical tap a
+finger does, stable-id focus synchronization with host-side generations,
+and rate-limited live-region announcements — with JVM and device-gate
+regression coverage. Still open here: TalkBack manual journeys on a
+physical phone (ADR-0019 evidence) and accessibility text editing
+(`ACTION_SET_TEXT` through the revisioned TEXT_EDIT contract).

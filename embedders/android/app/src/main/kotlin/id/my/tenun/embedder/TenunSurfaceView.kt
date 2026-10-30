@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Handler
 import android.os.HandlerThread
@@ -17,6 +18,9 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewConfiguration
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityNodeProvider
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -146,6 +150,11 @@ class TenunSurfaceView @JvmOverloads constructor(
             // them — a swapped-in bundle whose regions reuse the same ids
             // must not inherit another application's scroll positions.
             regionOffsets.clear()
+            // TN-180: semantic ids belong to the engine that emitted them;
+            // clear the bridge so a swapped application's ids never read as
+            // "the same element" to a screen reader. The new engine's first
+            // committed scene re-populates the bridge through syncFromScene.
+            semanticsBridgeState.onSceneCommitted(null)
             // Reflect the engine's already-committed scene (including the
             // JS-provided button label) before the first draw, so the view
             // renders the JavaScript application's initial state.
@@ -492,6 +501,7 @@ class TenunSurfaceView @JvmOverloads constructor(
                     beginRouteTransition(transitionSource, applied, spec)
                 }
                 adoptDisplayTextInput(applied, editResponse)
+                onSemanticsCommitted(applied)
                 return true
             }
             SceneHolder.Outcome.REJECTED -> {
@@ -947,22 +957,131 @@ class TenunSurfaceView @JvmOverloads constructor(
                 contentY >= tap.y && contentY <= tap.y + tap.h
         }
         if (hit == null) return false
+        val dispatched = dispatchSceneAction(hit.action, hit.payloadJson ?: "{}")
+        if (dispatched && !dispatchedOnce) {
+            dispatchedOnce = true
+            onFirstSuccessfulDispatch?.invoke()
+        }
+        return dispatched
+    }
+
+    /**
+     * TN-180: the ONE dispatch path touch and accessibility share —
+     * semantic ACTION_CLICK dispatches the identical "tap"/"long-press"
+     * a finger does (ADR-0025 rule 3).
+     */
+    private fun dispatchSceneAction(action: String, payloadJson: String): Boolean {
         val eng = engine ?: return false
         // TN-137: the result channel distinguishes a FAILED handler (null —
         // it threw) from a successful dispatch; a thrown action must not
         // fire the OTA trial's dispatch criterion, and there is nothing to
         // sync (the engine kept its last committed scene).
-        val handlerResult = eng.dispatchActionResult(hit.action, hit.payloadJson ?: "{}")
+        val handlerResult = eng.dispatchActionResult(action, payloadJson)
         if (handlerResult == null) return true
         // The committed scene arrives via tenun_commit;
         // the dispatch return value is engine state.
         syncFromScene(eng.getLatestScene())
         redraw()
-        if (!dispatchedOnce) {
-            dispatchedOnce = true
-            onFirstSuccessfulDispatch?.invoke()
-        }
         return true
+    }
+
+    /* ----------------- TN-180: accessibility bridge (TN-091 slice 1) ----------------- */
+
+    private val semanticsBridgeState = SemanticsBridgeState()
+    private var accessibilityProvider: TenunAccessibilityProvider? = null
+
+    init {
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+
+    override fun getAccessibilityNodeProvider(): AccessibilityNodeProvider? {
+        val existing = accessibilityProvider
+        if (existing != null) return existing
+        val provider = TenunAccessibilityProvider(accessibilityHost, semanticsBridgeState)
+        accessibilityProvider = provider
+        return provider
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        // The surface is a container of virtual semantic nodes; screen
+        // readers enumerate them through the node provider above.
+        info.className = "android.view.View"
+    }
+
+    private val accessibilityHost = object : AccessibilityHost {
+        override val hostView: TenunSurfaceView get() = this@TenunSurfaceView
+
+        override fun dispatchSemanticAction(action: String, tapId: Int): Boolean {
+            // TalkBack activation ≡ touch activation: same verb, same
+            // payload, same dispatch path, same commit/sync.
+            return dispatchSceneAction(action, """{"id":$tapId}""")
+        }
+
+        override fun semanticBounds(node: SceneSemantics.Node): Rect {
+            val scene = sceneHolder.current ?: return Rect()
+            val scale = if (scene.designWidth > 0) dlScale else 1f
+            // Where the node paints NOW: scene scroll for scene-space
+            // nodes, the region's viewport + paint offset for content
+            // nodes (the tap hit-test coordinate model).
+            val dx: Float
+            val dy: Float
+            if (node.scroll != null) {
+                val region = scene.ops.asSequence()
+                    .filterIsInstance<DisplayListScene.Op.ScrollRegionOp>()
+                    .firstOrNull { it.id == node.scroll }
+                    ?: return Rect()
+                dx = (region.x + node.x) * scale
+                dy = (region.y - scrollY + node.y - regionOffset(region)) * scale
+            } else {
+                dx = node.x * scale
+                dy = (node.y - scrollY) * scale
+            }
+            val left = dx.toInt()
+            val top = dy.toInt()
+            val right = (dx + node.w * scale).toInt()
+            val bottom = (dy + node.h * scale).toInt()
+            return Rect(left, top, right, bottom)
+        }
+
+        override fun screenOffset(): Pair<Int, Int> {
+            val location = IntArray(2)
+            hostView.getLocationOnScreen(location)
+            return Pair(location[0], location[1])
+        }
+
+        override fun sendVirtualViewEvent(virtualViewId: Int, eventType: Int) {
+            // Virtual-view events route through the parent (the framework
+            // helper pattern): sendAccessibilityEvent takes a type int, and
+            // a no-op when no service is connected is exactly right.
+            val event = AccessibilityEvent.obtain(eventType)
+            event.setSource(hostView, virtualViewId)
+            event.packageName = hostView.context.packageName
+            event.className = "android.view.View"
+            event.isEnabled = true
+            hostView.parent?.requestSendAccessibilityEvent(hostView, event) ?: event.recycle()
+        }
+
+        override fun announce(text: String) {
+            val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_ANNOUNCEMENT)
+            event.setSource(hostView)
+            event.packageName = hostView.context.packageName
+            event.className = "android.view.View"
+            event.isEnabled = true
+            event.text.add(text)
+            hostView.parent?.requestSendAccessibilityEvent(hostView, event) ?: event.recycle()
+        }
+    }
+
+    /** Applied-scene hook: advance the bridge and emit its diff as events. */
+    private fun onSemanticsCommitted(scene: DisplayListScene) {
+        val diff = semanticsBridgeState.onSceneCommitted(scene.semantics)
+        for (virtualId in diff.changedVirtualIds) {
+            accessibilityHost.sendVirtualViewEvent(virtualId, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        }
+        for (text in diff.announcements) {
+            accessibilityHost.announce(text)
+        }
     }
 
     private fun renderScene(canvas: Canvas) {
