@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-184: skia-host scene parity — the wire's full vocabulary paints"
 summary: "The 2026-10-30 review found stage 2's rasterizer accepted only a subset of the display-list contract: #aarrggbb colors, non-rect/text scroll-region content, text clips and align boxes, fixed/anchor overlays, real bold, and centerline rings all failed or silently mis-painted. All seven fixed with pixel tests; every real emitted scene (incl. the milestone app's live Controls tab) now renders."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-184"
 milestone: "M4"
 priority: "P1"
@@ -69,3 +69,11 @@ against the compiled C ABI; two made REAL scenes fail whole.
   honor it (accepted, unpainted).
 - Whole-scene scroll offset (the ABI renders settled offsets; the stage
   3 surface passes scroll state).
+
+## Status note (2026-10-30, closed)
+
+All seven defects fixed in PR #267 with pixel-level tests (20 total in
+the crate, 8 new) and real-scene evidence: every probe that failed the
+2026-10-30 review — the milestone app's live alpha-color Controls tab,
+the layoutScreen TextField-in-ScrollView scene, all idle tabs — now
+renders rc=0 through the C ABI. 8/8 CI gates on the PR head.
