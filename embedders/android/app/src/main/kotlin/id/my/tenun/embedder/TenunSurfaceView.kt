@@ -493,6 +493,11 @@ class TenunSurfaceView @JvmOverloads constructor(
         when (sceneHolder.apply(sceneJson)) {
             SceneHolder.Outcome.APPLIED -> {
                 val applied = sceneHolder.current!!
+                // TN-183: the scroll extent follows the commit, not the
+                // first draw — a laid-out-but-not-yet-drawn view clamps
+                // touch scrolls and transition snapshots against the new
+                // scene's real bounds instead of a stale zero.
+                if (width > 0 && height > 0) recomputeScrollExtent(applied)
                 // TN-169: a commit carrying a transition animates from the
                 // previously settled scene on the animation thread; the
                 // follow-up redraw defers to the in-flight transition.
@@ -696,7 +701,12 @@ class TenunSurfaceView @JvmOverloads constructor(
      * absent. unlockCanvasAndPost posts either kind.
      */
     private fun lockDrawCanvas(): Canvas? = try {
-        holder.lockHardwareCanvas()
+        // The software fallback covers BOTH rejection shapes: a thrown
+        // exception AND a null return — SurfaceHolder's internal lock
+        // catches hardware-backend failures itself and returns null
+        // (AOSP SurfaceView.internalLockCanvas, API 26 through 36), so a
+        // null-only helper silently dropped frames on GPU-less configs.
+        holder.lockHardwareCanvas() ?: holder.lockCanvas()
     } catch (e: IllegalStateException) {
         holder.lockCanvas()
     } catch (e: RuntimeException) {
@@ -721,11 +731,28 @@ class TenunSurfaceView @JvmOverloads constructor(
     val isTransitionActiveForTest: Boolean
         get() = synchronized(paintLock) { activeRouteTransition != null }
 
+    /** TN-183 acceptance observation: the scroll offset the active route
+     * transition snapshots its layers under (null when no transition runs). */
+    val transitionScrollForTest: Float?
+        get() = synchronized(paintLock) { activeRouteTransition?.scrollY }
+
+    /** TN-183 acceptance observation: scrolls through the PRODUCTION
+     * touch-path clamp (scrollBy), so tests exercise the same extent
+     * math a finger drag does — not a parallel implementation. */
+    fun dragScrollForTest(delta: Float) {
+        scrollBy(delta)
+    }
+
     private class RouteTransitionState(
         val from: DisplayListScene,
         val to: DisplayListScene,
         val spec: SceneTransition,
-        val startUptimeMs: Long
+        val startUptimeMs: Long,
+        /** Scroll position the route was entered from: every frame of the
+         * transition paints BOTH layers under this offset (the browser
+         * twin's paintScene(from/to, scrollY) rule), so a scrolled page
+         * does not snap to its top the moment the animation starts. */
+        val scrollY: Float
     )
 
     /** Starts (or replaces) the transition to [to]. Evaluated on the
@@ -733,7 +760,7 @@ class TenunSurfaceView @JvmOverloads constructor(
      *  dispatch, a stalled capability call — cannot freeze route motion:
      *  JavaScript configured the transition; the host evaluates it. */
     private fun beginRouteTransition(from: DisplayListScene, to: DisplayListScene, spec: SceneTransition) {
-        val state = RouteTransitionState(from, to, spec, SystemClock.uptimeMillis())
+        val state = RouteTransitionState(from, to, spec, SystemClock.uptimeMillis(), scrollY)
         synchronized(paintLock) { activeRouteTransition = state }
         val handler = ensureTransitionHandler()
         handler.removeCallbacksAndMessages(null)
@@ -801,15 +828,18 @@ class TenunSurfaceView @JvmOverloads constructor(
         canvas.save()
         canvas.scale(scale, scale)
         canvas.clipRect(0f, 0f, to.designWidth, height / scale)
-        drawSceneLayer(canvas, state.from, frame.fromDx, frame.fromAlpha)
-        drawSceneLayer(canvas, to, frame.toDx, frame.toAlpha)
+        drawSceneLayer(canvas, state.from, frame.fromDx, frame.fromAlpha, state.scrollY)
+        drawSceneLayer(canvas, to, frame.toDx, frame.toAlpha, state.scrollY)
         canvas.restore()
     }
 
     /** One scene body under a horizontal translate and alpha, clipped to
-     *  the viewport. Design units (the caller scaled); alpha rides
-     *  saveLayerAlpha — the software canvas has no global alpha. */
-    private fun drawSceneLayer(canvas: Canvas, scene: DisplayListScene, dx: Float, alpha: Float) {
+     * the viewport. Design units (the caller scaled); alpha rides
+     * saveLayerAlpha — the software canvas has no global alpha. The body
+     * keeps the route's scroll offset (TN-183): both layers paint under
+     * the SAME snapshotted scrollY, exactly like the settled renderer and
+     * the browser twin's paintScene(from/to, scrollY). */
+    private fun drawSceneLayer(canvas: Canvas, scene: DisplayListScene, dx: Float, alpha: Float, scrollY: Float) {
         val scale = if (scene.designWidth > 0) width / scene.designWidth else 1f
         val visibleHeight = height / scale
         canvas.save()
@@ -820,17 +850,22 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         canvas.translate(dx, 0f)
         canvas.clipRect(-dx, 0f, -dx + scene.designWidth, visibleHeight)
-        renderDisplayListOps(canvas, scene, visibleHeight)
+        renderDisplayListOps(canvas, scene, visibleHeight, scrollY)
         if (layered) canvas.restore()
         canvas.restore()
     }
 
     /** The ops body of renderDisplayList without background/bounds effects —
-     *  shared by plain rendering and transition layers. */
-    private fun renderDisplayListOps(canvas: Canvas, dl: DisplayListScene, visibleHeight: Float) {
+     * shared by plain rendering and transition layers. The scrollable body
+     * translates by -scrollY INSIDE the caller's viewport clip (the settled
+     * renderDisplayList rule); fixed overlays stay viewport-pinned. */
+    private fun renderDisplayListOps(canvas: Canvas, dl: DisplayListScene, visibleHeight: Float, scrollY: Float) {
+        canvas.save()
+        canvas.translate(0f, -scrollY)
         for (op in dl.ops) {
             if (!op.isFixed()) paintDisplayListOp(canvas, op, visibleHeight)
         }
+        canvas.restore()
         for (op in dl.ops) {
             if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
         }
@@ -1134,10 +1169,18 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
     }
 
-    private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {
+    /** Design-unit scale and whole-scene scroll extent from the committed
+     *  scene and the current view size — shared by the draw path (every
+     *  frame) and syncFromScene (TN-183: bounds exist before first draw). */
+    private fun recomputeScrollExtent(dl: DisplayListScene) {
         dlScale = if (dl.designWidth > 0) width / dl.designWidth else 1f
         val visibleHeight = height / dlScale
         maxScroll = (dl.contentHeight - visibleHeight).coerceAtLeast(0f)
+    }
+
+    private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {
+        recomputeScrollExtent(dl)
+        val visibleHeight = height / dlScale
         scrollY = scrollY.coerceIn(0f, maxScroll)
 
         canvas.drawColor(Color.parseColor(dl.background))
