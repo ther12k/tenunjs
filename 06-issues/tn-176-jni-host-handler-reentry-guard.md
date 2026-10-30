@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-176: JNI host-handler setter and destroy must refuse same-engine reentry"
 summary: "The Android JNI nativeSetHostCallHandler locked the engine mutex without TN-167's in_entry check, and nativeDestroy returned void so a refused destroy still zeroed Kotlin's handle — a synchronous host-service callback calling destroy() or replacing the handler deadlocked the dispatch thread (ANR-shaped on main)."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-176"
 milestone: "M4"
 priority: "P1"
@@ -55,3 +55,16 @@ setter — this is why the suite stayed green.
 ## Out of scope
 
 - Any change to the C API's reentry semantics (TN-167 frozen).
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #261: the JNI
+nativeSetHostCallHandler refuses same-engine reentry with WARN (the
+TN-167 rule, now shared with the C API), and nativeDestroy returns
+whether the destroy happened — TenunEngine.destroy() keeps its handle
+on refusal so a refused engine stays usable and the owner retries after
+the entry returns. Evidence: EngineReentryGuardTest on the CI device
+gate (reentrant destroy refused + engine stays usable through two full
+dispatches; reentrant handler replacement refused without deadlock;
+post-entry destroy succeeds — the hang itself is the pre-fix failure),
+NDK release+debug+androidTest variants compile, full run_android_test.sh
+green, 8/8 CI gates.

@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-178: Development hot reload must be debug-build-only and absent from release packages"
 summary: "The dev_server.txt hot-reload marker was generated into main assets and honored at runtime regardless of build type: packaging a release with a leftover marker enabled unsigned network-sourced JavaScript evaluation with live host capabilities — the signed OTA envelope's gates never applied to this path."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-178"
 milestone: "M4"
 priority: "P1"
@@ -62,3 +62,19 @@ Local residue demonstrated the accident concretely: a stale
 - Release signing/distribution configuration (TN-128's store candidates
   own that).
 - The OTA channel's own signed-envelope machinery (unchanged).
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #261: the
+dev_server.txt marker is generated into src/debug/assets (release never
+packages it; build.mjs purges stale copies in both locations), and
+MainActivity.readDevServerAsset() honors it only in debuggable builds
+(ApplicationInfo.FLAG_DEBUGGABLE) — a release package can no longer
+activate unsigned network hot reload even if a marker is manually
+re-added. The first-ever assembleRelease also exposed a latent -O2
+warning blocker in vendored quickjs; CMake now carries the host build's
+suppressions. Packaging proof (marker deliberately seeded in debug
+assets): assembleRelease/assembleDebug/assembleDebugAndroidTest all
+BUILD SUCCESSFUL; release APK contains 0 dev_server entries, debug APK
+exactly 1. A stale local main-assets marker from the 2026-10-28 WiFi
+loop was found shipping into the first release APK and removed
+(git-ignored residue, never committed).
