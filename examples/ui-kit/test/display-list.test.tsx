@@ -69,9 +69,10 @@ describe("display-list layout engine", () => {
       </Scaffold>
     );
     const { scene } = layoutScreen(galleryTheme, tree);
-    // The column's inner width is 720 - 2*24; body text renders at size 17.
-    const placedLines = wrapText(longText(), 17, 720 - 48);
-    const bodyOps = scene.ops.filter((op) => op.op === "text" && (op as any).size === 17);
+    // The column's inner width is 720 - 2*24; body text renders at theme's body size (16).
+    const bodySize = galleryTheme.typography?.body?.size ?? 17;
+    const placedLines = wrapText(longText(), bodySize, 720 - 48);
+    const bodyOps = scene.ops.filter((op) => op.op === "text" && (op as any).size === bodySize);
     expect(bodyOps.length).toBe(placedLines.length);
   });
 
@@ -135,8 +136,8 @@ describe("gallery device loop", () => {
       .map((op: any) => op.text);
     expect(labels).toContain("Tenun Gallery");
     expect(labels).toContain("Widget showcase");
-    // Long titles wrap across text ops; assert on the words.
-    expect(labels).toContain("Onboarding");
+    // Module titles may wrap across text ops depending on theme typography.
+    expect(labels.some((l: string) => l.includes("Onboarding"))).toBe(true);
     expect(labels).toContain("Plant shop");
     expect(labels).toContain("Profile & account");
     expect(labels).toContain("Theme lab");

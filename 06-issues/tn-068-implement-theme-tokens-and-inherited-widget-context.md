@@ -182,6 +182,15 @@ addendum is delivered by
 lowering retains slot identity to the commit boundary (the runtime
 bakes before any host sees a scene), `ThemeScopeBox` narrows SLOTS as
 well as roles for descendants only, and `ApplicationRuntime` carries a
-slot palette (`palette` option, `setPalette`). Still open here:
-spacing/radius/typography/locale/scale/platform context values.
+slot palette (`palette` option, `setPalette`).
+
+## TN-174 slice note (2026-10-30)
+
+Spacing, radius, and typography token flow is delivered by
+[TN-174](tn-174-theme-driven-spacing-radius-typography-tokens.md):
+`ThemeConfig`'s `spacing`, `radius`, and `typography` blocks now actively
+drive layout metrics instead of being dead config; custom typography
+variants can be declared; `ThemeScopeBox` accepts `tokens` narrowing
+descendants only; and runtime `setTheme` updates geometry on the next
+frame. Still open here: locale, scale, and platform context values.
 

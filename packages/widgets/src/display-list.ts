@@ -51,7 +51,7 @@ export interface LayoutViewport {
 
 export type LayoutErrorCode =
   | "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX"
-  | "INVALID_TRANSITION" | "INVALID_COLOR_REF";
+  | "INVALID_TRANSITION" | "INVALID_COLOR_REF" | "INVALID_THEME_TOKEN";
 
 /* ------------------------------------------------------------------ *
  * TN-173: color-slot refs in ordinary widget props. The vocabulary    *
@@ -403,6 +403,10 @@ interface InternalContext extends RenderContext {
   slotScopes: Array<Partial<Record<string, string>>>;
   /** TN-173: set when an op retained a slot ref past emission (unscoped). */
   usedRefs: boolean;
+  /** TN-174: theme-validated active token set (spacing/radius/typography). */
+  tokens: TokenSet;
+  /** TN-174: active token-scope overlays, outermost first (ThemeScope.tokens). */
+  tokenScopes: Array<TokenScope>;
   /**
    * Per-render function-component resolutions. measure and place walk the
    * tree separately; without this cache every component would be INVOKED
@@ -439,6 +443,12 @@ export interface ThemeScopeProps {
    * unaffected; unoverridden slots inherit.
    */
   slots?: Partial<ThemePalette>;
+  /**
+   * TN-174: token overlays (spacing/radius/typography) narrowed to
+   * DESCENDANTS ONLY — innermost scope wins, then outer scopes, then the
+   * theme's token blocks, then the built-in scales.
+   */
+  tokens?: TokenScope;
   children?: WidgetChild;
 }
 
@@ -451,7 +461,11 @@ export function ThemeScopeBox(props: ThemeScopeProps): WidgetNode {
   return {
     kind: ThemeScope,
     key: null,
-    props: { scheme: props.scheme, ...(props.slots !== undefined ? { slots: props.slots } : {}) },
+    props: {
+      scheme: props.scheme,
+      ...(props.slots !== undefined ? { slots: props.slots } : {}),
+      ...(props.tokens !== undefined ? { tokens: props.tokens } : {}),
+    },
     children: (props as { children?: WidgetChild[] }).children ?? [],
   } as unknown as WidgetNode;
 }
@@ -564,21 +578,147 @@ const TYPOGRAPHY: Record<string, Typography> = {
 
 const DESIGN_WIDTH = 720;
 
-function spacing(value: unknown, fallback: number): number {
+/**
+ * TN-174: the ACTIVE token set — theme entries validated and merged over
+ * the built-in scales. Built once per layoutScreen; resolvers read it
+ * through the context so `setTheme` invalidation flows tokens to the next
+ * frame. Theme blocks may override built-in names and (typography) declare
+ * custom variants.
+ */
+interface TokenSet {
+  readonly spacing: Readonly<Record<string, number>>;
+  readonly radius: Readonly<Record<string, number>>;
+  readonly typography: Readonly<Record<string, Typography>>;
+}
+
+/** Scope-carried token overlays (ThemeScopeBox.tokens): same shape as the
+ *  theme blocks, narrowed to descendants only. */
+export interface TokenScope {
+  spacing?: Record<string, number>;
+  radius?: Record<string, number>;
+  typography?: Record<string, ThemeTypographyInput>;
+}
+
+/** Theme-declared typography entry (weight and lineHeight optional; resolvers default them). */
+export interface ThemeTypographyInput {
+  size: number;
+  lineHeight?: number;
+  weight?: number | "normal" | "bold";
+}
+
+function finiteNonnegative(value: unknown, where: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a nonnegative finite number`);
+  }
+  return value;
+}
+
+function finitePositive(value: unknown, where: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a positive finite number`);
+  }
+  return value;
+}
+
+function buildTokenSet(theme: ThemeConfig): TokenSet {
+  const spacing: Record<string, number> = { ...SPACING };
+  if (theme.spacing !== undefined) {
+    if (typeof theme.spacing !== "object" || theme.spacing === null || Array.isArray(theme.spacing)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "theme.spacing must be an object");
+    }
+    for (const [key, value] of Object.entries(theme.spacing)) {
+      spacing[key] = finiteNonnegative(value, `theme.spacing.${key}`);
+    }
+  }
+  const radius: Record<string, number> = { ...RADIUS };
+  if (theme.radius !== undefined) {
+    if (typeof theme.radius !== "object" || theme.radius === null || Array.isArray(theme.radius)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "theme.radius must be an object");
+    }
+    for (const [key, value] of Object.entries(theme.radius)) {
+      radius[key] = finiteNonnegative(value, `theme.radius.${key}`);
+    }
+  }
+  const typography: Record<string, Typography> = { ...TYPOGRAPHY };
+  if (theme.typography !== undefined) {
+    if (typeof theme.typography !== "object" || theme.typography === null || Array.isArray(theme.typography)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", "theme.typography must be an object");
+    }
+    for (const [variant, entry] of Object.entries(theme.typography)) {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", `theme.typography.${variant} must be an object`);
+      }
+      const size = finitePositive((entry as { size?: unknown }).size, `theme.typography.${variant}.size`);
+      let lineHeight: number;
+      if ((entry as { lineHeight?: unknown }).lineHeight !== undefined) {
+        lineHeight = finitePositive((entry as { lineHeight?: unknown }).lineHeight, `theme.typography.${variant}.lineHeight`);
+      } else {
+        const existing = TYPOGRAPHY[variant];
+        lineHeight = existing ? Math.round(size * (existing.lineHeight / existing.size)) : Math.round(size * 1.3);
+      }
+      let weight: number;
+      const w = (entry as { weight?: unknown }).weight;
+      if (w === "bold") {
+        weight = 700;
+      } else if (w === "normal") {
+        weight = 400;
+      } else if (w === undefined) {
+        weight = TYPOGRAPHY[variant]?.weight ?? 400;
+      } else if (typeof w === "number" && Number.isFinite(w)) {
+        weight = w;
+      } else {
+        throw new LayoutError("INVALID_THEME_TOKEN", `theme.typography.${variant}.weight must be a finite number or 'normal'/'bold'`);
+      }
+      typography[variant] = { size, lineHeight, weight };
+    }
+  }
+  return { spacing, radius, typography };
+}
+
+function spacing(ctx: InternalContext, value: unknown, fallback: number): number {
   if (typeof value === "number") return value;
-  if (typeof value === "string" && value in SPACING) return SPACING[value]!;
+  if (typeof value === "string") {
+    for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
+      const scoped = ctx.tokenScopes[index]!.spacing?.[value];
+      if (typeof scoped === "number") return scoped;
+    }
+    const themed = ctx.tokens.spacing[value];
+    if (typeof themed === "number") return themed;
+  }
   return fallback;
 }
 
-function radius(value: unknown, fallback: number): number {
+function radius(ctx: InternalContext, value: unknown, fallback: number): number {
   if (typeof value === "number") return value;
-  if (typeof value === "string" && value in RADIUS) return RADIUS[value]!;
+  if (typeof value === "string") {
+    for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
+      const scoped = ctx.tokenScopes[index]!.radius?.[value];
+      if (typeof scoped === "number") return scoped;
+    }
+    const themed = ctx.tokens.radius[value];
+    if (typeof themed === "number") return themed;
+  }
   return fallback;
 }
 
-function typography(variant: unknown): Typography {
-  if (typeof variant === "string" && variant in TYPOGRAPHY) return TYPOGRAPHY[variant]!;
-  return TYPOGRAPHY.body!;
+function typography(ctx: InternalContext, variant: unknown): Typography {
+  if (typeof variant === "string") {
+    for (let index = ctx.tokenScopes.length - 1; index >= 0; index--) {
+      const scoped = ctx.tokenScopes[index]!.typography?.[variant];
+      if (scoped !== undefined) {
+        const weight = scoped.weight === "bold" ? 700 : scoped.weight === "normal" ? 400 : (scoped.weight ?? 400);
+        const lineHeight = scoped.lineHeight ?? Math.round(scoped.size * 1.3);
+        return {
+          size: scoped.size,
+          lineHeight,
+          weight,
+        };
+      }
+    }
+    const themed = ctx.tokens.typography[variant];
+    if (themed !== undefined) return themed;
+  }
+  return ctx.tokens.typography.body!;
 }
 
 /** ---------- text metrics (approximate, prototype-grade) ---------- */
@@ -740,12 +880,12 @@ function offset(props: Record<string, unknown>, name: string): number | undefine
   return value;
 }
 
-function gapOf(props: Record<string, unknown>): number {
-  return nonnegative(spacing(props.gap, 0), "gap");
+function gapOf(ctx: InternalContext, props: Record<string, unknown>): number {
+  return nonnegative(spacing(ctx, props.gap, 0), "gap");
 }
 
-function paddingOf(props: Record<string, unknown>, fallback: number): number {
-  return nonnegative(spacing(props.padding, fallback), "padding");
+function paddingOf(ctx: InternalContext, props: Record<string, unknown>, fallback: number): number {
+  return nonnegative(spacing(ctx, props.padding, fallback), "padding");
 }
 
 function loose(maxW: number, maxH = Infinity): Constraints {
@@ -804,8 +944,8 @@ function decorationLayout(ctx: InternalContext, node: AnyNode, bounds: Constrain
 /** Shared flex measurement/placement: both passes use the same assigned boxes. */
 function flexLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints, axis: "row" | "column"): NodeLayout {
   const horizontal = axis === "row";
-  const pad = paddingOf(node.props, 0);
-  const gap = gapOf(node.props);
+  const pad = paddingOf(ctx, node.props, 0);
+  const gap = gapOf(ctx, node.props);
   const inner = inset(bounds, pad);
   const mainMax = horizontal ? inner.maxW : inner.maxH;
   const crossMax = horizontal ? inner.maxH : inner.maxW;
@@ -905,8 +1045,8 @@ function scrollLayout(ctx: InternalContext, node: AnyNode, bounds: Constraints):
   // bounded by the parent — while content lays out under an UNBOUNDED main
   // axis and keeps its intrinsic size. Overflow is preserved; nothing is
   // clamped, shrunk, or re-measured to fit.
-  const pad = paddingOf(node.props, 0);
-  const gap = gapOf(node.props);
+  const pad = paddingOf(ctx, node.props, 0);
+  const gap = gapOf(ctx, node.props);
   const inner = inset(bounds, pad);
   const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
   for (const kid of kids) {
@@ -1037,7 +1177,7 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
   if (kind === ContainerKind) {
     const own = withDimensions(bounds, props);
     if (childNodes(node).length === 0) return constrain({ w: own.maxW, h: own.minH }, own);
-    return decorationLayout(ctx, node, own, paddingOf(props, 0)).frame;
+    return decorationLayout(ctx, node, own, paddingOf(ctx, props, 0)).frame;
   }
   if (kind === IconKind) {
     const size = dimension(props, "size") ?? 24;
@@ -1048,7 +1188,7 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
   }
   switch (kind) {
     case "text": {
-      const ty = typography(props.variant);
+      const ty = typography(ctx, props.variant);
       const lines = wrapText(textContent(node), ty.size, Math.max(bounds.maxW, 1));
       const widest = Math.max(...lines.map((line) => textWidth(line, ty.size)));
       return constrain({ w: Math.min(widest, bounds.maxW), h: lines.length * ty.lineHeight }, bounds);
@@ -1057,11 +1197,11 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
       const label = textContent(node) || "Button";
       return constrain({ w: Math.max(96, textWidth(label, TYPOGRAPHY.body!.size) + 48), h: 64 }, bounds);
     }
-    case "card": return decorationLayout(ctx, node, bounds, paddingOf(props, 16), spacing("sm", 8)).frame;
+    case "card": return decorationLayout(ctx, node, bounds, paddingOf(ctx, props, 16), spacing(ctx, "sm", 8)).frame;
     case "column": return flexLayout(ctx, node, bounds, "column").frame;
     case "row": return flexLayout(ctx, node, bounds, "row").frame;
     case "app-bar": return constrain({ w: bounds.maxW, h: 96 }, bounds);
-    case "spacer": return constrain({ w: 0, h: nonnegative(spacing(props.size, 16), "spacer size") }, bounds);
+    case "spacer": return constrain({ w: 0, h: nonnegative(spacing(ctx, props.size, 16), "spacer size") }, bounds);
     case "scaffold": return scaffoldLayout(ctx, node, bounds).frame;
     default: return constrain({ w: 0, h: 0 }, bounds);
   }
@@ -1222,6 +1362,9 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     const slotOverlay = props.slots as Partial<Record<string, string>> | undefined;
     const pushed = slotOverlay !== undefined && slotOverlay !== null && typeof slotOverlay === "object";
     if (pushed) ctx.slotScopes.push(slotOverlay);
+    const tokenScope = props.tokens as TokenScope | undefined;
+    const pushedTokens = tokenScope !== undefined && tokenScope !== null && typeof tokenScope === "object";
+    if (pushedTokens) ctx.tokenScopes.push(tokenScope);
     const scoped: InternalContext = {
       ...ctx,
       palette: merged,
@@ -1231,6 +1374,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
     } finally {
       if (pushed) ctx.slotScopes.pop();
+      if (pushedTokens) ctx.tokenScopes.pop();
       // The scoped copy carries usedRefs BY VALUE; lift it so finish() bakes.
       if (scoped.usedRefs) ctx.usedRefs = true;
     }
@@ -1278,7 +1422,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       ctx.tapRegions = outerTaps;
     }
     const contentHeight = layout.children.length > 0
-      ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(props, 0)
+      ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(ctx, props, 0)
       : 0;
     for (const tap of nestedTaps) outerTaps.push({ ...tap, scroll: regionId });
     outerOps.push({ op: "scroll-region", id: regionId, x, y, w, h, contentHeight, ops: nestedOps });
@@ -1298,7 +1442,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
     return h;
   }
   if (kind === ContainerKind) {
-    const pad = paddingOf(props, 0);
+    const pad = paddingOf(ctx, props, 0);
     const radius = dimension(props, "radius") ?? 0;
     const fill = roleColor(ctx, props.color);
     if (fill !== undefined) {
@@ -1347,7 +1491,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
 
   switch (kind) {
     case "text": {
-      const ty = typography(props.variant);
+      const ty = typography(ctx, props.variant);
       const lines = wrapText(textContent(node), ty.size, Math.max(w, 1));
       const align = props.align === "center" ? "center" : "left";
       const boxWidth = typeof props.width === "number" ? props.width : w;
@@ -1419,15 +1563,15 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       return h;
     }
     case "card": {
-      const pad = paddingOf(props, 16);
+      const pad = paddingOf(ctx, props, 16);
       const elevated = props.background === "surface" || props.elevation === true;
       ctx.ops.push({
         op: "rect", x, y, w, h,
-        r: radius(props.radius, 14),
+        r: radius(ctx, props.radius, 14),
         color: roleColor(ctx, props.background) ?? ctx.theme.colors?.surfaceRaised ?? "#1C1C24",
         ...(elevated ? { shadow: 12 } : {}),
       });
-      placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing("sm", 8)), x, y);
+      placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing(ctx, "sm", 8)), x, y);
       return h;
     }
     case "column":
@@ -1609,8 +1753,8 @@ interface WrapLayout {
 
 /** Greedy line-fill of children within [maxWidth] (Flutter's Wrap). */
 function layoutWrapChildren(ctx: InternalContext, node: AnyNode, maxWidth: number): WrapLayout {
-  const spacingValue = spacing(node.props.spacing, 8);
-  const runSpacing = spacing(node.props.runSpacing, 8);
+  const spacingValue = spacing(ctx, node.props.spacing, 8);
+  const runSpacing = spacing(ctx, node.props.runSpacing, 8);
   const lines: WrapLine[] = [];
   let entries: WrapEntry[] = [];
   let lineWidth = 0;
@@ -1712,6 +1856,8 @@ export function layoutScreen(
     palette: resolveRoles(theme),
     slotPalette: options?.palette,
     slotScopes: [],
+    tokens: buildTokenSet(theme),
+    tokenScopes: [],
     usedRefs: false,
     ops: [],
     tapRegions: [],

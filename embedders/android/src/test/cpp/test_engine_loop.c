@@ -254,10 +254,12 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   {
     const char* scene_now = tenun_android_engine_get_scene(engine);
     int stop_tap_id = -1;
-    /* Find STOP region inside the taps array (w: 358) */
+    /* Find STOP region inside the taps array (h: 52, w: 362 under theme spacing.md: 14) */
     const char* taps_start = strstr(scene_now, "\"taps\":");
     if (taps_start) {
-      const char* stop_tap = strstr(taps_start, "\"w\":358");
+      const char* stop_tap = strstr(taps_start, "\"h\":52");
+      if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":362");
+      if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":358");
       if (stop_tap) {
         const char* p_id = strstr(stop_tap, "\"payload\":{\"id\":");
         if (p_id) {

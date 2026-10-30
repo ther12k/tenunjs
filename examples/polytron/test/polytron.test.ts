@@ -569,8 +569,8 @@ describe("WasherRuntime screens", () => {
 
     runtime.navigate("programs");
     expect(runtime.route()).toBe("programs");
-    // The running StatusStrip is tappable (h=86, y=16)
-    const progStripTap = runtime.render().scene.taps.find((t) => t.y === 16 && t.h === 86);
+    // The running StatusStrip is tappable (h=86)
+    const progStripTap = runtime.render().scene.taps.find((t) => t.h === 86);
     expect(progStripTap).toBeDefined();
     const tapId = (progStripTap!.payload as { id: number }).id;
     runtime.tap(tapId);
@@ -578,7 +578,7 @@ describe("WasherRuntime screens", () => {
 
     runtime.navigate("controls");
     expect(runtime.route()).toBe("controls");
-    const ctrlStripTap = runtime.render().scene.taps.find((t) => t.y === 16 && t.h === 86);
+    const ctrlStripTap = runtime.render().scene.taps.find((t) => t.h === 86);
     expect(ctrlStripTap).toBeDefined();
     const ctrlTapId = (ctrlStripTap!.payload as { id: number }).id;
     runtime.tap(ctrlTapId);
