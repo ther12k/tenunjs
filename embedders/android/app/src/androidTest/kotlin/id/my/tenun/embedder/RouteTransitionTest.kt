@@ -69,6 +69,52 @@ class RouteTransitionTest {
     }
 
     @Test
+    fun transitionSnapshotsTheScrollOffsetItsLayersPaintUnder() {
+        val view = TenunSurfaceView(instrumentation.targetContext)
+        // Laid out (320x480) but NOT attached: the TN-183 extent rule makes
+        // the scroll bounds real at commit time, so the production touch
+        // clamp (scrollBy, via dragScrollForTest) can actually scroll.
+        instrumentation.runOnMainSync {
+            view.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(320, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(480, android.view.View.MeasureSpec.EXACTLY)
+            )
+            view.layout(0, 0, 320, 480)
+            view.syncFromScene(scene("A-route").replace("\"contentHeight\":480", "\"contentHeight\":2000"))
+        }
+        // 2000 content in a 480-high viewport: scrollable to 1520. The
+        // production clamp exposes the extent — a huge drag lands exactly
+        // on the view's internal bound, proving it was computed at commit
+        // time (TN-183), not left at zero until the first draw.
+        instrumentation.runOnMainSync {
+            view.dragScrollForTest(100_000f)
+        }
+        assertEquals("extent follows the commit, not the first draw", 1520f, view.committedSceneForTest().second)
+        instrumentation.runOnMainSync {
+            view.dragScrollForTest(-999_999f) // back to top…
+            view.dragScrollForTest(400f) // …then to a mid-route position
+        }
+        assertEquals("finger scroll moved the view", 400f, view.committedSceneForTest().second)
+        instrumentation.runOnMainSync {
+            view.syncFromScene(scene("B-route", """{"kind":"fade","direction":"forward","durationMs":5000}"""))
+        }
+        // TN-183: the transition owns the offset the route was entered
+        // from — its frames paint both layers under THIS scrollY (the
+        // settled-renderer and browser-twin rule), never a snap to top.
+        assertTrue("transition is in flight", view.isTransitionActiveForTest)
+        assertEquals(
+            "transition layers keep the entry scroll offset",
+            400f,
+            view.transitionScrollForTest
+        )
+        val settleDeadline = System.currentTimeMillis() + 8_000
+        while (view.isTransitionActiveForTest && System.currentTimeMillis() < settleDeadline) {
+            Thread.sleep(25)
+        }
+        assertFalse("transition settled", view.isTransitionActiveForTest)
+    }
+
+    @Test
     fun malformedTransitionBlocksAreRejectedAndTheSettledSceneStays() {
         val view = TenunSurfaceView(instrumentation.targetContext)
         instrumentation.runOnMainSync {
