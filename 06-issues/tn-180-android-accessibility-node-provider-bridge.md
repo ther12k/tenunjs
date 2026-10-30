@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-180: Android accessibility node provider bridge over scene.semantics"
 summary: "TN-091 slice 1: TenunSurfaceView exposes scene.semantics as Android virtual accessibility nodes through an AccessibilityNodeProvider — ACTION_CLICK dispatches the same tap a finger does, focus syncs with stable ids, live regions announce explicitly."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-180"
 milestone: "M5"
 priority: "P1"
@@ -59,3 +59,20 @@ focusable rectangle.
 - `ACTION_SET_TEXT` through accessibility (needs the revisioned TEXT_EDIT
   session contract; the IME path remains the editing route).
 - RTL ordering (TN-068 context remainder).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #263: strict
+scene.semantics parsing in DisplayListScene (SceneContractException on
+declared-but-malformed blocks; pre-TN-179 scenes unchanged);
+SemanticsBridgeState with stable virtual ids, retirement, diffing,
+rate-limited announcements (2/commit), and focus bookkeeping;
+TenunAccessibilityProvider exposing populated framework nodes with
+ACTION_CLICK/ACTION_LONG_CLICK/ACTION_FOCUS dispatching the ordinary
+tap/long-press through the view's single dispatch path; TenunSurfaceView
+wiring with engine-swap reset. Evidence: 6 JVM tests
+(SceneAccessibilityBridgeTest), device-gate EngineAccessibilityProviderTest
+(real framework nodes from a production engine; a11y click advances the
+same counter a finger does; focus round-trip), full run_android_test.sh
+green, 8/8 CI gates. TN-091 remainder: physical-phone TalkBack journeys
+(ADR-0019) and ACTION_SET_TEXT.

@@ -284,7 +284,7 @@ status: accepted
 | 06-issues/tn-177-gatt-completion-watchdog-attribution.md | 57c5e6bbea3481f8bf75cb6540d354b7e6045b90aaa201c9918ab1b0f84aad50 |
 | 06-issues/tn-178-release-dev-reload-separation.md | 4948f80a17c2b2cfc7e87d224f7611b19a172a85eb7506d017f9670e43589b70 |
 | 06-issues/tn-179-scene-semantics-wire-v1.md | 0bb7acb9a11a9ddff64c736ca122905b935e5c8a697203874357b3661950bf4a |
-| 06-issues/tn-180-android-accessibility-node-provider-bridge.md | 9cb375fc3c95cd945fd9503f6b7fc77c37650eed5c89fe8c6e2f68aeffdf6214 |
+| 06-issues/tn-180-android-accessibility-node-provider-bridge.md | 46f7929c72c2477f9f153d341b45acfae2e0db07e28f3366791153147fb16dc0 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
