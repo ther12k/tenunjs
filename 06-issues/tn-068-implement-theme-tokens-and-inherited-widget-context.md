@@ -172,3 +172,16 @@ Follow-up issue references: <IDs only>
 ```
 
 Do not claim completion when any acceptance checkbox or required evidence item remains unresolved.
+
+## TN-173 slice note (2026-10-30)
+
+The "ordinary TSX widget property adoption" half of this issue's
+addendum is delivered by
+[TN-173](tn-173-adopt-colorref-props-with-commit-time-resolution.md):
+`Card.background` and `Text.color` accept `colorSlot()` refs, the
+lowering retains slot identity to the commit boundary (the runtime
+bakes before any host sees a scene), `ThemeScopeBox` narrows SLOTS as
+well as roles for descendants only, and `ApplicationRuntime` carries a
+slot palette (`palette` option, `setPalette`). Still open here:
+spacing/radius/typography/locale/scale/platform context values.
+

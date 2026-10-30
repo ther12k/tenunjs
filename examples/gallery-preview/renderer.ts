@@ -8,8 +8,13 @@ import {
  * Normalizes the display-list color convention for CSS: scenes use
  * Android-style "#AARRGGBB" for translucent colors (the Android host parses
  * it natively); CSS wants alpha last, so rewrite those to rgba().
+ * TN-173: an op color arriving as a slot REF is a contract violation —
+ * runtimes bake refs at the commit boundary; a host never paints one.
  */
-function toCss(color: string): string {
+function toCss(color: string | { slot: string }): string {
+  if (typeof color !== "string") {
+    throw new Error(`[TENUN_SCENE_ERROR] unbaked color ref "${color.slot}" reached the host; the bundle must bake scenes before commit`);
+  }
   if (color.startsWith("#") && color.length === 9) {
     const a = parseInt(color.slice(1, 3), 16) / 255;
     const r = parseInt(color.slice(3, 5), 16);

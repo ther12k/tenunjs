@@ -42,7 +42,8 @@ function sceneWithoutColors(scene: DisplayListScene): unknown {
 
 function paintColor(op: DisplayListScene["ops"][number]): string {
   if (!("color" in op)) throw new Error("The theme reference fixture must contain paint operations");
-  return op.color;
+  // This example bakes through the theme seam; committed ops carry literals.
+  return op.color as string;
 }
 
 describe("TN-143 persisted theme contract example", () => {

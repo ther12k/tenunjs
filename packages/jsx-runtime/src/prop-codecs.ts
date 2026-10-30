@@ -34,7 +34,7 @@ export type WidgetPropSchema = Readonly<Record<string, PropRule>>;
  * "root" carries framework-internal props such as theme/navigation).
  */
 export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
-  "text": { variant: { type: "string" }, color: { type: "string" } },
+  "text": { variant: { type: "string" }, color: { type: ["string", "object"] } },
   "button": { variant: { type: "string" }, onPress: { type: "function" } },
   "column": {
     padding: { type: ["string", "number"] },
@@ -51,7 +51,7 @@ export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
   "card": {
     padding: { type: ["string", "number"] },
     radius: { type: ["string", "number"] },
-    background: { type: "string" },
+    background: { type: ["string", "object"] },
     elevation: { type: "boolean" },
     semantics: { type: "object" },
   },

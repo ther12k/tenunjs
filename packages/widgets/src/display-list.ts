@@ -49,7 +49,43 @@ export interface LayoutViewport {
   readonly height: number;
 }
 
-export type LayoutErrorCode = "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX" | "INVALID_TRANSITION";
+export type LayoutErrorCode =
+  | "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX"
+  | "INVALID_TRANSITION" | "INVALID_COLOR_REF";
+
+/* ------------------------------------------------------------------ *
+ * TN-173: color-slot refs in ordinary widget props. The vocabulary    *
+ * (ColorRef/ThemePalette) is OWNED by theme-slots.ts; this import is  *
+ * TYPE-ONLY (erased at runtime), so the value dependency stays        *
+ * strictly theme-slots -> display-list.                              *
+ * ------------------------------------------------------------------ */
+import type { ColorRef, ThemePalette } from "./theme-slots";
+
+const SEMANTIC_SLOT_NAMES: ReadonlySet<string> = new Set([
+  "background", "onBackground", "primary", "onPrimary",
+  "primaryContainer", "onPrimaryContainer", "secondaryContainer",
+  "onSecondaryContainer", "surface", "surfaceContainer",
+  "surfaceContainerHigh", "onSurface", "onSurfaceVariant", "outline",
+  "outlineVariant", "error", "onError", "success", "onSuccess", "warning",
+  "onWarning", "inverseSurface", "onInverseSurface", "onPrimaryFixed",
+]);
+const APP_SLOT_PATTERN = /^app\.[A-Za-z][A-Za-z0-9_]*$/;
+
+/** Runtime shape check for values claiming to be refs (forged objects included). */
+function isColorRefValue(value: unknown): value is ColorRef {
+  return typeof value === "object" && value !== null &&
+    typeof (value as { slot?: unknown }).slot === "string" &&
+    (SEMANTIC_SLOT_NAMES.has((value as { slot: string }).slot) ||
+      APP_SLOT_PATTERN.test((value as { slot: string }).slot));
+}
+
+/**
+ * A color as it travels through the lowering: a literal, or a slot ref
+ * retained until the commit boundary (see layoutScreen's palette option).
+ * Hosts only ever receive baked scenes — color fields on committed ops
+ * are strings by construction, and hosts reject anything else.
+ */
+export type SceneColor = string | ColorRef;
 
 export class LayoutError extends Error {
   constructor(readonly code: LayoutErrorCode, message: string) {
@@ -118,7 +154,7 @@ export interface RectOp extends FixedPosition {
   w: number;
   h: number;
   r: number;
-  color: string;
+  color: SceneColor;
   /** Elevation 0..24: soft drop shadow painted under the rect. */
   shadow?: number;
 }
@@ -130,7 +166,7 @@ export interface OutlineOp extends FixedPosition {
   w: number;
   h: number;
   r: number;
-  color: string;
+  color: SceneColor;
   width: number;
 }
 
@@ -164,7 +200,7 @@ export interface TextOp extends FixedPosition {
   text: string;
   size: number;
   weight: number;
-  color: string;
+  color: SceneColor;
   /** Horizontal alignment within [x, x + width) when width is given. */
   align?: "left" | "center";
   width?: number;
@@ -177,7 +213,7 @@ export interface CircleOp extends FixedPosition {
   cx: number;
   cy: number;
   r: number;
-  color: string;
+  color: SceneColor;
 }
 
 export interface RingOp extends FixedPosition {
@@ -186,11 +222,11 @@ export interface RingOp extends FixedPosition {
   cy: number;
   r: number;
   width: number;
-  color: string;
+  color: SceneColor;
   /** 0..1 swept from the 12 o'clock position clockwise. */
   progress: number;
   /** Optional full-circle track painted under the arc. */
-  track?: string;
+  track?: SceneColor;
 }
 
 export interface LineOp extends FixedPosition {
@@ -199,7 +235,7 @@ export interface LineOp extends FixedPosition {
   y1: number;
   x2: number;
   y2: number;
-  color: string;
+  color: SceneColor;
   width: number;
 }
 
@@ -210,8 +246,8 @@ export interface GradientOp extends FixedPosition {
   w: number;
   h: number;
   r: number;
-  color: string;
-  colorTo: string;
+  color: SceneColor;
+  colorTo: SceneColor;
   shadow?: number;
 }
 
@@ -361,6 +397,12 @@ interface InternalContext extends RenderContext {
   designWidth: number;
   /** Active color roles: theme-derived defaults until a ThemeScope narrows them. */
   palette: SchemeRoles;
+  /** TN-173: the commit-time slot palette; refs cannot resolve without it. */
+  slotPalette?: ThemePalette;
+  /** TN-173: active slot-scope overlays, outermost first (ThemeScope.slots). */
+  slotScopes: Array<Partial<Record<string, string>>>;
+  /** TN-173: set when an op retained a slot ref past emission (unscoped). */
+  usedRefs: boolean;
   /**
    * Per-render function-component resolutions. measure and place walk the
    * tree separately; without this cache every component would be INVOKED
@@ -389,6 +431,14 @@ export const ThemeScope = Symbol.for("tenun.preview.theme-scope");
 export interface ThemeScopeProps {
   /** Role overrides merged over the ambient palette. */
   scheme: Partial<SchemeRoles>;
+  /**
+   * TN-173: slot-level overrides merged over the layout palette for
+   * DESCENDANTS ONLY — ColorRef props inside the scope resolve against
+   * the innermost scope that declares their slot, then the enclosing
+   * scopes, then the layout palette. Siblings outside the scope are
+   * unaffected; unoverridden slots inherit.
+   */
+  slots?: Partial<ThemePalette>;
   children?: WidgetChild;
 }
 
@@ -401,7 +451,7 @@ export function ThemeScopeBox(props: ThemeScopeProps): WidgetNode {
   return {
     kind: ThemeScope,
     key: null,
-    props: { scheme: props.scheme },
+    props: { scheme: props.scheme, ...(props.slots !== undefined ? { slots: props.slots } : {}) },
     children: (props as { children?: WidgetChild[] }).children ?? [],
   } as unknown as WidgetNode;
 }
@@ -1165,12 +1215,25 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
   }
   if (kind === ThemeScope) {
     const merged: SchemeRoles = { ...ctx.palette, ...((props.scheme as Partial<SchemeRoles>) ?? {}) };
+    // TN-173: slot-level narrowing rides alongside the role scheme — the
+    // overlay applies to DESCENDANTS ONLY (siblings outside the scope keep
+    // the outer palette), inner scopes win, and slots the overlay omits
+    // fall through to the enclosing scope or the layout palette.
+    const slotOverlay = props.slots as Partial<Record<string, string>> | undefined;
+    const pushed = slotOverlay !== undefined && slotOverlay !== null && typeof slotOverlay === "object";
+    if (pushed) ctx.slotScopes.push(slotOverlay);
     const scoped: InternalContext = {
       ...ctx,
       palette: merged,
       theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
     };
-    placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
+    try {
+      placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
+    } finally {
+      if (pushed) ctx.slotScopes.pop();
+      // The scoped copy carries usedRefs BY VALUE; lift it so finish() bakes.
+      if (scoped.usedRefs) ctx.usedRefs = true;
+    }
     return h;
   }
   if (kind === SizedBoxKind) {
@@ -1473,9 +1536,18 @@ type CrossAlign = "start" | "center" | "end" | "stretch";
  * Resolves a color prop for the structural widgets: hash-prefixed literals pass
  * through, SchemeRoles names ("primary", "onSurfaceVariant", ...) resolve
  * against the active palette, then theme tokens; anything else paints
- * nothing rather than guessing.
+ * nothing rather than guessing. TN-173: a ColorRef passes through AS A REF
+ * — slot identity is retained to the commit boundary. Inside a slot-scoped
+ * subtree the ref resolves EAGERLY through the merged overlay (a scope is
+ * bake-time knowledge a plain ref cannot carry); unscoped refs bake
+ * against the layout palette at finish().
  */
-function roleColor(ctx: InternalContext, token: unknown): string | undefined {
+function roleColor(ctx: InternalContext, token: unknown): SceneColor | undefined {
+  if (isColorRefValue(token)) {
+    if (ctx.slotScopes.length > 0) return resolveSlotRef(ctx, token);
+    ctx.usedRefs = true;
+    return token;
+  }
   if (typeof token !== "string") return undefined;
   if (token.startsWith("#")) return token;
   const byRole = (ctx.palette as unknown as Record<string, string | undefined>)[token];
@@ -1483,6 +1555,24 @@ function roleColor(ctx: InternalContext, token: unknown): string | undefined {
   const themed = ctx.theme.colors?.[token];
   if (typeof themed === "string") return themed;
   return undefined;
+}
+
+/** Resolves a slot ref against the innermost scope that declares it, then
+ *  the layout palette. A missing value fails visibly — never a guess. */
+function resolveSlotRef(ctx: InternalContext, ref: ColorRef): string {
+  for (let index = ctx.slotScopes.length - 1; index >= 0; index--) {
+    const overlay = ctx.slotScopes[index]!;
+    const scoped = overlay[ref.slot];
+    if (typeof scoped === "string") return scoped;
+  }
+  const value = ctx.slotPalette?.[ref.slot];
+  if (typeof value !== "string") {
+    throw new LayoutError(
+      "INVALID_COLOR_REF",
+      `color slot "${ref.slot}" has no palette value (pass layoutScreen a palette or add the slot to one)`
+    );
+  }
+  return value;
 }
 
 /** Stack alignment: fractional position of non-positioned children. */
@@ -1594,12 +1684,23 @@ function addTap(
  * input delegate belongs to ApplicationRuntime; discovered field bindings stay
  * in TypeScript and never enter the serialized scene or application snapshot.
  */
+export interface LayoutOptions {
+  /**
+   * TN-173: the slot palette color refs bake against at the commit
+   * boundary. Required exactly when any widget color prop carries a
+   * ColorRef (colorSlot); scenes without refs need none and are
+   * byte-identical to before.
+   */
+  palette?: ThemePalette;
+}
+
 export function layoutScreen(
   theme: ThemeConfig,
   tree: WidgetNode,
   viewportOrWidth: number | LayoutViewport = DESIGN_WIDTH,
   textInput?: TextInputLayoutDelegate,
-): { scene: DisplayListScene; tapRuns: Array<() => void>; textFields: TextFieldBinding[] } {
+  options?: LayoutOptions,
+): { scene: DisplayListScene; semanticScene?: DisplayListScene; tapRuns: Array<() => void>; textFields: TextFieldBinding[] } {
   const viewport = typeof viewportOrWidth === "number" ? undefined : validateLayoutViewport(viewportOrWidth);
   const designWidth = typeof viewportOrWidth === "number" ? viewportOrWidth : viewport!.width;
   if (!Number.isFinite(designWidth) || designWidth <= 0) {
@@ -1609,6 +1710,9 @@ export function layoutScreen(
     theme,
     designWidth,
     palette: resolveRoles(theme),
+    slotPalette: options?.palette,
+    slotScopes: [],
+    usedRefs: false,
     ops: [],
     tapRegions: [],
     tapRuns: [],
@@ -1638,5 +1742,34 @@ export function layoutScreen(
   place(ctx, root, 0, 0, frame);
   const scene = ctx.finish();
   scene.contentHeight = frame.h;
-  return { scene, tapRuns: ctx.tapRuns, textFields: ctx.textFields };
+  // TN-173 commit boundary: when any op retained a slot ref, the host
+  // scene bakes against the layout palette (hosts only ever see literal
+  // colors), and the slot-identity view is returned alongside — the same
+  // geometry and taps with refs intact, the seam a future re-bake path
+  // consumes. Slot-SCOPED refs already resolved eagerly at emission.
+  let semanticScene: DisplayListScene | undefined;
+  if (ctx.usedRefs) {
+    semanticScene = { ...scene, ops: scene.ops.slice() };
+    scene.ops = bakeRetainedRefs(scene.ops, ctx);
+  }
+  return { scene, ...(semanticScene !== undefined ? { semanticScene } : {}), tapRuns: ctx.tapRuns, textFields: ctx.textFields };
+}
+
+/** Bakes retained (unscoped) slot refs into literals, recursing through
+ *  scroll-region content. Slot-scoped refs resolved at emission. */
+function bakeRetainedRefs(ops: DisplayOp[], ctx: InternalContext): DisplayOp[] {
+  return ops.map((op) => {
+    if (op.op === "scroll-region") {
+      return { ...op, ops: bakeRetainedRefs([...op.ops], ctx) } as DisplayOp;
+    }
+    let baked: DisplayOp = op;
+    for (const field of ["color", "colorTo", "track"] as const) {
+      const value = (op as unknown as Record<string, unknown>)[field];
+      if (isColorRefValue(value)) {
+        if (baked === op) baked = { ...op } as DisplayOp;
+        (baked as unknown as Record<string, unknown>)[field] = resolveSlotRef(ctx, value);
+      }
+    }
+    return baked;
+  });
 }
