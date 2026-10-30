@@ -503,6 +503,66 @@
     }
 
     /* Call to Action Banner */
+    .changelog-card {
+      background: #050a0e;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 32px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .changelog-header {
+      background: #09131c;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: #8aa4b5;
+    }
+    .changelog-entry {
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .changelog-entry:last-child { border-bottom: none; }
+    .ver-pill {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #00b7fd;
+      background: rgba(0, 183, 253, 0.1);
+      border: 1px solid rgba(0, 183, 253, 0.35);
+      border-radius: 8px;
+      padding: 4px 12px;
+      white-space: nowrap;
+    }
+    .ver-pill.older {
+      color: #8aa4b5;
+      background: rgba(138, 164, 181, 0.08);
+      border-color: rgba(138, 164, 181, 0.25);
+    }
+    .changelog-body { flex: 1; min-width: 260px; }
+    .changelog-date {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #5c7585;
+      margin-bottom: 6px;
+    }
+    .changelog-body ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #b8ccd8;
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
     .cta-banner {
       background: linear-gradient(135deg, #091a26, #0e293d);
       border: 1px solid var(--card-border-glow);
@@ -625,8 +685,8 @@
             <span class="meta-lbl">Hardware Interlock</span>
           </div>
           <div class="meta-item">
-            <span class="meta-val">OTA Hot-Reload</span>
-            <span class="meta-lbl">Live Updates</span>
+            <span class="meta-val">Cloud Hot-Update</span>
+            <span class="meta-lbl">No Reinstall Needed</span>
           </div>
         </div>
       </div>
@@ -982,6 +1042,43 @@
 //   ABDI:      1000 (Relay A=ON, Relay B=OFF, Drain=OFF, Inlet=OFF)
 //   HEAP:      142 KB free
 //   WATER:     65% tub level</code></pre>
+      </div>
+
+      <!-- Changelog -->
+      <div class="changelog-card">
+        <div class="changelog-header">
+          <span>CHANGELOG.md — served from this domain</span>
+          <span>auto-delivered to installed apps</span>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill">v0.1.8</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-30 · versionCode 9 · current</div>
+            <ul>
+              <li>Cloud hot-update now catches deploys made <strong>while the app was closed</strong> — first launch after a release compares the server bundle against the one that booted, then updates itself.</li>
+              <li>A failed update fetch no longer disables live reload for the rest of the session.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill older">v0.1.7</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-30 · versionCode 8</div>
+            <ul>
+              <li>Rebuilt on TenunJS main with the Android TalkBack accessibility bridge over scene semantics (TN-180).</li>
+              <li>JNI reentry guards and debug-only dev-reload hardening (TN-176..178).</li>
+            </ul>
+          </div>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill older">v0.1.6</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-28 · versionCode 7</div>
+            <ul>
+              <li>Update channel moved to <strong>https://wash.rizeva.my.id</strong> — hot updates and the APK download work from any network, no laptop required.</li>
+            </ul>
+          </div>
+        </div>
       </div>
 
       <!-- CTA Card -->
