@@ -285,7 +285,7 @@ status: accepted
 | 06-issues/tn-178-release-dev-reload-separation.md | 4948f80a17c2b2cfc7e87d224f7611b19a172a85eb7506d017f9670e43589b70 |
 | 06-issues/tn-179-scene-semantics-wire-v1.md | 0bb7acb9a11a9ddff64c736ca122905b935e5c8a697203874357b3661950bf4a |
 | 06-issues/tn-180-android-accessibility-node-provider-bridge.md | 46f7929c72c2477f9f153d341b45acfae2e0db07e28f3366791153147fb16dc0 |
-| 06-issues/tn-181-gpu-hardware-canvas-rasterization.md | bea2e6e27184c43ad59439b7a572c9272af8c487662529cc056184e21bdc3e14 |
+| 06-issues/tn-181-gpu-hardware-canvas-rasterization.md | 42b84b546db21e34a85c9b1a1710c95495e6f0f1efe2ea147d5f6d5978c31a22 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

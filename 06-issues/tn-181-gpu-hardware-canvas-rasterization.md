@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-181: GPU rasterization — draw through Android's hardware canvas"
 summary: "Every frame rasterized on the CPU because both draw paths locked the SOFTWARE canvas. lockHardwareCanvas() hands the surface to Android's hardware-accelerated Skia GL backend — same paint ops, GPU raster, unconditional software fallback where no GPU backend exists."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-181"
 milestone: "M4"
 priority: "P1"
@@ -46,3 +46,17 @@ first stage of the Skia adoption track (ADR-0026).
 - The framework-owned Skia renderer (`skia-safe`) — TN-182, its own
   slice with its own evidence.
 - A dedicated GPU render thread; frame-pacing work.
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #264: both draw
+paths (commit redraw + TN-169 transition frames) draw through
+lockDrawCanvas() — lockHardwareCanvas() first (Android's
+hardware-accelerated Skia GL backend), unconditional software fallback
+on IllegalStateException/RuntimeException. Evidence: full 8/8 CI
+including the KVM device gate whose first run hit the known sdkmanager
+download flake (environment exit 90 before any test; rerun green) — all
+journey/transition/IME/accessibility instrumentation passed on the
+hardware canvas, which IS the pixel-parity proof for every op this host
+paints. Stage 1 of ADR-0026; framework-owned skia-safe rendering is
+TN-182.
