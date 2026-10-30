@@ -675,13 +675,32 @@ class TenunSurfaceView @JvmOverloads constructor(
         // Transition frames draw from the animation thread; the paint lock
         // keeps at most one thread between lock and post.
         synchronized(paintLock) {
-            val canvas = holder.lockCanvas() ?: return
+            val canvas = lockDrawCanvas() ?: return
             try {
                 renderScene(canvas)
             } finally {
                 holder.unlockCanvasAndPost(canvas)
             }
         }
+    }
+
+    /**
+     * TN-181: GPU rasterization. lockCanvas() is the SOFTWARE path — every
+     * frame rasterizes on the CPU regardless of the device. lockHardwareCanvas()
+     * (API 23+, minSdk 26) hands the surface to Android's hardware-accelerated
+     * Skia GL backend; every paint op this host uses (rect/round-rect/text/
+     * shaders/saveLayerAlpha) is hardware-supported and pixel-compatible.
+     * Environments without a GPU backend (some emulators, low-end
+     * headless configs) reject it — the software canvas stays the
+     * unconditional fallback, so behavior is identical where hardware is
+     * absent. unlockCanvasAndPost posts either kind.
+     */
+    private fun lockDrawCanvas(): Canvas? = try {
+        holder.lockHardwareCanvas()
+    } catch (e: IllegalStateException) {
+        holder.lockCanvas()
+    } catch (e: RuntimeException) {
+        holder.lockCanvas()
     }
 
     /* ---------------- TN-169: host-evaluated route transitions ---------------- */
@@ -736,7 +755,7 @@ class TenunSurfaceView @JvmOverloads constructor(
             }
             synchronized(paintLock) {
                 if (activeRouteTransition !== state) return
-                val canvas = holder.lockCanvas()
+                val canvas = lockDrawCanvas()
                 if (canvas != null) {
                     try {
                         if (raw >= 1f) {
