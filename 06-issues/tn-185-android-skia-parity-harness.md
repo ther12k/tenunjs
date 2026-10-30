@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-185: Android skia-host parity harness — the cdylib on the device gate"
 summary: "ADR-0026 stage 3, first slice: libtenun_skia_host.so cross-builds into the APK (arm64-v8a/x86_64, prebuilt rust-skia bindings), a dlopen shim bridges the C ABI, the device gate dual-renders every probe scene through BOTH painters with shared anchor classifiers, injects the device Roboto pair through a new set-typefaces ABI, and logs Canvas-vs-skia-host per-frame timings — the measurement path ADR-0019 requires before any production-surface switch."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-185"
 milestone: "M4"
 priority: "P1"
@@ -72,3 +72,13 @@ the platform Canvas until the measurement says otherwise.
 - GPU-backed Skia surfaces and a dedicated Skia render thread (later
   stage-3 slices; this path is CPU raster into a buffer).
 - Elevation shadows (TN-160/ADR-0026 stage 3 image filters).
+
+## Status note (2026-10-31, closed)
+
+Implemented in PR #268: the cdylib cross-builds for both ABIs in
+seconds (prebuilt rust-skia bindings), the dlopen shim forwards the C
+ABI with fail-visible absence, typeface injection validates whole, and
+the device gate dual-renders 12 probe scenes through both painters with
+shared anchors plus per-frame timing evidence. 8/8 CI gates on the PR
+head. The production surface remains the platform Canvas pending the
+measured-parity record this harness now produces.
