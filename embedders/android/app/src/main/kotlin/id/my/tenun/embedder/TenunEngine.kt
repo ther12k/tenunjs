@@ -63,8 +63,14 @@ class TenunEngine(
     fun destroy() {
         if (nativeHandle != 0L) {
             nativeSetHostCallHandler(nativeHandle, null)
-            nativeDestroy(nativeHandle)
-            nativeHandle = 0L
+            // TN-176: a REFUSED native destroy (same-engine reentry from
+            // inside a host-service callback) keeps the handle — the
+            // engine is still alive and usable; the owner retries after
+            // the dispatch entry returns. Zeroing the handle here would
+            // report a live engine as disposed and leak it.
+            if (nativeDestroy(nativeHandle)) {
+                nativeHandle = 0L
+            }
         }
     }
 
@@ -115,5 +121,8 @@ class TenunEngine(
     private external fun nativeDispatchActionResult(handle: Long, action: String, payloadJson: String): String?
     private external fun nativeSetHostCallHandler(handle: Long, handler: HostServiceHandler?)
     private external fun nativeGetLatestScene(handle: Long): String
-    private external fun nativeDestroy(handle: Long)
+
+    /** TN-176: false when the destroy was refused (same-engine reentry
+     * from inside a host-service callback) — the engine stays alive. */
+    private external fun nativeDestroy(handle: Long): Boolean
 }

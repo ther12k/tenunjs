@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "tenun-android-embedder"
 include(":app")
+include(":offline-ble")

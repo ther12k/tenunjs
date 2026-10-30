@@ -15,7 +15,12 @@ import fs from "node:fs";
 import { buildBundle, repoRoot } from "./bundle-lib";
 
 const outPath = path.resolve(repoRoot, "embedders/android/app/src/main/assets/gallery_app.js");
-const devServerPath = path.resolve(repoRoot, "embedders/android/app/src/main/assets/dev_server.txt");
+// TN-178: the hot-reload marker lives in the DEBUG source set — release
+// builds never package it, so a leftover marker cannot ship unsigned
+// network reload into a release APK. MainActivity additionally refuses
+// to honor it in non-debuggable builds (defense in depth).
+const devServerPath = path.resolve(repoRoot, "embedders/android/app/src/debug/assets/dev_server.txt");
+const staleMainPath = path.resolve(repoRoot, "embedders/android/app/src/main/assets/dev_server.txt");
 
 const { code, hash } = await buildBundle();
 
@@ -24,9 +29,14 @@ console.log(`gallery bundle: ${outPath} (${code.length} bytes, sha256:${hash})`)
 
 const devServer = process.env.TENUN_DEV_SERVER?.trim();
 if (devServer) {
+  fs.mkdirSync(path.dirname(devServerPath), { recursive: true });
   fs.writeFileSync(devServerPath, `${devServer}\n`);
-  console.log(`dev hot reload: polling ${devServer} (dev_server.txt written)`);
-} else if (fs.existsSync(devServerPath)) {
-  fs.rmSync(devServerPath);
-  console.log("dev hot reload: disabled (stale dev_server.txt removed)");
+  // A marker from the pre-TN-178 location would still ship in release.
+  if (fs.existsSync(staleMainPath)) fs.rmSync(staleMainPath);
+  console.log(`dev hot reload: polling ${devServer} (debug-assets dev_server.txt written)`);
+} else {
+  for (const stale of [devServerPath, staleMainPath]) {
+    if (fs.existsSync(stale)) fs.rmSync(stale);
+  }
+  console.log("dev hot reload: disabled (stale dev_server.txt copies removed)");
 }

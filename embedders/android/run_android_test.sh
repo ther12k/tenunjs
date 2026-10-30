@@ -61,6 +61,10 @@ if [ -x "$SCRIPT_DIR/gradlew" ] && [ -d "$ANDROID_SDK" ]; then
   echo "== 3. Running Android Gradle unit tests (IME composition & scene sync) =="
   (cd "$SCRIPT_DIR" && export ANDROID_HOME="$ANDROID_SDK" && ./gradlew test)
 
+  # 3b. The :offline-ble module (TN-177) is part of `./gradlew test`
+  # above: the PRODUCTION PolytronBleService + GattWriteLedger against
+  # hand-written android.* fakes on a virtual-time scheduler.
+
   echo "== 4. Building packaged Android debug APK (:app:assembleDebug) =="
   (cd "$SCRIPT_DIR" && export ANDROID_HOME="$ANDROID_SDK" && ./gradlew :app:assembleDebug)
 

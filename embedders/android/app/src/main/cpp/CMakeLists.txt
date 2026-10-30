@@ -28,6 +28,10 @@ target_include_directories(tenun_android PRIVATE
 
 target_compile_options(tenun_android PRIVATE
     -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter
+    # Release (-O2) dead-store analysis trips these in vendored quickjs;
+    # debug (-O0) never does. Same suppressions the host build in
+    # run_android_test.sh carries (plus implicit-fallthrough there).
+    -Wno-implicit-fallthrough -Wno-unused-but-set-variable
 )
 
 find_library(log-lib log)
