@@ -11,6 +11,7 @@ import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.Calendar
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -208,6 +209,7 @@ class MainActivity : Activity() {
             if (stored != null) {
                 try {
                     Log.i(TAG, "booting confirmed OTA bundle v${store.installedVersion()}")
+                    bootBundleSha = sha256Hex(stored)
                     return TenunEngine(stored, hostRegistry).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
                 } catch (e: Exception) {
                     Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
@@ -216,6 +218,7 @@ class MainActivity : Activity() {
                 }
             }
         }
+        bootBundleSha = sha256Hex(assetBundleBytes)
         return try {
             TenunEngine(assetBundleBytes, hostRegistry).also { lastBootCorrelation = "packaged" }
         } catch (e: Exception) {
@@ -224,6 +227,16 @@ class MainActivity : Activity() {
             // source here — no cause speculation.
             lastBootCorrelation = "packaged (see logcat TenunEngine)"
             Log.e(TAG, "packaged bundle failed to boot: ${e.message}")
+            null
+        }
+    }
+
+    private fun sha256Hex(bytes: ByteArray?): String? {
+        if (bytes == null) return null
+        return try {
+            MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
             null
         }
     }
@@ -380,6 +393,12 @@ class MainActivity : Activity() {
      *  from the dev server, never a hardcoded demo name. */
     private var assetBundleName = "polytron_app.js"
 
+    /** sha256(hex) of the bundle bytes that actually booted (stored OTA or
+     *  packaged asset) — the baseline the FIRST dev-server poll compares
+     *  against, so a deploy that landed while the app was closed is picked
+     *  up on launch instead of only on the next change while running. */
+    private var bootBundleSha: String? = null
+
     private fun readAssetBundle(): ByteArray? {
         return try {
             assets.open("polytron_app.js").use { it.readBytes() }
@@ -429,20 +448,31 @@ class MainActivity : Activity() {
         val url = devServerUrl ?: return
         ioExecutor.execute {
             try {
-                val hash = httpGetText("$url/hash")
+                // The server sends the hash with a trailing newline — trim so
+                // it compares equal against the locally computed boot sha.
+                val hash = httpGetText("$url/hash").trim()
                 val known = lastHash
                 lastHash = hash
-                if (known != null && hash != known && reloadInFlight.compareAndSet(false, true)) {
-                    val bytes = httpGetBytes("$url/$assetBundleName")
-                    runOnUiThread {
-                        try {
-                            applyReload(bytes)
-                        } finally {
-                            reloadInFlight.set(false)
-                            schedulePoll(POLL_INTERVAL_MS)
+                if (reloadWanted(hash, known, bootBundleSha) && reloadInFlight.compareAndSet(false, true)) {
+                    try {
+                        val bytes = httpGetBytes("$url/$assetBundleName")
+                        runOnUiThread {
+                            try {
+                                applyReload(bytes)
+                            } finally {
+                                reloadInFlight.set(false)
+                                schedulePoll(POLL_INTERVAL_MS)
+                            }
                         }
+                        return@execute
+                    } catch (e: Exception) {
+                        // The bundle fetch died mid-reload (server hiccup,
+                        // network drop). Release the in-flight flag here or
+                        // every later poll CAS-fails silently and hot reload
+                        // stays dead for the rest of the process.
+                        reloadInFlight.set(false)
+                        Log.d(TAG, "dev reload fetch failed: ${e.message}")
                     }
-                    return@execute
                 }
             } catch (e: Exception) {
                 // Dev server unreachable is a normal state (laptop asleep,
@@ -607,5 +637,20 @@ class MainActivity : Activity() {
         private const val OTA_INTERVAL_MS = 30_000L
         private const val TRIAL_MIN_UPTIME_MS = 10_000L
         private const val CONFIRM_RETRY_MS = 5_000L
+
+        /**
+         * Dev-reload decision, extracted for tests. Reload when the server
+         * hash differs from what this device knows — the last observed hash,
+         * or, on the first poll after launch, the booted bundle's own hash:
+         * a deploy that landed while the app was closed must still be picked
+         * up on the next launch, not only on a change seen while running.
+         * A null boot sha (unreadable bytes) keeps the legacy record-only
+         * first poll; a blank server hash never triggers a fetch.
+         */
+        internal fun reloadWanted(serverHash: String?, lastHash: String?, bootSha: String?): Boolean {
+            if (serverHash.isNullOrBlank()) return false
+            val known = lastHash ?: bootSha ?: return false
+            return known != serverHash
+        }
     }
 }

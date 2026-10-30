@@ -503,6 +503,66 @@
     }
 
     /* Call to Action Banner */
+    .changelog-card {
+      background: #050a0e;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 32px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .changelog-header {
+      background: #09131c;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: #8aa4b5;
+    }
+    .changelog-entry {
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .changelog-entry:last-child { border-bottom: none; }
+    .ver-pill {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #00b7fd;
+      background: rgba(0, 183, 253, 0.1);
+      border: 1px solid rgba(0, 183, 253, 0.35);
+      border-radius: 8px;
+      padding: 4px 12px;
+      white-space: nowrap;
+    }
+    .ver-pill.older {
+      color: #8aa4b5;
+      background: rgba(138, 164, 181, 0.08);
+      border-color: rgba(138, 164, 181, 0.25);
+    }
+    .changelog-body { flex: 1; min-width: 260px; }
+    .changelog-date {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #5c7585;
+      margin-bottom: 6px;
+    }
+    .changelog-body ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #b8ccd8;
+      font-size: 0.92rem;
+      line-height: 1.65;
+    }
     .cta-banner {
       background: linear-gradient(135deg, #091a26, #0e293d);
       border: 1px solid var(--card-border-glow);
@@ -563,7 +623,7 @@
           <path d="M10 16c2-2 4-2 6 0s4 2 6 0" stroke="#39D2C0" stroke-width="2" stroke-linecap="round"/>
         </svg>
         <span>Polytron Wash</span>
-        <span class="brand-badge">v0.1.6</span>
+        <span class="brand-badge">v0.1.8</span>
       </a>
       <div class="nav-links">
         <a href="#diagram">System Architecture</a>
@@ -601,7 +661,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Download APK (v0.1.6)
+            Download APK (v0.1.8)
           </a>
           <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener" class="btn-secondary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -625,8 +685,8 @@
             <span class="meta-lbl">Hardware Interlock</span>
           </div>
           <div class="meta-item">
-            <span class="meta-val">OTA Hot-Reload</span>
-            <span class="meta-lbl">Live Updates</span>
+            <span class="meta-val">Cloud Hot-Update</span>
+            <span class="meta-lbl">No Reinstall Needed</span>
           </div>
         </div>
       </div>
@@ -984,13 +1044,50 @@
 //   WATER:     65% tub level</code></pre>
       </div>
 
+      <!-- Changelog -->
+      <div class="changelog-card">
+        <div class="changelog-header">
+          <span>CHANGELOG.md — served from this domain</span>
+          <span>auto-delivered to installed apps</span>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill">v0.1.8</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-30 · versionCode 9 · current</div>
+            <ul>
+              <li>Cloud hot-update now catches deploys made <strong>while the app was closed</strong> — first launch after a release compares the server bundle against the one that booted, then updates itself.</li>
+              <li>A failed update fetch no longer disables live reload for the rest of the session.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill older">v0.1.7</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-30 · versionCode 8</div>
+            <ul>
+              <li>Rebuilt on TenunJS main with the Android TalkBack accessibility bridge over scene semantics (TN-180).</li>
+              <li>JNI reentry guards and debug-only dev-reload hardening (TN-176..178).</li>
+            </ul>
+          </div>
+        </div>
+        <div class="changelog-entry">
+          <span class="ver-pill older">v0.1.6</span>
+          <div class="changelog-body">
+            <div class="changelog-date">2026-10-28 · versionCode 7</div>
+            <ul>
+              <li>Update channel moved to <strong>https://wash.rizeva.my.id</strong> — hot updates and the APK download work from any network, no laptop required.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <!-- CTA Card -->
       <div class="cta-banner">
         <h2>Ready to Deploy or Build Your Own?</h2>
         <p>Download the native Android APK package or browse the full hardware schematics, firmware code, and test suite on GitHub.</p>
         <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
           <a href="/polytron-wash.apk" class="btn-primary" style="padding: 16px 36px; font-size: 1.05rem;">
-            Download Android APK (v0.1.6)
+            Download Android APK (v0.1.8)
           </a>
           <a href="https://github.com/ther12k/polytronwash" target="_blank" rel="noopener" class="btn-secondary" style="padding: 16px 28px; font-size: 1.05rem;">
             View on GitHub
