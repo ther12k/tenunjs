@@ -275,6 +275,7 @@ status: accepted
 | 06-issues/tn-169-deliver-host-evaluated-route-transitions.md | b616364a896846fc3b4c28cc740456b4542bb302877dac24e9475bd5f1fd9b86 |
 | 06-issues/tn-170-deliver-runtime-theme-switching-and-palette-themes.md | b361b174e1cad5855b449e223913bbcc6087b5890f115471a39480dff7a2c1c5 |
 | 06-issues/tn-171-deliver-device-journey-and-readme-recording.md | f9037fcb5818e5b9233f5b3f7715a06216390ace38046138853e10d99ef9f23a |
+| 06-issues/tn-172-fix-spike-adapter-stale-destroy-recycling.md | 1e04da3b10ebe8200e29ae7bfe7e4e8abd106f5005b0130df71ac5c93dd8c61e |
 <<<<<<< HEAD
 =======
 >>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))

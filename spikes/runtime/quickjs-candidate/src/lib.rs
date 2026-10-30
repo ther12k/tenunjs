@@ -94,6 +94,65 @@ mod tests {
         assert_eq!(bigint_i64_from_decimal("12x"), None);
         assert_eq!(bigint_i64_from_decimal(""), None);
     }
+
+    /// TN-172: a stale destroy of a RECYCLED slot must be a true no-op.
+    /// create A → destroy A → create B reuses the slot with a bumped
+    /// generation; a late destroy(A) previously removed B's thread-map
+    /// entry BEFORE the generation check, leaking B and failing its
+    /// later resolves with ERR_AFFINITY on its own owner thread.
+    #[test]
+    fn stale_destroy_leaves_the_recycled_slot_occupant_untouched() {
+        fn pack(source: &str) -> Vec<u8> {
+            let payload = source.as_bytes();
+            let mut out = Vec::with_capacity(48 + payload.len());
+            out.extend_from_slice(b"TJRB");
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+            out.extend_from_slice(&Sha256::digest(payload));
+            out.extend_from_slice(payload);
+            out
+        }
+        unsafe {
+            let cfg = ConfigC {
+                abi_version: 1,
+                max_heap_bytes: 64 * 1024 * 1024,
+                interrupt_poll_ms: 0,
+            };
+            let a = tenun_js_create(&cfg);
+            assert!(!a.is_null(), "VM A created");
+            let bundle = pack("var marker = 1;");
+            assert_eq!(
+                tenun_js_eval_bundle(a, bundle.as_ptr(), bundle.len()),
+                TENUN_JS_OK
+            );
+            tenun_js_destroy(a);
+            // Slot recycled: B must land in the same slot with a new
+            // generation for this test to exercise the defect at all.
+            let b = tenun_js_create(&cfg);
+            assert!(!b.is_null(), "VM B created");
+            assert_eq!(
+                decode_handle(a).map(|(s, _)| s),
+                decode_handle(b).map(|(s, _)| s),
+                "precondition: B recycled A's slot"
+            );
+            // The stale destroy — pre-fix this stripped B's ownership.
+            tenun_js_destroy(a);
+            // B is untouched: it still evaluates on its owner thread.
+            let probe = pack("var after = marker_unreachable;");
+            let status = tenun_js_eval_bundle(b, probe.as_ptr(), probe.len());
+            // marker_unreachable is undefined on the fresh VM B — the eval
+            // must fail with a JS error (EVAL), NOT an affinity/handle
+            // error, proving B's registry entry survived the stale destroy.
+            assert_eq!(status, TENUN_JS_ERR_EVAL);
+            let ok = pack("var fine = 2;");
+            assert_eq!(
+                tenun_js_eval_bundle(b, ok.as_ptr(), ok.len()),
+                TENUN_JS_OK,
+                "B still usable after the stale destroy of its predecessor"
+            );
+            tenun_js_destroy(b);
+        }
+    }
 }
 
 pub const TENUN_JS_OK: i32 = 0;
@@ -522,8 +581,12 @@ fn registry_release(handle: *mut TenunJsVm) {
     };
     let taken = OWNER_VMS.with(|m| {
         let mut map = m.borrow_mut();
-        match map.remove(&slot) {
-            Some(owned) if owned.generation == generation => Some(owned),
+        // Generation is verified BEFORE removing (TN-172): a stale handle
+        // to a recycled slot must leave the CURRENT occupant — a newer
+        // generation — untouched. Remove-first stripped the replacement's
+        // ownership and leaked it (2026-10-27 review P1 #6).
+        match map.get(&slot) {
+            Some(owned) if owned.generation == generation => map.remove(&slot),
             _ => None, // stale handle (already destroyed) — no-op
         }
     });
