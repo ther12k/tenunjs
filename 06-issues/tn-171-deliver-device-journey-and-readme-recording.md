@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-171: Deliver the same-code device journey and README recording (TN-155 closure)"
 summary: "Day Plan's compiled TSX bundle boots through the production Android embedder and completes the full user journey through real MotionEvents and the InputConnection; the README records Day Plan as the headline demo; TN-155 closes."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-171"
 milestone: "M4"
 priority: "P1"
@@ -57,3 +57,19 @@ the README's headline demo.
 - Packaging Day Plan as the launcher application (the embedder APK keeps
   its own asset; the bundle is reused, not the app identity).
 - Physical-device evidence (ADR-0019 owns that boundary).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #256 (commits
+92096b0..a382c7f): the compiled Day Plan bundle is a committed
+androidTest asset; `FrameworkFeelJourneyTest` drives the full journey
+through real MotionEvents and the InputConnection on the CI device gate
+— boot frame, task completion, forward/backward transitions asserted on
+the committed scenes with settle waits, runtime theme toggles with
+retained state, plan-title editing, checklist drag with accurate taps
+afterwards; the README records Day Plan as the headline demo. En route
+the journey exposed and fixed a real TN-169 gap (transition stamps must
+ride whole commit bursts — see the burst-semantics commit), and the
+input/drag steps moved onto the main thread (runOnMainSync is not
+reentrant; off-main IME calls throw and the adapter reports a silent
+false). All eight CI gates green including the device gate.

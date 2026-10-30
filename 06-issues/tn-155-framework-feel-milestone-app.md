@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-155: Framework-feel milestone app — the end-to-end Flutter-inspired experience"
 summary: "One small TSX application that demonstrates the promised framework experience end to end: nested layout, editable text, independent scrolling, route transition with animation, direct Skia drawing, and the same code on every available embedder."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-155"
 milestone: "M4"
 priority: "P0"
@@ -107,3 +107,18 @@ widgets that demonstrates, in one codebase:
 - [Scrolling and animation](../02-architecture/scrolling-animation.md)
 - [Text and IME](../02-architecture/text-and-ime.md)
 - TN-154 (native platform substrate, closed)
+
+## Status note (2026-10-30, closed)
+
+All seven requirements are implemented with evidence on every available
+host, delivered slice by slice: TN-157 (bounded layout + Day Plan
+foundation), TN-158 (host viewport delivery), TN-160 (controlled text
+editing), TN-161 (independent scroll regions), TN-169 (host-evaluated
+route transitions), TN-170 (semantic palettes with runtime switching),
+and TN-171 (same-code device journey + README recording; the browser and
+QuickJS structural parity gates ran throughout). Day Plan is the
+README's headline demo. Recorded limitations that stay open elsewhere:
+font/CJK coverage and narrow-overflow polish (TN-160 notes), the live
+soft-keyboard journey (ADR-0019 physical-device boundary), and TN-068's
+deeper token work (ColorRef widget adoption, spacing/typography/locale/
+scale context).
