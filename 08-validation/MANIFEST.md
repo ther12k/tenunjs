@@ -277,7 +277,7 @@ status: accepted
 | 06-issues/tn-171-deliver-device-journey-and-readme-recording.md | f9037fcb5818e5b9233f5b3f7715a06216390ace38046138853e10d99ef9f23a |
 | 06-issues/tn-172-fix-spike-adapter-stale-destroy-recycling.md | 1e04da3b10ebe8200e29ae7bfe7e4e8abd106f5005b0130df71ac5c93dd8c61e |
 | 06-issues/tn-173-adopt-colorref-props-with-commit-time-resolution.md | 99fc10ec5c4875abaf8f0d8d36f613684074fa2b4dfee54184b699808952de59 |
-| 06-issues/tn-174-theme-driven-spacing-radius-typography-tokens.md | 7eaf879e82bfb46485151c234a036484b672e02b2ef8dd24880b938aee0f5fad |
+| 06-issues/tn-174-theme-driven-spacing-radius-typography-tokens.md | 0730b5c2bd8c3c46d3e592d82cf2c30297246326b3612c7c24793327052c54c5 |
 <<<<<<< HEAD
 =======
 >>>>>>> 479c65c (fix(widgets): flatten ScrollView nested-array children and type baker nested errors (TN-168))

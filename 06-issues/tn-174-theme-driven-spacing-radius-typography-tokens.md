@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-174: Make spacing, radius, and typography tokens flow from the theme"
 summary: "ThemeConfig's spacing/radius/typography blocks are dead config today — the lowering resolves hardcoded module constants. This slice makes the theme blocks live (validated, typed failures), adds custom typography variants, and narrows all three vocabularies through ThemeScope descendants."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-174"
 milestone: "M4"
 priority: "P1"
@@ -56,3 +56,17 @@ config. A theme that changes `spacing.md` changes nothing.
 - Locale, scale, and platform context values (they have no design or
   ADR yet — separate issue when the context-inheritance design lands).
 - Density scaling of the built-in scales.
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #259 (commit
+c1d1ff8): ThemeConfig's spacing, radius, and typography blocks actively
+drive layout metrics across all layout and content widgets; buildTokenSet
+validates token inputs with typed INVALID_THEME_TOKEN errors; custom
+typography variants and ergonomic weight specs ('normal', 'bold', number)
+are supported; ThemeScopeBox scopes tokens for descendants only; and
+runtime setTheme updates geometry on the next frame. Evidence: 6 new unit
+tests in packages/widgets/test/theme-tokens.test.ts, 620-test suite,
+typecheck clean, full run_android_test.sh green, and all eight CI gates
+pass including verify-android-device.
+
