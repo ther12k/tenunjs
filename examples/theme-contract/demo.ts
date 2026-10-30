@@ -39,7 +39,8 @@ if (requestedMode !== undefined) await example.setMode(requestedMode as ThemeMod
 const scene = example.render();
 const colorAt = (index: number): string | undefined => {
   const op = scene.ops[index];
-  return op && "color" in op ? op.color : undefined;
+  // The theme example bakes before exposing scenes; paint ops carry literals.
+  return op && "color" in op ? (op.color as string) : undefined;
 };
 console.log(JSON.stringify({
   mode: example.mode,

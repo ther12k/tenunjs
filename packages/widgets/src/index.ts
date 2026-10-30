@@ -11,6 +11,7 @@
 import { HostWidgetKind } from "@tenunjs/protocol";
 import { jsx, type WidgetChild, type WidgetNode } from "@tenunjs/jsx-runtime";
 import { ScrollViewKind } from "./display-list";
+import type { ColorRef } from "./theme-slots";
 
 export * from "./structural";
 export * from "./display-list";
@@ -167,7 +168,8 @@ function flattenScrollChildren(children: ScrollViewProps["children"]): WidgetChi
 
 export interface TextProps {
   variant?: "body" | "title" | "display" | string;
-  color?: string;
+  /** Role name, literal, or a colorSlot() ref baked at the commit boundary (TN-173). */
+  color?: string | ColorRef;
   children?: WidgetChild;
 }
 
@@ -192,7 +194,8 @@ export function Button(props: ButtonProps): WidgetNode {
 export interface CardProps {
   padding?: string | number;
   radius?: string | number;
-  background?: string;
+  /** Role name, literal, or a colorSlot() ref baked at the commit boundary (TN-173). */
+  background?: string | ColorRef;
   /** Elevated cards paint layered elevation under the surface. */
   elevation?: boolean;
   semantics?: Record<string, unknown>;

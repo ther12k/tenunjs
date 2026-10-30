@@ -55,6 +55,7 @@ import type { ScreenDefinition } from "@tenunjs/core";
 import { LayoutError, layoutScreen, normalizeSceneTransition, validateLayoutViewport } from "./display-list";
 import type { DisplayListScene, LayoutViewport, SceneTransition, SceneTransitionRequest } from "./display-list";
 import type { ThemeConfig } from "./index";
+import type { ThemePalette } from "./theme-slots";
 import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
 import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from "./text-input";
 
@@ -70,6 +71,10 @@ export interface ApplicationSnapshot {
 
 export interface ApplicationRender {
   readonly scene: DisplayListScene;
+  /** TN-173: present when any widget color prop carried a ColorRef — the
+   *  same geometry and taps with slot identity intact (the committed
+   *  `scene` is fully baked; hosts never see refs). */
+  readonly semanticScene?: DisplayListScene;
   readonly tapRuns: Array<() => void>;
 }
 
@@ -88,6 +93,12 @@ export interface ApplicationRuntimeOptions {
   readonly initial: string;
   /** Application-owned theme passed to layoutScreen unchanged. */
   readonly theme: ThemeConfig;
+  /**
+   * TN-173: the slot palette ColorRef widget props bake against at the
+   * commit boundary. Required exactly when any screen uses colorSlot()
+   * colors; composes with `theme` (roles keep driving defaults).
+   */
+  readonly palette?: ThemePalette;
   /** Merged into every action context (e.g. a navigate callback). */
   readonly services?: ApplicationServices;
   /** Legacy design width with unbounded root height; mutually exclusive with viewport. */
@@ -180,6 +191,7 @@ function createAbortSource(): { signal: AbortSignal; abort(): void } {
 export class ApplicationRuntime {
   private readonly screens: Record<string, ScreenDefinition<any, any>>;
   private theme: ThemeConfig;
+  private slotPalette: ThemePalette | undefined;
   private readonly services: ApplicationServices;
   private readonly designWidth: number | undefined;
   private viewport: Readonly<LayoutViewport> | undefined;
@@ -219,6 +231,7 @@ export class ApplicationRuntime {
     const viewport = options.viewport === undefined ? undefined : validateLayoutViewport(options.viewport);
     this.screens = options.screens;
     this.theme = options.theme;
+    this.slotPalette = options.palette;
     this.services = { ...(options.services ?? {}) };
     this.designWidth = options.designWidth;
     this.viewport = viewport;
@@ -279,6 +292,21 @@ export class ApplicationRuntime {
       throw new ApplicationRuntimeError("INVALID_THEME", "theme.colors must be an object");
     }
     this.theme = theme;
+    this.notifyStale();
+  }
+
+  /**
+   * TN-173: swaps the slot palette ColorRef props bake against — the
+   * same invalidation channel as setTheme (route, sessions, state,
+   * viewport, and input preserved; one commit per swap). Not part of
+   * state snapshots.
+   */
+  setPalette(palette: ThemePalette): void {
+    this.assertLive();
+    if (!palette || typeof palette !== "object" || Array.isArray(palette)) {
+      throw new ApplicationRuntimeError("INVALID_THEME", "palette must be an object");
+    }
+    this.slotPalette = palette;
     this.notifyStale();
   }
 
@@ -356,10 +384,10 @@ export class ApplicationRuntime {
         `screen "${session.name}" produced a null view`
       );
     }
-    const { scene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
+    const { scene, semanticScene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
       active: this.activeTextInput,
       focus: (id) => this.focusTextInput(id),
-    });
+    }, { palette: this.slotPalette });
     // Adopt the whole rendered field table only after layout succeeded. A
     // removed/read-only field ends its activation; ordinary rerenders keep it.
     this.textFields = new Map(textFields.map((binding) => [binding.props.id, binding]));
@@ -374,7 +402,7 @@ export class ApplicationRuntime {
     if (this.pendingTransition !== null) {
       scene.transition = this.pendingTransition;
     }
-    return { scene, tapRuns };
+    return semanticScene !== undefined ? { scene, semanticScene, tapRuns } : { scene, tapRuns };
   }
 
   /**
