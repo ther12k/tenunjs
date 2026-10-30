@@ -90,7 +90,9 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetHostCallHa
 JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestScene(
     JNIEnv *env, jobject thiz, jlong handle);
 
-JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
+/* TN-176: JNI_FALSE when the destroy was refused (same-engine reentry
+ * from inside a host-service callback); the engine stays alive. */
+JNIEXPORT jboolean JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
     JNIEnv *env, jobject thiz, jlong handle);
 
 #ifdef __cplusplus

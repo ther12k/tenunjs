@@ -398,8 +398,20 @@ class MainActivity : Activity() {
         }
     }
 
-    /** One line: the dev server base URL, e.g. http://192.168.1.55:8898 */
+    /**
+     * One line: the dev server base URL, e.g. http://192.168.1.55:8898.
+     *
+     * TN-178: honored in DEBUGGABLE builds only. The marker is generated
+     * into the debug source set, but a release package must never
+     * activate unsigned network hot reload even if a dev_server.txt
+     * asset is accidentally packaged — the reload path fetches and
+     * evaluates arbitrary JavaScript with live host capabilities and has
+     * none of the OTA envelope's signature/compatibility gates.
+     */
     private fun readDevServerAsset(): String? {
+        val debuggable = (applicationInfo.flags and
+            android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable) return null
         return try {
             assets.open("dev_server.txt").use { stream ->
                 stream.readBytes().decodeToString().trim().ifEmpty { null }

@@ -532,9 +532,16 @@ class PolytronBleService(
             if (g !== gatt) return
             mainHandler.post {
                 if (g !== gatt) return@post
-                writeSeq++ // any pending watchdog for this submission is void now
                 when (val completion = ledger.complete()) {
                     is GattWriteLedger.Completion.Current -> {
+                        // TN-177: ONLY the live submission's own callback
+                        // retires its watchdog. Advancing writeSeq before
+                        // classification let a LATE (abandoned) or spurious
+                        // callback cancel the CURRENT submission's armed
+                        // watchdog — after a stalled WASH's late completion,
+                        // a retrying STOP whose callback never arrived kept
+                        // writing=true forever and wedged every later write.
+                        writeSeq++
                         if (status != BluetoothGatt.GATT_SUCCESS) {
                             handleWriteFailure(completion.cmd)
                             return@post
@@ -553,8 +560,9 @@ class PolytronBleService(
                         // current in-flight command here and cleared the
                         // STOP latch for a STOP that was never written. The
                         // current submission settles on its own callback or
-                        // its own watchdog.
-                        Log.i(TAG, "late GATT write completion ignored (abandoned submission)")
+                        // its own watchdog (TN-177: and this late callback
+                        // must not touch that watchdog either).
+                        Log.i(TAG, "late GATT write completion ignored (${completion.cmd})")
                     GattWriteLedger.Completion.None -> Unit // spurious callback
                 }
             }

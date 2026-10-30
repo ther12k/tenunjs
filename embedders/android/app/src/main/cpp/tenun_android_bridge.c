@@ -843,14 +843,24 @@ JNIEXPORT jstring JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeGetLatestS
   return result;
 }
 
-JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
+/* TN-176: returns JNI_FALSE when the destroy was REFUSED (same-engine
+ * reentry from inside a host-service callback — the C destroy's TN-167
+ * refusal). The Kotlin wrapper keeps its handle in that case so the
+ * engine remains usable and the owner can retry after the entry returns;
+ * a void return left no way to distinguish "destroyed" from "refused",
+ * so a reentrant destroy() zeroed a still-live handle. */
+JNIEXPORT jboolean JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeDestroy(
     JNIEnv *env, jobject thiz, jlong handle) {
   (void)env;
   (void)thiz;
   tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
-  if (engine) {
-    tenun_android_engine_destroy(engine);
+  if (!engine) return (jboolean)1; /* idempotent: nothing left to destroy */
+  if (atomic_load(&engine->in_entry)) {
+    TENUN_LOG_WARN("tenun jni destroy refused: same-engine reentry from inside a host-service callback");
+    return (jboolean)0;
   }
+  tenun_android_engine_destroy(engine);
+  return (jboolean)1;
 }
 
 #if defined(__ANDROID__) || defined(ANDROID)
@@ -909,6 +919,15 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_nativeSetHostCallHa
   (void)thiz;
   tenun_android_engine* engine = (tenun_android_engine*)(intptr_t)handle;
   if (!engine) return;
+  /* TN-176: the JNI setter shares the C API's TN-167 reentry refusal.
+   * A host-service callback synchronously replacing the handler — or
+   * tearing the engine down through TenunEngine.destroy(), which calls
+   * this setter first — would otherwise deadlock on the mutex the outer
+   * dispatch entry holds. The owner retries after the entry returns. */
+  if (atomic_load(&engine->in_entry)) {
+    TENUN_LOG_WARN("tenun jni set-host-call-handler refused: same-engine reentry from inside a host-service callback");
+    return;
+  }
   pthread_mutex_lock(&engine->lock);
   if (engine->j_host_handler) {
     (*env)->DeleteGlobalRef(env, engine->j_host_handler);

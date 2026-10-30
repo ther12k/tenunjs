@@ -279,6 +279,9 @@ status: accepted
 | 06-issues/tn-173-adopt-colorref-props-with-commit-time-resolution.md | 99fc10ec5c4875abaf8f0d8d36f613684074fa2b4dfee54184b699808952de59 |
 | 06-issues/tn-174-theme-driven-spacing-radius-typography-tokens.md | 0730b5c2bd8c3c46d3e592d82cf2c30297246326b3612c7c24793327052c54c5 |
 | 06-issues/tn-175-scoped-token-measurement-validation-parity.md | 8f21121e69159bc31a02ca1194b308501ab77cbedf635e8f03eb2eeebcc33062 |
+| 06-issues/tn-176-jni-host-handler-reentry-guard.md | a6a393d8c76ca90790dbd73ba3273adc86f379a8f8613a5a5adde24224811ba3 |
+| 06-issues/tn-177-gatt-completion-watchdog-attribution.md | 57c5e6bbea3481f8bf75cb6540d354b7e6045b90aaa201c9918ab1b0f84aad50 |
+| 06-issues/tn-178-release-dev-reload-separation.md | 4948f80a17c2b2cfc7e87d224f7611b19a172a85eb7506d017f9670e43589b70 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
