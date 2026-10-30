@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-172: Fix the spike adapter's stale-destroy slot recycling"
 summary: "registry_release removes the slot's thread-map entry BEFORE checking the generation, so a stale destroy of a recycled slot strips the replacement VM's ownership and leaks it — the 2026-10-27 review's P1 #6."
 type: issue
-status: ready
+status: closed
 issue_id: "TN-172"
 milestone: "M1"
 priority: "P2"
@@ -56,3 +56,15 @@ entire defect.
 - Any change to shipped Android/C bridge paths (the adapter is the
   evaluation spike only).
 - The deferred-VM parking policy itself (unchanged).
+
+## Status note (2026-10-30, closed)
+
+Implemented and published in one session. Fixed in PR #257 (commits
+e8d13a5, a1df6b9): registry_release verifies the occupant's generation
+BEFORE removing it — a stale destroy of a recycled slot is a true no-op.
+Regression test through the public adapter API fails on the pre-fix
+ordering and passes after; verify-rust green; all three evidence packets
+replayed from a clean detached sibling worktree (the shared checkout's
+untracked deploy.sh dirtied the first pass) and verify-evidence passes;
+all eight CI gates green including the device gate.
+
