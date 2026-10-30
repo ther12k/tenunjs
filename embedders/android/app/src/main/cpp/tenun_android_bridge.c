@@ -969,3 +969,108 @@ JNIEXPORT void JNICALL Java_id_my_tenun_embedder_TenunEngine_00024Companion_nati
   TENUN_LOG_WARN("TENUN_TEST_INJECTION set stage=%d", (int)stage_code);
 }
 #endif
+
+/* ------------------------------------------------------------------------- */
+/* TN-185 (ADR-0026 stage 3): skia-host parity harness bridge.               */
+/* libtenun_skia_host.so (built by embedders/android/tools/skia-host/) is    */
+/* NOT linked at build time — it is a cdylib with a pure C ABI. This shim    */
+/* dlopen()s it in the app's linker namespace and forwards two calls. When   */
+/* the library is absent (JVM-only builds, local quick loops) every call     */
+/* returns -100 and the Kotlin side reports unavailable — the production     */
+/* paint surface stays the platform Canvas; this path exists for on-device   */
+/* parity/performance evidence only.                                         */
+/* ------------------------------------------------------------------------- */
+#include <dlfcn.h>
+
+typedef int (*tenun_skia_render_scene_fn)(const char *, int, int, unsigned char *, size_t);
+typedef int (*tenun_skia_set_typefaces_fn)(const unsigned char *, size_t, const unsigned char *, size_t);
+
+static void *skia_host_lib = NULL;
+static tenun_skia_render_scene_fn skia_render_scene_fn = NULL;
+static tenun_skia_set_typefaces_fn skia_set_typefaces_fn = NULL;
+static pthread_mutex_t skia_host_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void tenun_skia_host_resolve_locked(void) {
+  if (skia_host_lib != NULL) return;
+  /* System.loadLibrary uses RTLD_LOCAL, so dlsym(RTLD_DEFAULT,...) cannot
+   * see the Rust exports; dlopen by soname within the same (classloader)
+   * namespace returns the already-loaded object and yields a handle we
+   * CAN dlsym. Never dlclose — the handle outlives every caller. */
+  skia_host_lib = dlopen("libtenun_skia_host.so", RTLD_NOW | RTLD_LOCAL);
+  if (skia_host_lib == NULL) {
+    TENUN_LOG_WARN("skia-host parity lib not present (dlopen: %s)", dlerror());
+    return;
+  }
+  skia_render_scene_fn = (tenun_skia_render_scene_fn)dlsym(
+      skia_host_lib, "tenun_skia_render_scene");
+  skia_set_typefaces_fn = (tenun_skia_set_typefaces_fn)dlsym(
+      skia_host_lib, "tenun_skia_host_set_typefaces");
+  if (skia_render_scene_fn == NULL || skia_set_typefaces_fn == NULL) {
+    TENUN_LOG_WARN("skia-host symbols unresolved (render=%p set_typefaces=%p)",
+                   (void *)skia_render_scene_fn, (void *)skia_set_typefaces_fn);
+  }
+}
+
+JNIEXPORT jboolean JNICALL Java_id_my_tenun_embedder_SkiaHostBridge_nativeAvailable(
+    JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  pthread_mutex_lock(&skia_host_lock);
+  tenun_skia_host_resolve_locked();
+  jboolean ok = (skia_render_scene_fn != NULL && skia_set_typefaces_fn != NULL)
+                    ? (jboolean)1 : (jboolean)0;
+  pthread_mutex_unlock(&skia_host_lock);
+  return ok;
+}
+
+JNIEXPORT jint JNICALL Java_id_my_tenun_embedder_SkiaHostBridge_nativeSetTypefaces(
+    JNIEnv *env, jclass clazz, jbyteArray regular, jbyteArray bold) {
+  (void)clazz;
+  pthread_mutex_lock(&skia_host_lock);
+  tenun_skia_host_resolve_locked();
+  tenun_skia_set_typefaces_fn set_fn = skia_set_typefaces_fn;
+  pthread_mutex_unlock(&skia_host_lock);
+  if (set_fn == NULL) return -100;
+
+  jbyte *reg = (*env)->GetByteArrayElements(env, regular, NULL);
+  jbyte *bld = (*env)->GetByteArrayElements(env, bold, NULL);
+  if (reg == NULL || bld == NULL) {
+    if (reg != NULL) (*env)->ReleaseByteArrayElements(env, regular, reg, JNI_ABORT);
+    if (bld != NULL) (*env)->ReleaseByteArrayElements(env, bold, bld, JNI_ABORT);
+    return -101;
+  }
+  jint rc = set_fn((const unsigned char *)reg, (size_t)(*env)->GetArrayLength(env, regular),
+                   (const unsigned char *)bld, (size_t)(*env)->GetArrayLength(env, bold));
+  (*env)->ReleaseByteArrayElements(env, regular, reg, JNI_ABORT);
+  (*env)->ReleaseByteArrayElements(env, bold, bld, JNI_ABORT);
+  return rc;
+}
+
+/* Renders scene_json (UTF-8) into out, which receives the renderer's
+ * RGBA8888 bytes verbatim (caller interprets); returns the renderer's
+ * status code, or one of the shim's own -100.. codes when the parity
+ * lib is absent/unresolvable. */
+JNIEXPORT jint JNICALL Java_id_my_tenun_embedder_SkiaHostBridge_nativeRenderScene(
+    JNIEnv *env, jclass clazz, jstring json, jint width, jint height, jbyteArray out) {
+  (void)clazz;
+  pthread_mutex_lock(&skia_host_lock);
+  tenun_skia_host_resolve_locked();
+  tenun_skia_render_scene_fn render_fn = skia_render_scene_fn;
+  pthread_mutex_unlock(&skia_host_lock);
+  if (render_fn == NULL) return -100;
+
+  const char *json_utf8 = (*env)->GetStringUTFChars(env, json, NULL);
+  if (json_utf8 == NULL) return -101;
+  jsize out_len = (*env)->GetArrayLength(env, out);
+  jbyte *pixels = (*env)->GetByteArrayElements(env, out, NULL);
+  jint rc;
+  if (pixels == NULL) {
+    rc = -101;
+  } else {
+    rc = render_fn(json_utf8, (int)width, (int)height, (unsigned char *)pixels,
+                   (size_t)out_len);
+    (*env)->ReleaseByteArrayElements(env, out, pixels, 0);
+  }
+  (*env)->ReleaseStringUTFChars(env, json, json_utf8);
+  return rc;
+}

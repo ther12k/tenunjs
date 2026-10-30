@@ -671,6 +671,18 @@ class TenunSurfaceView @JvmOverloads constructor(
      */
     fun committedSceneForTest(): Pair<DisplayListScene?, Float> = sceneHolder.current to scrollY
 
+    /**
+     * TN-185 parity harness: paints a committed scene through the SAME
+     * renderDisplayList the surface draw path uses, onto a caller-supplied
+     * Canvas (e.g. one backed by a Bitmap). The view must be measured —
+     * the painter scales by its own width/height. This is how the device
+     * gate compares the platform Canvas painter against the framework-
+     * owned Skia rasterizer pixel-for-pixel.
+     */
+    fun renderDisplayListForTest(canvas: Canvas, dl: DisplayListScene) {
+        renderDisplayList(canvas, dl)
+    }
+
     fun redraw() {
         if (!isSurfaceValid) return
         // TN-169: an in-flight route transition owns the surface — a plain
