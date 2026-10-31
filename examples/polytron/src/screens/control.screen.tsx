@@ -3,8 +3,15 @@ import { Column, Scaffold, Text } from "@tenunjs/widgets";
 import { SnackBar } from "@tenunjs-examples/ui-kit";
 import type { BleLinkState } from "../runtime";
 import { fmtClock, type WashReply, type WashStatus } from "../protocol";
-import { modeColor } from "../theme";
-import { BannerCard, LinkHeader, ListRow, RelayRow, StopBar, WaveFillCard } from "../widgets";
+import {
+  BannerCard,
+  ChromeSpacer,
+  CollapseHeader,
+  GroupedRelayCard,
+  LinkHeader,
+  ListRow,
+  WaveFillCard,
+} from "../widgets";
 
 /**
  * Mesin tab — the mockup's screen 04: live device reality as read-only
@@ -19,6 +26,8 @@ export interface ControlsState {
   statusAt: number | null;
   pending: string | null;
   snack: WashReply | null;
+  /** Diagnostics section expanded (default collapsed — reference 04). */
+  diagOpen: boolean;
 }
 
 export const ControlsScreen = defineScreen({
@@ -30,6 +39,7 @@ export const ControlsScreen = defineScreen({
     statusAt: null,
     pending: null,
     snack: null,
+    diagOpen: false,
   }),
 
   actions: {
@@ -65,6 +75,12 @@ export const ControlsScreen = defineScreen({
     clearSnack: defineAction<ControlsState, void>({
       run({ state }) {
         (state as unknown as ControlsState).snack = null;
+      },
+    }),
+    toggleDiag: defineAction<ControlsState, void>({
+      run({ state }) {
+        const s = state as unknown as ControlsState;
+        s.diagOpen = !s.diagOpen;
       },
     }),
     goHome: defineAction<ControlsState, void>({
@@ -109,11 +125,11 @@ export const ControlsScreen = defineScreen({
     const stale = !offline && !waiting && staleFor > 15;
     const running = st?.running === true;
 
-    const relays: ReadonlyArray<{ icon: "motorA" | "motorB" | "drain" | "droplet"; name: string; on: boolean | null; color: string }> = [
-      { icon: "motorA", name: "Motor A", on: st ? st.motorA : null, color: "#0E9F8C" },
-      { icon: "motorB", name: "Motor B", on: st ? st.motorB : null, color: "#7C5CE0" },
-      { icon: "drain", name: "Buang", on: st ? st.drain : null, color: "#2E90FA" },
-      { icon: "droplet", name: "Isi", on: st ? st.inlet : null, color: "#17A673" },
+    const relays: ReadonlyArray<{ icon: "motorA" | "motorB" | "drain" | "droplet"; label: string; on: boolean | null; iconColor: string }> = [
+      { icon: "motorA", label: "Motor A", on: st ? st.motorA : null, iconColor: "#0E9F8C" },
+      { icon: "motorB", label: "Motor B", on: st ? st.motorB : null, iconColor: "#7C5CE0" },
+      { icon: "drain", label: "Buang", on: st ? st.drain : null, iconColor: "#2E90FA" },
+      { icon: "droplet", label: "Isi", on: st ? st.inlet : null, iconColor: "#17A673" },
     ];
 
     const headerPress = () => {
@@ -157,66 +173,57 @@ export const ControlsScreen = defineScreen({
           )}
 
           <WaveFillCard
+            large
             pct={st?.waterPct ?? null}
             caption={
               st === null
                 ? offline
                   ? "offline · belum terbaca"
-                  : "belum terbaca"
+                  : "menunggu data pertama"
                 : st.waterPct == null
-                  ? "sensor belum terkalibrasi"
+                  ? "belum tersedia di mesin ini"
                   : "level air dalam tangki"
             }
           />
 
-          <Column gap="sm">
-            <Text variant="label">Status relai</Text>
-            <Text variant="caption">Indikator, bukan tombol</Text>
-            {relays.map((r) => (
-              <RelayRow key={r.name} icon={r.icon} iconColor={r.color} label={r.name} on={r.on} />
-            ))}
-          </Column>
-
-          <StopBar
-            disabled={offline}
-            pending={s.pending === "STOP"}
-            emphasis={running}
-            onPress={() => actions.send1("STOP")}
-          />
-          {offline ? (
-            <Text variant="caption">STOP aplikasi butuh sambungan — gunakan tombol fisik di mesin</Text>
-          ) : null}
+          <GroupedRelayCard rows={relays} />
 
           <Column gap="sm">
-            <Text variant="label">Diagnostik perangkat</Text>
-            <ListRow
-              icon="droplet"
-              iconColor="#2E90FA"
-              label="Cek air (raw)"
-              sub="WATER — adc mentah + ema + pct"
-              pill={
-                offline
-                  ? undefined
-                  : { label: "KIRIM", busy: s.pending === "WATER", onPress: () => actions.send1("WATER") }
-              }
-              locked={offline ? "offline" : undefined}
-            />
-            <ListRow
-              icon="power"
-              iconColor="#8AA3B2"
-              label="Versi firmware"
-              sub={`heap ${st?.heapKB ?? "—"} KB · ${s.link.name ?? "polytron"}`}
-              pill={
-                offline
-                  ? undefined
-                  : { label: "KIRIM", busy: s.pending === "VER", onPress: () => actions.send1("VER") }
-              }
-              locked={offline ? "offline" : undefined}
-            />
-            <Text variant="caption">
-              {offline ? "Data diperbarui —" : `Data diperbarui ${staleFor}s lalu`}
-            </Text>
+            <CollapseHeader label="Diagnostik perangkat" open={s.diagOpen} onToggle={() => actions.toggleDiag()} />
+            {s.diagOpen ? (
+              <Column gap="sm">
+                <ListRow
+                  icon="droplet"
+                  iconColor="#2E90FA"
+                  label="Cek air (raw)"
+                  sub="WATER — adc mentah + ema + pct"
+                  pill={
+                    offline
+                      ? undefined
+                      : { label: "KIRIM", busy: s.pending === "WATER", onPress: () => actions.send1("WATER") }
+                  }
+                  locked={offline ? "offline" : undefined}
+                />
+                <ListRow
+                  icon="power"
+                  iconColor="#8AA3B2"
+                  label="Versi firmware"
+                  sub={`heap ${st?.heapKB ?? "—"} KB · ${s.link.name ?? "polytron"}`}
+                  pill={
+                    offline
+                      ? undefined
+                      : { label: "KIRIM", busy: s.pending === "VER", onPress: () => actions.send1("VER") }
+                  }
+                  locked={offline ? "offline" : undefined}
+                />
+                <Text variant="caption">
+                  {offline ? "Data diperbarui —" : `Data diperbarui ${staleFor}s lalu`}
+                </Text>
+              </Column>
+            ) : null}
           </Column>
+
+          <ChromeSpacer />
 
           {s.snack ? (
             <SnackBar

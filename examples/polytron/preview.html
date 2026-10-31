@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" href="data:," />
-    <meta name="theme-color" content="#081110" />
+    <meta name="theme-color" content="#EFF3F6" />
     <title>Polytron Wash · TenunJS</title>
     <style>
       /* Mobile-first: the app is a full-bleed single column — sticky
@@ -12,9 +12,9 @@
          style with underline), canvas fills the rest of the viewport.
          Wide screens get the same app centered as a phone column. */
       :root {
-        color-scheme: dark;
-        --bg: #081110; --card: #0a141a; --line: #22303c;
-        --txt: #e6eef7; --dim: #86a1bf; --acc: #00b7fd; --ok: #00ff80;
+        color-scheme: light;
+        --bg: #EFF3F6; --card: #ffffff; --line: #E4EBF0;
+        --txt: #182E38; --dim: #5F7A8C; --acc: #0E9F8C; --ok: #17A673;
       }
       * { box-sizing: border-box; }
       html, body { height: 100%; }
@@ -28,7 +28,7 @@
       }
       .hdr {
         flex: none; position: sticky; top: 0; z-index: 5;
-        background: #0a141ae6; backdrop-filter: blur(10px);
+        background: #ffffffeb; backdrop-filter: blur(10px);
         border-bottom: 1px solid var(--line);
         padding-top: env(safe-area-inset-top);
       }
@@ -41,25 +41,25 @@
       .brand .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .link { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); white-space: nowrap; }
       #demo-btn {
-        border: 1px solid var(--line); background: #0e1a20; color: var(--dim);
+        border: 1px solid var(--line); background: #ffffff; color: var(--dim);
         font: 700 11px/1 Inter, system-ui, sans-serif; letter-spacing: .08em;
         padding: 6px 10px; border-radius: 999px; cursor: pointer; flex: none;
       }
-      #demo-btn.on { border-color: var(--acc); color: var(--acc); background: #08222e; }
+      #demo-btn.on { border-color: var(--acc); color: var(--acc); background: #DFF3EE; }
       /* Link state lives HERE once — not as a banner atop every tab. The
          chain icon breaks when unlinked; tap to connect / disconnect. */
       #link-btn {
         display: flex; align-items: center; gap: 6px;
-        border: 1px solid var(--line); background: #0e1a20; color: var(--dim);
+        border: 1px solid var(--line); background: #ffffff; color: var(--dim);
         font: 700 11px/1 Inter, system-ui, sans-serif; letter-spacing: .04em;
         padding: 6px 10px; border-radius: 999px; cursor: pointer; flex: none;
       }
       #link-btn svg { width: 13px; height: 13px; flex: none; }
       #link-btn .icon-full { display: none; }
-      #link-btn.ok { border-color: #00ff8055; color: var(--ok); }
+      #link-btn.ok { border-color: #17a67355; color: var(--ok); }
       #link-btn.ok .icon-full { display: block; }
       #link-btn.ok .icon-broken { display: none; }
-      #link-btn.wait { border-color: #fcb51866; color: #fcb518; }
+      #link-btn.wait { border-color: #f5a52466; color: #B77807; }
       #link-btn:disabled { cursor: default; }
       /* Narrow phones: the pill keeps its state color + icon (the title
          tooltip still carries the full text) so the brand row fits on
@@ -81,7 +81,7 @@
         touch-action: none; background: var(--bg);
       }
       @media (min-width: 760px) {
-        body { display: grid; place-items: center; background: radial-gradient(circle at 15% 0%, #0c2a3a, #081110 60%); }
+        body { display: grid; place-items: center; background: radial-gradient(circle at 15% 0%, #e7eef4, #d8e3ea 60%); }
         .app {
           width: 480px; max-width: 100vw; height: min(94dvh, 940px); border-radius: 26px;
           border: 1px solid var(--line); overflow: hidden;
@@ -92,30 +92,30 @@
       @media (min-width: 1100px) {
         .app { width: 560px; }
       }
-      #prog-edit { position: fixed; inset: 0; background: #081110f2; display: grid; place-items: center; z-index: 10; padding: 12px; }
+      #prog-edit { position: fixed; inset: 0; background: #182e3899; display: grid; place-items: center; z-index: 10; padding: 12px; }
       #prog-edit[hidden] { display: none; }
-      .pair-card { width: min(94vw, 440px); max-height: min(92dvh, 640px); overflow-y: auto; border: 1px solid var(--line); border-radius: 20px; background: #0a141a; padding: 18px; display: grid; gap: 12px; }
+      .pair-card { width: min(94vw, 440px); max-height: min(92dvh, 640px); overflow-y: auto; border: 1px solid var(--line); border-radius: 20px; background: #ffffff; padding: 18px; display: grid; gap: 12px; }
       .pair-card h2 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
       .pair-card h2 span { font-size: 13px; color: var(--dim); font-weight: normal; }
       .step-builder { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
-      .step-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #0e1a20; border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; }
+      .step-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #F0F4F7; border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; }
       .step-mode { font: 800 11.5px Inter, system-ui; padding: 4px 8px; border-radius: 6px; letter-spacing: .04em; }
       .step-stepper { display: flex; align-items: center; gap: 6px; }
-      .step-stepper button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #13242e; color: var(--txt); font-weight: 800; cursor: pointer; }
+      .step-stepper button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #ffffff; color: var(--txt); font-weight: 800; cursor: pointer; }
       .step-val { font: 700 12.5px ui-monospace, monospace; min-width: 58px; text-align: center; color: var(--acc); }
       .step-del { border: none; background: transparent; color: #ff5566; font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
       .quick-adds { display: flex; flex-wrap: wrap; gap: 6px; }
-      .quick-btn { font: 600 11px Inter, system-ui; padding: 5px 9px; border-radius: 8px; border: 1px dashed var(--line); background: #0c181f; color: var(--dim); cursor: pointer; }
+      .quick-btn { font: 600 11px Inter, system-ui; padding: 5px 9px; border-radius: 8px; border: 1px dashed var(--line); background: #ffffff; color: var(--dim); cursor: pointer; }
       .quick-btn:hover { border-color: var(--acc); color: var(--txt); }
-      #prog-edit-summary { font: 600 11.5px Inter, system-ui; color: var(--dim); line-height: 1.4; padding: 6px 10px; background: #0c181f; border-radius: 8px; border-left: 3px solid var(--acc); }
+      #prog-edit-summary { font: 600 11.5px Inter, system-ui; color: var(--dim); line-height: 1.4; padding: 6px 10px; background: #F0F4F7; border-radius: 8px; border-left: 3px solid var(--acc); }
       .raw-toggle { font: 600 11px Inter, system-ui; color: var(--dim); background: none; border: none; cursor: pointer; text-align: left; padding: 2px 0; text-decoration: underline; }
       #prog-edit-raw-section { display: grid; gap: 8px; }
       #prog-edit-raw-section[hidden] { display: none; }
-      #prog-edit-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a20; color: var(--txt); font: 600 13px ui-monospace, monospace; letter-spacing: .04em; }
+      #prog-edit-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff; color: var(--txt); font: 600 13px ui-monospace, monospace; letter-spacing: .04em; }
       #prog-edit-msg { color: var(--dim); font-size: 11.5px; line-height: 1.5; min-height: 18px; }
       .pair-actions { display: flex; gap: 8px; }
-      .pair-actions button { flex: 1; padding: 11px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a20; color: var(--txt); font-weight: 700; cursor: pointer; }
-      #prog-edit-save { border-color: var(--acc); color: var(--acc); background: #08222e; }
+      .pair-actions button { flex: 1; padding: 11px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff; color: var(--txt); font-weight: 700; cursor: pointer; }
+      #prog-edit-save { border-color: var(--acc); color: var(--acc); background: #DFF3EE; }
     </style>
   </head>
   <body>

@@ -1,11 +1,19 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
 import { Column, Scaffold, Text } from "@tenunjs/widgets";
 import { SnackBar } from "@tenunjs-examples/ui-kit";
-import { BannerCard, LinkHeader, ProgramCard, StepEditor } from "../widgets";
+import {
+  BannerCard,
+  ChromeSpacer,
+  LinkHeader,
+  ListRow,
+  ProgramCard,
+  SegmentedControl,
+  StepEditor,
+  sentenceCase,
+} from "../widgets";
 import type { BleLinkState } from "../runtime";
 import {
   PROGRAM_SLOTS,
-  fmtProgramSummary,
   formatProgramSteps,
   parseProgramSteps,
   type ProgramStep,
@@ -14,11 +22,12 @@ import {
 } from "../protocol";
 
 /**
- * Programs tab — the mockup's screen 02: the three stored programs
- * (CEPAT / NORMAL / KUSTOM) as light cards, and a real in-canvas step
- * editor (numbered steps, duration steppers, quick-add chips, duration
- * estimate, Simpan program) replacing the raw native text dialog as the
- * primary editing surface. Connection lives in the LinkHeader.
+ * Programs tab — the reference's screen 02: a Cepat/Normal/Kustom
+ * segmented selector with the selected slot's step editor ALWAYS visible
+ * (numbered steps, ±30 s steppers in honest minutes:seconds, quick-add
+ * chips, duration estimate, Mulai/Simpan). TUB CLEAN stays as a compact
+ * maintenance card. The connection lives in the LinkHeader; STOP lives in
+ * the pinned chrome.
  */
 export interface ProgramsState {
   link: BleLinkState;
@@ -28,8 +37,12 @@ export interface ProgramsState {
   values: Record<string, string>;
   pending: string | null;
   snack: WashReply | null;
-  /** Non-null while the visual step editor is open for a slot. */
-  editing: { slot: number; steps: ProgramStep[] } | null;
+  /** Selected slot index of the segmented control. */
+  selected: number;
+  /** Local, unsaved editor steps per slot — initialized from the machine's
+   *  tokens on first touch, kept when switching segments, consumed by
+   *  Simpan (SET) or discarded on revert-to-machine values. */
+  drafts: Record<number, ProgramStep[]>;
 }
 
 export const ProgramsScreen = defineScreen({
@@ -42,7 +55,8 @@ export const ProgramsScreen = defineScreen({
     values: {},
     pending: null,
     snack: null,
-    editing: null,
+    selected: 0,
+    drafts: {},
   }),
 
   actions: {
@@ -98,69 +112,72 @@ export const ProgramsScreen = defineScreen({
         svc.ble?.disconnect();
       },
     }),
+    selectSlot: defineAction<ProgramsState, number>({
+      run({ input, state }) {
+        const s = state as unknown as ProgramsState;
+        if (!PROGRAM_SLOTS[input]) return;
+        s.selected = input;
+      },
+    }),
     start: defineAction<ProgramsState, string>({
       run({ input, state, services }) {
         const s = state as unknown as ProgramsState;
-        // No starts (and no single-flight leak) while a cycle runs.
-        if (!s.link.connected || s.pending !== null || s.status?.running === true) return;
+        // No starts before the machine has spoken, while a cycle runs, or
+        // with a command already in flight.
+        if (!s.link.connected || s.status === null || s.status.running === true || s.pending !== null) return;
+        if (s.statusAt !== null && Date.now() - s.statusAt > 15_000) return;
         s.pending = input;
         s.snack = null;
         (services as { send?: (cmd: string) => void }).send?.(input);
       },
     }),
-    /** Open the visual editor pre-filled with the slot's current tokens
-     *  (empty when the machine's values have not been read yet). */
-    edit: defineAction<ProgramsState, number>({
-      run({ input, state }) {
-        const s = state as unknown as ProgramsState;
-        if (!PROGRAM_SLOTS[input] || s.status?.running === true) return;
-        const tokens = s.values[PROGRAM_SLOTS[input]!.key] ?? "";
-        s.editing = { slot: input, steps: parseProgramSteps(tokens) };
-      },
-    }),
     stepBump: defineAction<ProgramsState, { index: number; dir: 1 | -1 }>({
       run({ input, state }) {
         const s = state as unknown as ProgramsState;
-        if (!s.editing) return;
-        const steps = s.editing.steps.map((st, i) =>
-          i === input.index ? { ...st, s: Math.max(10, st.s + input.dir * 30) } : st,
-        );
-        s.editing = { ...s.editing, steps };
+        const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[PROGRAM_SLOTS[s.selected]!.key] ?? "");
+        s.drafts = {
+          ...s.drafts,
+          [s.selected]: steps.map((st, i) =>
+            i === input.index ? { ...st, s: Math.max(10, st.s + input.dir * 30) } : st,
+          ),
+        };
       },
     }),
     stepAdd: defineAction<ProgramsState, string>({
       run({ input, state }) {
         const s = state as unknown as ProgramsState;
-        if (!s.editing) return;
-        if (s.editing.steps.length >= 8) return; // firmware run_seq bound
-        s.editing = {
-          ...s.editing,
-          steps: [...s.editing.steps, { mode: input.toUpperCase(), s: 300 }],
+        const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[PROGRAM_SLOTS[s.selected]!.key] ?? "");
+        if (steps.length >= 8) return; // firmware run_seq bound
+        s.drafts = {
+          ...s.drafts,
+          [s.selected]: [...steps, { mode: input.toUpperCase(), s: 300 }],
         };
       },
     }),
-    stepRemove: defineAction<ProgramsState, { index: number }>({
+    stepRemove: defineAction<ProgramsState, number>({
       run({ input, state }) {
         const s = state as unknown as ProgramsState;
-        if (!s.editing) return;
-        s.editing = { ...s.editing, steps: s.editing.steps.filter((_, i) => i !== input.index) };
+        const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[PROGRAM_SLOTS[s.selected]!.key] ?? "");
+        s.drafts = { ...s.drafts, [s.selected]: steps.filter((_, i) => i !== input.index) };
       },
     }),
-    editCancel: defineAction<ProgramsState, void>({
-      run({ state }) {
-        (state as unknown as ProgramsState).editing = null;
-      },
-    }),
-    /** Compile the steps back to firmware tokens and SET the slot — the
-     *  same wire path the native dialog used (optimistic cache + ack). */
+    /** Compile the draft back to firmware tokens and SET the slot — the
+     *  same wire path as before (optimistic cache + ack). */
     editSave: defineAction<ProgramsState, void>({
       run({ state, services }) {
         const s = state as unknown as ProgramsState;
-        if (!s.editing || !s.link.connected || s.status?.running === true) return;
-        const slot = PROGRAM_SLOTS[s.editing.slot];
-        if (!slot || s.editing.steps.length === 0) return;
-        const tokens = formatProgramSteps(s.editing.steps);
-        s.editing = null;
+        const slot = PROGRAM_SLOTS[s.selected];
+        if (!slot || !s.link.connected || s.status?.running === true) return;
+        const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[slot.key] ?? "");
+        if (steps.length === 0) return;
+        const tokens = formatProgramSteps(steps);
+        // The draft is consumed by the send: accepted → the optimistic SET
+        // cache already shows the new steps; rejected → the machine's
+        // rolled-back tokens re-render. Either way the editor mirrors the
+        // wire truth, never a private diverged copy.
+        const drafts = { ...s.drafts };
+        delete drafts[s.selected];
+        s.drafts = drafts;
         s.pending = `SET ${slot.key}`;
         s.snack = null;
         (services as { send?: (cmd: string) => void }).send?.(`SET ${slot.key} ${tokens}`);
@@ -174,13 +191,17 @@ export const ProgramsScreen = defineScreen({
     const running = st?.running === true;
     const offline = !s.link.connected;
     const now = Date.now();
+    const waiting = !offline && st === null;
     const staleFor = offline || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
-    const slotColors = ["#0E9F8C", "#17A673", "#7C5CE0"];
+    const stale = !offline && !waiting && staleFor > 15;
 
     const headerPress = () => {
       if (s.link.connected || s.link.connecting) actions.disconnect();
       else actions.connect();
     };
+
+    const selectedSlot = PROGRAM_SLOTS[s.selected] ?? PROGRAM_SLOTS[0]!;
+    const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[selectedSlot.key] ?? "");
 
     return (
       <Scaffold>
@@ -193,7 +214,7 @@ export const ProgramsScreen = defineScreen({
             phase={s.link.phase}
             name={s.link.name}
             statusAgeS={s.statusAt === null ? null : staleFor}
-            stale={false}
+            stale={stale}
             onPress={headerPress}
           />
 
@@ -207,52 +228,47 @@ export const ProgramsScreen = defineScreen({
             />
           ) : null}
 
-          {s.editing ? (
+          <Column gap="sm">
+            <Text variant="label">Program tersimpan</Text>
+            <SegmentedControl
+              options={PROGRAM_SLOTS.map((slot) => sentenceCase(slot.name))}
+              selected={s.selected}
+              disabled={running || offline}
+              onSelect={(i) => actions.selectSlot(i)}
+            />
+          </Column>
+
+          {offline ? (
+            <ListRow
+              icon="lock"
+              iconColor="#8AA3B2"
+              label="Tersimpan di mesin"
+              sub="sambungkan untuk melihat dan mengubah langkah"
+              locked="offline"
+            />
+          ) : (
             <StepEditor
-              slotName={PROGRAM_SLOTS[s.editing.slot]?.name ?? "?"}
-              steps={s.editing.steps}
+              steps={steps}
+              canStart={!running && steps.length > 0}
               onBump={(index, dir) => actions.stepBump({ index, dir })}
               onRemove={(index) => actions.stepRemove({ index })}
               onAdd={(mode) => actions.stepAdd(mode)}
               onSave={() => actions.editSave()}
-              onCancel={() => actions.editCancel()}
+              onStart={running ? undefined : () => actions.start(`PROG ${s.selected}`)}
             />
-          ) : (
-            <Column gap="sm">
-              <Text variant="label">Program tersimpan</Text>
-              {PROGRAM_SLOTS.map((slot, i) => (
-                <ProgramCard
-                  key={slot.key}
-                  name={slot.name}
-                  color={slotColors[i] ?? "#0E9F8C"}
-                  line={
-                    s.values[slot.key] !== undefined
-                      ? fmtProgramSummary(s.values[slot.key]) || "(belum dikonfigurasi)"
-                      : offline
-                        ? "tersimpan di mesin · sambungkan untuk membaca"
-                        : "belum dimuat — sambungkan untuk membaca"
-                  }
-                  state={offline ? "locked" : running ? "busy" : s.pending === `PROG ${i}` ? "pending" : "idle"}
-                  onStart={() => actions.start(`PROG ${i}`)}
-                  onEdit={running ? undefined : () => actions.edit(i)}
-                />
-              ))}
-            </Column>
           )}
 
-          {!s.editing ? (
-            <Column gap="sm">
-              <Text variant="label">Pemeliharaan</Text>
-              <ProgramCard
-                name="TUB CLEAN"
-                color="#F5A524"
-                icon="tub"
-                line="Cuci 15 mnt · Buang 1 mnt · Peras 5 mnt"
-                state={offline ? "locked" : running ? "busy" : s.pending === "TUB" ? "pending" : "idle"}
-                onStart={() => actions.start("TUB")}
-              />
-            </Column>
-          ) : null}
+          <Column gap="sm">
+            <Text variant="label">Pemeliharaan</Text>
+            <ProgramCard
+              name="Tub clean"
+              color="#F5A524"
+              icon="tub"
+              line="Cuci 15 mnt · Buang 1 mnt · Peras 5 mnt"
+              state={offline ? "locked" : running ? "busy" : s.pending === "TUB" ? "pending" : "idle"}
+              onStart={() => actions.start("TUB")}
+            />
+          </Column>
 
           {s.snack ? (
             <SnackBar
@@ -261,6 +277,8 @@ export const ProgramsScreen = defineScreen({
               onAction={() => actions.clearSnack()}
             />
           ) : null}
+
+          <ChromeSpacer />
         </Column>
       </Scaffold>
     );

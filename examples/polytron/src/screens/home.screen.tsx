@@ -2,15 +2,16 @@ import { defineAction, defineScreen } from "@tenunjs/core";
 import { Column, Scaffold, Text } from "@tenunjs/widgets";
 import { SnackBar } from "@tenunjs-examples/ui-kit";
 import {
-  ActivityList,
+  ActivitySummaryCard,
   BannerCard,
+  ChromeSpacer,
   FunctionGrid,
   LinkHeader,
+  MetricTilesRow,
   ProgramHero,
+  ProgramPillRow,
   ProgressRingCard,
-  StopBar,
   StepChips,
-  WaveFillCard,
   fmtAgo,
   modeIcon,
   type FunctionDef,
@@ -65,15 +66,6 @@ const FUNCTIONS: ReadonlyArray<FunctionDef & { cmd: string }> = [
   { label: "Bilas", cmd: "RINSE", icon: "waves", color: "#0EA5E9" },
   { label: "Bilas ND", cmd: "RINSEND", icon: "wavesSlash", color: "#38BDF8" },
 ];
-
-/** Activity dot color by line kind (HA timeline semantics). */
-function rowColor(line: string): string {
-  if (line.startsWith(">")) return "#0E9F8C";
-  if (line.startsWith("OK")) return "#17A673";
-  if (line.startsWith("ERR")) return "#E5484D";
-  if (line.startsWith("BUSY")) return "#F5A524";
-  return "#8AA3B2";
-}
 
 export const HomeScreen = defineScreen({
   name: "Home",
@@ -172,12 +164,19 @@ export const HomeScreen = defineScreen({
     start: defineAction<HomeState, string>({
       run({ input, state, services }) {
         const s = state as unknown as HomeState;
-        if (!s.link.connected) return;
-        // STOP always fires (safety) — only other commands single-flight
-        if (input !== "STOP" && s.pending !== null) return;
+        // Never ready before the machine has spoken; stale telemetry gates
+        // NEW starts. STOP is pinned chrome now and bypasses this action.
+        if (!s.link.connected || s.status === null) return;
+        if (s.statusAt !== null && Date.now() - s.statusAt > 15_000) return;
+        if (s.pending !== null) return;
         s.pending = input;
         s.err = null;
         (services as { send?: (cmd: string) => void }).send?.(input);
+      },
+    }),
+    goPrograms: defineAction<HomeState, void>({
+      run({ services }) {
+        (services as { navigate?: (route: string) => void }).navigate?.("programs");
       },
     }),
   },
@@ -246,12 +245,16 @@ export const HomeScreen = defineScreen({
     const activeCmd = running ? st!.mode : null;
     const functionCards: FunctionDef[] = FUNCTIONS.map((f) => ({
       ...f,
-      sub: fmtAgo(s.usage[f.cmd], now),
-      disabled: offline || stale,
+      // Only a real last-run is worth a sub label — no "belum pernah" noise.
+      sub: s.usage[f.cmd] !== undefined ? fmtAgo(s.usage[f.cmd], now) : undefined,
+      disabled: offline || stale || waiting,
       pending: s.pending === f.cmd,
       active: activeCmd === f.cmd,
       onPress: () => actions.start(f.cmd),
     }));
+
+    // Compact activity summary: the latest meaningful event only.
+    const latestRow = s.rows.find((r) => !r.line.startsWith("ST:")) ?? null;
 
     return (
       <Scaffold>
@@ -278,6 +281,7 @@ export const HomeScreen = defineScreen({
 
           {running && st ? (
             <Column gap="lg">
+              <ProgramPillRow name={parsedSteps.length > 0 ? st.prog : st.mode} onPress={() => actions.goPrograms()} />
               <ProgressRingCard
                 time={fmtClock(st.remainS ?? 0)}
                 caption="Sisa waktu"
@@ -291,9 +295,9 @@ export const HomeScreen = defineScreen({
                 title={MODE_LABELS[st.mode] ?? st.mode}
                 sub={`Tahap ${st.step} dari ${st.steps}${parsedSteps.length > 0 ? ` · ${st.prog}` : ""}`}
               />
-              <WaveFillCard
-                pct={st.waterPct}
-                caption={st.waterPct === null ? "sensor belum terkalibrasi" : "level air dalam tangki"}
+              <MetricTilesRow
+                left={{ label: "Berlalu", value: fmtClock(st.elapsedS ?? 0) }}
+                right={{ label: "Air", value: st.waterPct === null ? "—" : `${st.waterPct}%`, accent: st.waterPct === null ? undefined : "#3FB6E8" }}
               />
               <Text variant="label">Fungsi lain terkunci selama proses</Text>
             </Column>
@@ -321,6 +325,7 @@ export const HomeScreen = defineScreen({
                         : "idle"
                   }
                   onStart={heroParsed.length > 0 ? () => actions.start(`PROG ${heroIdx}`) : undefined}
+                  onEdit={() => actions.goPrograms()}
                 />
               )}
 
@@ -328,31 +333,22 @@ export const HomeScreen = defineScreen({
                 <Text variant="label">Fungsi mesin</Text>
                 <FunctionGrid functions={functionCards} />
               </Column>
+
+              <Column gap="sm">
+                <Text variant="label">Aktivitas terakhir</Text>
+                <ActivitySummaryCard
+                  line={latestRow ? fmtActivityLine(latestRow.line) : null}
+                  at={latestRow?.t ?? null}
+                />
+              </Column>
             </Column>
           )}
-
-          <StopBar
-            disabled={offline}
-            pending={s.pending === "STOP"}
-            emphasis={running}
-            onPress={() => actions.start("STOP")}
-          />
 
           {s.err ? (
             <SnackBar message={s.err} actionLabel="OK" onAction={() => actions.clearErr()} />
           ) : null}
 
-          <Column gap="sm">
-            <Text variant="label">Aktivitas terakhir</Text>
-            <ActivityList
-              rows={s.rows.map((r) => ({
-                t: r.t,
-                line: fmtActivityLine(r.line),
-                color: rowColor(r.line),
-              }))}
-              now={now}
-            />
-          </Column>
+          <ChromeSpacer />
         </Column>
       </Scaffold>
     );

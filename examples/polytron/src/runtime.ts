@@ -377,6 +377,12 @@ export class WasherRuntime {
     return this.droppedRunning;
   }
 
+  /** True while a STOP command is in flight — the pinned STOP band's
+   *  "MENGHENTIKAN…" state. */
+  stopPending(): boolean {
+    return this.pendingCmds.some((e) => e.cmd === "STOP");
+  }
+
   /** Repaint driver while connected: pushes a tick that re-renders the
    *  active screen. Fast (800 ms) while anything is animated — the machine
    *  running, or the waiting-for-first-status spinner — slow (3 s) for the

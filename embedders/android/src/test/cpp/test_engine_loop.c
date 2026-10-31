@@ -254,20 +254,28 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   {
     const char* scene_now = tenun_android_engine_get_scene(engine);
     int stop_tap_id = -1;
-    /* Find STOP region inside the taps array (h: 52, w: 362 under theme spacing.md: 14) */
+    /* The STOP band is PINNED CHROME now (shared chrome module): a fixed
+       tap anchored with anchorSize 120 = STOP band 64 + nav 56. The nav
+       tabs carry anchorSize 56, so scan for the 120 one and read its id
+       from the object that opens before it. */
     const char* taps_start = strstr(scene_now, "\"taps\":");
     if (taps_start) {
-      const char* stop_tap = strstr(taps_start, "\"h\":54");
-      if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":362");
-      if (!stop_tap) stop_tap = strstr(taps_start, "\"w\":358");
-      if (stop_tap) {
-        const char* p_id = strstr(stop_tap, "\"payload\":{\"id\":");
-        if (p_id) {
+      const char* scan = taps_start;
+      while ((scan = strstr(scan, "\"anchorSize\":120")) != NULL) {
+        const char* obj_start = scan;
+        while (obj_start > taps_start && *obj_start != '{') obj_start--;
+        /* payload serializes AFTER the anchor fields — it belongs to this
+           tap iff no array/object close sits between the tap's '{' and it. */
+        const char* p_id = strstr(obj_start, "\"payload\":{\"id\":");
+        const char* close = strstr(obj_start, "]}");
+        if (p_id && (close == NULL || p_id < close)) {
           stop_tap_id = (int)strtol(p_id + 16, NULL, 10);
+          break;
         }
+        scan += 1;
       }
     }
-    CHECK(stop_tap_id >= 0, "Found STOP bar tap region in scene taps");
+    CHECK(stop_tap_id >= 0, "Found the pinned STOP chrome tap (anchorSize 120)");
     if (stop_tap_id >= 0) {
       char payload_buf[32];
       snprintf(payload_buf, sizeof(payload_buf), "{\"id\":%d}", stop_tap_id);
@@ -290,7 +298,7 @@ static int run_polytron_bundle_checks(const char* asset_path) {
   /* 4. Tab navigation to Programs */
   char* scene_nav = tenun_android_engine_dispatch(engine, "NAVIGATE", "{\"route\":\"programs\"}");
   CHECK(scene_nav != NULL, "NAVIGATE dispatch returned scene");
-  CHECK(strstr(scene_nav, "CEPAT") != NULL || strstr(scene_nav, "NORMAL") != NULL, "Navigated to Programs tab");
+  CHECK(strstr(scene_nav, "Cepat") != NULL || strstr(scene_nav, "Normal") != NULL, "Navigated to Programs tab");
   free(scene_nav);
 
   /* 5. Return to Home */

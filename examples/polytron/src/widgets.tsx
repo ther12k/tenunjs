@@ -106,7 +106,11 @@ export type IconKind =
   | "motorB"
   | "check"
   | "play"
-  | "close";
+  | "close"
+  | "home"
+  | "list"
+  | "gauge"
+  | "sliders";
 
 /** Firmware mode token → the icon that represents it on chips/cards. */
 export function modeIcon(mode: string): FunctionIcon {
@@ -204,6 +208,27 @@ export function drawIcon(
   } else if (kind === "close") {
     line(cx - s * 0.6, cy - s * 0.6, cx + s * 0.6, cy + s * 0.6, 3);
     line(cx + s * 0.6, cy - s * 0.6, cx - s * 0.6, cy + s * 0.6, 3);
+  } else if (kind === "home") {
+    line(cx - s, cy - s * 0.1, cx, cy - s * 0.9, 3);
+    line(cx, cy - s * 0.9, cx + s, cy - s * 0.1, 3);
+    put({ op: "outline", x: cx - s * 0.72, y: cy - s * 0.1, w: s * 1.44, h: s * 0.95, r: s * 0.22, color, width: 3 });
+    put({ op: "rect", x: cx - s * 0.18, y: cy + s * 0.25, w: s * 0.36, h: s * 0.6, r: s * 0.1, color });
+  } else if (kind === "list") {
+    for (let i = -1; i <= 1; i++) {
+      put({ op: "circle", cx: cx - s * 0.7, cy: cy + i * s * 0.62, r: 1.6, color });
+      line(cx - s * 0.38, cy + i * s * 0.62, cx + s * 0.85, cy + i * s * 0.62, 3);
+    }
+  } else if (kind === "gauge") {
+    put({ op: "ring", cx, cy: cy + s * 0.15, r: s, width: 3, color, progress: 0.5 });
+    line(cx, cy + s * 0.15, cx + s * 0.55, cy - s * 0.45, 3);
+    put({ op: "circle", cx, cy: cy + s * 0.15, r: 2.2, color });
+  } else if (kind === "sliders") {
+    for (let i = -1; i <= 1; i++) {
+      line(cx - s * 0.85, cy + i * s * 0.62, cx + s * 0.85, cy + i * s * 0.62, 3);
+    }
+    put({ op: "circle", cx: cx - s * 0.3, cy: cy - s * 0.62, r: 3.2, color });
+    put({ op: "circle", cx: cx + s * 0.35, cy: cy, r: 3.2, color });
+    put({ op: "circle", cx: cx - s * 0.1, cy: cy + s * 0.62, r: 3.2, color });
   } else {
     // motorA / motorB — the drum-with-letter glyph
     put({ op: "ring", cx, cy, r: s - 1, width: 3, color, progress: 1 });
@@ -394,7 +419,13 @@ export function BannerCard(props: {
 
 /* ----------------------------- program hero ------------------------------ */
 
-/** The navy "PROGRAM TERSIMPAN" hero card with the teal Mulai button. */
+/** Sentence-case slot name ("CEPAT" → "Cepat"). */
+export function sentenceCase(name: string): string {
+  return name.length <= 1 ? name : name[0]! + name.slice(1).toLowerCase();
+}
+
+/** The navy "PROGRAM TERSIMPAN" hero card with the teal Mulai button. The
+ *  name row carries a › and opens the Programs editor. */
 export function ProgramHero(props: {
   name: string;
   meta: string;
@@ -410,19 +441,20 @@ export function ProgramHero(props: {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.navy });
       put({ op: "text", x: 20, y: 28, text: "PROGRAM TERSIMPAN", size: 10.5, weight: 700, color: C.navyDim });
-      const nameW = props.onEdit ? w - 20 - textWidth("Ubah", 12) - 44 : w - 40;
+      const name = sentenceCase(props.name);
+      const nameW = props.onEdit ? w - 20 - 28 : w - 40;
       put({
         op: "text",
         x: 20,
         y: 54,
-        text: truncate(props.name, 19, nameW),
+        text: truncate(name, 19, nameW),
         size: 19,
         weight: 800,
         color: "#FFFFFF",
       });
-      if (props.onEdit) {
-        put({ op: "text", x: w - 16 - textWidth("Ubah", 12), y: 54, text: "Ubah", size: 12, weight: 700, color: "#7FD4C6" });
-        tap({ x: w - 30 - textWidth("Ubah", 12), y: 36, w: textWidth("Ubah", 12) + 28, h: 34 }, props.onEdit);
+      if (props.onEdit && props.state !== "locked") {
+        drawIcon("chevR", w - 24, 48, 7, put, "#7FD4C6");
+        tap({ x: 0, y: 30, w, h: 40 }, props.onEdit);
       }
       put({ op: "text", x: 20, y: 74, text: truncate(props.meta, 12, w - 40), size: 12, weight: 400, color: C.navyDim2 });
       const bx = 20;
@@ -479,23 +511,23 @@ export function ProgressRingCard(props: {
   pct: number | null;
   accent: string;
 }): WidgetNode {
-  const h = 236;
+  const h = 268;
   return CanvasBox({
     height: h,
     paint: (origin, put) => {
       const w = origin.w;
       put({ op: "rect", x: 0, y: 0, w, h, r: 20, color: C.card });
       const cx = w / 2;
-      const cy = 108;
-      const r = 68;
+      const cy = 130;
+      const r = 92;
       const pct = props.pct === null ? 0 : Math.max(0, Math.min(1, props.pct));
-      put({ op: "ring", cx, cy, r, width: 10, color: props.accent, progress: pct, track: C.track });
+      put({ op: "ring", cx, cy, r, width: 13, color: props.accent, progress: pct, track: C.track });
       put({
         op: "text",
         x: 0,
         y: cy + 2,
         text: props.time,
-        size: 34,
+        size: 44,
         weight: 800,
         color: C.txt,
         align: "center",
@@ -504,7 +536,7 @@ export function ProgressRingCard(props: {
       put({
         op: "text",
         x: 0,
-        y: cy + 26,
+        y: cy + 28,
         text: props.caption,
         size: 11.5,
         weight: 400,
@@ -516,9 +548,9 @@ export function ProgressRingCard(props: {
         put({
           op: "text",
           x: 0,
-          y: cy + 50,
+          y: cy + 54,
           text: `${Math.round(props.pct * 100)}%`,
-          size: 14,
+          size: 15,
           weight: 800,
           color: props.accent,
           align: "center",
@@ -536,33 +568,33 @@ export function ProgressRingCard(props: {
 export function StepChips(props: {
   steps: ReadonlyArray<{ label: string; icon: IconKind; color: string; active: boolean }>;
 }): WidgetNode {
-  const h = 62;
+  const h = 70;
   return CanvasBox({
     height: h,
     paint: (origin, put) => {
       const w = origin.w;
       const n = props.steps.length;
       if (n === 0) return;
-      const cw = Math.min(76, (w - 16) / n);
+      const cw = Math.min(84, (w - 16) / n);
       const total = cw * n;
       const x0 = (w - total) / 2;
-      const cy = 24;
+      const cy = 26;
       props.steps.forEach((step, i) => {
         const cx = x0 + cw * i + cw / 2;
         if (i < n - 1) {
-          put({ op: "line", x1: cx + 18, y1: cy, x2: cx + cw - 18, y2: cy, color: C.line, width: 2 });
+          put({ op: "line", x1: cx + 21, y1: cy, x2: cx + cw - 21, y2: cy, color: C.line, width: 2 });
         }
         if (step.active) {
-          put({ op: "circle", cx, cy, r: 17, color: withAlpha(step.color, 0x26) });
-          put({ op: "ring", cx, cy, r: 17, width: 2, color: step.color, progress: 1 });
+          put({ op: "circle", cx, cy, r: 20, color: withAlpha(step.color, 0x26) });
+          put({ op: "ring", cx, cy, r: 20, width: 2, color: step.color, progress: 1 });
         } else {
-          put({ op: "circle", cx, cy, r: 17, color: C.chipBg });
+          put({ op: "circle", cx, cy, r: 20, color: C.chipBg });
         }
-        drawIcon(step.icon, cx, cy, 8, put, step.active ? step.color : C.faint);
+        drawIcon(step.icon, cx, cy, 9.5, put, step.active ? step.color : C.faint);
         put({
           op: "text",
           x: cx - cw / 2,
-          y: 56,
+          y: 62,
           text: truncate(step.label, 10, cw - 4),
           size: 10,
           weight: step.active ? 800 : 500,
@@ -577,44 +609,187 @@ export function StepChips(props: {
 
 /* ------------------------------ water meter ------------------------------ */
 
-/** "Ketinggian air" card with the wave-fill bar (the mockup's 65% tile). */
-export function WaveFillCard(props: { pct: number | null; caption?: string }): WidgetNode {
-  const h = props.caption ? 96 : 82;
+/** "Ketinggian air" card with the wave-fill bar. `large` is the Mesin
+ *  tab's monitoring tile (big % + tall wave); the compact form serves the
+ *  running Home screen. null pct renders an honest "—" never a fake value
+ *  (the v3 firmware reports W-1: no water sensor installed). */
+export function WaveFillCard(props: { pct: number | null; caption?: string; large?: boolean }): WidgetNode {
+  const h = props.large ? (props.caption ? 116 : 100) : props.caption ? 96 : 82;
   return CanvasBox({
     height: h,
     paint: (origin, put) => {
       const w = origin.w;
+      const big = props.large === true;
+      const valueSize = big ? 30 : 19;
       put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
-      drawIcon("droplet", 30, 26, 12, put, props.pct !== null ? C.water : C.faint);
-      put({ op: "text", x: 52, y: 31, text: "Ketinggian air", size: 13.5, weight: 700, color: C.txt });
-      const label = props.pct === null ? "?" : `${props.pct}%`;
+      drawIcon("droplet", 30, big ? 32 : 26, big ? 14 : 12, put, props.pct !== null ? C.water : C.faint);
+      put({ op: "text", x: 52, y: big ? 38 : 31, text: "Ketinggian air", size: big ? 14 : 13.5, weight: 700, color: C.txt });
+      const label = props.pct === null ? "—" : `${props.pct}%`;
       put({
         op: "text",
-        x: w - 18 - textWidth(label, 19),
-        y: 34,
+        x: w - 18 - textWidth(label, valueSize),
+        y: big ? 42 : 34,
         text: label,
-        size: 19,
+        size: valueSize,
         weight: 800,
         color: props.pct === null ? C.faint : C.txt,
       });
       const bx = 18;
       const bw = w - 36;
-      const by = h - (props.caption ? 38 : 24);
-      const bh = 14;
-      put({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 7, color: C.waterTrack });
+      const bh = big ? 20 : 14;
+      const by = h - (props.caption ? (big ? 44 : 38) : 24);
+      put({ op: "rect", x: bx, y: by, w: bw, h: bh, r: bh / 2, color: C.waterTrack });
       if (props.pct !== null) {
         const pct = Math.max(0, Math.min(100, props.pct)) / 100;
         const fw = Math.max(bh, bw * pct);
-        put({ op: "rect", x: bx, y: by, w: fw, h: bh, r: 7, color: C.water });
+        put({ op: "rect", x: bx, y: by, w: fw, h: bh, r: bh / 2, color: C.water });
         // Wave crest: two circles riding the fill's right edge.
-        put({ op: "circle", cx: bx + fw - 4, cy: by + bh / 2, r: bh / 2 + 1.5, color: C.water });
-        put({ op: "circle", cx: bx + fw - 14, cy: by + bh / 2 - 2.5, r: bh / 2 - 1, color: C.water });
+        put({ op: "circle", cx: bx + fw - 5, cy: by + bh / 2, r: bh / 2 + 2, color: C.water });
+        put({ op: "circle", cx: bx + fw - 17, cy: by + bh / 2 - 3, r: bh / 2 - 1, color: C.water });
       }
       if (props.caption) {
         put({ op: "text", x: 18, y: h - 8, text: truncate(props.caption, 10.5, w - 36), size: 10.5, weight: 400, color: C.dim });
       }
     },
   });
+}
+
+/* --------------------------- running-screen rows -------------------------- */
+
+/** "Program Cepat ›" — the cycle's program row above the ring; taps open
+ *  the Programs tab. */
+export function ProgramPillRow(props: { name: string; onPress?: () => void }): WidgetNode {
+  const h = 44;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put, tap) => {
+      const w = origin.w;
+      put({ op: "text", x: 4, y: h / 2 + 5, text: "Program", size: 13, weight: 400, color: C.dim });
+      put({ op: "text", x: 4 + textWidth("Program", 13) + 8, y: h / 2 + 5, text: sentenceCase(props.name), size: 13.5, weight: 800, color: C.txt });
+      if (props.onPress) {
+        drawIcon("chevR", w - 10, h / 2, 7, put, C.acc);
+        tap({ x: 0, y: 0, w, h }, props.onPress);
+      }
+    },
+  });
+}
+
+/** Two half-width value tiles side by side (Berlalu / Air on the running
+ *  Home screen). */
+export function MetricTilesRow(props: {
+  left: { label: string; value: string; accent?: string };
+  right: { label: string; value: string; accent?: string };
+}): WidgetNode {
+  const h = 88;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      const cw = (w - 10) / 2;
+      [props.left, props.right].forEach((tile, i) => {
+        const x = i * (cw + 10);
+        put({ op: "rect", x, y: 0, w: cw, h, r: 16, color: C.card });
+        put({ op: "text", x: x + 16, y: 32, text: tile.label, size: 11.5, weight: 400, color: C.dim });
+        put({
+          op: "text",
+          x: x + 16,
+          y: 62,
+          text: tile.value,
+          size: 22,
+          weight: 800,
+          color: tile.accent ?? C.txt,
+        });
+      });
+    },
+  });
+}
+
+/* ------------------------------- mesin cards ------------------------------ */
+
+/** ONE grouped relay card — header + divided rows (the reference's single
+ *  card with dividers, not four separate cards). Read-only by design. */
+export function GroupedRelayCard(props: {
+  rows: ReadonlyArray<{ icon: IconKind; iconColor: string; label: string; on: boolean | null }>;
+}): WidgetNode {
+  const headerH = 46;
+  const rowH = 52;
+  const h = headerH + props.rows.length * rowH;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.card });
+      put({ op: "text", x: 18, y: 29, text: "Relai", size: 13.5, weight: 700, color: C.txt });
+      put({ op: "text", x: 18 + textWidth("Relai", 13.5) + 10, y: 29, text: "Indikator, bukan tombol", size: 10.5, weight: 400, color: C.faint });
+      props.rows.forEach((row, i) => {
+        const y = headerH + i * rowH;
+        if (i > 0) put({ op: "line", x1: 18, y1: y, x2: w - 18, y2: y, color: C.line, width: 1 });
+        const cy = y + rowH / 2;
+        drawIcon(row.icon, 34, cy, 11, put, row.on === true ? row.iconColor : "#B4C4CE");
+        put({ op: "text", x: 58, y: cy + 5, text: row.label, size: 13.5, weight: 700, color: row.on === true ? C.txt : C.dim });
+        if (row.on === null) {
+          put({ op: "text", x: w - 18 - textWidth("—", 14), y: cy + 5, text: "—", size: 14, weight: 800, color: C.faint });
+        } else {
+          const stateText = row.on ? "Aktif" : "Nonaktif";
+          const color = row.on ? C.green : C.faint;
+          put({ op: "circle", cx: w - 18 - textWidth(stateText, 12.5) - 12, cy, r: 4.5, color });
+          put({ op: "text", x: w - 18 - textWidth(stateText, 12.5), y: cy + 5, text: stateText, size: 12.5, weight: 700, color });
+        }
+      });
+    },
+  });
+}
+
+/** Collapsible section header — "Diagnostik perangkat ›". */
+export function CollapseHeader(props: { label: string; open: boolean; onToggle: () => void }): WidgetNode {
+  const h = 56;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put, tap) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
+      put({ op: "text", x: 18, y: h / 2 + 5, text: props.label, size: 13.5, weight: 700, color: C.txt });
+      if (props.open) {
+        put({ op: "line", x1: w - 28, y1: h / 2 - 2, x2: w - 20, y2: h / 2 + 6, color: C.acc, width: 2.5 });
+        put({ op: "line", x1: w - 20, y1: h / 2 + 6, x2: w - 12, y2: h / 2 - 2, color: C.acc, width: 2.5 });
+      } else {
+        drawIcon("chevR", w - 20, h / 2, 7, put, C.acc);
+      }
+      tap({ x: 0, y: 0, w, h }, props.onToggle);
+    },
+  });
+}
+
+/* ------------------------------ home summary ------------------------------ */
+
+/** The activity summary card — the single latest event with its time (the
+ *  reference's compact "Aktivitas terakhir" row, not a full feed). */
+export function ActivitySummaryCard(props: { line: string | null; at: number | null }): WidgetNode {
+  const h = 58;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.card });
+      put({ op: "outline", x: 0, y: 0, w, h, r: 14, color: C.line, width: 1 });
+      if (props.line === null || props.at === null) {
+        put({ op: "text", x: 18, y: h / 2 + 5, text: "Belum ada aktivitas", size: 12.5, weight: 400, color: C.faint });
+        return;
+      }
+      const d = new Date(props.at);
+      const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      put({ op: "circle", cx: 26, cy: h / 2, r: 4.5, color: C.acc });
+      put({ op: "text", x: 42, y: h / 2 + 5, text: truncate(props.line, 13, w - 42 - 52), size: 13, weight: 500, color: C.txt });
+      put({ op: "text", x: w - 16 - textWidth(time, 10.5), y: h / 2 + 5, text: time, size: 10.5, weight: 400, color: C.faint });
+    },
+  });
+}
+
+/** Bottom clearance for the pinned chrome (STOP band + nav). Every screen
+ *  ends with one so content never scrolls under the fixed area. */
+export function ChromeSpacer(): WidgetNode {
+  return CanvasBox({ height: 128, paint: () => undefined });
 }
 
 /* ----------------------------- function cards ---------------------------- */
@@ -631,14 +806,16 @@ export interface FunctionDef {
   onPress?: () => void;
 }
 
-/** Six-function icon grid — white tiles, per-function color, one tap. */
+/** Six-function icon grid — white tiles, one calm blue icon family (the
+ *  reference's uniform line icons); the mode color returns only for the
+ *  active/pending highlight. */
 export function FunctionGrid(props: {
   functions: ReadonlyArray<FunctionDef>;
 }): WidgetNode {
   const cols = 3;
   const gap = 10;
   const rows = Math.ceil(props.functions.length / cols);
-  const tileH = 106;
+  const tileH = 104;
   const h = rows * tileH + (rows - 1) * gap;
   return CanvasBox({
     height: h,
@@ -660,7 +837,7 @@ export function FunctionGrid(props: {
           color: !enabled ? C.line : highlighted ? item.color : C.line,
           width: highlighted ? 2 : 1.5,
         });
-        drawIcon(item.icon, x + w / 2, y + 34, 14, put, enabled ? item.color : "#B4C4CE");
+        drawIcon(item.icon, x + w / 2, y + 34, 14, put, enabled ? (highlighted ? item.color : "#2E90FA") : "#B4C4CE");
         put({
           op: "text",
           x: x + 4,
@@ -1062,6 +1239,45 @@ export function ChoiceRow(props: {
   });
 }
 
+/* ---------------------------- segmented control --------------------------- */
+
+/** Full-width segmented selector (the reference's Cepat / Normal / Kustom
+ *  pill row) — teal selected segment on a soft track. */
+export function SegmentedControl(props: {
+  options: ReadonlyArray<string>;
+  selected: number;
+  disabled?: boolean;
+  onSelect?: (i: number) => void;
+}): WidgetNode {
+  const h = 48;
+  const gap = 4;
+  return CanvasBox({
+    height: h,
+    paint: (origin, put, tap) => {
+      const w = origin.w;
+      put({ op: "rect", x: 0, y: 0, w, h, r: 14, color: C.chipBg });
+      const segW = (w - gap * (props.options.length + 1)) / props.options.length;
+      props.options.forEach((opt, i) => {
+        const x = gap + i * (segW + gap);
+        const sel = i === props.selected;
+        if (sel) put({ op: "rect", x, y: gap, w: segW, h: h - gap * 2, r: 11, color: C.card });
+        put({
+          op: "text",
+          x,
+          y: h / 2 + 5,
+          text: opt,
+          size: 13,
+          weight: sel ? 800 : 600,
+          color: props.disabled ? C.faint : sel ? C.accDeep : C.dim,
+          align: "center",
+          width: segW,
+        });
+        if (!props.disabled && props.onSelect) tap({ x, y: 0, w: segW, h }, () => props.onSelect?.(i));
+      });
+    },
+  });
+}
+
 /* ------------------------------ program card ----------------------------- */
 
 /** Program slot card: colored spine, name + human summary line, an
@@ -1167,36 +1383,35 @@ export function ProgramCard(props: {
 
 const ADD_MODES: ReadonlyArray<string> = ["WASH", "RINSE", "DRAIN", "FILL", "SPIN"];
 
-/** The visual program editor (mockup screen 02): numbered step rows with
- *  duration steppers, quick-add chips (they wrap to a second row instead
- *  of being dropped on narrow screens), the duration estimate and the
- *  save/cancel pair. Pure canvas — no native text dialog needed. */
+/** The visual program editor (reference screen 02): numbered step rows
+ *  with minute:second steppers (±30 s), quick-add chips that wrap, the
+ *  duration estimate and the Mulai/Simpan pair. The slot selector lives in
+ *  the screen above this editor. Pure canvas. */
 export function StepEditor(props: {
-  slotName: string;
   steps: ReadonlyArray<ProgramStep>;
+  canStart?: boolean;
   onBump: (index: number, dir: 1 | -1) => void;
   onRemove: (index: number) => void;
   onAdd: (mode: string) => void;
   onSave: () => void;
-  onCancel: () => void;
+  onStart?: () => void;
 }): WidgetNode {
   const rowH = 58;
-  const headerH = 44;
   const addH = 98; // two chip rows (see the wrap loop below)
   const estH = 64;
-  const saveH = 92;
-  const h = headerH + props.steps.length * rowH + addH + estH + saveH + 8;
+  const btnH = 68;
+  const h = props.steps.length * rowH + addH + estH + btnH + 8;
+  const stepValue = (s: number): string => {
+    const mm = Math.floor(s / 60);
+    const ss = s % 60;
+    if (ss === 0 && mm >= 1) return `${mm} mnt`;
+    return `${mm}:${String(ss).padStart(2, "0")}`;
+  };
   return CanvasBox({
     height: h,
     paint: (origin, put, tap) => {
       const w = origin.w;
       let y = 0;
-      // Header: slot name + Batal
-      put({ op: "text", x: 2, y: y + 24, text: `Edit · ${props.slotName}`, size: 15, weight: 800, color: C.txt });
-      const cx = textWidth("Batal", 12.5);
-      put({ op: "text", x: w - 16 - cx, y: y + 24, text: "Batal", size: 12.5, weight: 700, color: C.red });
-      tap({ x: w - 26 - cx, y, w: cx + 20, h: 40 }, props.onCancel);
-      y += headerH;
       // Step rows
       props.steps.forEach((step, i) => {
         const ry = y + i * rowH;
@@ -1215,10 +1430,9 @@ export function StepEditor(props: {
           align: "center",
           width: 22,
         });
-        const icon = modeIcon(step.mode);
-        drawIcon(icon, 54, ry + (rowH - 8) / 2, 10, put, modeColorLocal(step.mode));
+        drawIcon(modeIcon(step.mode), 54, ry + (rowH - 8) / 2, 10, put, modeColorLocal(step.mode));
         const sw = 118;
-        const nameEdge = w - 24 - sw - 34;
+        const nameEdge = w - 24 - sw - 48;
         put({
           op: "text",
           x: 74,
@@ -1229,7 +1443,8 @@ export function StepEditor(props: {
           color: C.txt,
         });
         put({ op: "text", x: 74, y: ry + 40, text: `langkah ${i + 1}`, size: 9.5, weight: 400, color: C.faint });
-        // stepper pill
+        // stepper pill — the value shows honest minutes:seconds so a ±30 s
+        // bump is always visible (whole minutes stay "N mnt").
         const sx = w - 24 - sw;
         const sy = ry + (rowH - 8) / 2 - 17;
         put({ op: "outline", x: sx, y: sy, w: sw, h: 34, r: 17, color: C.lineStrong, width: 1.5 });
@@ -1239,7 +1454,7 @@ export function StepEditor(props: {
           op: "text",
           x: sx + third,
           y: sy + 21,
-          text: fmtDurationS(step.s),
+          text: stepValue(step.s),
           size: 11.5,
           weight: 800,
           color: C.acc,
@@ -1249,9 +1464,9 @@ export function StepEditor(props: {
         put({ op: "text", x: sx + third * 2, y: sy + 22, text: "+", size: 16, weight: 700, color: C.dim, align: "center", width: third });
         tap({ x: sx, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, -1));
         tap({ x: sx + sw / 2, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, 1));
-        // remove ✕
-        drawIcon("close", w - 12, ry + (rowH - 8) / 2, 5.5, put, C.redFaint);
-        tap({ x: w - 24, y: sy - 4, w: 24, h: 42 }, () => props.onRemove(i));
+        // remove ✕ — 44px target (was 24, under every touch guideline)
+        drawIcon("close", w - 30, ry + (rowH - 8) / 2, 6, put, C.redFaint);
+        tap({ x: w - 52, y: sy - 5, w: 44, h: 44 }, () => props.onRemove(i));
       });
       y += props.steps.length * rowH;
       // Quick-add chips — wrap to the next row when the line runs out;
@@ -1288,10 +1503,21 @@ export function StepEditor(props: {
       });
       put({ op: "text", x: 50 + textWidth(`±${fmtDurationS(totalS)}`, 16) + 10, y: y + 44, text: `· ${props.steps.length} tahap`, size: 11, weight: 400, color: C.dim });
       y += estH;
-      // Save
-      put({ op: "rect", x: 0, y: y + 4, w, h: 48, r: 14, color: C.accDeep });
-      put({ op: "text", x: 0, y: y + 33, text: "Simpan program", size: 14.5, weight: 800, color: "#FFFFFF", align: "center", width: w });
-      tap({ x: 0, y, w, h: 56 }, props.onSave);
+      // [Mulai program] [Simpan]
+      const bw2 = (w - 10) / 2;
+      const canStart = props.canStart !== false && props.onStart !== undefined;
+      if (canStart) {
+        put({ op: "rect", x: 0, y: y + 4, w: bw2, h: 48, r: 14, color: C.accDeep });
+        put({ op: "text", x: 0, y: y + 33, text: "Mulai program", size: 13.5, weight: 800, color: "#FFFFFF", align: "center", width: bw2 });
+        tap({ x: 0, y, w: bw2, h: 60 }, () => props.onStart?.());
+      } else {
+        put({ op: "outline", x: 0, y: y + 4, w: bw2, h: 48, r: 14, color: C.line, width: 1.5 });
+        put({ op: "text", x: 0, y: y + 33, text: props.onStart === undefined ? "Tersimpan di mesin" : "Mesin berjalan", size: 12, weight: 700, color: C.faint, align: "center", width: bw2 });
+      }
+      put({ op: "rect", x: bw2 + 10, y: y + 4, w: bw2, h: 48, r: 14, color: C.accSoft });
+      put({ op: "outline", x: bw2 + 10, y: y + 4, w: bw2, h: 48, r: 14, color: C.acc, width: 1.5 });
+      put({ op: "text", x: bw2 + 10, y: y + 33, text: "Simpan", size: 13.5, weight: 800, color: C.accDeep, align: "center", width: bw2 });
+      tap({ x: bw2 + 10, y, w: bw2, h: 60 }, props.onSave);
     },
   });
 }
