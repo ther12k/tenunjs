@@ -154,7 +154,7 @@ export const ProgramsScreen = defineScreen({
         };
       },
     }),
-    stepRemove: defineAction<ProgramsState, number>({
+    stepRemove: defineAction<ProgramsState, { index: number }>({
       run({ input, state }) {
         const s = state as unknown as ProgramsState;
         const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[PROGRAM_SLOTS[s.selected]!.key] ?? "");
