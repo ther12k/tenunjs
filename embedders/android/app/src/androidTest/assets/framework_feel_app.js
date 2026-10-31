@@ -1615,7 +1615,7 @@
         const titleX = hasMenu ? 100 : 40;
         let menuTapId;
         if (hasMenu) {
-          ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: 34, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
+          ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: Math.round(34 * ctx.textScale * 100) / 100, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
           menuTapId = addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu);
         }
         const title = typeof props.title === "string" ? props.title : "";
@@ -1624,7 +1624,7 @@
           x: x + titleX,
           y: y + 62,
           text: title,
-          size: 32,
+          size: Math.round(32 * ctx.textScale * 100) / 100,
           weight: 700,
           color: ctx.theme.colors?.text ?? "#F2F2F7"
         });

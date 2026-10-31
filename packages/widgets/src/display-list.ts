@@ -1966,7 +1966,7 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
       const titleX = hasMenu ? 100 : 40;
       let menuTapId: number | undefined;
       if (hasMenu) {
-        ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: 34, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
+        ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: Math.round(34 * ctx.textScale * 100) / 100, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
         menuTapId = addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu as () => void);
       }
       const title = typeof props.title === "string" ? props.title : "";
@@ -1975,7 +1975,9 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
         x: x + titleX,
         y: y + 62,
         text: title,
-        size: 32,
+        // TN-187: the bar scales with the environment textScale (exactly
+        // 32 at 1.0 — byte-identical scenes for existing apps).
+        size: Math.round(32 * ctx.textScale * 100) / 100,
         weight: 700,
         color: ctx.theme.colors?.text ?? "#F2F2F7",
       });
