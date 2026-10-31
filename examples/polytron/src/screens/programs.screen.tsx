@@ -43,6 +43,9 @@ export interface ProgramsState {
    *  tokens on first touch, kept when switching segments, consumed by
    *  Simpan (SET) or discarded on revert-to-machine values. */
   drafts: Record<number, ProgramStep[]>;
+  /** Set when Mulai program had to SAVE a dirty draft first — the OK ack
+   *  of that SET then starts the freshly saved slot (result action). */
+  autoStart: boolean;
 }
 
 export const ProgramsScreen = defineScreen({
@@ -57,6 +60,7 @@ export const ProgramsScreen = defineScreen({
     snack: null,
     selected: 0,
     drafts: {},
+    autoStart: false,
   }),
 
   actions: {
@@ -82,10 +86,30 @@ export const ProgramsScreen = defineScreen({
       },
     }),
     result: defineAction<ProgramsState, WashReply>({
-      run({ input, state }) {
+      run({ input, state, services }) {
         const s = state as unknown as ProgramsState;
         s.pending = null;
         s.snack = input;
+        if (s.autoStart) {
+          s.autoStart = false;
+          // The save is answered — only an ACCEPTED one may auto-start,
+          // and only through the same fresh-idle gates as a direct start
+          // (the machine may have changed in the round-trip).
+          if (!input.ok) return;
+          const svc = services as { send?: (cmd: string) => void; savePending?: () => boolean };
+          if (
+            !s.link.connected ||
+            s.status === null ||
+            s.status.running === true ||
+            s.pending !== null ||
+            (s.statusAt !== null && Date.now() - s.statusAt > 15_000) ||
+            (svc.savePending?.() ?? false)
+          ) {
+            return;
+          }
+          s.pending = `PROG ${s.selected}`;
+          svc.send?.(`PROG ${s.selected}`);
+        }
       },
     }),
     clearSnack: defineAction<ProgramsState, void>({
@@ -126,9 +150,41 @@ export const ProgramsScreen = defineScreen({
         // with a command already in flight.
         if (!s.link.connected || s.status === null || s.status.running === true || s.pending !== null) return;
         if (s.statusAt !== null && Date.now() - s.statusAt > 15_000) return;
+        // Another slot's save could still be rejected — never outrun it.
+        if ((services as { savePending?: () => boolean }).savePending?.()) return;
         s.pending = input;
         s.snack = null;
         (services as { send?: (cmd: string) => void }).send?.(input);
+      },
+    }),
+    /** Mulai program: a dirty editor saves FIRST and starts the freshly
+     *  saved slot on its OK ack — the displayed sequence is what runs,
+     *  never the stale stored tokens (review 2026-10-31). */
+    startSelected: defineAction<ProgramsState, void>({
+      run({ state, services }) {
+        const s = state as unknown as ProgramsState;
+        if (!s.link.connected || s.status === null || s.status.running === true || s.pending !== null) return;
+        if (s.statusAt !== null && Date.now() - s.statusAt > 15_000) return;
+        if ((services as { savePending?: () => boolean }).savePending?.()) return;
+        const slot = PROGRAM_SLOTS[s.selected];
+        if (!slot) return;
+        const steps = s.drafts[s.selected] ?? parseProgramSteps(s.values[slot.key] ?? "");
+        if (steps.length === 0) return;
+        const svc = services as { send?: (cmd: string) => void };
+        if (s.drafts[s.selected]) {
+          const tokens = formatProgramSteps(steps);
+          const drafts = { ...s.drafts };
+          delete drafts[s.selected];
+          s.drafts = drafts;
+          s.autoStart = true;
+          s.pending = `SET ${slot.key}`;
+          s.snack = null;
+          svc.send?.(`SET ${slot.key} ${tokens}`);
+          return;
+        }
+        s.pending = `PROG ${s.selected}`;
+        s.snack = null;
+        svc.send?.(`PROG ${s.selected}`);
       },
     }),
     stepBump: defineAction<ProgramsState, { index: number; dir: 1 | -1 }>({
@@ -254,7 +310,7 @@ export const ProgramsScreen = defineScreen({
               onRemove={(index) => actions.stepRemove({ index })}
               onAdd={(mode) => actions.stepAdd(mode)}
               onSave={() => actions.editSave()}
-              onStart={running ? undefined : () => actions.start(`PROG ${s.selected}`)}
+              onStart={running ? undefined : () => actions.startSelected()}
             />
           )}
 

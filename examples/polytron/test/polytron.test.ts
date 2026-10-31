@@ -983,3 +983,162 @@ describe("BLE write queue", () => {
     expect(order).toEqual(["A", "B", "C"]);
   });
 });
+
+describe("review fixes 2026-11-01", () => {
+  test("a reply settles its own command by verb — a purged SET never steals STOP's ack", async () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam, replyTimeoutMs: 5 });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.navigate("settings");
+    runtime.lineIn("SET WASHMIN 10"); // machine-confirmed anchor
+    runtime.tap(tapIdFor(runtime, "+")); // SET WASHMIN 11 — active on the wire
+    runtime.tap(tapIdFor(runtime, "+")); // SET WASHMIN 12 — still queued
+    runtime.tap(stopTapId(runtime)); // native purge drops the queued 12
+    expect(ble.writes).toEqual(["SET WASHMIN 11", "SET WASHMIN 12", "STOP"]);
+    runtime.lineIn("OK SET WASHMIN"); // the ACTIVE set's ack — lands on 11
+    runtime.lineIn("OK STOP"); // STOP's own ack — lands on STOP, not on 12
+    expect(runtime.stopPending()).toBe(false); // no stranded MENGHENTIKAN…
+    await new Promise((r) => setTimeout(r, 20)); // the purged SET only ever times out
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("11"); // …and the applied value, not the purged 12
+    expect(texts).not.toContain("12");
+  });
+
+  test("two consecutive SET failures roll back to the machine's value — no intermediate", async () => {
+    const ble = fakeBle();
+    const seam: BleSeam = {
+      ...ble.seam,
+      write: async (cmd: string) => {
+        ble.writes.push(cmd);
+        return false; // radio drops BOTH writes
+      },
+    };
+    const runtime = new WasherRuntime({ ble: seam });
+    runtime.linkPush({ connected: true });
+    runtime.navigate("settings");
+    runtime.lineIn("SET WASHMIN 10");
+    runtime.tap(tapIdFor(runtime, "+")); // 10 → 11 optimistic, write in flight
+    runtime.tap(tapIdFor(runtime, "+")); // 11 → 12 before the first failure settles
+    await new Promise((r) => setTimeout(r, 0)); // both writes fail
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ble.writes).toEqual(["SET WASHMIN 11", "SET WASHMIN 12"]);
+    // Both failed: the display must return to the CONFIRMED 10 — the old
+    // optimistic-of-optimistic rollback stranded a phantom 11 here.
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).not.toContain("11");
+    expect(texts).toContain("10");
+  });
+
+  test("a disconnect while a start is unconfirmed still warns: the machine may have begun", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1"); // fresh idle
+    runtime.tap(tapIdFor(runtime, "Cuci")); // WASH accepted, no reply yet
+    runtime.linkPush({ connected: false, name: "" }); // link dies mid-handshake
+    expect(runtime.mayStillRun()).toBe(true); // the last ST: was idle — the START decides
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("MUNGKIN masih");
+    expect(texts).toContain("fisik");
+  });
+
+  test("Mulai program saves a dirty draft first, then starts the freshly saved slot", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.navigate("programs");
+    runtime.lineIn("SET PROG0 WASH:600");
+    runtime.tap(tapIdFor(runtime, "+ Peras")); // dirty: WASH:600 + SPIN:300
+    runtime.tap(tapIdFor(runtime, "Mulai program"));
+    // The DISPLAYED sequence is what goes to the machine — not the stale slot.
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300"]);
+    expect(ble.writes).not.toContain("PROG 0");
+    runtime.lineIn("OK SET PROG0"); // save accepted → auto-start follows
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300", "PROG 0"]);
+  });
+
+  test("a REJECTED save never auto-starts the program", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.navigate("programs");
+    runtime.lineIn("SET PROG0 WASH:600");
+    runtime.tap(tapIdFor(runtime, "+ Peras"));
+    runtime.tap(tapIdFor(runtime, "Mulai program"));
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300"]);
+    runtime.lineIn("BUSY - STOP first"); // save rejected
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300"]); // no PROG 0
+    const texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("BUSY"); // the rejection is surfaced
+  });
+
+  test("starts are gated app-wide while a program save is in flight", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.navigate("programs");
+    runtime.lineIn("SET PROG0 WASH:600");
+    runtime.tap(tapIdFor(runtime, "+ Peras"));
+    runtime.tap(tapIdFor(runtime, "Simpan")); // SET PROG0 in flight, no reply
+    runtime.navigate("home");
+    runtime.tap(tapIdFor(runtime, "Cuci")); // Home must NOT start slot 0's old tokens
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300"]);
+    runtime.lineIn("OK SET PROG0"); // save lands → starts unblock
+    runtime.tap(tapIdFor(runtime, "Cuci"));
+    expect(ble.writes).toEqual(["SET PROG0 WASH:600, SPIN:300", "WASH"]);
+  });
+
+  test("editor steppers and the delete column never overlap (topmost-wins safety)", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.navigate("programs");
+    runtime.lineIn("SET PROG0 WASH:600, DRAIN:30");
+    const { scene } = chromeView(runtime).render();
+    const taps = scene.taps.filter((t) => !t.fixed);
+    for (let a = 0; a < taps.length; a++) {
+      for (let b = a + 1; b < taps.length; b++) {
+        const p = taps[a]!;
+        const q = taps[b]!;
+        const ox = Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x);
+        const oy = Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y);
+        if (ox > 0 && oy > 0) {
+          throw new Error(`tap regions overlap by ${ox}x${oy}: [${p.x},${p.y},${p.w},${p.h}] vs [${q.x},${q.y},${q.w},${q.h}]`);
+        }
+      }
+    }
+  });
+
+  test("nav labels are centered within their tab column (width = tabW)", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    const { scene } = chromeView(runtime).render();
+    const tabW = scene.designWidth / 4;
+    for (const label of ["Beranda", "Program", "Mesin", "Setelan"]) {
+      const op = scene.ops.find((o) => o.op === "text" && o.text === label && o.fixed);
+      expect(op).toBeDefined();
+      expect(op!.width).toBeCloseTo(tabW, 0); // Android centers within this box
+    }
+  });
+
+  test("Controls command feedback renders fully above the pinned chrome", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.navigate("controls");
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    runtime.tap(tapIdFor(runtime, "Diagnostik perangkat")); // expand diagnostics
+    runtime.tap(tapIdFor(runtime, "KIRIM")); // WATER probe
+    runtime.lineIn("WATER raw 433 ema 430 pct 63 cal 310..1024");
+    const { scene } = chromeView(runtime).render();
+    // Every 88-high snack frame must clear the fixed chrome band entirely.
+    const snackFrames = scene.ops.filter((op) => op.op === "rect" && op.h === 88 && op.r === 16);
+    expect(snackFrames.length).toBeGreaterThan(0);
+    for (const frame of snackFrames) {
+      expect(frame.y + 88).toBeLessThanOrEqual(scene.contentHeight - CHROME_H + 1);
+    }
+  });
+});

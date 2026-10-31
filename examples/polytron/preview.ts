@@ -26,7 +26,7 @@ import {
   type ProgramStep,
 } from "./src/protocol";
 import { createWriteQueue } from "./src/write-queue";
-import { CanvasPreviewRenderer } from "../gallery-preview/renderer";
+import { CanvasPreviewRenderer, anchorOffsetForTest } from "../gallery-preview/renderer";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#preview");
 const routes = document.querySelector<HTMLElement>("#routes");
@@ -670,7 +670,8 @@ function paint(): void {
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.scale(scale, scale);
-      ctx.translate(0, -scrollY);
+      // activeTap is already in viewport space (fixed anchors included) —
+      // no content translate here.
       ctx.fillStyle = "rgba(0, 183, 253, 0.16)";
       ctx.strokeStyle = "rgba(0, 183, 253, 0.45)";
       ctx.lineWidth = 2;
@@ -717,12 +718,20 @@ previewCanvas.addEventListener("pointerdown", (event) => {
   previewCanvas.setPointerCapture(event.pointerId);
   pointerY = event.clientY;
   dragging = false;
+  // Fixed-aware topmost-wins resolution (the renderer's shared rule) —
+  // the old content-space scan tested the pinned chrome against scrolled
+  // coordinates and fired EVERY overlapping region, so the visible STOP
+  // button and nav tabs silently did nothing.
   const render = chromeApp.render();
   const rect = previewCanvas.getBoundingClientRect();
   const scale = rect.width / render.scene.designWidth;
-  const x = (event.clientX - rect.left) / scale;
-  const y = (event.clientY - rect.top) / scale + scrollY;
-  activeTap = render.scene.taps.find((tap) => x >= tap.x && x <= tap.x + tap.w && y >= tap.y && y <= tap.y + tap.h) ?? null;
+  const hitIdx = renderer.hitTest(render.scene, event.clientX, event.clientY, scrollY, "tap");
+  activeTap = null;
+  if (hitIdx !== null) {
+    const t = render.scene.taps[hitIdx]!;
+    const vy = t.fixed ? t.y + anchorOffsetForTest(t, rect.height / scale) : t.y - scrollY;
+    activeTap = { x: t.x, y: vy, w: t.w, h: t.h }; // viewport space for the highlight
+  }
   if (activeTap) paint();
 });
 previewCanvas.addEventListener("pointermove", (event) => {
@@ -745,33 +754,21 @@ previewCanvas.addEventListener("pointerup", (event) => {
   previewCanvas.releasePointerCapture(event.pointerId);
   activeTap = null;
   if (dragging) return;
-  // BOTH axes scale by the same canvas factor — the old code scaled x
-  // but not y, so every tap on a wider-than-design canvas missed low.
+  // Same fixed-aware topmost-wins rule as pointerdown: ONE region fires.
   const render = chromeApp.render();
-  const rect = previewCanvas.getBoundingClientRect();
-  const scale = rect.width / render.scene.designWidth;
-  const x = (event.clientX - rect.left) / scale;
-  const y = (event.clientY - rect.top) / scale + scrollY;
-  let fired = false;
-  render.scene.taps.forEach((tap, i) => {
-    if (x >= tap.x && x <= tap.x + tap.w && y >= tap.y && y <= tap.y + tap.h) {
-      const run = render.tapRuns[i];
-      if (typeof run === "function") {
-        run();
-        fired = true;
+  const hitIdx = renderer.hitTest(render.scene, event.clientX, event.clientY, scrollY, "tap");
+  if (hitIdx !== null) {
+    const run = render.tapRuns[hitIdx];
+    if (typeof run === "function") {
+      run();
+      try {
+        navigator.vibrate?.(12);
+      } catch {
+        /* ignore */
       }
     }
-  });
-  if (fired) {
-    try {
-      navigator.vibrate?.(12);
-    } catch {
-      /* ignore */
-    }
-    paint();
-  } else {
-    paint();
   }
+  paint();
 });
 previewCanvas.addEventListener("pointercancel", () => {
   activeTap = null;
@@ -815,22 +812,28 @@ interface PolytronDebug {
   runtime,
   tapAt: (fx: number, fy: number): boolean => {
     const r = previewCanvas.getBoundingClientRect();
-    const scene = chromeApp.render().scene;
+    const render = chromeApp.render();
+    const scene = render.scene;
     const x = fx * scene.designWidth;
-    const y = fy * (scene.contentHeight ?? previewCanvas.height);
-    const runs = chromeApp.render().tapRuns;
-    let fired = false;
-    scene.taps.forEach((tap, i) => {
-      if (!fired && x >= tap.x && x <= tap.x + tap.w && y >= tap.y && y <= tap.y + tap.h) {
-        const run = runs[i];
+    const visibleHeight = r.height / (r.width / scene.designWidth);
+    const y = fy * (scene.contentHeight ?? visibleHeight);
+    // Topmost-wins, fixed anchors honored — mirrors the hosts' shared
+    // hit-test rule (the old first-match-in-order scan was close enough
+    // for disjoint content taps but wrong wherever regions overlapped).
+    for (let i = scene.taps.length - 1; i >= 0; i--) {
+      const t = scene.taps[i]!;
+      const ty = t.fixed ? t.y + anchorOffsetForTest(t, visibleHeight) : t.y;
+      if (t.x <= x && x <= t.x + t.w && ty <= y && y <= ty + t.h) {
+        const run = render.tapRuns[i];
         if (typeof run === "function") {
           run();
-          fired = true;
+          paint();
+          return true;
         }
+        return false;
       }
-    });
-    if (fired) paint();
-    return fired;
+    }
+    return false;
   },
   sceneTexts: (): string[] => {
     const scene = chromeApp.render().scene;

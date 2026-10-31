@@ -83,6 +83,9 @@ export interface WasherHostServices {
 export type WasherServices = WasherHostServices & {
   /** Runtime-bound command send (origin tracking + log + write). */
   send(cmd: string): void;
+  /** Runtime-bound start gate: true while a program-slot save (SET PROGn)
+   *  is in flight, so no tab can start the old stored tokens mid-save. */
+  savePending(): boolean;
 };
 
 const noBleHost: BleSeam = {
@@ -103,6 +106,10 @@ interface PendingCmd {
   /** Restores the optimistic settings apply when the reply is BUSY/ERR or
    *  the write/ack fails — a rejected SET must not linger as if applied. */
   undo?: () => void;
+  /** SET bookkeeping: an OK ack confirms this value reached the machine,
+   *  promoting it into the confirmed cache (see `confirmed`). */
+  setKey?: string;
+  setValue?: string;
 }
 
 /** Silence this long after a write means the machine is not answering. */
@@ -119,6 +126,12 @@ export class WasherRuntime {
   private lastLink: BleLinkState = { supported: false, connecting: false, connected: false, name: null };
   private lastStatus: WashStatus | null = null;
   private settings: Record<string, string> = {};
+  /** Machine-confirmed values: SET lines the firmware itself echoed
+   *  (GET:ALL on connect, any later echo) plus OK-acked SETs. Optimistic
+   *  display values roll back to THIS on failure — never to another
+   *  unconfirmed optimistic value, which left rejected intermediates
+   *  displayed as applied when several SETs failed in a row. */
+  private confirmed: Record<string, string> = {};
   /** In-flight commands in send order — the wire is serial, so replies
    *  finish in the same order and each pops the FRONT entry. Routing by
    *  "last sender" let a query from another tab steal a running
@@ -134,6 +147,8 @@ export class WasherRuntime {
   private droppedRunning = false;
   /** Re-render driver while connected (see HEARTBEAT_MS). */
   private hbTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reply guard duration — REPLY_TIMEOUT_MS unless the host overrides. */
+  private readonly replyTimeoutMs: number;
 
   constructor(
     host: Partial<Omit<WasherHostServices, "navigate">> & {
@@ -142,15 +157,20 @@ export class WasherRuntime {
        *  shrinking a fixed 390 design (which turned captions into ~8.6px
        *  text on a 320px phone). Default 390. */
       designWidth?: number;
+      /** Reply guard duration (ms). Tests shorten it so timeout paths
+       *  settle without waiting the real 10 s. Default 10_000. */
+      replyTimeoutMs?: number;
     } = {},
   ) {
-    const { designWidth, ...hostServices } = host;
+    const { designWidth, replyTimeoutMs, ...hostServices } = host;
+    this.replyTimeoutMs = replyTimeoutMs ?? REPLY_TIMEOUT_MS;
     this.services = {
       ble: noBleHost,
       clockNow: () => null,
       editProgram: () => Promise.resolve(null),
       navigate: (route: string) => this.navigate(route),
       send: (cmd: string) => this.send(cmd),
+      savePending: () => this.programSavePending(),
       ...hostServices,
     };
     this.app = new ApplicationRuntime({
@@ -214,7 +234,13 @@ export class WasherRuntime {
     // entity) — never keep rendering the last received cycle as if it
     // were current. Settings values stay cached (device-persisted).
     if (was) {
-      const wasRunning = this.lastStatus?.running === true;
+      // A start command still awaiting its reply means the machine MAY have
+      // begun when the link died — deciding from the last ST: alone missed
+      // exactly that window (idle → start sent → drop ⇒ no warning).
+      const startInFlight = this.pendingCmds.some((e) =>
+        /^(WASH|SPIN|DRAIN|FILL|RINSE|RINSEND|PROG|TUB|STOP)(\s|$)/.test(e.cmd),
+      );
+      const wasRunning = this.lastStatus?.running === true || startInFlight;
       this.lastStatus = null;
       this.lastStatusAt = null;
       this.app.pushState("status", null);
@@ -262,17 +288,42 @@ export class WasherRuntime {
     const setting = parseSetting(line);
     if (setting) {
       this.settings = { ...this.settings, [setting.key]: setting.value };
+      // A machine-echoed SET line is authoritative — remember it as the
+      // rollback anchor for any optimistic edit on this key.
+      this.confirmed = { ...this.confirmed, [setting.key]: setting.value };
       this.app.pushState("settings", this.settings);
       return;
     }
 
     // OK/BUSY/ERR replies — and informational lines (CLOCK …, WATER …)
-    // ride the same route so the originating screen can show them. The
-    // serial wire answers in order: this reply settles the OLDEST
-    // in-flight command and routes to whoever sent it.
+    // ride the same route so the originating screen can show them.
+    // Replies are matched to their command by VERB (plus the SET key),
+    // not blindly by order: the native transport purges queued commands
+    // when STOP arrives without telling the runtime, so a purged SET
+    // never answers — order-only settling gave its reply to the wrong
+    // entry, showed a phantom value and reported STOP unconfirmed.
+    // ERR/BUSY/verbless lines settle the oldest entry (serial wire).
     const reply: WashReply = parseReply(line) ?? { ok: true, busy: false, msg: line };
-    const front = this.pendingCmds.shift();
+    const replyVerb = (reply.msg.trim().split(/\s+/)[0] ?? "").toUpperCase();
+    let index = this.pendingCmds.findIndex((e) => {
+      const verb = (e.cmd.split(/\s+/)[0] ?? "").toUpperCase();
+      if (verb !== replyVerb) return false;
+      if (replyVerb === "SET") {
+        const key = e.cmd.split(/\s+/)[1];
+        const replyKey = reply.msg.trim().split(/\s+/)[1];
+        return key === undefined || replyKey === undefined || key === replyKey;
+      }
+      return true;
+    });
+    if (index < 0) index = 0;
+    const front = this.pendingCmds.splice(index, 1)[0] ?? null;
     if (front?.timer && typeof clearTimeout === "function") clearTimeout(front.timer);
+    if (front?.setKey !== undefined && reply.ok) {
+      // The ack confirms the machine applied this value — promote it to
+      // the rollback anchor so later failures restore THIS, not an
+      // intermediate optimistic guess.
+      this.confirmed = { ...this.confirmed, [front.setKey!]: front.setValue! };
+    }
     if (!reply.ok && front?.undo) front.undo();
     if (front?.quiet) return; // housekeeping reply — already settled, no UI noise
     this.app.pushTo(front?.screen ?? this.app.route(), "result", reply);
@@ -296,23 +347,29 @@ export class WasherRuntime {
     // navigating away replayed the STALE cache — the value "reverted".
     const set = /^SET (\S+) (.+)$/.exec(cmd);
     let undo: (() => void) | undefined;
+    let setKey: string | undefined;
+    let setValue: string | undefined;
     if (set) {
-      const key = set[1]!;
-      const prev = this.settings[key];
-      this.settings = { ...this.settings, [key]: set[2]! };
+      setKey = set[1]!;
+      setValue = set[2]!;
+      this.settings = { ...this.settings, [setKey]: setValue };
       this.app.pushState("settings", this.settings);
       // The other half of optimism: a BUSY/ERR reply or a failed write
       // restores the machine's real value instead of leaving the rejected
       // one displayed as applied (spin motor showed B after "BUSY").
+      // The anchor is the CONFIRMED cache read AT UNDO TIME — an earlier
+      // sibling SET's ack may have promoted it in between, and snapping to
+      // a stale capture would roll the display past the machine's value.
       undo = () => {
         const restored = { ...this.settings };
-        if (prev === undefined) delete restored[key];
-        else restored[key] = prev;
+        const anchor = this.confirmed[setKey!];
+        if (anchor === undefined) delete restored[setKey!];
+        else restored[setKey!] = anchor;
         this.settings = restored;
         this.app.pushState("settings", restored);
       };
     }
-    const entry: PendingCmd = { screen: this.app.route(), cmd, timer: null, quiet: opts.quiet, undo };
+    const entry: PendingCmd = { screen: this.app.route(), cmd, timer: null, quiet: opts.quiet, undo, setKey, setValue };
     const fail = (why: string): void => {
       const i = this.pendingCmds.indexOf(entry);
       if (i < 0) return; // already settled by its reply
@@ -326,7 +383,7 @@ export class WasherRuntime {
       this.log(`ERR ${msg}${entry.cmd === "STOP" ? "" : ` (${entry.cmd})`}`);
     };
     if (typeof setTimeout === "function") {
-      entry.timer = setTimeout(() => fail("tanpa jawaban dari mesin"), REPLY_TIMEOUT_MS);
+      entry.timer = setTimeout(() => fail("tanpa jawaban dari mesin"), this.replyTimeoutMs);
     }
     this.pendingCmds.push(entry);
     void this.services.ble.write(cmd).then(
@@ -381,6 +438,13 @@ export class WasherRuntime {
    *  "MENGHENTIKAN…" state. */
   stopPending(): boolean {
     return this.pendingCmds.some((e) => e.cmd === "STOP");
+  }
+
+  /** True while a program-slot save (SET PROGn) is in flight — every
+   *  start gates on this, so a save that ends up rejected can never be
+   *  outrun by a start of the old stored tokens from another tab. */
+  programSavePending(): boolean {
+    return this.pendingCmds.some((e) => /^SET PROG\d/.test(e.cmd));
   }
 
   /** Repaint driver while connected: pushes a tick that re-renders the

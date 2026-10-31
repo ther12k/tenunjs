@@ -169,6 +169,9 @@ export const HomeScreen = defineScreen({
         if (!s.link.connected || s.status === null) return;
         if (s.statusAt !== null && Date.now() - s.statusAt > 15_000) return;
         if (s.pending !== null) return;
+        // A program save in flight elsewhere could still be rejected —
+        // starting its slot now would run the OLD stored tokens.
+        if ((services as { savePending?: () => boolean }).savePending?.()) return;
         s.pending = input;
         s.err = null;
         (services as { send?: (cmd: string) => void }).send?.(input);
