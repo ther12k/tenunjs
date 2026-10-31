@@ -11,6 +11,7 @@
  * server over TLS (dev.ts picks up dev-cert.pem/dev-key.pem) before
  * opening it from a phone on the LAN.
  */
+import { withChrome } from "./src/chrome";
 import { WasherRuntime, type BleLinkState } from "./src/runtime";
 import {
   BLE_CMD_UUID,
@@ -627,6 +628,9 @@ linkBtn.addEventListener("click", () => {
   );
 });
 
+// The pinned STOP band + bottom nav — the SAME shared chrome the native
+// entry draws, so this preview renders the APK's actual shell.
+const chromeApp = withChrome(runtime);
 const renderer = new CanvasPreviewRenderer(previewCanvas);
 let scrollY = 0;
 let activeTap: { x: number; y: number; w: number; h: number } | null = null;
@@ -655,7 +659,7 @@ function updateDocumentFeedback(): void {
 
 function paint(): void {
   updateDocumentFeedback();
-  const result = runtime.render();
+  const result = chromeApp.render();
   scrollY = Math.min(scrollY, renderer.maxScroll(result.scene));
   renderer.render(result.scene, scrollY);
   if (activeTap) {
@@ -713,7 +717,7 @@ previewCanvas.addEventListener("pointerdown", (event) => {
   previewCanvas.setPointerCapture(event.pointerId);
   pointerY = event.clientY;
   dragging = false;
-  const render = runtime.render();
+  const render = chromeApp.render();
   const rect = previewCanvas.getBoundingClientRect();
   const scale = rect.width / render.scene.designWidth;
   const x = (event.clientX - rect.left) / scale;
@@ -732,7 +736,7 @@ previewCanvas.addEventListener("pointermove", (event) => {
     }
   }
   pointerY = event.clientY;
-  const scene = runtime.render().scene;
+  const scene = chromeApp.render().scene;
   const scale = previewCanvas.clientWidth / scene.designWidth;
   scrollY = Math.max(0, Math.min(renderer.maxScroll(scene), scrollY + delta / scale));
   renderer.render(scene, scrollY);
@@ -743,7 +747,7 @@ previewCanvas.addEventListener("pointerup", (event) => {
   if (dragging) return;
   // BOTH axes scale by the same canvas factor — the old code scaled x
   // but not y, so every tap on a wider-than-design canvas missed low.
-  const render = runtime.render();
+  const render = chromeApp.render();
   const rect = previewCanvas.getBoundingClientRect();
   const scale = rect.width / render.scene.designWidth;
   const x = (event.clientX - rect.left) / scale;
@@ -778,7 +782,7 @@ previewCanvas.addEventListener(
   "wheel",
   (event) => {
     event.preventDefault();
-    const scene = runtime.render().scene;
+    const scene = chromeApp.render().scene;
     const scale = previewCanvas.clientWidth / scene.designWidth;
     scrollY = Math.max(0, Math.min(renderer.maxScroll(scene), scrollY + event.deltaY / scale));
     renderer.render(scene, scrollY);
@@ -811,10 +815,10 @@ interface PolytronDebug {
   runtime,
   tapAt: (fx: number, fy: number): boolean => {
     const r = previewCanvas.getBoundingClientRect();
-    const scene = runtime.render().scene;
+    const scene = chromeApp.render().scene;
     const x = fx * scene.designWidth;
     const y = fy * (scene.contentHeight ?? previewCanvas.height);
-    const runs = runtime.render().tapRuns;
+    const runs = chromeApp.render().tapRuns;
     let fired = false;
     scene.taps.forEach((tap, i) => {
       if (!fired && x >= tap.x && x <= tap.x + tap.w && y >= tap.y && y <= tap.y + tap.h) {
@@ -829,7 +833,7 @@ interface PolytronDebug {
     return fired;
   },
   sceneTexts: (): string[] => {
-    const scene = runtime.render().scene;
+    const scene = chromeApp.render().scene;
     const texts: string[] = [];
     for (const op of scene.ops) if (op.op === "text") texts.push(op.text);
     return texts;

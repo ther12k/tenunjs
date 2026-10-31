@@ -177,6 +177,9 @@ describe("native polytron entry", () => {
     t.dispatch("BLE_LINK", JSON.stringify({ connected: false, connecting: false }));
     t.dispatch("BLE_LINK", JSON.stringify({ connected: true, name: "Polytron Wash" }));
     expect(bleWrites).toContain("GET:ALL");
+    // The machine speaks (idle) so the function tiles arm — the fresh-status
+    // gate keeps them inert until real telemetry arrives.
+    t.dispatch("BLE_LINE", "ST:IDLE|READY|0/0|0|0|0000|180|W10");
     t.dispatch("NAVIGATE", JSON.stringify({ route: "home" })); // the grid lives on Home
     const cucci = tapIdForText(sceneOf(t), "Cuci");
     t.dispatch("TAP", JSON.stringify(cucci)); // user fires before the ack lands
@@ -200,12 +203,14 @@ describe("native polytron entry", () => {
     expect(bleWrites).toContain("SET PROG0 WASH:600, SPIN:300");
     t.dispatch("BLE_LINE", JSON.stringify({ line: "BUSY - STOP first" })); // machine rejects
     t.dispatch("NAVIGATE", JSON.stringify({ route: "programs" }));
-    const scene = sceneOf(t);
-    expect(texts(scene)).not.toContain("Cuci 10 mnt · Peras 5 mnt"); // optimistic gone
-    // and the accepted path keeps it
+    let scene = sceneOf(t);
+    expect(texts(scene)).not.toContain("±15 mnt"); // optimistic steps rolled back
+    // and the accepted path keeps them
     t.dispatch("SAVE_PROGRAM", JSON.stringify({ slot: 0, tokens: "WASH:600, SPIN:300" }));
     t.dispatch("BLE_LINE", JSON.stringify({ line: "OK SET PROG0" }));
     t.dispatch("NAVIGATE", JSON.stringify({ route: "programs" }));
-    expect(texts(sceneOf(t))).toContain("Cuci 10 mnt · Peras 5 mnt");
+    scene = sceneOf(t);
+    expect(texts(scene)).toContain("±15 mnt");
+    expect(texts(scene)).toContain("2 tahap");
   });
 });

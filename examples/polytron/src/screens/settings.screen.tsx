@@ -8,7 +8,7 @@ import {
   type WashReply,
   type WashStatus,
 } from "../protocol";
-import { ChoiceRow, LinkHeader, ListRow, WaveFillCard, SettingRow } from "../widgets";
+import { ChoiceRow, ChromeSpacer, LinkHeader, ListRow, WaveFillCard, SettingRow } from "../widgets";
 
 /**
  * Settings: everything "SET …" reaches on the device — duration/tuning
@@ -150,7 +150,9 @@ export const SettingsScreen = defineScreen({
     const spinMotorIdx = s.values.SPINMOTOR === "B" ? 1 : s.values.SPINMOTOR === "A" ? 0 : -1;
     const waterPct = s.status?.waterPct ?? null;
     const now = Date.now();
+    const waiting = !offline && s.status === null;
     const staleFor = offline || s.statusAt === null ? 0 : Math.max(0, Math.round((now - s.statusAt) / 1000));
+    const stale = !offline && !waiting && staleFor > 15;
     // Everyday durations above calibration above motor tuning — the
     // common controls must not be a scroll away.
     const everyday = SETTING_DEFS.filter((d) => !d.advanced);
@@ -185,7 +187,7 @@ export const SettingsScreen = defineScreen({
             phase={s.link.phase}
             name={s.link.name}
             statusAgeS={s.statusAt === null ? null : staleFor}
-            stale={false}
+            stale={stale}
             onPress={headerPress}
           />
 
@@ -222,7 +224,7 @@ export const SettingsScreen = defineScreen({
                 waterPct === null
                   ? offline
                     ? "offline · belum terbaca"
-                    : "sensor belum terkalibrasi"
+                    : "belum tersedia di mesin ini"
                   : "level air dalam tangki"
               }
             />
@@ -269,6 +271,8 @@ export const SettingsScreen = defineScreen({
               onAction={() => actions.clearSnack()}
             />
           ) : null}
+
+          <ChromeSpacer />
         </Column>
       </Scaffold>
     );

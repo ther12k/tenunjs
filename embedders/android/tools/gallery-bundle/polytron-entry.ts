@@ -5,6 +5,7 @@
  */
 import { installHostHandoff } from "@tenunjs/widgets";
 import { WasherRuntime, type BleSeam } from "../../../../examples/polytron/src/runtime";
+import { withChrome } from "../../../../examples/polytron/src/chrome";
 import { PROGRAM_SLOTS } from "../../../../examples/polytron/src/protocol";
 
 const host = globalThis as Record<string, unknown>;
@@ -146,19 +147,9 @@ const app = new WasherRuntime({
   designWidth: 390,
 });
 
-/**
- * Mobile navigation tabs for phone SurfaceView rendering.
- */
-const TABS = [
-  { route: "home", label: "Beranda", icon: "⌂" },
-  { route: "programs", label: "Program", icon: "☰" },
-  { route: "controls", label: "Kontrol", icon: "⚙" },
-  { route: "settings", label: "Setelan", icon: "🔧" },
-] as const;
-
-const BAR_H = 56;
-
-// Wrap app to inject fixed bottom navigation bar into display list scenes
+// The fixed bottom chrome (pinned STOP band + navigation) is the shared
+// module — the SAME drawing serves the native entry and the browser
+// preview, so the preview finally renders the APK's shell.
 const appWithNavBar = {
   route: () => app.route(),
   routes: () => app.routes(),
@@ -166,102 +157,10 @@ const appWithNavBar = {
   exportState: () => app.exportState(),
   onStateInvalidation: (listener: () => void) => app.onStateInvalidation(listener),
   dispatch: (action: string, payload?: unknown) => app.dispatch(action, payload),
-  render: () => {
-    const res = app.render();
-    const scene = res.scene;
-    const currentRoute = app.route();
-    const w = scene.designWidth;
-    const tabW = w / TABS.length;
-
-    // Fixed bottom chrome = the light nav bar ONLY. The connection
-    // control moved to the LinkHeader at the top of every screen (the
-    // 2026-10-30 redesign) — one surface, in content, on every tab.
-    scene.ops.push({
-      op: "rect",
-      x: 0,
-      y: 0,
-      w,
-      h: BAR_H,
-      r: 0,
-      color: "#FFFFFF",
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: BAR_H,
-    });
-    // Top border line
-    scene.ops.push({
-      op: "line",
-      x1: 0,
-      y1: 0,
-      x2: w,
-      y2: 0,
-      color: "#E4EBF0",
-      width: 1,
-      fixed: true,
-      anchor: "bottom",
-      anchorSize: BAR_H,
-    });
-
-    // Tabs
-    TABS.forEach((tab, i) => {
-      const active = tab.route === currentRoute;
-      const tabX = i * tabW;
-      const textX = tabX + tabW / 2;
-      const color = active ? "#0E9F8C" : "#8AA3B2";
-
-      // Icon
-      scene.ops.push({
-        op: "text",
-        x: textX,
-        y: 22,
-        text: tab.icon,
-        size: 16,
-        weight: active ? 700 : 400,
-        color,
-        align: "center",
-        width: 0,
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: BAR_H,
-      });
-
-      // Label
-      scene.ops.push({
-        op: "text",
-        x: textX,
-        y: 42,
-        text: tab.label,
-        size: 11,
-        weight: active ? 700 : 400,
-        color,
-        align: "center",
-        width: 0,
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: BAR_H,
-      });
-
-      // Tap hit region
-      const tapId = res.tapRuns.length;
-      scene.taps.push({
-        x: tabX,
-        y: 0,
-        w: tabW,
-        h: BAR_H,
-        action: "tap",
-        fixed: true,
-        anchor: "bottom",
-        anchorSize: BAR_H,
-        payload: { id: tapId },
-      });
-      res.tapRuns.push(() => {
-        app.navigate(tab.route);
-      });
-    });
-
-    return res;
-  },
+  render: () => chromeApp.render(),
 };
+
+const chromeApp = withChrome(app);
 
 const handoff = installHostHandoff({
   app: appWithNavBar,

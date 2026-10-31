@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { WasherRuntime, type BleSeam } from "../src/runtime";
+import { withChrome, CHROME_H } from "../src/chrome";
 import { createWriteQueue } from "../src/write-queue";
 import { textWidth } from "@tenunjs-examples/ui-kit";
 import {
@@ -22,8 +23,26 @@ import {
  * back through lineIn exactly like a real notify would.
  */
 
+/** The chrome-wrapped view of a runtime — what both hosts commit. */
+const chromeCache = new Map<WasherRuntime, ReturnType<typeof withChrome>>();
+function chromeView(runtime: WasherRuntime): ReturnType<typeof withChrome> {
+  let view = chromeCache.get(runtime);
+  if (!view) {
+    view = withChrome(runtime);
+    chromeCache.set(runtime, view);
+  }
+  return view;
+}
+
+/** The pinned STOP band's tap payload (fixed, full chrome height). */
+function stopTapId(runtime: WasherRuntime): number {
+  const { scene } = chromeView(runtime).render();
+  const tap = scene.taps.find((t) => t.fixed && t.anchorSize === CHROME_H);
+  return tap ? (tap.payload as { id: number }).id : -1;
+}
+
 function sceneTexts(runtime: WasherRuntime): string[] {
-  const scene = runtime.render().scene;
+  const scene = chromeView(runtime).render().scene;
   const texts: string[] = [];
   for (const op of scene.ops) if (op.op === "text") texts.push(op.text);
   return texts;
@@ -31,8 +50,9 @@ function sceneTexts(runtime: WasherRuntime): string[] {
 
 /** Tap-run id of the FIRST region containing the text op `label`. */
 function tapIdFor(runtime: WasherRuntime, label: string): number {
-  const { scene } = runtime.render();
+  const { scene } = chromeView(runtime).render();
   return scene.taps.findIndex((tap) =>
+    !tap.fixed &&
     scene.ops.some(
       (op) =>
         op.op === "text" &&
@@ -65,7 +85,7 @@ function fakeBle(): { seam: BleSeam; writes: string[] } {
  *  against the double-offset bug that painted tiles below the
  *  scrollable area (fixed 2026-10-22). */
 function assertSceneWithinBounds(runtime: WasherRuntime): void {
-  const { scene } = runtime.render();
+  const { scene } = chromeView(runtime).render();
   for (const op of scene.ops) {
     if (op.op !== "text") continue;
     if (op.y > scene.contentHeight + 1 || op.x < -1 || op.x > scene.designWidth + 1) {
@@ -183,8 +203,8 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("Peras");
     expect(texts).toContain("STOP MESIN");
     expect(tapIdFor(runtime, "Cuci")).toBe(-1);
-    expect(tapIdFor(runtime, "STOP MESIN")).toBe(-1);
-    expect(runtime.render().scene.taps).toHaveLength(0); // nothing tappable at all
+    expect(stopTapId(runtime)).toBe(-1); // STOP locked offline
+    expect(chromeView(runtime).render().scene.taps).toHaveLength(4); // nav only
 
     const supported = new WasherRuntime({ ble: fakeBle().seam });
     texts = sceneTexts(supported).join("\n");
@@ -192,12 +212,11 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("SAMBUNGKAN"); // the header row offers the connect tap
     expect(texts).toContain("Cuci");
     expect(texts).toContain("Peras");
-    expect(texts).toContain("belum pernah"); // offline cards keep the useful sub, lock says disabled
-    expect(texts).toContain("belum ada aktivitas");
+    expect(texts).toContain("Belum ada aktivitas"); // clean tiles, empty summary
     expect(tapIdFor(supported, "Cuci")).toBe(-1);
-    expect(tapIdFor(supported, "STOP MESIN")).toBe(-1);
-    // Exactly ONE tappable surface offline: the header connect row.
-    expect(supported.render().scene.taps).toHaveLength(1);
+    expect(stopTapId(supported)).toBe(-1); // STOP locked offline
+    // Offline taps = 4 nav tabs + the header connect row.
+    expect(chromeView(supported).render().scene.taps).toHaveLength(5);
   });
 
   test("idle home shows the six-function icon grid and the navy program hero", () => {
@@ -234,13 +253,14 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("20%"); // elapsed/total
     expect(texts).toContain("Tahap 2 dari 5"); // stage banner sub
     expect(texts).toContain("Cuci"); // current-mode chip / banner title
-    expect(texts).toContain("Ketinggian air"); // water wave card
+    expect(texts).toContain("Air"); // compact water tile
     expect(texts).toContain("63%");
+    expect(texts).toContain("Berlalu"); // elapsed tile
     expect(texts).toContain("Fungsi lain terkunci selama proses");
     expect(texts).not.toContain("Mulai program"); // hero hidden while running
     // Grid hidden while running — the ring replaced it (mockup 03).
     expect(tapIdFor(runtime, "Peras")).toBe(-1);
-    expect(tapIdFor(runtime, "STOP MESIN")).toBeGreaterThanOrEqual(0);
+    expect(stopTapId(runtime)).toBeGreaterThanOrEqual(0);
     assertSceneWithinBounds(runtime);
   });
 
@@ -263,9 +283,11 @@ describe("WasherRuntime screens", () => {
     expect(sceneTexts(runtime).join("\n")).not.toContain("ST:WASH");
     runtime.lineIn("> WASH");
     runtime.lineIn("OK WASH 600 s");
+    // The running screen carries no feed; the summary lands when idle.
+    runtime.lineIn("ST:IDLE|DONE WASH|0/0|0|0|0000|180|W10");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("Mulai Cuci");
-    expect(texts).toContain("Cuci dimulai (10 mnt)");
+    expect(texts).toContain("Cuci dimulai (10 mnt)"); // latest event summarized
+    expect(texts).not.toContain("ST:WASH");
   });
 
   test("finished cycles show the completion banner and unlock the grid", () => {
@@ -291,10 +313,18 @@ describe("WasherRuntime screens", () => {
 
     runtime.navigate("programs");
     runtime.lineIn("SET PROG1 WASH:600, DRAIN:30, SPIN:300");
+    // Segments for all three slots; the editor follows the selection.
     texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("NORMAL");
-    expect(texts).toContain("Cuci 10 mnt · Buang 30 dtk · Peras 5 mnt");
-    expect(texts).toContain("TUB CLEAN");
+    expect(texts).toContain("Cepat");
+    expect(texts).toContain("Normal");
+    expect(texts).toContain("Kustom");
+    const normalTap = tapIdFor(runtime, "Normal");
+    expect(normalTap).toBeGreaterThanOrEqual(0);
+    runtime.tap(normalTap);
+    texts = sceneTexts(runtime).join("\n");
+    expect(texts).toContain("±16 mnt"); // 600+30+300 s
+    expect(texts).toContain("3 tahap");
+    expect(texts).toContain("Tub clean");
   });
 
   test("tap Cuci writes WASH; the reply lands in Recent Activity", () => {
@@ -308,8 +338,7 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("OK WASH 600 s");
     const texts = sceneTexts(runtime).join("\n");
     expect(ble.writes).toEqual(["WASH"]);
-    expect(texts).toContain("Mulai Cuci");
-    expect(texts).toContain("Cuci dimulai (10 mnt)");
+    expect(texts).toContain("Cuci dimulai (10 mnt)"); // latest event summarized
     expect(texts).toContain("baru saja"); // usage sub-label flipped
   });
 
@@ -330,16 +359,19 @@ describe("WasherRuntime screens", () => {
   test("offline Programs, Controls and Settings remain visible without unsafe taps", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     for (const [route, visible] of [
-      ["programs", ["CEPAT", "NORMAL", "KUSTOM", "TUB CLEAN", "tersimpan di mesin"]],
-      ["controls", ["Motor A", "Ketinggian air", "offline"]],
+      ["programs", ["Cepat", "Normal", "Kustom", "Tub clean", "tersimpan di mesin"]],
+      ["controls", ["Motor A", "Ketinggian air", "offline", "Relai", "Diagnostik perangkat"]],
       ["settings", ["Durasi", "Lanjutan", "Motor peras", "Jam LCD", "Sensor air", "tersimpan"]],
     ] as const) {
       runtime.navigate(route);
       const texts = sceneTexts(runtime).join("\n");
       expect(texts).not.toContain("BLUETOOTH"); // header owns connection state
       for (const label of visible) expect(texts).toContain(label);
-      // No unsafe taps; the ONLY offline tap is the header connect row.
-      expect(runtime.render().scene.taps).toHaveLength(1);
+      // Offline taps = 4 nav tabs + the header connect row (+ the
+      // controls tab's UI-only diagnostics toggle). Nothing that could
+      // reach the machine is tappable — no STOP, no starts.
+      expect(chromeView(runtime).render().scene.taps.length).toBeLessThanOrEqual(6);
+      expect(stopTapId(runtime)).toBe(-1);
       assertSceneWithinBounds(runtime);
     }
   });
@@ -355,6 +387,7 @@ describe("WasherRuntime screens", () => {
     expect(texts).toContain("Motor B");
     expect(texts).toContain("Nonaktif");
     expect(texts).toContain("63%");
+    expect(texts).toContain("Relai"); // grouped relay card
     expect(texts).toContain("Mencuci · 9:50"); // running banner with remaining
   });
 
@@ -405,28 +438,27 @@ describe("WasherRuntime screens", () => {
     expect(sceneTexts(noClock).join("\n")).toContain("waktu host tidak");
   });
 
-  test("the canvas step editor resolves edits into a SET PROG write", () => {
+  test("the segmented editor is always visible and resolves edits into a SET write", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10");
     runtime.navigate("programs");
     runtime.lineIn("SET PROG0 WASH:600");
-    const tapId = tapIdFor(runtime, "Ubah");
-    expect(tapId).toBeGreaterThanOrEqual(0);
-    runtime.tap(tapId);
-    // The editor opens pre-filled with the machine's tokens.
-    let texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("Edit · CEPAT");
+    // The editor for the selected slot shows the machine's tokens.
+    const texts = sceneTexts(runtime).join("\n");
     expect(texts).toContain("Cuci");
     expect(texts).toContain("Estimasi durasi");
     expect(texts).toContain("10 mnt");
-    expect(texts).toContain("Simpan program");
-    // Bump the duration 600 → 630 and save.
-    runtime.tap(tapIdFor(runtime, "+"));
-    runtime.tap(tapIdFor(runtime, "Simpan program"));
+    expect(texts).toContain("Mulai program");
+    // Bump the duration 600 → 630 (honest 10:30 shown) and save.
+    const plus = tapIdFor(runtime, "+");
+    expect(plus).toBeGreaterThanOrEqual(0);
+    runtime.tap(plus);
+    expect(sceneTexts(runtime).join("\n")).toContain("10:30");
+    runtime.tap(tapIdFor(runtime, "Simpan"));
     expect(ble.writes).toEqual(["SET PROG0 WASH:630"]);
-    texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("Cuci 11 mnt"); // optimistic cache shows the edit
+    expect(sceneTexts(runtime).join("\n")).toContain("11 mnt");
     runtime.dispose(); // the ack never arrives in this test
   });
 
@@ -435,7 +467,7 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.navigate("controls");
-    const tapId = tapIdFor(runtime, "STOP MESIN");
+    const tapId = stopTapId(runtime); // the pinned chrome STOP
     expect(tapId).toBeGreaterThanOrEqual(0);
     runtime.tap(tapId);
     runtime.navigate("settings"); // user walks away mid-command
@@ -452,7 +484,7 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10"); // idle → grid visible
     const cucci = tapIdFor(runtime, "Cuci");
     runtime.tap(cucci); // no reply yet → Cuci still pending
-    const stop = tapIdFor(runtime, "STOP MESIN");
+    const stop = stopTapId(runtime);
     expect(stop).toBeGreaterThanOrEqual(0);
     runtime.tap(stop); // safety command must fire anyway
     expect(ble.writes).toEqual(["WASH", "STOP"]);
@@ -492,22 +524,22 @@ describe("WasherRuntime screens", () => {
     expect(ble.writes).toEqual(["SET WASHMIN 11", "SET WASHMIN 11"]);
   });
 
-  test("a rejected program edit rolls the cached tokens back", () => {
+  test("a rejected program edit returns the editor to the machine's tokens", () => {
     const ble = fakeBle();
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W10");
     runtime.navigate("programs");
     runtime.lineIn("SET PROG0 WASH:600");
-    runtime.tap(tapIdFor(runtime, "Ubah")); // open the canvas editor
     runtime.tap(tapIdFor(runtime, "+")); // 600 → 630
-    runtime.tap(tapIdFor(runtime, "Simpan program"));
+    runtime.tap(tapIdFor(runtime, "Simpan"));
     expect(ble.writes).toEqual(["SET PROG0 WASH:630"]);
-    // Optimistic window: the edited summary shows before the reply.
-    expect(sceneTexts(runtime).join("\n")).toContain("Cuci 11 mnt");
+    // Optimistic window: the edited estimate shows before the reply.
+    expect(sceneTexts(runtime).join("\n")).toContain("11 mnt");
     runtime.lineIn("BUSY - STOP first");
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).not.toContain("Cuci 11 mnt"); // optimistic edit gone
-    expect(texts).toContain("Cuci 10 mnt"); // machine's stored program intact
+    expect(texts).not.toContain("11 mnt"); // optimistic edit gone
+    expect(texts).toContain("10 mnt"); // machine's stored program intact
   });
 
   test("quiet GET:ALL ack settles only itself — cannot steal a user reply", () => {
@@ -531,6 +563,7 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|142|W63"); // idle → grid visible
     runtime.tap(tapIdFor(runtime, "Cuci")); // Home sends WASH, no reply yet
     runtime.navigate("controls");
+    runtime.tap(tapIdFor(runtime, "Diagnostik perangkat")); // expand first
     runtime.tap(tapIdFor(runtime, "KIRIM")); // Controls sends WATER meanwhile
     // Serial wire answers in order: this reply settles WASH (the front).
     runtime.lineIn("OK WASH 600 s");
@@ -538,7 +571,7 @@ describe("WasherRuntime screens", () => {
     runtime.navigate("home");
     const homeTexts = sceneTexts(runtime).join("\n");
     expect(homeTexts).not.toContain("MENGIRIM"); // Home's tile un-stuck
-    expect(homeTexts).toContain("Cuci dimulai (10 mnt)");
+    expect(homeTexts).toContain("WATER raw 433"); // latest event summarized
     runtime.navigate("controls");
     expect(sceneTexts(runtime).join("\n")).toContain("WATER raw 433"); // Controls got its own reply
     // Home's single-flight guard is free again
@@ -555,6 +588,7 @@ describe("WasherRuntime screens", () => {
     runtime.tap(tapIdFor(runtime, "Cuci")); // write ok, reply never comes
     runtime.linkPush({ connected: false }); // link drops mid-command
     runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1"); // machine speaks again
     const again = tapIdFor(runtime, "Cuci");
     expect(again).toBeGreaterThanOrEqual(0); // un-stuck: tappable again
     runtime.tap(again);
@@ -588,7 +622,7 @@ describe("WasherRuntime screens", () => {
     texts = sceneTexts(runtime).join("\n");
     expect(texts).toContain("Menunggu status…");
     expect(texts).not.toContain("Siap");
-    expect(texts).toContain("belum terbaca"); // unknown ≠ "belum dikalibrasi"
+    expect(texts).toContain("menunggu data pertama"); // unknown ≠ "belum tersedia"
   });
 
   test("while a cycle runs, Program MULAI and edit are visibly unavailable", () => {
@@ -615,7 +649,7 @@ describe("WasherRuntime screens", () => {
     runtime.navigate("programs");
     expect(runtime.route()).toBe("programs");
     // The running banner card is tappable (h=68 with sub)
-    const progBannerTap = runtime.render().scene.taps.find((t) => t.h === 68);
+    const progBannerTap = chromeView(runtime).render().scene.taps.find((t) => t.h === 68);
     expect(progBannerTap).toBeDefined();
     const tapId = (progBannerTap!.payload as { id: number }).id;
     runtime.tap(tapId);
@@ -623,7 +657,7 @@ describe("WasherRuntime screens", () => {
 
     runtime.navigate("controls");
     expect(runtime.route()).toBe("controls");
-    const ctrlBannerTap = runtime.render().scene.taps.find((t) => t.h === 68);
+    const ctrlBannerTap = chromeView(runtime).render().scene.taps.find((t) => t.h === 68);
     expect(ctrlBannerTap).toBeDefined();
     const ctrlTapId = (ctrlBannerTap!.payload as { id: number }).id;
     runtime.tap(ctrlTapId);
@@ -712,11 +746,11 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: ble.seam });
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
-    runtime.tap(tapIdFor(runtime, "STOP MESIN"));
+    runtime.tap(stopTapId(runtime));
     expect(ble.writes).toContain("STOP");
     runtime.linkPush({ connected: false, name: "" });
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("STOP belum terkonfirmasi");
+    expect(texts).toContain("terkonfirmasi"); // (snack wraps — assert pieces)
     expect(texts).toContain("cek mesin");
   });
 
@@ -734,7 +768,7 @@ describe("WasherRuntime screens", () => {
       expect(texts).toContain("Data mesin beku");
       expect(texts).toContain("tidak diperbarui");
       expect(tapIdFor(runtime, "Cuci")).toBe(-1); // new starts blocked…
-      expect(tapIdFor(runtime, "STOP MESIN")).toBeGreaterThanOrEqual(0); // …STOP never
+      expect(stopTapId(runtime)).toBeGreaterThanOrEqual(0); // …STOP never
       runtime.navigate("controls");
       expect(sceneTexts(runtime).join("\n")).toContain("Data mesin beku");
     } finally {
@@ -746,23 +780,71 @@ describe("WasherRuntime screens", () => {
     expect(sceneTexts(runtime).join("\n")).not.toContain("Data mesin beku");
   });
 
-  test("offline Controls explains that app STOP needs a connection", () => {
+  test("the pinned STOP is locked chrome on every tab while offline", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    // Offline: the band renders (locked style) but carries NO tap — the
+    // physical button is the only stop, and the mayrun snack says so.
+    for (const route of runtime.routes()) {
+      runtime.navigate(route);
+      const texts = sceneTexts(runtime).join("\n");
+      expect(texts).toContain("STOP MESIN"); // visible on every tab…
+      expect(stopTapId(runtime)).toBe(-1); // …but inert offline
+    }
+    // A drop mid-cycle keeps the physical-button warning on Home.
+    runtime.navigate("home");
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
-    runtime.navigate("controls");
     runtime.linkPush({ connected: false, name: "" });
     const texts = sceneTexts(runtime).join("\n");
-    expect(texts).toContain("STOP aplikasi butuh sambungan");
-    expect(texts).toContain("tombol fisik");
+    expect(texts).toContain("MUNGKIN masih");
+    expect(texts).toContain("tombol");
+    expect(texts).toContain("fisik");
+  });
+
+  test("the pinned STOP fires from ANY tab and never scrolls away", () => {
+    const ble = fakeBle();
+    const runtime = new WasherRuntime({ ble: ble.seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
+    // Present and FIXED on every tab while connected — even deep in the
+    // least safety-relevant corner (Settings).
+    for (const route of runtime.routes()) {
+      runtime.navigate(route);
+      const { scene } = chromeView(runtime).render();
+      const stopTap = scene.taps.find((t) => t.fixed && t.anchorSize === CHROME_H);
+      expect(stopTap).toBeDefined();
+      expect(stopTap!.h).toBeGreaterThanOrEqual(40); // wet-hands target
+    }
+    runtime.navigate("settings");
+    runtime.tap(stopTapId(runtime)); // fired from the Settings tab
+    expect(ble.writes).toEqual(["STOP"]);
+    runtime.lineIn("OK STOP"); // settles without stranding pending state
+  });
+
+  test("Programs and Settings headers show the frozen-data state too", () => {
+    const runtime = new WasherRuntime({ ble: fakeBle().seam });
+    runtime.linkPush({ connected: true });
+    runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W-1");
+    const realNow = Date.now;
+    const frozen = realNow();
+    Date.now = () => frozen + 20_000;
+    try {
+      for (const route of ["programs", "settings"] as const) {
+        runtime.navigate(route);
+        const texts = sceneTexts(runtime).join("\n");
+        expect(texts).toContain("beku 20s"); // header freshness turns amber
+      }
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   test("connecting shows the orbit spinner in the header; connected shows a plain dot", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam });
     // Header-scoped: only circles inside the LinkHeader band count —
     // function icons (spin/droplet glyphs) also draw small circles.
-    const dotAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 5 && op.cy < 90).length;
-    const orbitAt = () => runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r > 1 && op.r < 4 && op.cy < 90).length;
+    const dotAt = () => chromeView(runtime).render().scene.ops.filter((op) => op.op === "circle" && op.r === 5 && op.cy < 90 && !op.fixed).length;
+    const orbitAt = () => chromeView(runtime).render().scene.ops.filter((op) => op.op === "circle" && op.r > 1 && op.r < 4 && op.cy < 90 && !op.fixed).length;
     // connecting: spinner orbiting, no static dot
     runtime.linkPush({ connecting: true, phase: "scanning" });
     expect(dotAt()).toBe(0);
@@ -777,9 +859,9 @@ describe("WasherRuntime screens", () => {
     runtime.linkPush({ connecting: true, phase: "scanning" });
     const realNow = Date.now;
     Date.now = () => 5_000_000;
-    const a = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90).map((op) => op.cy);
+    const a = chromeView(runtime).render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90 && !op.fixed).map((op) => op.cy);
     Date.now = () => 5_000_520; // ~4 head-steps later
-    const b = runtime.render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90).map((op) => op.cy);
+    const b = chromeView(runtime).render().scene.ops.filter((op) => op.op === "circle" && op.r === 3 && op.cy < 90 && !op.fixed).map((op) => op.cy);
     Date.now = realNow;
     expect(a).not.toEqual(b);
   });
@@ -810,7 +892,7 @@ describe("WasherRuntime screens", () => {
     const runtime = new WasherRuntime({ ble: fakeBle().seam, designWidth: 320 });
     runtime.linkPush({ connected: true, name: "Polytron Wash Super Long Name" });
     runtime.lineIn("ST:IDLE|READY|0/0|0|0|0000|180|W63");
-    const row = runtime.render().scene.ops.filter((op) => op.op === "text" && op.y > 60 && op.y < 90);
+    const row = chromeView(runtime).render().scene.ops.filter((op) => op.op === "text" && op.y > 60 && op.y < 90);
     const label = row.find((op) => op.text.startsWith("Terhubung"));
     const right = row.find((op) => op.text.startsWith("Data"));
     expect(label).toBeDefined();
@@ -825,7 +907,7 @@ describe("WasherRuntime screens", () => {
     runtime.linkPush({ connected: true });
     runtime.lineIn("ST:WASH|NORMAL|1/5|0|600|1000|142|W63");
     runtime.navigate("settings");
-    const scene = runtime.render().scene;
+    const scene = chromeView(runtime).render().scene;
     // The wave card: label left, % right — must not overlap at 320.
     const label = scene.ops.find((op) => op.op === "text" && op.text === "Ketinggian air");
     const pct = scene.ops.find((op) => op.op === "text" && op.text === "63%");
@@ -853,7 +935,7 @@ describe("WasherRuntime screens", () => {
     runtime.lineIn("SET PROG0 WASH:300");
     for (const route of runtime.routes()) {
       runtime.navigate(route);
-      const taps = runtime.render().scene.taps;
+      const taps = chromeView(runtime).render().scene.taps;
       expect(taps.length).toBeGreaterThan(0);
       for (const tap of taps) {
         expect(tap.h).toBeGreaterThanOrEqual(40); // wet-hands minimum
