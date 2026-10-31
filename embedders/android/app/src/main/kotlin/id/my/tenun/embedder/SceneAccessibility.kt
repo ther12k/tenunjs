@@ -133,6 +133,17 @@ interface AccessibilityHost {
     /** Dispatches a semantic action through the ORDINARY tap path. */
     fun dispatchSemanticAction(action: String, tapId: Int): Boolean
 
+    /**
+     * TN-186: replaces an editable field's text through the revisioned
+     * TEXT_EDIT contract. When the field has no live edit session the
+     * host focuses it first via its ORDINARY tap (accessibility
+     * activation ≡ touch, ADR-0025 rule 3), then commits the full
+     * replacement (selection collapses to the end, no composition).
+     * Returns false when the field is read-only, not editable, or the
+     * runtime rejects the edit — never a silent partial change.
+     */
+    fun setSemanticText(node: SceneSemantics.Node, text: String): Boolean
+
     /** View-local pixel bounds of the node (scroll offsets applied). */
     fun semanticBounds(node: SceneSemantics.Node): Rect
 
@@ -182,6 +193,12 @@ class TenunAccessibilityProvider(
         info.isClickable = node.pressTapId != null
         info.isLongClickable = node.longPressTapId != null
         info.isEditable = node.role == "textfield" && !node.readOnly
+        if (info.isEditable) {
+            // TN-186: services (TalkBack voice entry, Voice Access, braille
+            // displays) replace editable text through this action; the host
+            // routes it through the revisioned TEXT_EDIT contract.
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_TEXT)
+        }
         if (node.liveRegion) info.liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         val local = host.semanticBounds(node)
         info.setBoundsInParent(Rect(local))
@@ -210,6 +227,12 @@ class TenunAccessibilityProvider(
                 node.longPressTapId?.let { host.dispatchSemanticAction("long-press", it) } ?: false
             AccessibilityNodeInfo.ACTION_FOCUS ->
                 node.pressTapId?.let { host.dispatchSemanticAction("tap", it) } ?: false
+            AccessibilityNodeInfo.ACTION_SET_TEXT -> {
+                val text = arguments
+                    ?.getCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE)
+                    ?.toString() ?: ""
+                host.setSemanticText(node, text)
+            }
             AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS -> {
                 if (state.setAccessibilityFocus(virtualViewId)) {
                     host.sendVirtualViewEvent(virtualViewId, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)

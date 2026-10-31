@@ -1084,6 +1084,30 @@ class TenunSurfaceView @JvmOverloads constructor(
             return dispatchSceneAction(action, """{"id":$tapId}""")
         }
 
+        override fun setSemanticText(node: SceneSemantics.Node, text: String): Boolean {
+            // Legacy (non display-list) scenes have no revisioned text
+            // contract — refuse rather than half-support.
+            if (sceneHolder.current == null) return false
+            if (node.role != "textfield" || node.readOnly || node.disabled) return false
+            // No live session on this field yet: focus it through the SAME
+            // tap a TalkBack activation runs (ADR-0025 rule 3). The commit
+            // adopts the session synchronously (adoptDisplayTextInput runs
+            // inside dispatchSceneAction's syncFromScene).
+            if (textInputSession.current?.id != node.id) {
+                val tapId = node.pressTapId ?: return false
+                if (!dispatchSceneAction("tap", """{"id":$tapId}""")) return false
+            }
+            val owner = engine ?: return false
+            if (owner.isDisposed) return false
+            // The focus tap must have adopted THIS field's session.
+            if (textInputSession.current?.id != node.id) return false
+            val token = textInputSession.token() ?: return false
+            // ACTION_SET_TEXT is a full replacement by Android contract:
+            // selection collapses to the end and no composition survives.
+            val value = TextInputValue(text, TextInputSelection(text.length, text.length), null)
+            return dispatchTextEdit(owner, token, value)
+        }
+
         override fun semanticBounds(node: SceneSemantics.Node): Rect {
             val scene = sceneHolder.current ?: return Rect()
             val scale = if (scene.designWidth > 0) dlScale else 1f
