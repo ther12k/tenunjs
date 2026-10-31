@@ -196,7 +196,7 @@ status: accepted
 | 06-issues/tn-088-implement-overlay-dialog-sheet-toast-and-modal-focus-behavior.md | 8b4198801947f24860ad8a3eb9aa71d9c229bf16a24f6c8a0cd6606c2d5bf88b |
 | 06-issues/tn-089-implement-semantics-node-model-and-scene-projection.md | fd5346b31f0d059370f72b1dacad65f2e188d9dd79f87d1a6719d655eae6e15a |
 | 06-issues/tn-090-implement-ios-voiceover-bridge-and-focus-synchronization.md | c4973a077803542a0ed7688a9c1cb7e791fbe6d43d954dbede62ce3c9baa302b |
-| 06-issues/tn-091-implement-android-talkback-bridge-and-focus-synchronization.md | 8614ae510bdaf9e8f2959c86e458358658d2275eaa8327396004e70909182098 |
+| 06-issues/tn-091-implement-android-talkback-bridge-and-focus-synchronization.md | e7c50e44dca09d900c9e7f1d77a6a27a308fe840589047a2e3a3ffd65ff1f20b |
 | 06-issues/tn-092-implement-text-scaling-high-contrast-inputs-and-reduced-motion-policy.md | ddd229f7bec7e3f706b81703afa925ae33c5b174f1e689d9f85c62eebd550a96 |
 | 06-issues/tn-093-implement-locale-rtl-bidi-layout-and-localized-resource-hooks.md | 1e7e708b08e29d29fe9f580d953d707b118488c9942f0dc9e2d8dbf0665916fe |
 | 06-issues/tn-094-specify-platform-view-lifecycle-and-composition-contract.md | 1a81b48865c5ae8fb1cbe75d3cc93ce4646cc5926392bf5a66636c447eb05086 |
@@ -291,6 +291,7 @@ status: accepted
 | 06-issues/tn-183-android-canvas-fallback-and-transition-scroll.md | 75f0393f9ad856730ab55652fe811fedd22ba590d9de02178981d663f88f4bc1 |
 | 06-issues/tn-184-skia-host-scene-parity.md | a96fcf728c7021aea6e57719c50949936e8df22f545b8dfda0109a2105d08596 |
 | 06-issues/tn-185-android-skia-parity-harness.md | 3671d7b748728476d09461484e3fc37201ceb97b7c08635f8b47cd42e084dbfe |
+| 06-issues/tn-186-a11y-set-text.md | cb82474fd9621ed7b74fa2f38e7c8a8f9ff3b782a4ef1435979070add8741936 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

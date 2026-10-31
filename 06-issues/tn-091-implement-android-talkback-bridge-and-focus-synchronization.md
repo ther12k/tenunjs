@@ -159,3 +159,14 @@ and rate-limited live-region announcements — with JVM and device-gate
 regression coverage. Still open here: TalkBack manual journeys on a
 physical phone (ADR-0019 evidence) and accessibility text editing
 (`ACTION_SET_TEXT` through the revisioned TEXT_EDIT contract).
+
+## TN-186 slice note (2026-10-31)
+
+Accessibility text editing is delivered by
+[TN-186](tn-186-a11y-set-text.md): editable textfield nodes expose
+`ACTION_SET_TEXT`, and the host routes it through the revisioned
+`TEXT_EDIT` path the IME uses — focusing the field first via its
+ordinary tap when no session is live, committing full replacements,
+refusing read-only fields and contract violations fail-visibly, with
+device-gate regression coverage. Still open here: ONLY the physical
+TalkBack journeys (ADR-0019 evidence, needs the phone).
