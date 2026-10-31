@@ -1,5 +1,6 @@
 import type { DisplayOp } from "@tenunjs/widgets";
 import { drawIcon } from "./widgets";
+import { KIT } from "./theme";
 import type { BleLinkState, WasherRuntime } from "./runtime";
 import type { WashStatus } from "./protocol";
 
@@ -21,8 +22,10 @@ import type { WashStatus } from "./protocol";
  * mid-cycle keeps it armed via mayStillRun().
  */
 
-export const STOP_BAND_H = 64;
-export const NAV_H = 56;
+// Kit control metrics (tokens.json): buttonHeight 56, navigationHeight 80,
+// touchTarget 48.
+export const STOP_BAND_H = 72;
+export const NAV_H = 80;
 /** Total fixed chrome height — screens reserve this at their bottom. */
 export const CHROME_H = STOP_BAND_H + NAV_H;
 
@@ -65,39 +68,42 @@ export function withChrome(app: ChromeApp) {
 
       scene.ops.push({
         op: "rect", x: 0, y: 0, w, h: STOP_BAND_H, r: 0,
-        color: "#FFFFFF", fixed: true, anchor: "bottom", anchorSize: CHROME_H,
+        color: KIT.white, fixed: true, anchor: "bottom", anchorSize: CHROME_H,
       });
       scene.ops.push({
         op: "line", x1: 0, y1: 0.5, x2: w, y2: 0.5,
-        color: "#E4EBF0", width: 1, fixed: true, anchor: "bottom", anchorSize: CHROME_H,
+        color: KIT.border, width: 1, fixed: true, anchor: "bottom", anchorSize: CHROME_H,
       });
 
       const bx = 16;
       const bw = w - 32;
       const by = 8;
-      const bh = 52; // also the engine-loop smoke probe's tap height
+      const bh = 56; // kit buttonHeight
       const label = pending ? "MENGHENTIKAN…" : "STOP MESIN";
-      let fg = "#E5484D";
+      let fg: string = KIT.danger;
+      const stopRect = (fill: string, outline?: string) => {
+        scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 16, color: fill, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
+        if (outline) scene.ops.push({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 16, color: outline, width: 1.5, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
+      };
       if (offline) {
-        scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 14, color: "#FDECEC", fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        scene.ops.push({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 14, color: "#F0C6C8", width: 1.5, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        fg = "#C98A8E";
-        drawFixedIcon(scene, "lock", bx + 30, by + bh / 2, 6.5, fg, CHROME_H);
+        stopRect(KIT.dangerBg, "#F3C6CC");
+        fg = "#B2434E";
+        drawFixedIcon(scene, "lock", bx + 34, by + bh / 2, 7, fg, CHROME_H);
       } else if (pending) {
-        scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 14, color: "#C93A40", fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        fg = "#FFFFFF";
+        scene.ops.push({ op: "gradient", x: bx, y: by, w: bw, h: bh, r: 16, color: KIT.dangerDark, colorTo: "#8E1522", fixed: true, anchor: "bottom", anchorSize: CHROME_H });
+        fg = KIT.white;
       } else if (running || mayrun) {
-        scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 14, color: "#E5484D", fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        fg = "#FFFFFF";
-        drawFixedIcon(scene, "stop", bx + bw / 2 - textHalf(scene, label, 15.5, w) - 18, by + bh / 2, 6.5, "#FFFFFF", CHROME_H);
+        // Kit danger gradient: #D92438 -> #B91C2D.
+        scene.ops.push({ op: "gradient", x: bx, y: by, w: bw, h: bh, r: 16, color: KIT.danger, colorTo: KIT.dangerDark, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
+        fg = KIT.white;
+        drawFixedIcon(scene, "stop", bx + bw / 2 - textHalf(scene, label, 16, w) - 19, by + bh / 2, 7, KIT.white, CHROME_H);
       } else {
-        scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 14, color: "#FDECEC", fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        scene.ops.push({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 14, color: "#E5484D", width: 1.5, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
-        drawFixedIcon(scene, "stop", bx + bw / 2 - textHalf(scene, label, 15.5, w) - 18, by + bh / 2, 6.5, "#E5484D", CHROME_H);
+        stopRect(KIT.dangerBg, KIT.danger);
+        drawFixedIcon(scene, "stop", bx + bw / 2 - textHalf(scene, label, 16, w) - 19, by + bh / 2, 7, KIT.danger, CHROME_H);
       }
       scene.ops.push({
-        op: "text", x: bx, y: by + bh / 2 + 5.5, text: label, size: 15.5,
-        weight: 800, color: fg, align: "center", width: bw,
+        op: "text", x: bx, y: by + bh / 2 + 5.5, text: label, size: 16,
+        weight: 700, color: fg, align: "center", width: bw,
         fixed: true, anchor: "bottom", anchorSize: CHROME_H,
       });
       if (!offline) {
@@ -113,22 +119,22 @@ export function withChrome(app: ChromeApp) {
       /* ---- bottom navigation ---- */
       scene.ops.push({
         op: "rect", x: 0, y: 0, w, h: NAV_H, r: 0,
-        color: "#FFFFFF", fixed: true, anchor: "bottom", anchorSize: NAV_H,
+        color: KIT.white, fixed: true, anchor: "bottom", anchorSize: NAV_H,
       });
       scene.ops.push({
         op: "line", x1: 0, y1: 0, x2: w, y2: 0,
-        color: "#E4EBF0", width: 1, fixed: true, anchor: "bottom", anchorSize: NAV_H,
+        color: KIT.border, width: 1, fixed: true, anchor: "bottom", anchorSize: NAV_H,
       });
       const tabW = w / TABS.length;
       TABS.forEach((tab, i) => {
         const active = tab.route === app.route();
         const tabX = i * tabW;
         const cx = tabX + tabW / 2;
-        const color = active ? "#0E9F8C" : "#8AA3B2";
-        drawFixedIcon(scene, tab.icon, cx, 19, 8.5, color, NAV_H);
+        const color = active ? KIT.tealInk : KIT.muted;
+        drawFixedIcon(scene, tab.icon, cx, 28, 10, color, NAV_H);
         scene.ops.push({
-          op: "text", x: cx, y: 43, text: tab.label, size: 11,
-          weight: active ? 700 : 400, color, align: "center", width: 0,
+          op: "text", x: cx, y: 63, text: tab.label, size: 11,
+          weight: active ? 700 : 500, color, align: "center", width: 0,
           fixed: true, anchor: "bottom", anchorSize: NAV_H,
         });
         const tapId = res.tapRuns.length;

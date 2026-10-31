@@ -126,10 +126,10 @@ export const ControlsScreen = defineScreen({
     const running = st?.running === true;
 
     const relays: ReadonlyArray<{ icon: "motorA" | "motorB" | "drain" | "droplet"; label: string; on: boolean | null; iconColor: string }> = [
-      { icon: "motorA", label: "Motor A", on: st ? st.motorA : null, iconColor: "#0E9F8C" },
-      { icon: "motorB", label: "Motor B", on: st ? st.motorB : null, iconColor: "#7C5CE0" },
-      { icon: "drain", label: "Buang", on: st ? st.drain : null, iconColor: "#2E90FA" },
-      { icon: "droplet", label: "Isi", on: st ? st.inlet : null, iconColor: "#17A673" },
+      { icon: "motorA", label: "Motor A", on: st ? st.motorA : null, iconColor: "#007F79" },
+      { icon: "motorB", label: "Motor B", on: st ? st.motorB : null, iconColor: "#0B2D5B" },
+      { icon: "drain", label: "Buang", on: st ? st.drain : null, iconColor: "#0079B8" },
+      { icon: "droplet", label: "Isi", on: st ? st.inlet : null, iconColor: "#087F5B" },
     ];
 
     const headerPress = () => {
@@ -194,7 +194,7 @@ export const ControlsScreen = defineScreen({
               <Column gap="sm">
                 <ListRow
                   icon="droplet"
-                  iconColor="#2E90FA"
+                  iconColor="#0079B8"
                   label="Cek air (raw)"
                   sub="WATER — adc mentah + ema + pct"
                   pill={
@@ -206,7 +206,7 @@ export const ControlsScreen = defineScreen({
                 />
                 <ListRow
                   icon="power"
-                  iconColor="#8AA3B2"
+                  iconColor="#8DA0B5"
                   label="Versi firmware"
                   sub={`heap ${st?.heapKB ?? "—"} KB · ${s.link.name ?? "polytron"}`}
                   pill={

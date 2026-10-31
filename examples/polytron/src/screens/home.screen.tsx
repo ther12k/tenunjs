@@ -59,12 +59,12 @@ export interface HomeState {
 }
 
 const FUNCTIONS: ReadonlyArray<FunctionDef & { cmd: string }> = [
-  { label: "Cuci", cmd: "WASH", icon: "wash", color: "#0E9F8C" },
-  { label: "Peras", cmd: "SPIN", icon: "spin", color: "#7C5CE0" },
-  { label: "Buang", cmd: "DRAIN", icon: "drain", color: "#2E90FA" },
-  { label: "Isi", cmd: "FILL", icon: "droplet", color: "#17A673" },
-  { label: "Bilas", cmd: "RINSE", icon: "waves", color: "#0EA5E9" },
-  { label: "Bilas ND", cmd: "RINSEND", icon: "wavesSlash", color: "#38BDF8" },
+  { label: "Cuci", cmd: "WASH", icon: "wash", color: "#007F79" },
+  { label: "Peras", cmd: "SPIN", icon: "spin", color: "#0B2D5B" },
+  { label: "Buang", cmd: "DRAIN", icon: "drain", color: "#0079B8" },
+  { label: "Isi", cmd: "FILL", icon: "droplet", color: "#087F5B" },
+  { label: "Bilas", cmd: "RINSE", icon: "waves", color: "#0079B8" },
+  { label: "Bilas ND", cmd: "RINSEND", icon: "wavesSlash", color: "#3DA9FF" },
 ];
 
 export const HomeScreen = defineScreen({
@@ -194,7 +194,7 @@ export const HomeScreen = defineScreen({
     const done = st !== null && !running && st.prog.startsWith("DONE");
     const total = (st?.elapsedS ?? 0) + (st?.remainS ?? 0);
     const pct = offline || waiting ? null : done ? 1 : running && total > 0 ? Math.min(1, st!.elapsedS / total) : null;
-    const accent = offline || waiting ? "#8AA3B2" : stale ? "#F5A524" : running ? modeColor(st!.mode) : done ? "#17A673" : "#0E9F8C";
+    const accent = offline || waiting ? "#8DA0B5" : stale ? "#C77700" : running ? modeColor(st!.mode) : done ? "#087F5B" : "#007F79";
 
     // --- link header data ---
     const headerTitle = running ? "Sedang mencuci" : done ? "Siklus selesai" : "Polytron Wash";
@@ -297,7 +297,7 @@ export const HomeScreen = defineScreen({
               />
               <MetricTilesRow
                 left={{ label: "Berlalu", value: fmtClock(st.elapsedS ?? 0) }}
-                right={{ label: "Air", value: st.waterPct === null ? "—" : `${st.waterPct}%`, accent: st.waterPct === null ? undefined : "#3FB6E8" }}
+                right={{ label: "Air", value: st.waterPct === null ? "—" : `${st.waterPct}%`, accent: st.waterPct === null ? undefined : "#3DA9FF" }}
               />
               <Text variant="label">Fungsi lain terkunci selama proses</Text>
             </Column>

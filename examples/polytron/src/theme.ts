@@ -1,52 +1,76 @@
 import { defineTheme } from "@tenunjs/widgets";
 
 /**
- * Polytron Wash theme — the calm light design language (2026-10-30
- * redesign, "Calm control. Clear status."): near-white blue-gray canvas,
- * white cards, teal accent, navy program hero, red stop. One quiet system
- * instead of the old dark LCD palette.
+ * Polytron Wash theme — the official asset-kit tokens
+ * (design/asset-kit polytron-wash-assets/tokens.json, 2026-10-31):
+ * deep navy primary, bright teal accent (tealInk for text on light),
+ * sky accents, soft blue-gray canvas, big radii, 48px touch targets.
  */
 export const washerTheme = defineTheme({
   colors: {
-    background: "#EFF3F6",
+    background: "#F6F8FB",
     surface: "#FFFFFF",
     surfaceRaised: "#FFFFFF",
-    accent: "#0E9F8C", // teal — links, active states, progress
-    primaryContainer: "#143A56", // navy program hero card
-    onPrimaryContainer: "#F2F8FB",
-    secondaryContainer: "#DFF3EE", // teal tint (selected chips)
-    onSecondaryContainer: "#0B6B5D",
-    outline: "#D9E4EB",
-    outlineVariant: "#E7EEF3",
-    text: "#182E38",
-    textDim: "#5F7A8C",
-    danger: "#E5484D",
-    success: "#17A673",
-    warning: "#F5A524",
+    accent: "#00C2B8", // teal — decorative fills, active states
+    primaryContainer: "#0B2D5B", // navy hero card (gradient end #005D79)
+    onPrimaryContainer: "#F6FAFF",
+    secondaryContainer: "#E6F5FC", // pale — selected chips
+    onSecondaryContainer: "#007F79",
+    outline: "#E2EAF2",
+    outlineVariant: "#EDF2F8",
+    text: "#0F172A",
+    textDim: "#64748B",
+    danger: "#D92438",
+    success: "#087F5B",
+    warning: "#C77700",
   },
-  spacing: { sm: 8, md: 14, lg: 20 },
+  spacing: { sm: 8, md: 12, lg: 16, xl: 24 },
   typography: {
     display: { size: 44, lineHeight: 52, weight: 700 },
     headline: { size: 30, lineHeight: 38, weight: 700 },
-    title: { size: 17, lineHeight: 24, weight: 700 },
+    title: { size: 24, lineHeight: 32, weight: 700 },
     body: { size: 14, lineHeight: 20, weight: 400 },
-    label: { size: 11.5, lineHeight: 16, weight: 600 },
-    caption: { size: 11, lineHeight: 15, weight: 400 },
+    label: { size: 16, lineHeight: 22, weight: 600 },
+    caption: { size: 12, lineHeight: 16, weight: 400 },
   },
 });
 
-/** Cycle-mode accent colors — one per mode token, tuned for the light
- *  canvas (dark enough for 3:1+ on white, still distinct from each other). */
+/** Kit palette extras the theme roles don't carry. */
+export const KIT = {
+  navy: "#0B2D5B",
+  navyGrad: "#005D79", // primary gradient end
+  teal: "#00C2B8",
+  tealInk: "#007F79",
+  tealGrad: "#003353", // brand gradient end
+  sky: "#3DA9FF",
+  skyInk: "#0079B8",
+  success: "#087F5B",
+  successBg: "#E2FAF0",
+  danger: "#D92438",
+  dangerDark: "#B91C2D",
+  dangerBg: "#FFF0F2",
+  pale: "#E6F5FC",
+  track: "#DFF1F7",
+  muted: "#64748B",
+  border: "#E2EAF2",
+  text: "#0F172A",
+  bg: "#F6F8FB",
+  water: "#3DA9FF",
+  waterTrack: "#DFF1F7",
+  white: "#FFFFFF",
+} as const;
+
+/** Cycle-mode accents — hues from the kit's stage icons, readable on white. */
 export const MODE_COLORS: Record<string, string> = {
-  WASH: "#0E9F8C", // teal — the wash waves
-  DRAIN: "#2E90FA", // blue — outflow
-  FILL: "#17A673", // green — inflow
-  SPIN: "#7C5CE0", // purple — spin
-  WAIT: "#F5A524", // amber — settle wait
-  STOP: "#E5484D",
-  IDLE: "#8AA3B2",
+  WASH: "#007F79", // teal ink
+  DRAIN: "#0079B8", // sky ink
+  FILL: "#087F5B", // success
+  SPIN: "#0B2D5B", // navy
+  WAIT: "#C77700",
+  STOP: "#D92438",
+  IDLE: "#64748B",
 };
 
 export function modeColor(mode: string): string {
-  return MODE_COLORS[mode] ?? "#5F7A8C";
+  return MODE_COLORS[mode] ?? "#64748B";
 }
