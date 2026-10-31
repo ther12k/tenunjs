@@ -255,13 +255,13 @@ static int run_polytron_bundle_checks(const char* asset_path) {
     const char* scene_now = tenun_android_engine_get_scene(engine);
     int stop_tap_id = -1;
     /* The STOP band is PINNED CHROME now (shared chrome module): a fixed
-       tap anchored with anchorSize 120 = STOP band 64 + nav 56. The nav
+       tap anchored with anchorSize 152 = STOP band 72 + nav 80 (kit metrics). The nav
        tabs carry anchorSize 56, so scan for the 120 one and read its id
        from the object that opens before it. */
     const char* taps_start = strstr(scene_now, "\"taps\":");
     if (taps_start) {
       const char* scan = taps_start;
-      while ((scan = strstr(scan, "\"anchorSize\":120")) != NULL) {
+      while ((scan = strstr(scan, "\"anchorSize\":152")) != NULL) {
         const char* obj_start = scan;
         while (obj_start > taps_start && *obj_start != '{') obj_start--;
         /* payload serializes AFTER the anchor fields — it belongs to this
@@ -275,7 +275,7 @@ static int run_polytron_bundle_checks(const char* asset_path) {
         scan += 1;
       }
     }
-    CHECK(stop_tap_id >= 0, "Found the pinned STOP chrome tap (anchorSize 120)");
+    CHECK(stop_tap_id >= 0, "Found the pinned STOP chrome tap (anchorSize 152)");
     if (stop_tap_id >= 0) {
       char payload_buf[32];
       snprintf(payload_buf, sizeof(payload_buf), "{\"id\":%d}", stop_tap_id);

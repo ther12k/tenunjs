@@ -19,37 +19,38 @@ import { fmtDurationS, type ProgramStep } from "./protocol";
 
 const C = {
   card: "#FFFFFF",
-  bg: "#EFF3F6",
-  line: "#E4EBF0",
-  lineStrong: "#C9D7E0",
-  track: "#E4EDF2",
-  txt: "#182E38",
-  dim: "#5F7A8C",
-  faint: "#8AA3B2",
+  bg: "#F6F8FB",
+  line: "#E2EAF2", // kit border
+  lineStrong: "#C9D6E4",
+  track: "#DFF1F7", // kit track
+  txt: "#0F172A", // kit text
+  dim: "#64748B", // kit muted
+  faint: "#8DA0B5",
   off: "#A9BCC7",
-  acc: "#0E9F8C", // teal
-  accDeep: "#0B7F70", // filled buttons (white text)
-  accSoft: "#DFF3EE",
-  accLine: "#9AD8CD",
-  navy: "#143A56",
+  acc: "#00C2B8", // kit teal (decorative)
+  accDeep: "#007F79", // kit tealInk — fills with white text
+  accSoft: "#E2FAF0", // kit successBg / soft teal wash
+  accLine: "#8FD9CF",
+  navy: "#0B2D5B", // kit navy
+  navyGrad: "#005D79", // primary gradient end
   navyDim: "#9FC0D8",
   navyDim2: "#C3D8E6",
-  red: "#E5484D",
-  redDark: "#C93A40",
-  redSoft: "#FDECEC",
-  redLine: "#F0C6C8",
-  redFaint: "#C98A8E",
-  green: "#17A673",
-  greenSoft: "#E3F5EC",
-  greenLine: "#BCE4D2",
-  amber: "#F5A524",
+  red: "#D92438", // kit danger
+  redDark: "#B91C2D", // kit dangerDark
+  redSoft: "#FFF0F2", // kit dangerBg
+  redLine: "#F3C6CC",
+  redFaint: "#B2434E",
+  green: "#087F5B", // kit success
+  greenSoft: "#E2FAF0",
+  greenLine: "#BEE8D8",
+  amber: "#C77700",
   amberSoft: "#FFF4E0",
-  blue: "#2E90FA",
-  blueSoft: "#E3F1FD",
-  water: "#3FB6E8",
-  waterTrack: "#DCF1FA",
-  purple: "#7C5CE0",
-  chipBg: "#F0F4F7",
+  blue: "#0079B8", // kit skyInk (readable)
+  blueSoft: "#E6F5FC", // kit pale
+  water: "#3DA9FF", // kit sky
+  waterTrack: "#DFF1F7",
+  purple: "#0B2D5B",
+  chipBg: "#EDF2F8",
 } as const;
 
 /* -------------------------------- icons --------------------------------- */
@@ -141,7 +142,7 @@ export function drawIcon(
   put: (op: DisplayOp) => void,
   color: string,
 ): void {
-  const line = (x1: number, y1: number, x2: number, y2: number, width = 3) =>
+  const line = (x1: number, y1: number, x2: number, y2: number, width = 2) =>
     put({ op: "line", x1, y1, x2, y2, color, width });
   const wave = (y: number, amp: number): void => {
     line(cx - s, y + amp * 0.7, cx - s / 3, y - amp, 3);
@@ -344,7 +345,7 @@ export function LinkHeader(props: {
         });
       }
       // Unsupported radios get an informational row, not a dead tap.
-      if (props.supported) tap({ x: 0, y: 34, w, h: 42 }, props.onPress);
+      if (props.supported) tap({ x: 0, y: 30, w, h: 46 }, props.onPress);
     },
   });
 }
@@ -434,12 +435,12 @@ export function ProgramHero(props: {
   /** Opens the Programs tab editor for this slot. */
   onEdit?: () => void;
 }): WidgetNode {
-  const h = 138;
+  const h = 142;
   return CanvasBox({
     height: h,
     paint: (origin, put, tap) => {
       const w = origin.w;
-      put({ op: "rect", x: 0, y: 0, w, h, r: 16, color: C.navy });
+      put({ op: "gradient", x: 0, y: 0, w, h, r: 22, color: C.navy, colorTo: C.navyGrad });
       put({ op: "text", x: 20, y: 28, text: "PROGRAM TERSIMPAN", size: 10.5, weight: 700, color: C.navyDim });
       const name = sentenceCase(props.name);
       const nameW = props.onEdit ? w - 20 - 28 : w - 40;
@@ -479,7 +480,7 @@ export function ProgramHero(props: {
       if (pending || busy) {
         put({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 12, color: busy ? "#3D5E78" : C.acc, width: 1.5 });
       } else {
-        put({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 12, color: C.acc });
+        put({ op: "gradient", x: bx, y: by, w: bw, h: bh, r: 14, color: C.acc, colorTo: "#00669B" });
       }
       const label = busy ? "MESIN SEDANG BERJALAN" : pending ? "MEMULAI…" : "Mulai program";
       const tw = textWidth(label, 13.5);
@@ -516,7 +517,7 @@ export function ProgressRingCard(props: {
     height: h,
     paint: (origin, put) => {
       const w = origin.w;
-      put({ op: "rect", x: 0, y: 0, w, h, r: 20, color: C.card });
+      put({ op: "rect", x: 0, y: 0, w, h, r: 22, color: C.card });
       const cx = w / 2;
       const cy = 130;
       const r = 92;
@@ -837,7 +838,7 @@ export function FunctionGrid(props: {
           color: !enabled ? C.line : highlighted ? item.color : C.line,
           width: highlighted ? 2 : 1.5,
         });
-        drawIcon(item.icon, x + w / 2, y + 34, 14, put, enabled ? (highlighted ? item.color : "#2E90FA") : "#B4C4CE");
+        drawIcon(item.icon, x + w / 2, y + 34, 14, put, enabled ? (highlighted ? item.color : C.navy) : "#B4C4CE");
         put({
           op: "text",
           x: x + 4,
@@ -1462,8 +1463,8 @@ export function StepEditor(props: {
           width: third,
         });
         put({ op: "text", x: sx + third * 2, y: sy + 22, text: "+", size: 16, weight: 700, color: C.dim, align: "center", width: third });
-        tap({ x: sx, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, -1));
-        tap({ x: sx + sw / 2, y: sy - 3, w: sw / 2, h: 40 }, () => props.onBump(i, 1));
+        tap({ x: sx, y: sy - 6, w: sw / 2, h: 46 }, () => props.onBump(i, -1));
+        tap({ x: sx + sw / 2, y: sy - 6, w: sw / 2, h: 46 }, () => props.onBump(i, 1));
         // remove ✕ — 44px target (was 24, under every touch guideline)
         drawIcon("close", w - 30, ry + (rowH - 8) / 2, 6, put, C.redFaint);
         tap({ x: w - 52, y: sy - 5, w: 44, h: 44 }, () => props.onRemove(i));
@@ -1483,7 +1484,7 @@ export function StepEditor(props: {
         }
         put({ op: "outline", x: ax, y: chipY + 8, w: bwid, h: 34, r: 17, color: C.accLine, width: 1.5 });
         put({ op: "text", x: ax, y: chipY + 29, text: label, size: 10.5, weight: 700, color: C.accDeep, align: "center", width: bwid });
-        tap({ x: ax, y: chipY + 5, w: bwid, h: 40 }, () => props.onAdd(mode));
+        tap({ x: ax, y: chipY + 3, w: bwid, h: 44 }, () => props.onAdd(mode));
         ax += bwid + 8;
       });
       y += addH;
@@ -1601,12 +1602,12 @@ function modeLabelLocal(mode: string): string {
 
 function modeColorLocal(mode: string): string {
   const colors: Record<string, string> = {
-    WASH: "#0E9F8C",
-    DRAIN: "#2E90FA",
-    FILL: "#17A673",
-    SPIN: "#7C5CE0",
-    WAIT: "#F5A524",
-    RINSE: "#0E9F8C",
+    WASH: "#007F79",
+    DRAIN: "#0079B8",
+    FILL: "#087F5B",
+    SPIN: "#0B2D5B",
+    WAIT: "#C77700",
+    RINSE: "#007F79",
   };
   return colors[mode] ?? C.dim;
 }

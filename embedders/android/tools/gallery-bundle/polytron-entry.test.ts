@@ -102,7 +102,7 @@ describe("native polytron entry", () => {
       expect(fixed.length).toBe(4); // the four nav tabs, nothing else
       const tabW = scene.designWidth / 4;
       for (const tap of fixed) {
-        expect(tap.anchorSize).toBe(56); // nav bar only (strip removed)
+        expect(tap.anchorSize).toBe(80); // kit nav bar (navigationHeight)
         expect(tap.w).toBe(tabW);
         expect(tap.x % tabW).toBe(0); // tab columns
       }
@@ -121,7 +121,7 @@ describe("native polytron entry", () => {
       // The header tap region is the row band: h 42 (wet-hands ≥40px).
       const region = scene.taps.find((tr) => tr.payload === tap);
       expect(region!.h).toBeGreaterThanOrEqual(40);
-      expect(region!.w).toBe(scene.designWidth - 28); // full content width
+      expect(region!.w).toBe(scene.designWidth - 24); // full content width
     }
   });
 

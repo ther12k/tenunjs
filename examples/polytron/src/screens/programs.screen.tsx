@@ -241,7 +241,7 @@ export const ProgramsScreen = defineScreen({
           {offline ? (
             <ListRow
               icon="lock"
-              iconColor="#8AA3B2"
+              iconColor="#8DA0B5"
               label="Tersimpan di mesin"
               sub="sambungkan untuk melihat dan mengubah langkah"
               locked="offline"
@@ -262,7 +262,7 @@ export const ProgramsScreen = defineScreen({
             <Text variant="label">Pemeliharaan</Text>
             <ProgramCard
               name="Tub clean"
-              color="#F5A524"
+              color="#C77700"
               icon="tub"
               line="Cuci 15 mnt · Buang 1 mnt · Peras 5 mnt"
               state={offline ? "locked" : running ? "busy" : s.pending === "TUB" ? "pending" : "idle"}
