@@ -33,8 +33,8 @@
 
   // packages/jsx-runtime/src/prop-codecs.ts
   var PROP_SCHEMAS = {
-    text: { variant: { type: "string" }, color: { type: "string" } },
-    button: { variant: { type: "string" }, onPress: { type: "function" } },
+    text: { variant: { type: "string" }, color: { type: ["string", "object"] }, semanticsId: { type: "string" } },
+    button: { variant: { type: "string" }, onPress: { type: "function" }, semanticsId: { type: "string" } },
     column: {
       padding: { type: ["string", "number"] },
       gap: { type: ["string", "number"] },
@@ -50,11 +50,11 @@
     card: {
       padding: { type: ["string", "number"] },
       radius: { type: ["string", "number"] },
-      background: { type: "string" },
+      background: { type: ["string", "object"] },
       elevation: { type: "boolean" },
       semantics: { type: "object" }
     },
-    "app-bar": { title: { type: "string", required: true }, onMenu: { type: "function" } },
+    "app-bar": { title: { type: "string", required: true }, onMenu: { type: "function" }, semanticsId: { type: "string" } },
     input: {
       field: { type: "string" },
       value: { type: "string" },
@@ -401,6 +401,55 @@
   }
 
   // packages/widgets/src/display-list.ts
+  function validateLocale(value, where = "locale") {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a non-empty string`);
+    }
+    return value.trim();
+  }
+  function validateTextScale(value, where = "textScale") {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a positive finite number`);
+    }
+    return value;
+  }
+  function validatePlatform(value, where = "platform") {
+    if (value !== "android" && value !== "ios" && value !== "web") {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be "android", "ios", or "web"`);
+    }
+    return value;
+  }
+  var SEMANTIC_SLOT_NAMES = new Set([
+    "background",
+    "onBackground",
+    "primary",
+    "onPrimary",
+    "primaryContainer",
+    "onPrimaryContainer",
+    "secondaryContainer",
+    "onSecondaryContainer",
+    "surface",
+    "surfaceContainer",
+    "surfaceContainerHigh",
+    "onSurface",
+    "onSurfaceVariant",
+    "outline",
+    "outlineVariant",
+    "error",
+    "onError",
+    "success",
+    "onSuccess",
+    "warning",
+    "onWarning",
+    "inverseSurface",
+    "onInverseSurface",
+    "onPrimaryFixed"
+  ]);
+  var APP_SLOT_PATTERN = /^app\.[A-Za-z][A-Za-z0-9_]*$/;
+  function isColorRefValue(value) {
+    return typeof value === "object" && value !== null && typeof value.slot === "string" && (SEMANTIC_SLOT_NAMES.has(value.slot) || APP_SLOT_PATTERN.test(value.slot));
+  }
+
   class LayoutError extends Error {
     code;
     constructor(code, message) {
@@ -498,24 +547,169 @@
     display: { size: 44, lineHeight: 52, weight: 700 }
   };
   var DESIGN_WIDTH = 720;
-  function spacing(value, fallback) {
+  function finiteNonnegative(value, where) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a nonnegative finite number`);
+    }
+    return value;
+  }
+  function finitePositive(value, where) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be a positive finite number`);
+    }
+    return value;
+  }
+  function validateTypographyEntry(entry, where) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where} must be an object`);
+    }
+    finitePositive(entry.size, `${where}.size`);
+    if (entry.lineHeight !== undefined) {
+      finitePositive(entry.lineHeight, `${where}.lineHeight`);
+    }
+    const w = entry.weight;
+    if (w !== undefined && w !== "bold" && w !== "normal" && !(typeof w === "number" && Number.isFinite(w))) {
+      throw new LayoutError("INVALID_THEME_TOKEN", `${where}.weight must be a finite number or 'normal'/'bold'`);
+    }
+  }
+  function pushTokenScope(ctx, raw) {
+    if (raw === undefined || raw === null || typeof raw !== "object")
+      return false;
+    const scope = raw;
+    if (scope.spacing !== undefined) {
+      if (typeof scope.spacing !== "object" || scope.spacing === null || Array.isArray(scope.spacing)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.spacing must be an object");
+      }
+      for (const [key, value] of Object.entries(scope.spacing)) {
+        finiteNonnegative(value, `ThemeScope tokens.spacing.${key}`);
+      }
+    }
+    if (scope.radius !== undefined) {
+      if (typeof scope.radius !== "object" || scope.radius === null || Array.isArray(scope.radius)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.radius must be an object");
+      }
+      for (const [key, value] of Object.entries(scope.radius)) {
+        finiteNonnegative(value, `ThemeScope tokens.radius.${key}`);
+      }
+    }
+    if (scope.typography !== undefined) {
+      if (typeof scope.typography !== "object" || scope.typography === null || Array.isArray(scope.typography)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "ThemeScope tokens.typography must be an object");
+      }
+      for (const [variant, entry] of Object.entries(scope.typography)) {
+        validateTypographyEntry(entry, `ThemeScope tokens.typography.${variant}`);
+      }
+    }
+    ctx.tokenScopes.push(scope);
+    return true;
+  }
+  function buildTokenSet(theme) {
+    const spacing = { ...SPACING };
+    if (theme.spacing !== undefined) {
+      if (typeof theme.spacing !== "object" || theme.spacing === null || Array.isArray(theme.spacing)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "theme.spacing must be an object");
+      }
+      for (const [key, value] of Object.entries(theme.spacing)) {
+        spacing[key] = finiteNonnegative(value, `theme.spacing.${key}`);
+      }
+    }
+    const radius = { ...RADIUS };
+    if (theme.radius !== undefined) {
+      if (typeof theme.radius !== "object" || theme.radius === null || Array.isArray(theme.radius)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "theme.radius must be an object");
+      }
+      for (const [key, value] of Object.entries(theme.radius)) {
+        radius[key] = finiteNonnegative(value, `theme.radius.${key}`);
+      }
+    }
+    const typography = { ...TYPOGRAPHY };
+    if (theme.typography !== undefined) {
+      if (typeof theme.typography !== "object" || theme.typography === null || Array.isArray(theme.typography)) {
+        throw new LayoutError("INVALID_THEME_TOKEN", "theme.typography must be an object");
+      }
+      for (const [variant, entry] of Object.entries(theme.typography)) {
+        validateTypographyEntry(entry, `theme.typography.${variant}`);
+        const size = finitePositive(entry.size, `theme.typography.${variant}.size`);
+        let lineHeight;
+        if (entry.lineHeight !== undefined) {
+          lineHeight = finitePositive(entry.lineHeight, `theme.typography.${variant}.lineHeight`);
+        } else {
+          const existing = TYPOGRAPHY[variant];
+          lineHeight = existing ? Math.round(size * (existing.lineHeight / existing.size)) : Math.round(size * 1.3);
+        }
+        let weight;
+        const w = entry.weight;
+        if (w === "bold") {
+          weight = 700;
+        } else if (w === "normal") {
+          weight = 400;
+        } else if (w === undefined) {
+          weight = TYPOGRAPHY[variant]?.weight ?? 400;
+        } else {
+          weight = w;
+        }
+        typography[variant] = { size, lineHeight, weight };
+      }
+    }
+    return { spacing, radius, typography };
+  }
+  function spacing(ctx, value, fallback) {
     if (typeof value === "number")
       return value;
-    if (typeof value === "string" && value in SPACING)
-      return SPACING[value];
+    if (typeof value === "string") {
+      for (let index = ctx.tokenScopes.length - 1;index >= 0; index--) {
+        const scoped = ctx.tokenScopes[index].spacing?.[value];
+        if (typeof scoped === "number")
+          return scoped;
+      }
+      const themed = ctx.tokens.spacing[value];
+      if (typeof themed === "number")
+        return themed;
+    }
     return fallback;
   }
-  function radius(value, fallback) {
+  function radius(ctx, value, fallback) {
     if (typeof value === "number")
       return value;
-    if (typeof value === "string" && value in RADIUS)
-      return RADIUS[value];
+    if (typeof value === "string") {
+      for (let index = ctx.tokenScopes.length - 1;index >= 0; index--) {
+        const scoped = ctx.tokenScopes[index].radius?.[value];
+        if (typeof scoped === "number")
+          return scoped;
+      }
+      const themed = ctx.tokens.radius[value];
+      if (typeof themed === "number")
+        return themed;
+    }
     return fallback;
   }
-  function typography(variant) {
-    if (typeof variant === "string" && variant in TYPOGRAPHY)
-      return TYPOGRAPHY[variant];
-    return TYPOGRAPHY.body;
+  function typography(ctx, variant) {
+    const name = typeof variant === "string" ? variant : "body";
+    let resolved;
+    for (let index = ctx.tokenScopes.length - 1;index >= 0; index--) {
+      const scoped = ctx.tokenScopes[index].typography?.[name];
+      if (scoped !== undefined) {
+        const weight = scoped.weight === "bold" ? 700 : scoped.weight === "normal" ? 400 : scoped.weight ?? 400;
+        const lineHeight = scoped.lineHeight ?? Math.round(scoped.size * 1.3);
+        resolved = {
+          size: scoped.size,
+          lineHeight,
+          weight
+        };
+        break;
+      }
+    }
+    if (!resolved) {
+      const themed = ctx.tokens.typography[name];
+      resolved = themed !== undefined ? themed : ctx.tokens.typography.body;
+    }
+    if (ctx.textScale === 1)
+      return resolved;
+    return {
+      size: Math.round(resolved.size * ctx.textScale * 100) / 100,
+      lineHeight: Math.round(resolved.lineHeight * ctx.textScale * 100) / 100,
+      weight: resolved.weight
+    };
   }
   var CHAR_WIDTH_FACTOR = 0.56;
   function textWidth(text, size) {
@@ -569,14 +763,42 @@
     }
     return result;
   }
-  function callComponent(node) {
+  var activeWidgetContext = null;
+  function withWidgetContext(context, fn) {
+    const prev = activeWidgetContext;
+    activeWidgetContext = context;
+    try {
+      return fn();
+    } finally {
+      activeWidgetContext = prev;
+    }
+  }
+  function makeWidgetContext(ctx) {
+    return Object.freeze({
+      theme: ctx.theme,
+      tokens: ctx.tokens,
+      palette: ctx.palette,
+      slotPalette: ctx.slotPalette,
+      locale: ctx.locale,
+      textScale: ctx.textScale,
+      platform: ctx.platform
+    });
+  }
+  function callComponent(ctx, node) {
     const fn = node.kind;
-    return asNode(fn({ ...node.props, children: node.children }));
+    const prev = activeWidgetContext;
+    const widgetCtx = makeWidgetContext(ctx);
+    activeWidgetContext = widgetCtx;
+    try {
+      return asNode(fn({ ...node.props, children: node.children }, widgetCtx));
+    } finally {
+      activeWidgetContext = prev;
+    }
   }
   function resolveOnce(ctx, node) {
     let resolved = ctx.componentCache.get(node);
     if (!resolved) {
-      resolved = callComponent(node);
+      resolved = callComponent(ctx, node);
       ctx.componentCache.set(node, resolved);
     }
     return resolved;
@@ -604,11 +826,11 @@
       throw new LayoutError("INVALID_CONSTRAINT", `${name} must be finite`);
     return value;
   }
-  function gapOf(props) {
-    return nonnegative(spacing(props.gap, 0), "gap");
+  function gapOf(ctx, props) {
+    return nonnegative(spacing(ctx, props.gap, 0), "gap");
   }
-  function paddingOf(props, fallback) {
-    return nonnegative(spacing(props.padding, fallback), "padding");
+  function paddingOf(ctx, props, fallback) {
+    return nonnegative(spacing(ctx, props.padding, fallback), "padding");
   }
   function loose(maxW, maxH = Infinity) {
     return { minW: 0, maxW, minH: 0, maxH };
@@ -660,8 +882,8 @@
   }
   function flexLayout(ctx, node, bounds, axis) {
     const horizontal = axis === "row";
-    const pad = paddingOf(node.props, 0);
-    const gap = gapOf(node.props);
+    const pad = paddingOf(ctx, node.props, 0);
+    const gap = gapOf(ctx, node.props);
     const inner = inset(bounds, pad);
     const mainMax = horizontal ? inner.maxW : inner.maxH;
     const crossMax = horizontal ? inner.maxH : inner.maxW;
@@ -754,8 +976,8 @@
     return { frame, children };
   }
   function scrollLayout(ctx, node, bounds) {
-    const pad = paddingOf(node.props, 0);
-    const gap = gapOf(node.props);
+    const pad = paddingOf(ctx, node.props, 0);
+    const gap = gapOf(ctx, node.props);
     const inner = inset(bounds, pad);
     const kids = childNodes(node).map((kid) => resolveNode(ctx, kid));
     for (const kid of kids) {
@@ -856,8 +1078,27 @@
     if (kind === Canvas) {
       return constrain({ w: dimension(props, "width") ?? bounds.maxW, h: dimension(props, "height") ?? 0 }, bounds);
     }
-    if (kind === ThemeScope)
-      return decorationLayout(ctx, node, bounds).frame;
+    if (kind === ThemeScope) {
+      const pushed = pushTokenScope(ctx, props.tokens);
+      const prevLocale = ctx.locale;
+      const prevTextScale = ctx.textScale;
+      const prevPlatform = ctx.platform;
+      if (props.locale !== undefined)
+        ctx.locale = validateLocale(props.locale, "ThemeScope locale");
+      if (props.textScale !== undefined)
+        ctx.textScale = validateTextScale(props.textScale, "ThemeScope textScale");
+      if (props.platform !== undefined)
+        ctx.platform = validatePlatform(props.platform, "ThemeScope platform");
+      try {
+        return decorationLayout(ctx, node, bounds).frame;
+      } finally {
+        if (pushed)
+          ctx.tokenScopes.pop();
+        ctx.locale = prevLocale;
+        ctx.textScale = prevTextScale;
+        ctx.platform = prevPlatform;
+      }
+    }
     if (kind === SizedBoxKind) {
       const own = withDimensions(bounds, props);
       const frames = childNodes(node).map((kid) => measure(ctx, kid, own));
@@ -882,7 +1123,7 @@
       const own = withDimensions(bounds, props);
       if (childNodes(node).length === 0)
         return constrain({ w: own.maxW, h: own.minH }, own);
-      return decorationLayout(ctx, node, own, paddingOf(props, 0)).frame;
+      return decorationLayout(ctx, node, own, paddingOf(ctx, props, 0)).frame;
     }
     if (kind === IconKind) {
       const size = dimension(props, "size") ?? 24;
@@ -893,17 +1134,17 @@
     }
     switch (kind) {
       case "text": {
-        const ty = typography(props.variant);
+        const ty = typography(ctx, props.variant);
         const lines = wrapText(textContent(node), ty.size, Math.max(bounds.maxW, 1));
         const widest = Math.max(...lines.map((line) => textWidth(line, ty.size)));
         return constrain({ w: Math.min(widest, bounds.maxW), h: lines.length * ty.lineHeight }, bounds);
       }
       case "button": {
         const label = textContent(node) || "Button";
-        return constrain({ w: Math.max(96, textWidth(label, TYPOGRAPHY.body.size) + 48), h: 64 }, bounds);
+        return constrain({ w: Math.max(96, textWidth(label, typography(ctx, "body").size) + 48), h: 64 }, bounds);
       }
       case "card":
-        return decorationLayout(ctx, node, bounds, paddingOf(props, 16), spacing("sm", 8)).frame;
+        return decorationLayout(ctx, node, bounds, paddingOf(ctx, props, 16), spacing(ctx, "sm", 8)).frame;
       case "column":
         return flexLayout(ctx, node, bounds, "column").frame;
       case "row":
@@ -911,7 +1152,7 @@
       case "app-bar":
         return constrain({ w: bounds.maxW, h: 96 }, bounds);
       case "spacer":
-        return constrain({ w: 0, h: nonnegative(spacing(props.size, 16), "spacer size") }, bounds);
+        return constrain({ w: 0, h: nonnegative(spacing(ctx, props.size, 16), "spacer size") }, bounds);
       case "scaffold":
         return scaffoldLayout(ctx, node, bounds).frame;
       default:
@@ -1032,14 +1273,24 @@
       });
     }
     ctx.ops.push(descriptor);
+    let focusTapId;
     if (!props.readOnly) {
-      addTap(ctx, x, y, w, h, () => {
+      focusTapId = addTap(ctx, x, y, w, h, () => {
         if (!ctx.textInput) {
           throw new TextInputError("TEXT_INPUT_RUNTIME_REQUIRED", "Editable TextField focus requires ApplicationRuntime");
         }
         ctx.textInput.focus(props.id);
       });
     }
+    ctx.semantics.push({
+      id: props.id,
+      role: "textfield",
+      value: descriptor.text,
+      hint: props.label ?? props.placeholder,
+      state: { focused: descriptor.focused, readOnly: props.readOnly === true },
+      bounds: { x, y, w, h },
+      ...focusTapId !== undefined ? { actions: [{ name: "focus", tapId: focusTapId }] } : {}
+    });
   }
   function place(ctx, node, x, y, frame) {
     const { kind, props } = node;
@@ -1075,12 +1326,33 @@
     }
     if (kind === ThemeScope) {
       const merged = { ...ctx.palette, ...props.scheme ?? {} };
+      const slotOverlay = props.slots;
+      const pushed = slotOverlay !== undefined && slotOverlay !== null && typeof slotOverlay === "object";
+      if (pushed)
+        ctx.slotScopes.push(slotOverlay);
+      const tokenScope = props.tokens;
+      const pushedTokens = pushTokenScope(ctx, tokenScope);
+      const locale = props.locale !== undefined ? validateLocale(props.locale, "ThemeScope locale") : ctx.locale;
+      const textScale = props.textScale !== undefined ? validateTextScale(props.textScale, "ThemeScope textScale") : ctx.textScale;
+      const platform = props.platform !== undefined ? validatePlatform(props.platform, "ThemeScope platform") : ctx.platform;
       const scoped = {
         ...ctx,
         palette: merged,
-        theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } }
+        theme: { ...ctx.theme, colors: { ...ctx.theme.colors, ...scopeThemeColors(merged) } },
+        locale,
+        textScale,
+        platform
       };
-      placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
+      try {
+        placeChildren(scoped, decorationLayout(scoped, node, bounds), x, y);
+      } finally {
+        if (pushed)
+          ctx.slotScopes.pop();
+        if (pushedTokens)
+          ctx.tokenScopes.pop();
+        if (scoped.usedRefs)
+          ctx.usedRefs = true;
+      }
       return h;
     }
     if (kind === SizedBoxKind) {
@@ -1106,21 +1378,29 @@
       const regionId = typeof props.id === "string" && props.id.length > 0 ? props.id : `scroll@${x},${y},${w},${h}`;
       const outerOps = ctx.ops;
       const outerTaps = ctx.tapRegions;
+      const outerSemantics = ctx.semantics;
       ctx.ops = [];
       ctx.tapRegions = [];
+      ctx.semantics = [];
       let nestedOps = [];
       let nestedTaps = [];
+      let nestedSemantics = [];
       try {
         placeChildren(ctx, layout, 0, 0);
         nestedOps = ctx.ops;
         nestedTaps = ctx.tapRegions;
+        nestedSemantics = ctx.semantics;
       } finally {
         ctx.ops = outerOps;
         ctx.tapRegions = outerTaps;
+        ctx.semantics = outerSemantics;
       }
-      const contentHeight = layout.children.length > 0 ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(props, 0) : 0;
+      const contentHeight = layout.children.length > 0 ? Math.max(...layout.children.map((child) => child.y + child.frame.h)) + paddingOf(ctx, props, 0) : 0;
       for (const tap of nestedTaps)
         outerTaps.push({ ...tap, scroll: regionId });
+      for (const sem of nestedSemantics) {
+        outerSemantics.push({ ...sem, scroll: regionId });
+      }
       outerOps.push({ op: "scroll-region", id: regionId, x, y, w, h, contentHeight, ops: nestedOps });
       return h;
     }
@@ -1129,16 +1409,33 @@
       return h;
     }
     if (kind === GestureDetectorKind) {
-      placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
-      if (typeof props.onTap === "function")
-        addTap(ctx, x, y, w, h, props.onTap);
+      ctx.absorbedText++;
+      try {
+        placeChildren(ctx, decorationLayout(ctx, node, bounds), x, y);
+      } finally {
+        ctx.absorbedText--;
+      }
+      const actions = [];
+      if (typeof props.onTap === "function") {
+        actions.push({ name: "press", tapId: addTap(ctx, x, y, w, h, props.onTap) });
+      }
       if (typeof props.onLongPress === "function") {
-        addTap(ctx, x, y, w, h, props.onLongPress, "long-press");
+        actions.push({ name: "long-press", tapId: addTap(ctx, x, y, w, h, props.onLongPress, "long-press") });
+      }
+      if (actions.length > 0 || props.semanticsLabel !== undefined) {
+        const label = typeof props.semanticsLabel === "string" ? props.semanticsLabel : deepTextContent(node);
+        ctx.semantics.push({
+          id: semanticId(props.semanticsId, { x, y, w, h }),
+          role: "generic",
+          ...label.length > 0 ? { label } : {},
+          bounds: { x, y, w, h },
+          ...actions.length > 0 ? { actions } : {}
+        });
       }
       return h;
     }
     if (kind === ContainerKind) {
-      const pad = paddingOf(props, 0);
+      const pad = paddingOf(ctx, props, 0);
       const radius = dimension(props, "radius") ?? 0;
       const fill = roleColor(ctx, props.color);
       if (fill !== undefined) {
@@ -1186,7 +1483,7 @@
     }
     switch (kind) {
       case "text": {
-        const ty = typography(props.variant);
+        const ty = typography(ctx, props.variant);
         const lines = wrapText(textContent(node), ty.size, Math.max(w, 1));
         const align = props.align === "center" ? "center" : "left";
         const boxWidth = typeof props.width === "number" ? props.width : w;
@@ -1203,10 +1500,21 @@
             color: roleColor(ctx, props.color) ?? ctx.theme.colors?.text ?? "#F2F2F7"
           });
         });
+        if (ctx.absorbedText === 0) {
+          const text = textContent(node);
+          if (text.length > 0) {
+            ctx.semantics.push({
+              id: semanticId(props.semanticsId, { x, y, w, h }),
+              role: props.variant === "title" || props.variant === "headline" || props.variant === "display" ? "header" : "text",
+              label: text,
+              bounds: { x, y, w, h }
+            });
+          }
+        }
         return h;
       }
       case "button": {
-        const ty = TYPOGRAPHY.body;
+        const ty = typography(ctx, "body");
         const label = textContent(node) || "Button";
         const variant = typeof props.variant === "string" ? props.variant : "primary";
         const palette = ctx.theme.colors ?? {};
@@ -1250,12 +1558,27 @@
           color: labelColor
         });
         if (typeof props.onPress === "function") {
-          addTap(ctx, x, y, w, h, props.onPress);
+          const tapId = addTap(ctx, x, y, w, h, props.onPress);
+          ctx.semantics.push({
+            id: semanticId(props.semanticsId, { x, y, w, h }),
+            role: "button",
+            label,
+            bounds: { x, y, w, h },
+            actions: [{ name: "press", tapId }]
+          });
+        } else {
+          ctx.semantics.push({
+            id: semanticId(props.semanticsId, { x, y, w, h }),
+            role: "button",
+            label,
+            state: { disabled: true },
+            bounds: { x, y, w, h }
+          });
         }
         return h;
       }
       case "card": {
-        const pad = paddingOf(props, 16);
+        const pad = paddingOf(ctx, props, 16);
         const elevated = props.background === "surface" || props.elevation === true;
         ctx.ops.push({
           op: "rect",
@@ -1263,11 +1586,22 @@
           y,
           w,
           h,
-          r: radius(props.radius, 14),
+          r: radius(ctx, props.radius, 14),
           color: roleColor(ctx, props.background) ?? ctx.theme.colors?.surfaceRaised ?? "#1C1C24",
           ...elevated ? { shadow: 12 } : {}
         });
-        placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing("sm", 8)), x, y);
+        placeChildren(ctx, decorationLayout(ctx, node, bounds, pad, spacing(ctx, "sm", 8)), x, y);
+        const sem = props.semantics;
+        if (sem !== undefined && sem !== null && typeof sem === "object") {
+          ctx.semantics.push({
+            id: semanticId(sem.id, { x, y, w, h }),
+            role: sem.role ?? "container",
+            ...typeof sem.label === "string" ? { label: sem.label } : {},
+            ...typeof sem.hint === "string" ? { hint: sem.hint } : {},
+            ...sem.liveRegion === true || sem.role === "alert" ? { liveRegion: true } : {},
+            bounds: { x, y, w, h }
+          });
+        }
         return h;
       }
       case "column":
@@ -1279,9 +1613,10 @@
         ctx.ops.push({ op: "rect", x, y, w, h, r: 0, color: ctx.theme.colors?.surface ?? "#101014" });
         const hasMenu = typeof props.onMenu === "function";
         const titleX = hasMenu ? 100 : 40;
+        let menuTapId;
         if (hasMenu) {
           ctx.ops.push({ op: "text", x: x + 36, y: y + 62, text: "☰", size: 34, weight: 600, color: ctx.theme.colors?.text ?? "#F2F2F7" });
-          addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu);
+          menuTapId = addTap(ctx, x + 12, y + 12, 72, 72, props.onMenu);
         }
         const title = typeof props.title === "string" ? props.title : "";
         ctx.ops.push({
@@ -1302,6 +1637,23 @@
           color: ctx.theme.colors?.outlineVariant ?? "#26262F",
           width: 2
         });
+        if (title.length > 0) {
+          ctx.semantics.push({
+            id: semanticId(props.semanticsId, { x: x + titleX, y, w: Math.max(w - titleX, 0), h }),
+            role: "header",
+            label: title,
+            bounds: { x: x + titleX, y, w: Math.max(w - titleX, 0), h }
+          });
+        }
+        if (menuTapId !== undefined) {
+          ctx.semantics.push({
+            id: `${semanticId(props.semanticsId, { x, y, w, h })}#menu`,
+            role: "button",
+            label: "Menu",
+            bounds: { x: x + 12, y: y + 12, w: 72, h: 72 },
+            actions: [{ name: "press", tapId: menuTapId }]
+          });
+        }
         return h;
       }
       case "spacer":
@@ -1344,6 +1696,12 @@
     }
   }
   function roleColor(ctx, token) {
+    if (isColorRefValue(token)) {
+      if (ctx.slotScopes.length > 0)
+        return resolveSlotRef(ctx, token);
+      ctx.usedRefs = true;
+      return token;
+    }
     if (typeof token !== "string")
       return;
     if (token.startsWith("#"))
@@ -1355,6 +1713,19 @@
     if (typeof themed === "string")
       return themed;
     return;
+  }
+  function resolveSlotRef(ctx, ref) {
+    for (let index = ctx.slotScopes.length - 1;index >= 0; index--) {
+      const overlay = ctx.slotScopes[index];
+      const scoped = overlay[ref.slot];
+      if (typeof scoped === "string")
+        return scoped;
+    }
+    const value = ctx.slotPalette?.[ref.slot];
+    if (typeof value !== "string") {
+      throw new LayoutError("INVALID_COLOR_REF", `color slot "${ref.slot}" has no palette value (pass layoutScreen a palette or add the slot to one)`);
+    }
+    return value;
   }
   var STACK_ALIGNMENT = {
     topLeft: { ax: 0, ay: 0 },
@@ -1368,8 +1739,8 @@
     bottomRight: { ax: 1, ay: 1 }
   };
   function layoutWrapChildren(ctx, node, maxWidth) {
-    const spacingValue = spacing(node.props.spacing, 8);
-    const runSpacing = spacing(node.props.runSpacing, 8);
+    const spacingValue = spacing(ctx, node.props.spacing, 8);
+    const runSpacing = spacing(ctx, node.props.runSpacing, 8);
     const lines = [];
     let entries = [];
     let lineWidth = 0;
@@ -1406,6 +1777,21 @@
       return value;
     return fallback;
   }
+  function semanticId(id, b) {
+    if (typeof id === "string" && id.length > 0)
+      return id;
+    return `sem@${b.x},${b.y},${b.w},${b.h}`;
+  }
+  function deepTextContent(node) {
+    let out = "";
+    for (const child of node.children) {
+      if (typeof child === "string" || typeof child === "number")
+        out += String(child);
+      else if (isWidgetNode(child))
+        out += deepTextContent(asNode(child));
+    }
+    return out;
+  }
   function addTap(ctx, x, y, w, h, run, action = "tap", fixed = false, anchor, anchorSize) {
     const id = ctx.tapRuns.length;
     ctx.tapRuns.push(run);
@@ -1420,20 +1806,34 @@
       ...fixed && anchor ? { anchor } : {},
       ...fixed && anchorSize !== undefined ? { anchorSize } : {}
     });
+    return id;
   }
-  function layoutScreen(theme, tree, viewportOrWidth = DESIGN_WIDTH, textInput) {
+  function layoutScreen(theme, tree, viewportOrWidth = DESIGN_WIDTH, textInput, options) {
     const viewport = typeof viewportOrWidth === "number" ? undefined : validateLayoutViewport(viewportOrWidth);
     const designWidth = typeof viewportOrWidth === "number" ? viewportOrWidth : viewport.width;
     if (!Number.isFinite(designWidth) || designWidth <= 0) {
       throw new LayoutError("INVALID_VIEWPORT", "Design width must be a positive finite number");
     }
+    const locale = options?.locale !== undefined ? validateLocale(options.locale, "options.locale") : "en-US";
+    const textScale = options?.textScale !== undefined ? validateTextScale(options.textScale, "options.textScale") : 1;
+    const platform = options?.platform !== undefined ? validatePlatform(options.platform, "options.platform") : "android";
     const ctx = {
       theme,
       designWidth,
       palette: resolveRoles(theme),
+      slotPalette: options?.palette,
+      slotScopes: [],
+      tokens: buildTokenSet(theme),
+      tokenScopes: [],
+      locale,
+      textScale,
+      platform,
+      usedRefs: false,
       ops: [],
       tapRegions: [],
       tapRuns: [],
+      semantics: [],
+      absorbedText: 0,
       textFields: [],
       textFieldIds: new Set,
       textInput,
@@ -1446,7 +1846,11 @@
           contentHeight: 0,
           background: theme.colors?.surface ?? "#101014",
           ops: ctx.ops,
-          taps: ctx.tapRegions
+          taps: ctx.tapRegions,
+          semantics: {
+            semanticsVersion: 1,
+            nodes: ctx.semantics
+          }
         };
       }
     };
@@ -1457,7 +1861,29 @@
     place(ctx, root, 0, 0, frame);
     const scene = ctx.finish();
     scene.contentHeight = frame.h;
-    return { scene, tapRuns: ctx.tapRuns, textFields: ctx.textFields };
+    let semanticScene;
+    if (ctx.usedRefs) {
+      semanticScene = { ...scene, ops: scene.ops.slice() };
+      scene.ops = bakeRetainedRefs(scene.ops, ctx);
+    }
+    return { scene, ...semanticScene !== undefined ? { semanticScene } : {}, tapRuns: ctx.tapRuns, textFields: ctx.textFields };
+  }
+  function bakeRetainedRefs(ops, ctx) {
+    return ops.map((op) => {
+      if (op.op === "scroll-region") {
+        return { ...op, ops: bakeRetainedRefs([...op.ops], ctx) };
+      }
+      let baked = op;
+      for (const field of ["color", "colorTo", "track"]) {
+        const value = op[field];
+        if (isColorRefValue(value)) {
+          if (baked === op)
+            baked = { ...op };
+          baked[field] = resolveSlotRef(ctx, value);
+        }
+      }
+      return baked;
+    });
   }
   // packages/widgets/src/app-runtime.ts
   var APPLICATION_STATE_SCHEMA = 1;
@@ -1502,6 +1928,10 @@
   class ApplicationRuntime {
     screens;
     theme;
+    slotPalette;
+    locale;
+    textScale;
+    platform;
     services;
     designWidth;
     viewport;
@@ -1533,6 +1963,10 @@
       const viewport = options.viewport === undefined ? undefined : validateLayoutViewport(options.viewport);
       this.screens = options.screens;
       this.theme = options.theme;
+      this.slotPalette = options.palette;
+      this.locale = options.locale !== undefined ? validateLocale(options.locale, "runtime options.locale") : "en-US";
+      this.textScale = options.textScale !== undefined ? validateTextScale(options.textScale, "runtime options.textScale") : 1;
+      this.platform = options.platform !== undefined ? validatePlatform(options.platform, "runtime options.platform") : "android";
       this.services = { ...options.services ?? {} };
       this.designWidth = options.designWidth;
       this.viewport = viewport;
@@ -1572,6 +2006,64 @@
       this.theme = theme;
       this.notifyStale();
     }
+    setPalette(palette) {
+      this.assertLive();
+      if (!palette || typeof palette !== "object" || Array.isArray(palette)) {
+        throw new ApplicationRuntimeError("INVALID_THEME", "palette must be an object");
+      }
+      this.slotPalette = palette;
+      this.notifyStale();
+    }
+    getLocale() {
+      return this.locale;
+    }
+    setLocale(locale) {
+      this.assertLive();
+      this.locale = validateLocale(locale, "setLocale");
+      this.notifyStale();
+    }
+    getTextScale() {
+      return this.textScale;
+    }
+    setTextScale(scale) {
+      this.assertLive();
+      this.textScale = validateTextScale(scale, "setTextScale");
+      this.notifyStale();
+    }
+    getPlatform() {
+      return this.platform;
+    }
+    setPlatform(platform) {
+      this.assertLive();
+      this.platform = validatePlatform(platform, "setPlatform");
+      this.notifyStale();
+    }
+    getWidgetContext() {
+      return Object.freeze({
+        theme: this.theme,
+        tokens: buildTokenSet(this.theme),
+        palette: resolveRoles(this.theme),
+        slotPalette: this.slotPalette,
+        locale: this.locale,
+        textScale: this.textScale,
+        platform: this.platform
+      });
+    }
+    setEnvironment(environment) {
+      this.assertLive();
+      if (!environment || typeof environment !== "object" || Array.isArray(environment)) {
+        throw new ApplicationRuntimeError("INVALID_THEME", "environment must be an object");
+      }
+      const locale = environment.locale !== undefined ? validateLocale(environment.locale, "environment.locale") : this.locale;
+      const textScale = environment.textScale !== undefined ? validateTextScale(environment.textScale, "environment.textScale") : this.textScale;
+      const platform = environment.platform !== undefined ? validatePlatform(environment.platform, "environment.platform") : this.platform;
+      const changed = locale !== this.locale || textScale !== this.textScale || platform !== this.platform;
+      this.locale = locale;
+      this.textScale = textScale;
+      this.platform = platform;
+      if (changed)
+        this.notifyStale();
+    }
     endTransitionBurst() {
       this.pendingTransition = null;
     }
@@ -1606,16 +2098,22 @@
       this.assertLive();
       const session = this.sessions.get(this.current) ?? this.mount(this.current);
       this.sessions.set(this.current, session);
-      const tree = this.screens[session.name].view({
+      const rootCtx = this.getWidgetContext();
+      const tree = withWidgetContext(rootCtx, () => this.screens[session.name].view({
         state: session.state,
         actions: session.actions
-      });
+      }, rootCtx));
       if (tree === null || tree === undefined) {
         throw new ApplicationRuntimeError("INVALID_VIEW", `screen "${session.name}" produced a null view`);
       }
-      const { scene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
+      const { scene, semanticScene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
         active: this.activeTextInput,
         focus: (id) => this.focusTextInput(id)
+      }, {
+        palette: this.slotPalette,
+        locale: this.locale,
+        textScale: this.textScale,
+        platform: this.platform
       });
       this.textFields = new Map(textFields.map((binding) => [binding.props.id, binding]));
       const focused = textFields.find((binding) => binding.descriptor.focused)?.descriptor;
@@ -1631,7 +2129,7 @@
       if (this.pendingTransition !== null) {
         scene.transition = this.pendingTransition;
       }
-      return { scene, tapRuns };
+      return semanticScene !== undefined ? { scene, semanticScene, tapRuns } : { scene, tapRuns };
     }
     dispatch(action, payload) {
       this.assertLive();
@@ -1921,6 +2419,14 @@
       if (normalized === "VIEWPORT") {
         if (typeof app.setViewport === "function") {
           app.setViewport(payload);
+        } else {
+          app.dispatch(normalized, payload);
+        }
+        return JSON.stringify({ route: app.route() });
+      }
+      if (normalized === "ENVIRONMENT") {
+        if (typeof app.setEnvironment === "function") {
+          app.setEnvironment(payload);
         } else {
           app.dispatch(normalized, payload);
         }
