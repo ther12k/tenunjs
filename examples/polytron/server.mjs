@@ -115,6 +115,20 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  if (pathname === "/preview.js") {
+    const jsPath = path.join(distDir, "preview.js");
+    if (fs.existsSync(jsPath)) {
+      const stat = fs.statSync(jsPath);
+      res.writeHead(200, {
+        "Content-Type": "text/javascript",
+        "Content-Length": stat.size,
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+      });
+      fs.createReadStream(jsPath).pipe(res);
+      return;
+    }
+  }
+
   if (pathname === "/" || pathname === "/index.html") {
     if (fs.existsSync(indexPath)) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
