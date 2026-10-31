@@ -132,9 +132,12 @@ export function withChrome(app: ChromeApp) {
         const cx = tabX + tabW / 2;
         const color = active ? KIT.tealInk : KIT.muted;
         drawFixedIcon(scene, tab.icon, cx, 28, 10, color, NAV_H);
+        // Label centered under its icon: the box is the whole tab column.
+        // width 0 left-aligned the label AT the icon center on Android
+        // (x + max(0, (width-measured)/2) = x) — visibly right-shifted.
         scene.ops.push({
-          op: "text", x: cx, y: 63, text: tab.label, size: 11,
-          weight: active ? 700 : 500, color, align: "center", width: 0,
+          op: "text", x: tabX, y: 63, text: tab.label, size: 11,
+          weight: active ? 700 : 500, color, align: "center", width: tabW,
           fixed: true, anchor: "bottom", anchorSize: NAV_H,
         });
         const tapId = res.tapRuns.length;

@@ -223,8 +223,9 @@ export const ControlsScreen = defineScreen({
             ) : null}
           </Column>
 
-          <ChromeSpacer />
-
+          {/* The snack sits ABOVE the chrome-clearance spacer: after it,
+              max scroll left the whole reply hidden behind the pinned
+              STOP/nav chrome (review 2026-10-31). */}
           {s.snack ? (
             <SnackBar
               message={`${s.snack.ok ? "OK" : s.snack.busy ? "BUSY" : "ERR"} · ${s.snack.msg}`}
@@ -232,6 +233,8 @@ export const ControlsScreen = defineScreen({
               onAction={() => actions.clearSnack()}
             />
           ) : null}
+
+          <ChromeSpacer />
         </Column>
       </Scaffold>
     );

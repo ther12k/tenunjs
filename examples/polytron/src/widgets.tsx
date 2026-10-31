@@ -787,10 +787,11 @@ export function ActivitySummaryCard(props: { line: string | null; at: number | n
   });
 }
 
-/** Bottom clearance for the pinned chrome (STOP band + nav). Every screen
- *  ends with one so content never scrolls under the fixed area. */
+/** Bottom clearance for the pinned chrome (STOP band 72 + nav 80 = 152 in
+ *  chrome.ts — kept in sync by the chrome tests). Every screen ends with
+ *  one so content never scrolls under the fixed area. */
 export function ChromeSpacer(): WidgetNode {
-  return CanvasBox({ height: 128, paint: () => undefined });
+  return CanvasBox({ height: 152, paint: () => undefined });
 }
 
 /* ----------------------------- function cards ---------------------------- */
@@ -1432,8 +1433,14 @@ export function StepEditor(props: {
           width: 22,
         });
         drawIcon(modeIcon(step.mode), 54, ry + (rowH - 8) / 2, 10, put, modeColorLocal(step.mode));
-        const sw = 118;
-        const nameEdge = w - 24 - sw - 48;
+        // Stepper pill + a DISJOINT 44px delete column. The old layout drew
+        // ✕ over the pill's right edge and let the delete tap cover the +
+        // tap — Android's topmost-wins dispatch then DELETED the step when
+        // the user tapped "+" (review 2026-10-31).
+        const delX = w - 72; // delete column [w-72, w-28]
+        const sw = 104; // stepper pill, right edge 8px clear of the delete column
+        const sx = delX - 8 - sw;
+        const nameEdge = sx - 14;
         put({
           op: "text",
           x: 74,
@@ -1446,7 +1453,6 @@ export function StepEditor(props: {
         put({ op: "text", x: 74, y: ry + 40, text: `langkah ${i + 1}`, size: 9.5, weight: 400, color: C.faint });
         // stepper pill — the value shows honest minutes:seconds so a ±30 s
         // bump is always visible (whole minutes stay "N mnt").
-        const sx = w - 24 - sw;
         const sy = ry + (rowH - 8) / 2 - 17;
         put({ op: "outline", x: sx, y: sy, w: sw, h: 34, r: 17, color: C.lineStrong, width: 1.5 });
         const third = sw / 3;
@@ -1465,9 +1471,9 @@ export function StepEditor(props: {
         put({ op: "text", x: sx + third * 2, y: sy + 22, text: "+", size: 16, weight: 700, color: C.dim, align: "center", width: third });
         tap({ x: sx, y: sy - 6, w: sw / 2, h: 46 }, () => props.onBump(i, -1));
         tap({ x: sx + sw / 2, y: sy - 6, w: sw / 2, h: 46 }, () => props.onBump(i, 1));
-        // remove ✕ — 44px target (was 24, under every touch guideline)
-        drawIcon("close", w - 30, ry + (rowH - 8) / 2, 6, put, C.redFaint);
-        tap({ x: w - 52, y: sy - 5, w: 44, h: 44 }, () => props.onRemove(i));
+        // remove ✕ — its own 44px column, never under the + tap
+        drawIcon("close", delX + 22, ry + (rowH - 8) / 2, 6, put, C.redFaint);
+        tap({ x: delX, y: sy - 5, w: 44, h: 44 }, () => props.onRemove(i));
       });
       y += props.steps.length * rowH;
       // Quick-add chips — wrap to the next row when the line runs out;
