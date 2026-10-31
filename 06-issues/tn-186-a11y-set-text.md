@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-186: Accessibility ACTION_SET_TEXT through the revisioned text contract"
 summary: "TN-091's ACTION_SET_TEXT remainder: editable textfield nodes expose the framework action, and the host routes it through the revisioned TEXT_EDIT contract — focusing the field via its ORDINARY tap when no session is live (accessibility activation ≡ touch), committing full replacements, refusing read-only fields and contract violations fail-visibly."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-186"
 milestone: "M5"
 priority: "P1"
@@ -62,3 +62,15 @@ a physical device.
 - Physical-device TalkBack journeys (TN-091's remaining evidence,
   needs the phone per ADR-0019).
 - ACTION_CHANGE_FOCUS/next/previous-navigation semantics.
+
+## Status note (2026-10-31, closed)
+
+Implemented in PR #270: editable textfield nodes expose ACTION_SET_TEXT,
+the host focuses unfocused fields through their ordinary tap and commits
+full replacements through the revisioned TEXT_EDIT path the IME uses,
+with read-only refusal and contract violations failing visibly.
+Device evidence: EngineAccessibilitySetTextTest on the gate emulator
+(focus-then-replace, live-session rewrite, clear-to-empty, announced
+value follows the commit, read-only refusal, multiline rejection with
+prior text intact); 8/8 CI gates. TN-091's only remainder is the
+physical TalkBack journeys (ADR-0019 evidence).

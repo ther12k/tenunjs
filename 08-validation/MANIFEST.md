@@ -291,7 +291,7 @@ status: accepted
 | 06-issues/tn-183-android-canvas-fallback-and-transition-scroll.md | 75f0393f9ad856730ab55652fe811fedd22ba590d9de02178981d663f88f4bc1 |
 | 06-issues/tn-184-skia-host-scene-parity.md | a96fcf728c7021aea6e57719c50949936e8df22f545b8dfda0109a2105d08596 |
 | 06-issues/tn-185-android-skia-parity-harness.md | 3671d7b748728476d09461484e3fc37201ceb97b7c08635f8b47cd42e084dbfe |
-| 06-issues/tn-186-a11y-set-text.md | ea4280691796972903bf8628b88b30f5fdaff48b072fe79ed8a8499db9f547e2 |
+| 06-issues/tn-186-a11y-set-text.md | cb82474fd9621ed7b74fa2f38e7c8a8f9ff3b782a4ef1435979070add8741936 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
