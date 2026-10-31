@@ -160,6 +160,7 @@ class TenunSurfaceView @JvmOverloads constructor(
             // renders the JavaScript application's initial state.
             value?.getLatestScene()?.let { syncFromScene(it) }
             if (isSurfaceValid) maybeDeliverViewport(width, height)
+            maybeDeliverEnvironment()
             redraw()
         }
 
@@ -254,6 +255,77 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
     }
 
+    // TN-187 environment delivery: the device's locale + font scale reach
+    // the runtime's inherited context (TN-068) through the ENVIRONMENT
+    // verb. Bundles without setEnvironment answer NULL across JNI
+    // (UNKNOWN_ACTION) and are not asked again until the engine is
+    // swapped — the VIEWPORT negotiation discipline.
+    private var environmentNegotiated = false
+    private var lastEnvironmentJson: String? = null
+
+    private fun maybeDeliverEnvironment() {
+        val eng = engine ?: return
+        val configuration = resources.configuration
+        val locale = configuration.locales.get(0)?.toString() ?: "en-US"
+        val fontScale = configuration.fontScale.takeIf { it > 0f } ?: 1f
+        val json = JSONObject()
+            .put("locale", locale)
+            .put("textScale", fontScale.toDouble())
+            .put("platform", "android")
+            .toString()
+        if (json == lastEnvironmentJson) return
+        val delivered = try {
+            eng.dispatchActionResult("ENVIRONMENT", json) != null
+        } catch (e: Exception) {
+            Log.w(TAG, "environment delivery failed: ${e.message}")
+            false
+        }
+        if (!delivered) {
+            if (environmentNegotiated) {
+                // The bundle negotiated before but rejected this one — a
+                // contract failure worth a line; keep the last good env.
+                Log.w(TAG, "ENVIRONMENT dispatch rejected; keeping last committed environment")
+            }
+            return
+        }
+        environmentNegotiated = true
+        lastEnvironmentJson = json
+        syncFromScene(eng.getLatestScene())
+        redraw()
+    }
+
+    /** TN-187 evidence hook: drives the production delivery path with an
+     *  explicit environment (the gate cannot reconfigure the emulator's
+     *  font scale mid-test). Returns whether the bundle adopted it. */
+    fun deliverEnvironmentForTest(locale: String, textScale: Double): Boolean {
+        val eng = engine ?: return false
+        val json = JSONObject()
+            .put("locale", locale)
+            .put("textScale", textScale)
+            .put("platform", "android")
+            .toString()
+        if (json == lastEnvironmentJson) return true
+        val delivered = try {
+            eng.dispatchActionResult("ENVIRONMENT", json) != null
+        } catch (e: Exception) {
+            Log.w(TAG, "environment delivery failed: ${e.message}")
+            false
+        }
+        if (!delivered) return false
+        environmentNegotiated = true
+        lastEnvironmentJson = json
+        syncFromScene(eng.getLatestScene())
+        redraw()
+        return true
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Live font-scale / locale changes re-deliver the environment so
+        // the next committed frame lays out under the new values.
+        maybeDeliverEnvironment()
+    }
+
     // Layout bounds
     val titleRect = RectF(40f, 100f, 680f, 180f)
     val detailsRect = RectF(40f, 220f, 680f, 300f)
@@ -309,6 +381,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         isSurfaceValid = true
         maybeDeliverViewport(width, height)
+        maybeDeliverEnvironment()
         redraw()
     }
 

@@ -67,6 +67,16 @@ import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from 
  *  hosts carry state across a bundle swap only when both sides match. */
 export const APPLICATION_STATE_SCHEMA = 1;
 
+/**
+ * TN-187: the host's environment descriptor — every field optional;
+ * absent fields keep their current value (see setEnvironment).
+ */
+export interface HostEnvironment {
+  locale?: string;
+  textScale?: number;
+  platform?: PlatformKind;
+}
+
 export interface ApplicationSnapshot {
   readonly route: string;
   readonly states: Record<string, unknown>;
@@ -379,6 +389,35 @@ export class ApplicationRuntime {
       textScale: this.textScale,
       platform: this.platform,
     });
+  }
+
+  /**
+   * TN-187: applies a PARTIAL host environment (the host's ENVIRONMENT
+   * dispatch — locale/textScale/platform). Every field is optional;
+   * absent fields keep their current value. All present fields validate
+   * BEFORE any assignment (a malformed payload leaves the current
+   * environment intact), and the invalidation fires once only when a
+   * value actually changed. Not part of state snapshots.
+   */
+  setEnvironment(environment: HostEnvironment): void {
+    this.assertLive();
+    if (!environment || typeof environment !== "object" || Array.isArray(environment)) {
+      throw new ApplicationRuntimeError("INVALID_THEME", "environment must be an object");
+    }
+    const locale = environment.locale !== undefined
+      ? validateLocale(environment.locale, "environment.locale")
+      : this.locale;
+    const textScale = environment.textScale !== undefined
+      ? validateTextScale(environment.textScale, "environment.textScale")
+      : this.textScale;
+    const platform = environment.platform !== undefined
+      ? validatePlatform(environment.platform, "environment.platform")
+      : this.platform;
+    const changed = locale !== this.locale || textScale !== this.textScale || platform !== this.platform;
+    this.locale = locale;
+    this.textScale = textScale;
+    this.platform = platform;
+    if (changed) this.notifyStale();
   }
 
   /**

@@ -38,7 +38,7 @@
  * here.
  */
 
-import type { DisplayListScene, LayoutViewport } from "./display-list";
+import type { DisplayListScene, LayoutViewport, PlatformKind } from "./display-list";
 import { TextInputError } from "./text-input";
 
 /** Anything the handoff can drive: ApplicationRuntime, or a wrapper that
@@ -59,6 +59,16 @@ export interface HandoffApplication {
    * negotiate viewports" and keep scaling the committed scene instead).
    */
   setViewport?(viewport: LayoutViewport): void;
+  /**
+   * Optional environment adoption (TN-187): when present, the host's
+   * "ENVIRONMENT" dispatch applies locale/textScale/platform through the
+   * same channel as the individual setters (one commit per change).
+   * ApplicationRuntime provides it; wrappers may delegate or omit it —
+   * omitted, ENVIRONMENT falls through to dispatch() and surfaces as
+   * UNKNOWN_ACTION, which hosts read as "bundle does not negotiate
+   * environment" and stop delivering it (the VIEWPORT precedent).
+   */
+  setEnvironment?(environment: { locale?: string; textScale?: number; platform?: PlatformKind }): void;
   /**
    * Optional out-of-band repaint signal: when application state can
    * change without a synchronous dispatch (async action settlement),
@@ -153,6 +163,22 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       // INVALID_VIEWPORT rather than being silently ignored.
       if (typeof app.setViewport === "function") {
         app.setViewport(payload as LayoutViewport);
+      } else {
+        app.dispatch(normalized, payload);
+      }
+      return JSON.stringify({ route: app.route() });
+    }
+    if (normalized === "ENVIRONMENT") {
+      // TN-187: the host's environment negotiation (VIEWPORT precedent).
+      // A bundle WITH setEnvironment applies the partial descriptor and
+      // commits through the invalidation subscription; a bundle WITHOUT
+      // it falls through to dispatch(), which raises UNKNOWN_ACTION —
+      // hosts read that (or a NULL dispatch result across JNI) as "keep
+      // the committed scene, stop delivering environment". A malformed
+      // payload degrades to {} above; setEnvironment fails visibly with
+      // the typed INVALID_THEME_TOKEN diagnostics.
+      if (typeof app.setEnvironment === "function") {
+        app.setEnvironment(payload as { locale?: string; textScale?: number; platform?: PlatformKind });
       } else {
         app.dispatch(normalized, payload);
       }
