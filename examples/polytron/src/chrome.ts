@@ -80,7 +80,7 @@ export function withChrome(app: ChromeApp) {
       const by = 8;
       const bh = 56; // kit buttonHeight
       const label = pending ? "MENGHENTIKAN…" : "STOP MESIN";
-      let fg = KIT.danger;
+      let fg: string = KIT.danger;
       const stopRect = (fill: string, outline?: string) => {
         scene.ops.push({ op: "rect", x: bx, y: by, w: bw, h: bh, r: 16, color: fill, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
         if (outline) scene.ops.push({ op: "outline", x: bx, y: by, w: bw, h: bh, r: 16, color: outline, width: 1.5, fixed: true, anchor: "bottom", anchorSize: CHROME_H });
