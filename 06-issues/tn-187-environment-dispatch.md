@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-187: Host ENVIRONMENT dispatch — device locale and font scale reach the runtime"
 summary: "TN-068's inherited context was framework-side only; the device's locale and fontScale never reached a running bundle. This wires the ENVIRONMENT verb end to end — ApplicationRuntime.setEnvironment (partial, validate-then-apply, one commit per change), the handoff negotiation (UNKNOWN_ACTION = old bundle, the VIEWPORT precedent), and Android delivery on engine set, surface change, and live configuration changes — so a11y font-scale journeys re-layout the committed scene."
 type: issue
-status: in-progress
+status: closed
 issue_id: "TN-187"
 milestone: "M4"
 priority: "P1"
@@ -62,3 +62,14 @@ must evidence) could not re-layout a committed scene.
   this verb is the plumbing they exercise).
 - High-contrast / reduced-motion policy (TN-092 owns).
 - iOS equivalent (TN-090 track).
+
+## Status note (2026-10-31, closed)
+
+Implemented in PR #271: `setEnvironment` (partial, validate-then-apply,
+one commit per change), the ENVIRONMENT handoff verb (VIEWPORT
+negotiation discipline), and Android delivery on engine set, surface
+change, and live configuration changes (manifest declares
+fontScale|locale|layoutDirection). Device evidence: the real Day Plan
+bundle re-lays out at exactly 2x text sizes and stays byte-stable on
+identical delivery; a verb-less bundle refuses visibly. 8/8 CI gates on
+the PR head.
