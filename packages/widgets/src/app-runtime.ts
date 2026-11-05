@@ -67,6 +67,9 @@ import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from 
  *  hosts carry state across a bundle swap only when both sides match. */
 export const APPLICATION_STATE_SCHEMA = 1;
 
+/** Plan B2: the back stack is a bounded origin list, not an unbounded history. */
+const BACK_STACK_CAP = 64;
+
 /**
  * TN-187: the host's environment descriptor — every field optional;
  * absent fields keep their current value (see setEnvironment).
@@ -221,6 +224,8 @@ export class ApplicationRuntime {
   private viewport: Readonly<LayoutViewport> | undefined;
   /** Host-delivered IME inset in logical px; renders reserve it from the viewport height. */
   private imeInset = 0;
+  /** Origin routes recorded by navigate(); goBack pops LIFO. Never in snapshots. */
+  private backStack: string[] = [];
   private readonly onAsyncActionError:
     | ((info: { screen: string; action: string; error: unknown }) => void)
     | undefined;
@@ -466,7 +471,15 @@ export class ApplicationRuntime {
     this.pendingTransition = options?.transition === undefined
       ? null
       : normalizeSceneTransition(options.transition);
-    if (this.current !== name) this.endTextInput();
+    if (this.current !== name) {
+      this.endTextInput();
+      // Plan B2: Back routes through one owner. Every route CHANGE records
+      // the origin for goBack() — same-name navigation never grows the
+      // stack. Bounded: a long-lived session cycling routes cannot grow it
+      // without limit; the oldest origins drop past the cap.
+      this.backStack.push(this.current);
+      if (this.backStack.length > BACK_STACK_CAP) this.backStack.shift();
+    }
     this.current = name;
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
     // The new screen has not rendered yet: tap ids from the PREVIOUS
@@ -491,6 +504,35 @@ export class ApplicationRuntime {
       }
       if (delivered) this.notifyStale();
     }
+  }
+
+  /** Whether goBack() has an origin to pop (plan B2 back ownership). */
+  canGoBack(): boolean {
+    this.assertLive();
+    return this.backStack.length > 0;
+  }
+
+  /**
+   * Plan B2: Android Back routes through ONE owner. Pops the most recent
+   * origin route and returns true; with an empty stack returns false WITHOUT
+   * touching state (the host then applies its platform default, e.g. finish).
+   * The popped screen's mounted session — and its controller state — is
+   * simply reactivated, never remounted. The stack is not part of state
+   * snapshots; restore keeps the current stack. goBack itself carries no
+   * transition; apps that want one navigate with explicit options.
+   */
+  goBack(): boolean {
+    this.assertLive();
+    const origin = this.backStack.pop();
+    if (origin === undefined) return false;
+    this.pendingTransition = null;
+    if (this.current !== origin) this.endTextInput();
+    this.current = origin;
+    if (!this.sessions.has(origin)) this.sessions.set(origin, this.mount(origin));
+    this.lastTapRuns = [];
+    this.textFields.clear();
+    this.notifyStale();
+    return true;
   }
 
   /**

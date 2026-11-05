@@ -205,3 +205,49 @@ describe("installHostHandoff — host protocol", () => {
     expect(committed.length).toBe(before); // no further out-of-band commits
   });
 });
+
+describe("plan B2 — BACK verb negotiation", () => {
+  function wrapperFor(app: ReturnType<typeof counterApp>, commit: (json: string) => void, hideBack = false) {
+    return {
+      route: () => app.route(),
+      render: () => app.render(),
+      exportState: () => app.exportState(),
+      stateSchema: () => app.stateSchema(),
+      dispatch: (action: string, payload?: unknown) => app.dispatch(action, payload),
+      onStateInvalidation: (listener: () => void) => app.onStateInvalidation(listener),
+      commit,
+      ...(hideBack ? {} : { goBack: () => app.goBack() }),
+    };
+  }
+
+  test("an adopting bundle answers handled true/false and one press pops once", () => {
+    const other = defineScreen({
+      name: "Other", initialState: () => ({}), actions: {},
+      view: () => jsx(Text, { children: "Other screen" }) as never,
+    });
+    const counter = defineScreen({
+      name: "Counter", initialState: () => ({ count: 0 }), actions: {},
+      view: () => jsx(Text, { children: "Counter screen" }) as never,
+    });
+    const app = new ApplicationRuntime({
+      screens: { counter, other }, initial: "counter", theme,
+      viewport: { width: 320, height: 480 },
+    } as never);
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined) });
+    // Same-name navigation records no origin: Back is not handled.
+    app.navigate("counter");
+    const reply1 = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply1.handled).toBe(false);
+    // One route change, one origin: the first press pops it, the second is not handled.
+    app.navigate("other");
+    const reply2 = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply2.handled).toBe(true);
+    expect(JSON.parse(adopt.dispatch("BACK", "{}")).handled).toBe(false);
+  });
+
+  test("a bundle without goBack surfaces UNKNOWN_ACTION (NULL across JNI = not handled)", () => {
+    const app = counterApp();
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined, true) });
+    expect(() => adopt.dispatch("BACK", "{}")).toThrow("unknown dispatch verb");
+  });
+});

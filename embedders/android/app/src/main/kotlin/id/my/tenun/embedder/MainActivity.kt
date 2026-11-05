@@ -603,6 +603,27 @@ class MainActivity : Activity() {
     // BLE runtime-permission dialog result: a granted set auto-resumes a
     // connect() that was parked behind the dialog; a denial reports guidance
     // (and opens this app's settings page when the OS marked it permanent).
+    override fun onBackPressed() {
+        // Plan B2: Back has ONE owner — the bundle's runtime. One dispatch per
+        // press; the { handled } reply decides between the runtime's pop and
+        // the platform default, so a press can never commit a navigation
+        // twice. A bundle without goBack answers NULL (UNKNOWN_ACTION), which
+        // is also "not handled". Predictive-back animation is a follow-up.
+        val eng = engine ?: return super.onBackPressed()
+        val reply = try {
+            eng.dispatchActionResult("BACK", "{}")
+        } catch (e: Exception) {
+            Log.w(TAG, "BACK dispatch failed: ${e.message}")
+            null
+        }
+        val handled = reply != null && runCatching {
+            org.json.JSONObject(reply).optBoolean("handled", false)
+        }.getOrDefault(false)
+        if (!handled) return super.onBackPressed()
+        surfaceView?.syncFromScene(eng.getLatestScene())
+        surfaceView?.redraw()
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,

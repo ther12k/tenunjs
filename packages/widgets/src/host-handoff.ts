@@ -79,6 +79,14 @@ export interface HandoffApplication {
    */
   setImeInset?(inset: number): void;
   /**
+   * Optional Back adoption (plan B2): when present, the host's "BACK"
+   * dispatch pops one origin route and answers { handled: boolean } —
+   * false lets the host apply its platform default. Wrappers may delegate
+   * or omit it; omitted, BACK falls through to dispatch() and surfaces as
+   * UNKNOWN_ACTION (the host's "not handled" signal, every press).
+   */
+  goBack?(): boolean;
+  /**
    * Optional out-of-band repaint signal: when application state can
    * change without a synchronous dispatch (async action settlement),
    * the host needs a fresh commit. ApplicationRuntime provides it;
@@ -207,6 +215,20 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       } else {
         app.dispatch(normalized, inset);
       }
+      return JSON.stringify({ route: app.route() });
+    }
+    if (normalized === "BACK") {
+      // Plan B2: Back has ONE owner. A bundle WITH goBack answers
+      // { handled } — false means the runtime had no origin to pop and the
+      // HOST applies its platform default (one decision per press, so a
+      // Back press can never commit a navigation twice). A bundle WITHOUT
+      // goBack falls through to dispatch() and surfaces as UNKNOWN_ACTION
+      // (NULL across JNI) — also "not handled, host decides".
+      if (typeof app.goBack === "function") {
+        const handled = app.goBack();
+        return JSON.stringify({ handled, route: app.route() });
+      }
+      app.dispatch(normalized, payload);
       return JSON.stringify({ route: app.route() });
     }
     const textInput = normalized === "TEXT_EDIT" || normalized === "TEXT_BLUR" || normalized === "TEXT_SUBMIT";

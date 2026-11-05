@@ -59,7 +59,7 @@ contract, known gaps), **missing**, **blocked** (naming the blocker).
 | Lazy lists (TN-085) | **missing** | Milestone B scope; the 6,554-record picker fixture is specified now but not claimed |
 | Vector paths / custom drawing | **partial**: `CanvasBox` (example) + fixed op set only | Milestone C scope |
 | Multiline text wrap / ellipsis / line height | **missing** (one baseline line per text op; `clip` only; `align` only `"center"` on host) | plan A1; slice D adds measurement/wrap fixtures + minimal lowering changes |
-| Navigation lifecycle/back (TN-063/065) | partial: screen sessions + host transitions exist; **Back routing, restoration policies missing** | Milestone B scope |
+| Navigation lifecycle/back (TN-063/065) | **added, bounded**: Back routes through one owner — `goBack()` pops a bounded origin stack, handoff `BACK` verb answers `{handled}`, host `onBackPressed` applies the platform default when not handled (plan B2 slice). Route restoration policies stay with TN-063/066 | Milestone B scope (rest) |
 
 ## Dependency-backed mapping (every pilot change → owner)
 
@@ -102,7 +102,7 @@ All five first-batch items are implemented on `feat/workout-pilot-gate-a`
 | 4. Focus/inset coordination + Focus-workout journey | slices B/C | Focus journey + `inputAction: "next"` transfer + `INSET` reveal floor |
 | 5. Essential motion/countdown slice (Gate A) | slice B | deadline + injected-clock countdown, ~1 Hz tick chain, host-painted ring, single completion announcement |
 
-Suite: **695 pass / 0 fail** (36 over baseline 659), `tsc` strict clean across
+Suite: **701 pass / 0 fail** (42 over baseline 659), `tsc` strict clean across
 all five tsconfigs.
 
 ### Slice E — production boot path (bun tier)
