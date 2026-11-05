@@ -100,10 +100,13 @@ describe("Focus workout named actions", () => {
     await screen.press("restTick", 10_000 + 30_000);
     expect(screen.state.restRemainingMs).toBe(60_000);
     expect(screen.state.restPhase).toBe("running");
-    // Pause freezes: ticks are ignored, nothing reschedules.
+    // Pause freezes the remaining time AT THE PAUSE INSTANT (review fix:
+    // no tick had run, so the full 90s remains — not a stale cached 60s).
     await screen.press("restPause");
+    expect(screen.state.restRemainingMs).toBe(90_000);
+    // Ticks are ignored while paused; nothing reschedules.
     await screen.press("restTick", 10_000 + 40_000);
-    expect(screen.state.restRemainingMs).toBe(60_000);
+    expect(screen.state.restRemainingMs).toBe(90_000);
     // Resume recomputes the deadline from the injected now and restarts the chain.
     await screen.press("restResume");
     expect(screen.state.restPhase).toBe("running");
@@ -129,5 +132,66 @@ describe("fixture model", () => {
     for (const draft of ["", "-", "62.", "12,5,5", "abc", "1 2"]) {
       expect(parseDecimalDraft(draft)).toBeNull();
     }
+  });
+});
+
+describe("review fixes — completion and countdown lifecycle", () => {
+  test("committed results survive completion and render into the done rows", async () => {
+    const { services } = restServices(1_000);
+    const screen = mountScreen(FocusScreen, { services });
+    await screen.press("editWeight", "77.5");
+    await screen.press("editReps", "12");
+    await screen.press("completeSet", "set-1-1");
+    expect(screen.state.results).toEqual({ "set-1-1": { weight: "77.5", reps: "12" } });
+    expect(screen.state.weightDraft).toBe("62.5"); // next set's drafts
+    const scene = screen.render();
+    expect(JSON.stringify(scene)).toContain("Done — 77.5 kg × 12");
+    expect(JSON.stringify(scene)).not.toContain("Done — 60 kg × 8");
+  });
+
+  test("a stale duplicate completion tap does not complete the next set", async () => {
+    const { services } = restServices(1_000);
+    const screen = mountScreen(FocusScreen, { services });
+    // First press carries the set the button was rendered for; a replay of
+    // the SAME press (stale transport duplicate) still names set-1-1, but the
+    // active set is now set-1-2 — the guard ignores it.
+    await screen.press("completeSet", "set-1-1");
+    await screen.press("completeSet", "set-1-1");
+    expect(screen.state.completedSets).toEqual(["set-1-1"]);
+    await screen.press("completeSet", "set-1-2"); // fresh press on the real button
+    expect(screen.state.completedSets).toEqual(["set-1-1", "set-1-2"]);
+    await expect(screen.press("completeSet", 42)).rejects.toThrow("strings");
+  });
+
+  test("pausing between ticks freezes the actual remaining time, not the cached tick", async () => {
+    let now = 1_000;
+    const screen = mountScreen(FocusScreen, {
+      services: { now: () => now, scheduleRestTick: () => undefined },
+    });
+    await screen.press("completeSet", "set-1-1");
+    now += 750; // elapsed before any tick ran
+    await screen.press("restPause");
+    expect(screen.state.restRemainingMs).toBe(90_000 - 750);
+    await screen.press("restResume");
+    expect(screen.state.restDeadline).toBe(now + (90_000 - 750));
+  });
+
+  test("the final set starts no rest; the completion alert is the last announcement", async () => {
+    let now = 1_000;
+    const ticks: number[] = [];
+    const screen = mountScreen(FocusScreen, {
+      services: { now: () => now, scheduleRestTick: (delayMs: number) => ticks.push(delayMs) },
+    });
+    const totalSets = FOCUS_WORKOUT.entries.reduce((sum, entry) => sum + entry.sets.length, 0);
+    for (let index = 0; index < totalSets; index++) {
+      const entry = FOCUS_WORKOUT.entries[screen.state.entryIndex]!;
+      const setId = entry.sets[screen.state.setIndex]!.id;
+      await screen.press("completeSet", setId);
+      now += 5_000;
+    }
+    expect(screen.state.workoutComplete).toBe(true);
+    expect(screen.state.restPhase).toBe("idle");
+    expect(screen.state.restDeadline).toBeNull();
+    expect(screen.render()).not.toBeNull();
   });
 });

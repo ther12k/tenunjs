@@ -131,18 +131,75 @@ describe("A1 lowering fixtures (measure/place single source)", () => {
   });
 });
 
-describe("A1 metric tolerance (documented approximation)", () => {
-  test("CHAR_WIDTH_FACTOR estimate stays within the documented band for ASCII prose", () => {
-    // The estimate is count × 0.56 × size. Typical Roboto ASCII prose
-    // advance averages ~0.50–0.60 em; the fixture pins the estimate INSIDE
-    // the band so a future factor change is a conscious contract change.
+describe("A1 documented metric approximation", () => {
+  test("textWidth is the documented per-character estimate, pinned as a formula", () => {
+    // The estimate is count × 0.56 × size — deliberately approximate.
+    // This fixture pins ONLY the formula so a factor change is a conscious
+    // contract change; it is NOT renderer evidence. Agreement with the real
+    // painted advance (Roboto via Paint.measureText / canvas fonts) is
+    // TN-075's contract and requires recorded renderer measurements on the
+    // declared Android target — no fabricated tolerance band here.
     const sample = "Complete your set";
     const size = 17;
-    const estimate = textWidth(sample, size);
-    expect(estimate).toBe(sample.length * size * 0.56);
-    // Band vs a representative reference advance (0.53 em average for this
-    // mix): agreement within 12% for ordinary prose.
-    const reference = sample.length * size * 0.53;
-    expect(Math.abs(estimate - reference) / reference).toBeLessThan(0.12);
+    expect(textWidth(sample, size)).toBe(sample.length * size * 0.56);
+    expect(textWidth("", size)).toBe(0);
+    expect(textWidth("😀", 17)).toBe(2 * 17 * 0.56); // UTF-16 code units, like the host offsets
+  });
+});
+
+describe("review fixes — wrap/ellipsis hardening", () => {
+  test("the ellipsis marker always fits the line budget", () => {
+    const { lines } = layoutTextLines({ maxLines: 1, ellipsis: true }, "M".repeat(20), { size: 17, lineHeight: 24 }, 100);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.endsWith("…")).toBe(true);
+    expect(textWidth(lines[0]!, 17)).toBeLessThanOrEqual(100);
+  });
+
+  test("hard breaks never split graphemes: accents, ZWJ emoji, and flags stay whole", () => {
+    // Combining accent: every wrapped line rejoins to the original text, and
+    // no line ENDS with a bare combining mark.
+    const accented = "Cafe\u0301";
+    const lines = wrapText(accented, 17, 40);
+    expect(lines.join("")).toBe(accented);
+    for (const line of lines) {
+      // No line STARTS with a bare combining mark (separated from its base);
+      // a cluster like "e\u0301" may legitimately END with one.
+      expect(/^[\u0300-\u036f]/.test(line)).toBe(false);
+    }
+    // ZWJ family emoji: one cluster, never split across lines.
+    const family = "👨\u200d👩\u200d👧\u200d👦";
+    const familyLines = wrapText(`${family} ${family}`, 17, Math.ceil(textWidth(family, 17)));
+    for (const line of familyLines) {
+      expect(line.includes(family) || line.trim().length === 0 || !line.includes("\u200d")).toBe(true);
+    }
+    expect(wrapText(`${family} ${family}`, 17, Math.ceil(textWidth(family, 17))).join(" ").split(/\s+/).filter(Boolean).join(" "))
+      .toBe(`${family} ${family}`);
+    // Flags: RI pairs stay paired.
+    const flags = "🇮🇩🇯🇵🇩🇪";
+    const flagLines = wrapText(flags, 17, Math.ceil(textWidth("🇮🇩", 17)));
+    expect(flagLines.join("")).toBe(flags);
+    for (const line of flagLines) expect(line.length % 2 === 0 || /[\u{1F1E6}-\u{1F1FF}]/u.test(line)).toBe(true);
+  });
+
+  test("an oversized word hard-breaks even after earlier words fill a line", () => {
+    const lines = wrapText(`ok ${"x".repeat(25)} tail`, 17, 100);
+    for (const line of lines.slice(0, lines.length - 1)) {
+      // Every FULL line (except possibly the last, which may hold "tail") fits the budget.
+      expect(textWidth(line, 17)).toBeLessThanOrEqual(100);
+    }
+    // Hard breaks insert no space, so compare non-space characters in order.
+    expect(lines.join("").split(/\s+/).filter(Boolean).join(""))
+      .toBe(`ok${"x".repeat(25)}tail`);
+    // maxLines + ellipsis now actually truncates this case (was: truncated false).
+    const capped = layoutTextLines({ maxLines: 2, ellipsis: true }, `ok ${"x".repeat(25)} tail`, { size: 17, lineHeight: 24 }, 100);
+    expect(capped.truncated).toBe(true);
+    expect(capped.lines[1]!.endsWith("…")).toBe(true);
+    expect(textWidth(capped.lines[1]!, 17)).toBeLessThanOrEqual(100);
+  });
+
+  test("an explicit null maxLines/ellipsis is absent, matching the runtime prop codec", () => {
+    const ty = { size: 17, lineHeight: 24 };
+    expect(() => layoutTextLines({ maxLines: null, ellipsis: null }, "some text", ty, 100)).not.toThrow();
+    expect(layoutTextLines({ maxLines: null, ellipsis: null }, "some text", ty, 100).lines).toEqual(wrapText("some text", 17, 100));
   });
 });

@@ -481,17 +481,23 @@ export class ApplicationRuntime {
       if (this.backStack.length > BACK_STACK_CAP) this.backStack.shift();
     }
     this.current = name;
+    this.activateRoute(name);
+  }
+
+  /**
+   * Route activation shared by navigate() and goBack(): mount if needed,
+   * drop stale tap/field tables, and TN-142-replay every cached state
+   * channel the screen implements — the "no stale hero after Back" property
+   * (goBack reactivation MUST see the same state reality a fresh navigate
+   * would; otherwise cached device state goes stale on the way back).
+   */
+  private activateRoute(name: string): void {
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
     // The new screen has not rendered yet: tap ids from the PREVIOUS
     // scene's committed table must not dispatch against it. render()
     // repopulates the table for the new scene.
     this.lastTapRuns = [];
     this.textFields.clear();
-    // TN-142: replay every cached state channel the newly active screen
-    // implements — the "no blank hero after navigate" property. Screens
-    // that never subscribed to a channel are skipped; transient pushes
-    // are never replayed. Invalidation fires once after the replay loop
-    // (coalesced), so invalidation-driven hosts repaint a single time.
     if (this.stateChannels.size > 0) {
       const session = this.sessions.get(name)!;
       let delivered = false;
@@ -517,9 +523,10 @@ export class ApplicationRuntime {
    * origin route and returns true; with an empty stack returns false WITHOUT
    * touching state (the host then applies its platform default, e.g. finish).
    * The popped screen's mounted session — and its controller state — is
-   * simply reactivated, never remounted. The stack is not part of state
-   * snapshots; restore keeps the current stack. goBack itself carries no
-   * transition; apps that want one navigate with explicit options.
+   * reactivated through the SAME activation path as navigate (channel replay
+   * included), never remounted. The stack is not part of state snapshots;
+   * restore keeps the current stack. goBack itself carries no transition;
+   * apps that want one navigate with explicit options.
    */
   goBack(): boolean {
     this.assertLive();
@@ -528,9 +535,7 @@ export class ApplicationRuntime {
     this.pendingTransition = null;
     if (this.current !== origin) this.endTextInput();
     this.current = origin;
-    if (!this.sessions.has(origin)) this.sessions.set(origin, this.mount(origin));
-    this.lastTapRuns = [];
-    this.textFields.clear();
+    this.activateRoute(origin);
     this.notifyStale();
     return true;
   }
@@ -652,12 +657,13 @@ export class ApplicationRuntime {
       const field = this.requireTextInput(identity);
       this.endTextInput();
       if (normalized === "TEXT_SUBMIT") {
-        field.props.onSubmitted?.();
         // Plan A2: "next" advances focus to the following editable field in
-        // layout order. onSubmitted may have navigated or rewritten the
-        // screen — re-render first so the transfer resolves against the
-        // table as it stands NOW and no-ops when the origin is gone.
-        if (field.props.inputAction === "next") {
+        // layout order — but ONLY on the same screen. onSubmitted may
+        // navigate; an automatic transfer must never land on a DIFFERENT
+        // route's field that happens to sort after the origin id.
+        const originRoute = this.current;
+        field.props.onSubmitted?.();
+        if (field.props.inputAction === "next" && this.current === originRoute) {
           this.render();
           this.transferTextInputFocus(field.props.id);
         }

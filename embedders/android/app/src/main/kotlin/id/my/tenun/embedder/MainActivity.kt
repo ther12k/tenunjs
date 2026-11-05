@@ -105,6 +105,33 @@ class MainActivity : Activity() {
 
         setContentView(surfaceView)
 
+        // Plan B2: Back has ONE owner. API 33+ delivers system Back through
+        // the invoked-callback dispatcher (targetSdk 36 no longer routes it
+        // through onBackPressed), so register there; the legacy override
+        // below keeps older versions covered. A registered callback suppresses
+        // the platform default, so not-handled falls back to finish() — the
+        // same default onBackPressed would apply.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedCallbackPriority.DEFAULT,
+                android.window.OnBackInvokedCallback {
+                    val eng = engine ?: return@OnBackInvokedCallback finish()
+                    val reply = try {
+                        eng.dispatchActionResult("BACK", "{}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "BACK dispatch failed: ${e.message}")
+                        null
+                    }
+                    val handled = reply != null && runCatching {
+                        org.json.JSONObject(reply).optBoolean("handled", false)
+                    }.getOrDefault(false)
+                    if (!handled) return@OnBackInvokedCallback finish()
+                    surfaceView?.syncFromScene(eng.getLatestScene())
+                    surfaceView?.redraw()
+                },
+            )
+        }
+
         // First scene from boot is on screen (surface attach synced it).
         if (engine?.getLatestScene()?.isNotEmpty() == true) trialHealth.onSceneCommitted()
 

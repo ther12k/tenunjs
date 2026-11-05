@@ -149,7 +149,9 @@ class TenunSurfaceView @JvmOverloads constructor(
             // IME-inset support is likewise a property of the bundle; a
             // swapped application re-negotiates the INSET verb.
             imeInsetNegotiated = false
+            imeInsetUnsupported = false
             lastImeInset = -1
+            reservedBottomInset = 0f
             // TN-165: scroll offsets belong to the engine that produced
             // them — a swapped-in bundle whose regions reuse the same ids
             // must not inherit another application's scroll positions.
@@ -389,13 +391,17 @@ class TenunSurfaceView @JvmOverloads constructor(
 
     /** IME-inset negotiation: deliver until the first success, then only on change. */
     private var imeInsetNegotiated = false
+    private var imeInsetUnsupported = false
     private var lastImeInset = -1
+    /** The inset the runtime reserved (design units); fixed anchors subtract it. */
+    private var reservedBottomInset = 0f
 
     private fun deliverImeInset(insetPx: Int) {
-        if (imeInsetNegotiated && insetPx == lastImeInset) return
+        if (imeInsetUnsupported) return
         val eng = engine ?: return
         val density = resources.displayMetrics.density
         if (density <= 0f) return
+        // Compare in ONE unit space: the stored value is logical (design units).
         val logical = (insetPx / density).toInt()
         if (imeInsetNegotiated && logical == lastImeInset) return
         val delivered = try {
@@ -406,11 +412,14 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         if (!delivered) {
             if (imeInsetNegotiated) Log.w(TAG, "INSET dispatch rejected; keeping last committed inset")
-            imeInsetNegotiated = true // a bundle without setImeInset is not asked again
+            // A bundle without setImeInset is not asked again (until engine swap).
+            imeInsetUnsupported = true
+            imeInsetNegotiated = true
             return
         }
         imeInsetNegotiated = true
         lastImeInset = logical
+        reservedBottomInset = logical.toFloat()
         syncFromScene(eng.getLatestScene())
         redraw()
     }
@@ -1113,7 +1122,9 @@ class TenunSurfaceView @JvmOverloads constructor(
         val dl = sceneHolder.current ?: return false
         val designX = x / dlScale
         val viewportY = y / dlScale
-        val visibleHeight = height / dlScale
+        // Hit regions mirror the paint anchors: fixed taps live above the
+        // reserved IME inset, never behind the keyboard.
+        val anchorBase = (height / dlScale - reservedBottomInset).coerceAtLeast(0f)
         // Topmost painted region wins: the LAST containing region is the
         // one the user sees — required for overlays. TN-161: taps tagged
         // with a scroll region resolve in that region's CONTENT space (the
@@ -1127,7 +1138,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         val hit = dl.taps.lastOrNull { tap ->
             if (tap.action != action) return@lastOrNull false
             if (tap.scroll == null) {
-                return@lastOrNull tap.contains(designX, viewportY, visibleHeight, scrollY)
+                return@lastOrNull tap.contains(designX, viewportY, anchorBase, scrollY)
             }
             val region = regions[tap.scroll] ?: return@lastOrNull false
             val regionTop = region.y - scrollY
@@ -1333,6 +1344,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {
         recomputeScrollExtent(dl)
         val visibleHeight = height / dlScale
+        // Fixed anchors anchor against the space the RUNTIME laid out for:
+        // the IME inset the bundle reserved comes off the bottom (plan A2),
+        // so bottom chrome paints above the keyboard instead of behind it.
+        val anchorBase = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
         scrollY = scrollY.coerceIn(0f, maxScroll)
 
         canvas.drawColor(Color.parseColor(dl.background))
@@ -1354,7 +1369,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         canvas.scale(dlScale, dlScale)
         canvas.clipRect(0f, 0f, dl.designWidth, visibleHeight)
         for (op in dl.ops) {
-            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+            if (op.isFixed()) paintDisplayOp(canvas, op, anchorBase)
         }
         canvas.restore()
     }

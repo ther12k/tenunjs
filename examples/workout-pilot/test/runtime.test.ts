@@ -247,3 +247,53 @@ describe("Gate A — focus transfer (slice C)", () => {
     expect(field(app.render().scene, repsId).focused).toBe(false);
   });
 });
+
+describe("review fixes — duplicate delivery and timer ownership", () => {
+  test("replaying the completion tap does not complete the next set", () => {
+    const clock = fakeClock();
+    const app = createWorkoutRuntime(WORKOUT_VIEWPORT, clock.options);
+    const scene = app.render().scene;
+    const entry = FOCUS_WORKOUT.entries[0]!;
+    const tapId = scene.semantics?.nodes.find((node) => node.id === completeAction(entry.id, entry.sets[0]!.id))
+      ?.actions?.[0]?.tapId;
+    expect(tapId).toBeDefined();
+    app.dispatch("TAP", { id: tapId! });
+    const state = () => app.exportState().states["focus"] as Record<string, unknown>;
+    expect(state().completedSets).toEqual(["set-1-1"]);
+    expect(state().results).toEqual({ "set-1-1": { weight: "60", reps: "8" } });
+    // The replacement button reuses the same numeric tap id: a duplicated
+    // delivery of the ORIGINAL payload is a stale press and is ignored.
+    app.dispatch("TAP", { id: tapId! });
+    expect(state().completedSets).toEqual(["set-1-1"]);
+    // And the committed result row paints what the user entered (set rows
+    // live nested inside the workout-sets scroll region's own op list).
+    const region = app.render().scene.ops.find((op) => op.op === "scroll-region") as
+      { ops?: Array<{ op: string; text?: string }> } | undefined;
+    const done = (region?.ops ?? []).filter((op) => op.op === "text" &&
+      typeof op.text === "string" && op.text.startsWith("Done —"));
+    expect(done.map((op) => op.text)).toEqual(["Done — 60 kg × 8"]);
+  });
+
+  test("pause/resume cycles never multiply live countdown chains, and disposal stays inert", () => {
+    const clock = fakeClock();
+    const app = createWorkoutRuntime(WORKOUT_VIEWPORT, clock.options);
+    dispatch(app, tapById(app.render().scene,
+      completeAction(FOCUS_WORKOUT.entries[0]!.id, FOCUS_WORKOUT.entries[0]!.sets[0]!.id)));
+    // Five pause/resume cycles each schedule through the owned generation
+    // token: earlier callbacks become inert instead of stacking chains.
+    for (let index = 0; index < 5; index++) {
+      dispatch(app, tapById(app.render().scene, "rest.pause"));
+      dispatch(app, tapById(app.render().scene, "rest.resume"));
+    }
+    const before = clock.pending();
+    expect(before).toBeGreaterThan(0);
+    // The countdown still completes exactly once through the newest chain.
+    clock.advance(REST_DURATION_MS * 2);
+    const state = app.exportState().states["focus"] as Record<string, unknown>;
+    expect(state.restPhase).toBe("idle");
+    expect(state.restRound).toBe(1);
+    // A callback firing after disposal is inert: no RUNTIME_DISPOSED throw.
+    app.dispose();
+    expect(() => clock.advance(1)).not.toThrow();
+  });
+});

@@ -245,6 +245,31 @@ describe("plan B2 — BACK verb negotiation", () => {
     expect(JSON.parse(adopt.dispatch("BACK", "{}")).handled).toBe(false);
   });
 
+  test("a HANDLED back commits even for wrappers without an invalidation subscription", () => {
+    const other = defineScreen({
+      name: "Other", initialState: () => ({}), actions: {},
+      view: () => jsx(Text, { children: "Other screen" }) as never,
+    });
+    const counter = defineScreen({
+      name: "Counter", initialState: () => ({ count: 0 }), actions: {},
+      view: () => jsx(Text, { children: "Counter screen" }) as never,
+    });
+    const app = new ApplicationRuntime({
+      screens: { counter, other }, initial: "counter", theme,
+      viewport: { width: 320, height: 480 },
+    } as never);
+    // No onStateInvalidation on the wrapper: BACK must still commit the
+    // popped route or the reply would claim success over a stale scene.
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined) });
+    const before = adopt.lastScene();
+    app.navigate("other");
+    const reply = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply.handled).toBe(true);
+    const committed = JSON.parse(adopt.lastScene()!);
+    expect(committed.ops.some((op: { op?: string; text?: string }) => op.text === "Counter screen")).toBe(true);
+    expect(before).not.toBeNull();
+  });
+
   test("a bundle without goBack surfaces UNKNOWN_ACTION (NULL across JNI = not handled)", () => {
     const app = counterApp();
     const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined, true) });

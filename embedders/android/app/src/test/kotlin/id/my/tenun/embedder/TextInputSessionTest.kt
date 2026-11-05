@@ -58,7 +58,7 @@ class TextInputSessionTest {
             { it.put("text", 123) }, { it.put("focused", "true") },
             { it.put("text", "line\nbreak") }, { it.put("text", "line\rbreak") },
             { it.put("readOnly", true) }, { it.put("keyboardType", "password") },
-            { it.put("returnAction", "next") }, { it.put("w", -1) },
+            { it.put("returnAction", "send") }, { it.put("w", -1) },
             { it.put("x", 1e100) }, { it.put("sessionId", 0) },
             { it.put("revision", -1) }, { it.put("revision", 0.5) },
             { it.put("revision", "1") }, { it.put("revision", 9007199254740992L) },
@@ -244,5 +244,6 @@ class TextInputSessionTest {
         assertEquals(EditorInfo.IME_ACTION_DONE, imeActionFor("send"))
         rejects { TextInputDescriptor.parse(json().put("keyboardType", "phone")) }
         rejects { TextInputDescriptor.parse(json().put("keyboardType", "number").put("returnAction", "send")) }
+        assertEquals("next", TextInputDescriptor.parse(json().put("returnAction", "next")).returnAction)
     }
 }

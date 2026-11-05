@@ -21,6 +21,11 @@ export function createWorkoutRuntime(
   // TN-170: the runtime owns the theme; the toggle service swaps it through
   // the invalidation channel — no screen state, no remounts.
   let dark = false;
+  // One owned countdown chain (review P2): every scheduling request
+  // invalidates every earlier callback via a generation token, so
+  // pause/resume cycles cannot multiply parallel chains, and a callback
+  // that outlives the runtime stays inert instead of throwing.
+  let restTimerGeneration = 0;
   const app: ApplicationRuntime = new ApplicationRuntime({
     screens: { focus: FocusScreen },
     initial: "focus",
@@ -34,7 +39,9 @@ export function createWorkoutRuntime(
         return now();
       },
       scheduleRestTick(delayMs: number) {
+        const generation = ++restTimerGeneration;
         schedule(() => {
+          if (generation !== restTimerGeneration || app.disposed) return;
           app.pushTo("focus", "restTick", now());
         }, delayMs);
       },

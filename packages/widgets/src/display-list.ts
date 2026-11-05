@@ -949,26 +949,32 @@ export function wrapText(text: string, size: number, maxWidth: number): string[]
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
+    if (textWidth(word, size) > maxWidth) {
+      // A single word wider than the line (a CJK run without break
+      // spaces, a long URL) must still fill lines: hard-break between
+      // grapheme clusters, wherever the word appears. Without this the
+      // word overflows every line it lands on; without cluster awareness
+      // it would split accents, ZWJ emoji, and flags mid-character.
+      if (current.length > 0) {
+        lines.push(current);
+        current = "";
+      }
+      let chunk = "";
+      for (const cluster of graphemeClusters(word)) {
+        const next = chunk + cluster;
+        if (chunk.length > 0 && textWidth(next, size) > maxWidth) {
+          lines.push(chunk);
+          chunk = cluster;
+        } else {
+          chunk = next;
+        }
+      }
+      current = chunk;
+      continue;
+    }
     const candidate = current.length > 0 ? `${current} ${word}` : word;
     if (textWidth(candidate, size) <= maxWidth || current.length === 0) {
-      if (current.length === 0 && textWidth(word, size) > maxWidth) {
-        // A single word wider than the line (a CJK run without break
-        // spaces, a long URL) must still fill lines: hard-break on code
-        // points. Without this the word overflows every line it lands on.
-        let chunk = "";
-        for (const character of word) {
-          const next = chunk + character;
-          if (chunk.length > 0 && textWidth(next, size) > maxWidth) {
-            lines.push(chunk);
-            chunk = character;
-          } else {
-            chunk = next;
-          }
-        }
-        current = chunk;
-      } else {
-        current = candidate;
-      }
+      current = candidate;
     } else {
       lines.push(current);
       current = word;
@@ -978,10 +984,10 @@ export function wrapText(text: string, size: number, maxWidth: number): string[]
   return lines;
 }
 
-/** Validated maxLines prop; absent means unbounded. */
+/** Validated maxLines prop; absent (or an explicit null, which the runtime prop codec accepts as absent) means unbounded. */
 function maxLinesOf(props: Record<string, unknown>): number {
   const value = props.maxLines;
-  if (value === undefined) return Number.MAX_SAFE_INTEGER;
+  if (value === undefined || value === null) return Number.MAX_SAFE_INTEGER;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new LayoutError("INVALID_CONSTRAINT", `Text maxLines must be a positive integer, got ${String(value)}`);
   }
@@ -989,10 +995,51 @@ function maxLinesOf(props: Record<string, unknown>): number {
 }
 
 /**
+ * Approximate grapheme clustering for hard breaks: combining marks, ZWJ
+ * sequences, skin-tone modifiers, variation selectors, and regional-indicator
+ * (flag) pairs stay attached to their base instead of splitting across
+ * lines. Full UAX-29 segmentation remains TN-075's contract; this only
+ * guarantees the estimator never separates user-visible characters the
+ * common fixtures exercise.
+ */
+function isExtendCodePoint(codePoint: number, previous: number): boolean {
+  if (codePoint === 0x200d || previous === 0x200d) return true; // ZWJ joins both directions
+  if (codePoint >= 0x0300 && codePoint <= 0x036f) return true; // combining diacritics
+  if (codePoint >= 0x1ab0 && codePoint <= 0x1aff) return true;
+  if (codePoint >= 0x20d0 && codePoint <= 0x20ff) return true;
+  if (codePoint >= 0xfe00 && codePoint <= 0xfe0f) return true; // variation selectors
+  if (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff) return true; // skin-tone modifiers
+  if (codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff &&
+      previous >= 0x1f1e6 && previous <= 0x1f1ff) return true; // flag pair
+  return false;
+}
+
+/** Splits a word into never-separated clusters (approximate; see above). */
+function graphemeClusters(word: string): string[] {
+  const clusters: string[] = [];
+  let current = "";
+  let previousCodePoint = 0;
+  for (const codePointText of word) {
+    const codePoint = codePointText.codePointAt(0)!;
+    if (current.length > 0 && isExtendCodePoint(codePoint, previousCodePoint)) {
+      current += codePointText;
+    } else {
+      if (current.length > 0) clusters.push(current);
+      current = codePointText;
+    }
+    previousCodePoint = codePoint;
+  }
+  if (current.length > 0) clusters.push(current);
+  return clusters;
+}
+
+/**
  * The single source of truth for painted Text lines — measure and place both
  * call this, so the laid-out height and the emitted line ops can never
  * disagree. Applies maxLines, then an ellipsis marker when lines were
- * dropped and ellipsis is requested. Returns the full text for semantics.
+ * dropped and ellipsis is requested; the marker always fits the line budget
+ * (trailing content yields before it overflows into a sibling). Returns the
+ * full text for semantics.
  */
 export function layoutTextLines(
   props: Record<string, unknown>,
@@ -1001,13 +1048,20 @@ export function layoutTextLines(
   maxWidth: number,
 ): { lines: string[]; truncated: boolean } {
   const maxLines = maxLinesOf(props);
-  if (props.ellipsis !== undefined && typeof props.ellipsis !== "boolean") {
+  if (props.ellipsis !== undefined && props.ellipsis !== null && typeof props.ellipsis !== "boolean") {
     throw new LayoutError("INVALID_CONSTRAINT", "Text ellipsis must be a boolean");
   }
   const lines = wrapText(text, typography.size, Math.max(maxWidth, 1));
   if (lines.length <= maxLines) return { lines, truncated: false };
   const cut = lines.slice(0, maxLines);
-  if (props.ellipsis === true) cut[maxLines - 1] = `${cut[maxLines - 1]!}…`;
+  if (props.ellipsis === true) {
+    const budget = Math.max(maxWidth, 1);
+    let last = cut[maxLines - 1]!;
+    while (last.length > 0 && textWidth(`${last}…`, typography.size) > budget) {
+      last = last.slice(0, Math.max(0, last.length - 1));
+    }
+    cut[maxLines - 1] = `${last}…`;
+  }
   return { lines: cut, truncated: true };
 }
 

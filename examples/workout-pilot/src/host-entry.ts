@@ -4,11 +4,23 @@
  * setTimeout shim the rest countdown's tick chain needs (QuickJS has no
  * timer globals; the host scheduler re-enters this dispatch entry, which
  * drains due callbacks — the polytron-entry precedent).
+ *
+ * Review fixes: the clock is a ratcheted monotonic wrapper over Date.now
+ * (QuickJS has no performance.now), shared by the countdown and the shim so
+ * a backward jump cannot strand a timer without a wake-up; and a restored
+ * "running" countdown is re-armed through a synthetic tick after TENUN_RESTORE.
  */
 import { installHostHandoff } from "@tenunjs/widgets";
 import { createWorkoutRuntime } from "./runtime";
 
 const host = globalThis as Record<string, unknown>;
+
+let monotonicLast = 0;
+/** Ratcheted wall clock: non-decreasing (review P2 — no backward jumps). */
+function monotonicNow(): number {
+  const current = Date.now();
+  return current > monotonicLast ? (monotonicLast = current) : monotonicLast;
+}
 
 interface ActiveTimer {
   id: number;
@@ -19,10 +31,27 @@ interface ActiveTimer {
 let nextTimerId = 1;
 const activeTimers = new Map<number, ActiveTimer>();
 
+/** Asks the native scheduler for the next wake-up when timers remain, so a
+ *  drained entry never strands a timer without a pending host wake-up. */
+function requestNextWakeup(nowMs: number): void {
+  let nextAt = Number.POSITIVE_INFINITY;
+  for (const timer of activeTimers.values()) nextAt = Math.min(nextAt, timer.runAt);
+  if (!Number.isFinite(nextAt) || typeof host.tenun_host_call !== "function") return;
+  try {
+    (host.tenun_host_call as (s: string, m: string, p: string) => string | null)(
+      "system",
+      "scheduleTimer",
+      JSON.stringify({ delayMs: Math.max(0, nextAt - nowMs) }),
+    );
+  } catch {
+    // Host scheduler optional; dispatch entry drains automatically.
+  }
+}
+
 function drainTimers(): void {
-  const now = Date.now();
+  const nowMs = monotonicNow();
   for (const [id, timer] of Array.from(activeTimers.entries())) {
-    if (now >= timer.runAt) {
+    if (nowMs >= timer.runAt) {
       activeTimers.delete(id);
       try {
         timer.fn();
@@ -31,6 +60,7 @@ function drainTimers(): void {
       }
     }
   }
+  requestNextWakeup(nowMs);
 }
 
 if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
@@ -40,18 +70,8 @@ if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
   ) => {
     const id = nextTimerId++;
     const delay = Math.max(0, ms);
-    activeTimers.set(id, { id, runAt: Date.now() + delay, fn });
-    if (typeof host.tenun_host_call === "function") {
-      try {
-        (host.tenun_host_call as (s: string, m: string, p: string) => string | null)(
-          "system",
-          "scheduleTimer",
-          JSON.stringify({ delayMs: delay }),
-        );
-      } catch {
-        // Host scheduler optional; dispatch entry drains automatically.
-      }
-    }
+    activeTimers.set(id, { id, runAt: monotonicNow() + delay, fn });
+    requestNextWakeup(monotonicNow());
     return id;
   };
   (host as { clearTimeout: (id: number) => void }).clearTimeout = (id: number) => {
@@ -59,7 +79,7 @@ if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
   };
 }
 
-const app = createWorkoutRuntime();
+const app = createWorkoutRuntime(undefined, { now: monotonicNow });
 const handoff = installHostHandoff({
   app,
   commit(json) {
@@ -71,9 +91,21 @@ const handoff = installHostHandoff({
 
 host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string => {
   drainTimers();
+  const normalized = action.toUpperCase();
   // The host scheduler's re-entry verb: due callbacks already ran above.
-  if (action.toUpperCase() === "TIMER") {
+  if (normalized === "TIMER") {
     return JSON.stringify({ route: app.route() });
   }
-  return handoff.dispatch(action, payloadJson);
+  const reply = handoff.dispatch(action, payloadJson);
+  if (normalized === "TENUN_RESTORE") {
+    // Review P2: a restored "running" rest has no timer in a fresh runtime.
+    // A synthetic tick recomputes remaining from the restored deadline and
+    // re-arms the ~1 Hz chain (restTick no-ops when rest is not running).
+    try {
+      app.pushTo("focus", "restTick", monotonicNow());
+    } catch {
+      // The restored route is not mounted; nothing to re-arm.
+    }
+  }
+  return reply;
 };

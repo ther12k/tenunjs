@@ -190,6 +190,8 @@ export namespace JSX {
   export interface TextProps extends BaseProps {
     variant?: string;
     color?: string;
+    maxLines?: number | null;
+    ellipsis?: boolean | null;
   }
 
   export interface ButtonProps extends BaseProps {

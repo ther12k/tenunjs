@@ -585,3 +585,41 @@ describe("TN-160 input action and focus transfer", () => {
     expect((scene.ops as TextInputOp[]).some((op) => op.op === "text-input" && op.focused)).toBe(false);
   });
 });
+
+describe("review fix — Next transfer never crosses a navigation", () => {
+  test("submitting a next field whose onSubmitted navigates leaves the destination unfocused", () => {
+    const state = { a: "a" };
+    let navigateApp: ApplicationRuntime | null = null;
+    const a = defineScreen({ name: "A", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "shared", value: state.a, inputAction: "next",
+          onSubmitted: () => { navigateApp?.navigate("b"); },
+          onChanged: (v: string) => { state.a = v; } }),
+        jsx(TextField, { id: "follower", value: "x", onChanged: () => undefined }),
+      ] }) });
+    const b = defineScreen({ name: "B", initialState: () => ({}), actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "shared", value: "b-value", onChanged: () => undefined }),
+        jsx(TextField, { id: "destination", value: "target", onChanged: () => undefined }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { a, b }, initial: "a", theme,
+      viewport: { width: 320, height: 480 } });
+    navigateApp = app;
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const scene = () => JSON.parse(commits.at(-1)!);
+    const focusViaTap = (id: string): TextInputOp => {
+      const current = scene();
+      const op = (current.ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+      const tap = (current.taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h)!;
+      handoff.dispatch("TAP", JSON.stringify(tap.payload));
+      return (scene().ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+    };
+    const active = focusViaTap("shared");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    // The submit navigated: no automatic transfer onto screen B's "shared"/"destination".
+    expect(app.route()).toBe("b");
+    expect((scene().ops as TextInputOp[]).some((op) => op.op === "text-input" && op.focused)).toBe(false);
+  });
+});

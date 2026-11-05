@@ -182,7 +182,10 @@ class TextInputSessionState {
         val old = current
         val identityChanged = this.owner !== nextOwner || old?.id != next?.id || old?.sessionId != next?.sessionId
         val editingChanged = old?.value() != next?.value() || old?.revision != next?.revision
-        val restart = identityChanged || (!ownEdit && editingChanged) || (forceRestart && next != null)
+        // Keyboard/action intent drives EditorInfo; a focused field whose
+        // intent changed needs restartInput or the IME keeps the old keyboard.
+        val intentChanged = old?.keyboardType != next?.keyboardType || old?.returnAction != next?.returnAction
+        val restart = identityChanged || (!ownEdit && editingChanged) || intentChanged || (forceRestart && next != null)
         if (restart) generation++
         this.owner = nextOwner
         current = next

@@ -913,12 +913,18 @@ describe("plan B2 — Back routes through one owner", () => {
     expect(app.canGoBack()).toBe(true);
     // Mutate the focus screen's mounted session state, then leave and come back.
     app.pushTo("focus", "edit");
+    app.pushState("edit", 99); // cached channel input delivered on activation
     app.navigate("home");
     expect(app.route()).toBe("home");
+    app.pushState("edit", 42); // newer channel reality while away
     expect(app.goBack()).toBe(true);
     expect(app.route()).toBe("focus");
-    // Same mounted session, never remounted: the earlier mutation survives.
-    expect(app.exportState().states["focus"]).toEqual({ edits: 1 });
+    // The replay delivered the LATEST input (42), not the stale pre-departure
+    // state: edits counts 1 (direct pushTo) + 1 (pushState 99 delivered live)
+    // + 1 (the Back activation replaying the latest cached input, 42).
+    expect(app.exportState().states["focus"]).toEqual({ edits: 3 });
+    // Same mounted session, never remounted (edits accumulated across the
+    // round trip instead of resetting to a fresh mount's 0).
     expect(app.goBack()).toBe(true);
     expect(app.route()).toBe("home");
     expect(app.goBack()).toBe(false);

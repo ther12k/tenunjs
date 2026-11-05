@@ -223,9 +223,13 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       // HOST applies its platform default (one decision per press, so a
       // Back press can never commit a navigation twice). A bundle WITHOUT
       // goBack falls through to dispatch() and surfaces as UNKNOWN_ACTION
-      // (NULL across JNI) — also "not handled, host decides".
+      // (NULL across JNI) — also "not handled, host decides". A HANDLED pop
+      // commits here: wrappers without an invalidation subscription (a
+      // legal HandoffApplication shape) would otherwise report success
+      // while the last committed scene still paints the previous route.
       if (typeof app.goBack === "function") {
         const handled = app.goBack();
+        if (handled) commit();
         return JSON.stringify({ handled, route: app.route() });
       }
       app.dispatch(normalized, payload);

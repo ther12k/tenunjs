@@ -35,6 +35,8 @@ class DisplayListInputConnection(
     private var operationDepth = 0
     private var batchDepth = 0
     private var reported = initial.value()
+    /** The live descriptor's return action; ENTER maps to it (plan A2 Next/Done). */
+    private var returnAction: String = initial.returnAction
 
     init {
         applyAuthoritative(initial)
@@ -44,13 +46,14 @@ class DisplayListInputConnection(
 
     /** The IME action this field's descriptor carries: NEXT advances focus, DONE submits. */
     private fun editorAction(): Int =
-        if (input.returnAction == "next") EditorInfo.IME_ACTION_NEXT else EditorInfo.IME_ACTION_DONE
+        if (returnAction == "next") EditorInfo.IME_ACTION_NEXT else EditorInfo.IME_ACTION_DONE
 
     override fun getEditable(): Editable? = if (live()) content else null
 
     /** Acknowledgements are copied; never predict the runtime's next revision. */
     fun applyAuthoritative(input: TextInputDescriptor) {
         if (!live()) return
+        returnAction = input.returnAction
         val next = input.value()
         // Exact acknowledgements and geometry-only paints must not replace
         // the IME's existing composing spans (which can carry its own styles).
