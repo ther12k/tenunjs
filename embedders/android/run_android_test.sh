@@ -8,8 +8,13 @@ WORK_DIR="/tmp/tenun-android-test"
 mkdir -p "$WORK_DIR"
 
 echo "== 1. Compiling Android native bridge with embedded QuickJS =="
+# -Wno-discarded-qualifiers: vendored quickjs.c assigns strrchr(base_name) on a
+# const input (module normalize); newer runner gcc (ubuntu-26.04) promotes that
+# warning to an error under -Werror. Suppressed like the other vendored-code
+# warnings above; no suppression of project-source warnings.
 cc -std=c11 -O2 -D_GNU_SOURCE -DTENUN_TEST_INJECTION -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
   -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter -Wno-implicit-fallthrough \
+  -Wno-discarded-qualifiers \
   -I"$SCRIPT_DIR/app/src/main/cpp" \
   -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
   "$SCRIPT_DIR/app/src/main/cpp/tenun_android_bridge.c" \
@@ -86,6 +91,7 @@ if [ -n "$NDK_DIR" ] && [ -d "$NDK_DIR" ]; then
     "$NDK_CLANG" --target=aarch64-linux-android26 \
       -std=c11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
       -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter \
+      -Wno-discarded-qualifiers \
       -fPIC -shared \
       -I"$SCRIPT_DIR/app/src/main/cpp" \
       -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
@@ -103,6 +109,7 @@ if [ -n "$NDK_DIR" ] && [ -d "$NDK_DIR" ]; then
     "$NDK_CLANG" --target=x86_64-linux-android26 \
       -std=c11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
       -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter \
+      -Wno-discarded-qualifiers \
       -fPIC -shared \
       -I"$SCRIPT_DIR/app/src/main/cpp" \
       -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
