@@ -137,8 +137,10 @@ all five tsconfigs.
   and view; guarded completion button taps with a set-completion cooldown against rapid duplicate replays;
   guarded view rendering against older snapshots without `results`; captured instant deadline remainder
   on pause; tied timer lifecycle to runtime generation to prevent orphaned callbacks; used monotonic clock
-  (`performance.now()`) by default and bound native wake-up scheduling to prevent wake-up accumulation across non-timer dispatches,
-  rest deadline boundaries, and engine swaps; rebased countdown deadline and cooldown across fresh engine instantiation on `TENUN_RESTORE`.
+  (`performance.now()`) by default and bound native wake-up scheduling to the REQUESTING engine (candidates
+  restore before publication; `RequesterBoundScheduler` + JVM lifecycle tests) to prevent wake-up accumulation
+  across non-timer dispatches, rest deadline boundaries, and engine swaps; rebased countdown deadline and
+  cooldown across fresh engine instantiation on `TENUN_RESTORE`.
 
 ### Slice E — production boot path (bun tier)
 
