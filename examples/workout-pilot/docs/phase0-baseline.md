@@ -88,3 +88,30 @@ issues (TN-063/065/082–088/045/046) and is **not started** by this branch.
   (JVM unit tests; device tests extended where the harness permits)
 - `examples/workout-pilot` journey tests (bun, fixture-driven) following the
   framework-feel precedent (`createXRuntime(viewport)` factory + journey tests)
+
+## Milestone A implementation record (updated 2026-11-05)
+
+All five first-batch items are implemented on `feat/workout-pilot-gate-a`
+(4 commits, each a bounded slice; `bun run verify:ts` green at every step):
+
+| Plan item | Slice | Delivered |
+| --- | --- | --- |
+| 1. Baseline + acceptance-fixture spec | docs | this document + `fixture-journeys.md` (frozen ids) |
+| 2. Renderer-consistent text measurement fixtures | slice D | `layoutTextLines` single source, CJK/URL hard-break, `maxLines`/`ellipsis`, 9 fixtures, reflow journey assertions |
+| 3. Numeric keyboard intent + decimal-editing tests | slice A | `number`/`decimal` intents, fail-closed draft gate, host `inputTypeFor`, JVM + bun tests |
+| 4. Focus/inset coordination + Focus-workout journey | slices B/C | Focus journey + `inputAction: "next"` transfer + `INSET` reveal floor |
+| 5. Essential motion/countdown slice (Gate A) | slice B | deadline + injected-clock countdown, ~1 Hz tick chain, host-painted ring, single completion announcement |
+
+Suite: **692 pass / 0 fail** (39 from baseline 659), `tsc` strict clean across
+all five tsconfigs.
+
+### Evidence boundaries (unchanged rules, explicit)
+
+- Physical-device rows remain **pending**: this environment has no Android
+  SDK/emulator, so Kotlin changes are review-verified with JVM-test additions
+  committed (`TextInputSessionTest`); Gradle/device gates must run where an
+  SDK exists. Emulator evidence would still be diagnostic, not acceptance.
+- Gate A at bun level = journey usable through the public runtime composition
+  (taps, TEXT_EDIT, TEXT_SUBMIT, pushTo ticks, theme/scale/inset re-renders).
+  TalkBack, live-IME, and reduced-motion-policy acceptance remain open per the
+  plan and TN-091/092.
