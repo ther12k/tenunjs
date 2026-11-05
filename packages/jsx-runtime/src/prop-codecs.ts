@@ -34,7 +34,13 @@ export type WidgetPropSchema = Readonly<Record<string, PropRule>>;
  * "root" carries framework-internal props such as theme/navigation).
  */
 export const PROP_SCHEMAS: Partial<Record<HostWidgetKind, WidgetPropSchema>> = {
-  "text": { variant: { type: "string" }, color: { type: ["string", "object"] }, semanticsId: { type: "string" } },
+  "text": {
+    variant: { type: "string" },
+    color: { type: ["string", "object"] },
+    semanticsId: { type: "string" },
+    maxLines: { type: "number" },
+    ellipsis: { type: "boolean" },
+  },
   "button": { variant: { type: "string" }, onPress: { type: "function" }, semanticsId: { type: "string" } },
   "column": {
     padding: { type: ["string", "number"] },

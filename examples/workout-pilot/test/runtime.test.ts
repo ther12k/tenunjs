@@ -92,6 +92,18 @@ describe("Gate A — Focus workout journey", () => {
     expect(scene.semantics?.nodes.some((node) => node.role === "alert" && node.liveRegion === true)).toBe(true);
     // Long exercise name (≥40 chars) is present verbatim for label-reflow coverage.
     expect(JSON.stringify(scene)).toContain(FOCUS_WORKOUT.entries[0]!.name);
+    // A1 label reflow: at the default wide viewport the long title fits on
+    // one line; at a narrow width it wraps into multiple painted lines
+    // without overlapping the fields below (the block grows).
+    const name = FOCUS_WORKOUT.entries[0]!.name;
+    const lineOps = (rendered: DisplayListScene) => rendered.ops.filter((op) => op.op === "text" &&
+      typeof (op as { text?: string }).text === "string" &&
+      name.includes((op as { text: string }).text) && (op as { text: string }).text.length > 0);
+    expect(lineOps(scene).length).toBeGreaterThanOrEqual(1);
+    const narrow = createWorkoutRuntime({ width: 320, height: 700 });
+    const narrowOps = lineOps(narrow.render().scene);
+    expect(narrowOps.length).toBeGreaterThanOrEqual(2);
+    expect(narrow.render().scene.semantics?.nodes.some((node) => node.label === name)).toBe(true);
   });
 
   test("editing weight keeps decimal drafts and commits through the controlled session", () => {
