@@ -1,0 +1,90 @@
+# Workout pilot — Phase 0 baseline and capability matrix
+
+Established 2026-11-05 against TenunJS `1427f41` (clean tree, `main`), in the
+worktree of branch `feat/workout-pilot-gate-a`. This is the Phase 0 record the
+UI/UX improvement plan requires before Milestone A implementation: repository
+revision, toolchain, baseline results, capability matrix, and the
+dependency-backed mapping for every change this pilot makes.
+
+## Toolchain and baseline results
+
+| Item | Value |
+| --- | --- |
+| Revision | `1427f4124063f46491bdd696caa626c5ee83dcdc` |
+| Bun | `1.4.0` (repo `packageManager`; installed locally, not on PATH by default) |
+| TypeScript | `7.0.2` (workspace devDependency) |
+| `bun run typecheck` | PASS — all five tsconfigs (root, examples, votol, polytron, gallery-bundle) |
+| `bun test` | **659 pass / 0 fail** across 58 files, 3730 assertions |
+| `verify:manifest` / `verify:evidence` | untouched; no governed design-pack files modified |
+| Android build | `embedders/android` Gradle project; JVM unit tests via `./gradlew test`, device stages via `run_android_test.sh` / `run_device_acceptance.sh` (requires KVM/emulator or physical device — not available in this environment; recorded as a limitation below) |
+
+Known pre-existing failures: none (baseline is fully green).
+
+## Physical device target (declared)
+
+The plan requires one supported physical Android target. This environment has no
+attached device or emulator, so the declared target is recorded as policy and
+the device evidence rows below stay explicitly **pending**:
+
+- Device class: Pixel-4a-class or newer (repo supported-baseline matrix)
+- Record on first acceptance run: density, font scale, OS version, refresh rate, keyboard
+
+Emulator (`run_device_acceptance.sh`) results, when produced, are diagnostic;
+physical-device TalkBack/IME journeys are the acceptance gate and remain open.
+
+## Capability matrix
+
+Legend: **implemented** (contract + host + tests), **prototype** (works, bounded
+contract, known gaps), **missing**, **blocked** (naming the blocker).
+
+| Capability | State | Evidence / notes |
+| --- | --- | --- |
+| Display-list scene parse/paint (rect, outline, gradient, circle, ring, line, text) | implemented | `packages/widgets/src/display-list.ts`; `DisplayListScene.kt` / `TenunSurfaceView.kt`; fail-closed `SceneContractException` |
+| Layout (bounded TS layout, TN-157) | implemented | `layoutScreen` lowering; viewport negotiation TN-158 |
+| Theme tokens, palettes, runtime switching (TN-170/173/174) | implemented | `theme-slots.ts`; `bakeThemeScene` |
+| Environment dispatch: locale/font-scale/platform (TN-187) | implemented | `ApplicationRuntime.setEnvironment`; host `maybeDeliverEnvironment` |
+| Viewport negotiation (TN-158) | implemented | `VIEWPORT` verb, logical px |
+| Controlled single-line text input (TN-160) | implemented | revisioned sessions, composition, stale guards; `keyboardType` locked to `"text"`, `returnAction` locked to `"done"` |
+| Numeric keyboard intent | **missing** → this pilot adds it | plan A2; extends TN-160's contract (this branch, slice A) |
+| Focus traversal (Next/Done), focus restoration | **missing** (only text-input focus sessions exist) | plan A2; slice C adds `returnAction: "next"` + runtime transfer; full TN-081 tree stays open |
+| Keyboard insets / keyboard-aware reveal | **missing** (no `WindowInsets` handling in host) | plan A2; slice C adds a minimal IME-inset dispatch |
+| Independent scroll regions (TN-161) | implemented (drag only) | offsets host-owned, content-space taps, region-id keyed; **no fling physics, no virtualization** (TN-083/084/085 remain open) |
+| Route transitions (TN-169) | implemented (slide/fade, host-evaluated, ≤10s cap) | `scene.transition` burst semantics; not a general animation system |
+| General animation surface (TN-086/087) | **missing** → pilot adds only the smallest countdown slice (plan A3: deadline + injected clock + host-painted ring re-commit) | no per-frame JS contract claimed |
+| Semantics wire v1 (TN-179) | implemented | roles button/text/header/textfield/container/generic/group/alert; actions press/long-press/focus; live regions rate-limited |
+| Android accessibility bridge (TN-180/186) | implemented (prototype contract) | `SceneAccessibility.kt`; `ACTION_SET_TEXT` supported; physical TalkBack journeys pending |
+| Overlays (dialog/sheet/snackbar, TN-088) | **missing** at framework layer | example-side `ModalBottomSheet`/`AlertDialog` in ui-kit only; Milestone B scope |
+| Images (TN-045/046) | **missing** (Icon is text-glyph based) | Milestone B scope |
+| Gestures beyond tap/long-press + swipe actions | **missing** (gesture arena TN-082 open) | Milestone B scope |
+| Lazy lists (TN-085) | **missing** | Milestone B scope; the 6,554-record picker fixture is specified now but not claimed |
+| Vector paths / custom drawing | **partial**: `CanvasBox` (example) + fixed op set only | Milestone C scope |
+| Multiline text wrap / ellipsis / line height | **missing** (one baseline line per text op; `clip` only; `align` only `"center"` on host) | plan A1; slice D adds measurement/wrap fixtures + minimal lowering changes |
+| Navigation lifecycle/back (TN-063/065) | partial: screen sessions + host transitions exist; **Back routing, restoration policies missing** | Milestone B scope |
+
+## Dependency-backed mapping (every pilot change → owner)
+
+The plan's rule: extend delivered contracts; never fabricate a blocked API; no
+new TN numbers invented here — bounded follow-ups are named, tracker allocation
+happens through the repository's normal governance.
+
+| Pilot change | Extends / depends on | Bounded follow-up named |
+| --- | --- | --- |
+| `keyboardType: "number"\|"decimal"` on TextField descriptor + host input type | TN-160 delivered contract (same editor, same revision protocol) | numeric/decimal editing acceptance issue (plan §9 tracking gap) |
+| Numeric content gate (fail-closed charset on number/decimal fields) | TN-160 stale-guard machinery; rejected edits are simply not adopted | same as above |
+| `returnAction: "next"` + runtime focus transfer | TN-160 session focus; NOT the full TN-081 native focus tree | TN-081 stays open unchanged |
+| Host IME-inset dispatch → runtime viewport adjustment | TN-158 viewport negotiation pattern | TN-081 insets contract stays open |
+| Workout example `RestTimer`: deadline + injected monotonic clock, timer re-commits | host `system.scheduleTimer` (`TIMER` dispatch, existing) | TN-086/087 animation graph stays open |
+| Reduced-motion + announcement policy | TN-187 environment (`platform`); semantics `liveRegion` (TN-179) exists | TN-092 reduced-motion policy stays open |
+| Workout-pilot example app (fixtures, journeys) | TN-155 framework-feel pattern (factory + host entry + parity script) | acceptance-example tracking issue (plan §9 tracking gap) |
+| Text measurement/wrap fixtures (slice D) | TN-157 bounded layout; host text op | TN-075 shaping service stays open |
+
+Everything else in the plan (Milestone B/C capabilities) maps to already-open
+issues (TN-063/065/082–088/045/046) and is **not started** by this branch.
+
+## Hosts and gates this pilot touches
+
+- `packages/widgets` TS contract + runtime (bun tests, `tsc` strict)
+- `embedders/android` Kotlin host descriptor parse + `EditorInfo` mapping
+  (JVM unit tests; device tests extended where the harness permits)
+- `examples/workout-pilot` journey tests (bun, fixture-driven) following the
+  framework-feel precedent (`createXRuntime(viewport)` factory + journey tests)

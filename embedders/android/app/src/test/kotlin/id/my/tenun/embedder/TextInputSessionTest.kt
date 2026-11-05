@@ -1,5 +1,6 @@
 package id.my.tenun.embedder
 
+import android.text.InputType
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -226,5 +227,18 @@ class TextInputSessionTest {
         assertEquals(wire, String(wire.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
         assertEquals(1L, JSONObject(wire).getLong("sessionId"))
         assertEquals(0L, JSONObject(wire).getLong("baseRevision"))
+    }
+
+    @Test
+    fun acceptsNumericKeyboardIntentsAndMapsEditorInfoInputTypes() {
+        for (kind in listOf("text", "number", "decimal")) {
+            assertEquals(kind, TextInputDescriptor.parse(json().put("keyboardType", kind)).keyboardType)
+        }
+        assertEquals(InputType.TYPE_CLASS_TEXT, inputTypeFor("text"))
+        assertEquals(InputType.TYPE_CLASS_NUMBER, inputTypeFor("number"))
+        assertEquals(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, inputTypeFor("decimal"))
+        assertEquals(InputType.TYPE_CLASS_TEXT, inputTypeFor("password"))
+        rejects { TextInputDescriptor.parse(json().put("keyboardType", "phone")) }
+        rejects { TextInputDescriptor.parse(json().put("keyboardType", "number").put("returnAction", "next")) }
     }
 }

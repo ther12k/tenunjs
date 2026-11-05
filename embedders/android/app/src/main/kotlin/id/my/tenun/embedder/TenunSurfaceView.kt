@@ -475,7 +475,7 @@ class TenunSurfaceView @JvmOverloads constructor(
             val owner = engine ?: return null
             if (!isCurrentTextInput(owner, token)) return null
             textInputConnection?.invalidate()
-            outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+            outAttrs.inputType = inputTypeFor(input.keyboardType)
             outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
             outAttrs.initialSelStart = input.selection.base
             outAttrs.initialSelEnd = input.selection.extent

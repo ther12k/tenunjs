@@ -60,7 +60,7 @@ import {
 import type { DisplayListScene, LayoutViewport, PlatformKind, SceneTransition, SceneTransitionRequest, WidgetContext } from "./display-list";
 import type { ThemeConfig } from "./index";
 import type { ThemePalette } from "./theme-slots";
-import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
+import { TextInputError, nextTextRevision, numericDraftError, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
 import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from "./text-input";
 
 /** Snapshot contract version. Bump only with a deliberate migration design:
@@ -554,6 +554,11 @@ export class ApplicationRuntime {
       // that newer value/removal/readOnly state before accepting an old IME echo.
       this.render();
       const field = this.requireTextInput(edit);
+      // Numeric-intent fields fail closed on out-of-contract content (a paste or
+      // IME leaking letters into a number field). The draft is not adopted; the
+      // handoff republishes authority so the host resyncs its editable.
+      const contentError = numericDraftError(field.props.keyboardType, edit.text);
+      if (contentError !== null) throw new TextInputError("INVALID_TEXT_CONTENT", contentError);
       const previous = this.activeTextInput!;
       const next: TextInputSessionState = {
         id: edit.id, sessionId: edit.sessionId, revision: nextTextRevision(previous.revision),

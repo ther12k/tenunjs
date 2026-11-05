@@ -1,9 +1,11 @@
 package id.my.tenun.embedder
 
+import android.text.InputType
 import org.json.JSONObject
 
 /** All text offsets are UTF-16 code-unit offsets, matching Android and JavaScript. */
 data class TextInputSelection(val base: Int, val extent: Int)
+
 data class TextInputComposition(val start: Int, val end: Int)
 data class TextInputValue(
     val text: String,
@@ -32,6 +34,18 @@ fun textInputEventJson(value: JSONObject): String {
         index++
     }
     return result.toString()
+}
+
+/**
+ * EditorInfo input type for a descriptor keyboard intent (pure, JVM-testable).
+ * "number" is digits only; "decimal" adds the decimal separator flag. The
+ * content contract is owned by the framework's numeric draft gate — this only
+ * picks the keyboard the IME shows.
+ */
+fun inputTypeFor(keyboardType: String): Int = when (keyboardType) {
+    "number" -> InputType.TYPE_CLASS_NUMBER
+    "decimal" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+    else -> InputType.TYPE_CLASS_TEXT
 }
 
 /** Required, nonpainting display-list operation. Ordinary paint ops draw the field. */
@@ -120,7 +134,10 @@ data class TextInputDescriptor(
             }
             val keyboardType = string("keyboardType")
             val returnAction = string("returnAction")
-            if (keyboardType != "text" || returnAction != "done") invalid("unsupported keyboard type or return action")
+            if ((keyboardType != "text" && keyboardType != "number" && keyboardType != "decimal") ||
+                returnAction != "done") {
+                invalid("unsupported keyboard type or return action")
+            }
             val fixed = if (json.has("fixed")) boolean("fixed") else false
             val anchor = if (json.has("anchor")) string("anchor") else null
             if (anchor != null && anchor != "bottom" && anchor != "center") invalid("unsupported anchor")

@@ -3,8 +3,8 @@ import { defineScreen } from "@tenunjs/core";
 import { jsx, jsxs, type WidgetNode } from "@tenunjs/jsx-runtime";
 import {
   ApplicationRuntime, ApplicationRuntimeError, Canvas, Column, Container, SizedBox, Text,
-  TextField, TextInputError, installHostHandoff, layoutScreen,
-  textInputContractError, validateTextEditEvent, validateTextInputOp,
+  TextField, TextInputError, installHostHandoff, layoutScreen, numericDraftError,
+  resolveTextFieldProps, textInputContractError, validateTextEditEvent, validateTextInputOp,
   type CanvasProps, type DisplayListScene, type TextEditEvent, type TextFieldProps,
   type TextInputErrorCode, type TextInputOp,
 } from "../src/index";
@@ -415,5 +415,88 @@ describe("TN-160 revisioned controlled edit sessions", () => {
     expect(() => f.dispatch("TEXT_EDIT", edit(last, "disposed"))).toThrow(ApplicationRuntimeError);
     expect(f.commits).toHaveLength(before);
     expect(f.changed).toEqual(["valid"]);
+  });
+});
+
+describe("TN-160 numeric keyboard intent", () => {
+  test("props default to text, reject unknown intents, and gate the initial value", () => {
+    expectCode(() => resolveTextFieldProps({ id: "w", value: "0", onChanged: () => undefined,
+      keyboardType: "phone" }), "INVALID_TEXT_FIELD");
+    expectCode(() => resolveTextFieldProps({ id: "w", value: "abc", onChanged: () => undefined,
+      keyboardType: "number" }), "INVALID_TEXT_CONTENT");
+    const resolved = resolveTextFieldProps({ id: "w", value: "12.5", onChanged: () => undefined,
+      keyboardType: "decimal" });
+    expect(resolved.keyboardType).toBe("decimal");
+    expect(resolveTextFieldProps({ id: "w", value: "x", onChanged: () => undefined }).keyboardType).toBe("text");
+  });
+
+  test("draft gate keeps editing intermediates and rejects out-of-contract content", () => {
+    for (const draft of ["", "-", "42", "007", "-3"]) {
+      expect(numericDraftError("number", draft)).toBe(null);
+      expect(numericDraftError("decimal", draft)).toBe(null);
+    }
+    for (const draft of ["12.", "12,5", ".5", "-,", "12.", "1.0", "1,0"]) {
+      expect(numericDraftError("decimal", draft)).toBe(null);
+    }
+    for (const [type, draft] of [
+      ["number", "4.2"], ["number", "4,2"], ["number", "abc"], ["number", "1 2"], ["number", "1-2"],
+      ["decimal", "1.2.3"], ["decimal", "1,2.3"], ["decimal", "12 kg"], ["decimal", "abc"], ["decimal", "1 2"],
+    ] as const) {
+      expect(numericDraftError(type, draft)).not.toBe(null);
+    }
+    expect(numericDraftError("text", "any text 🙂")).toBe(null);
+  });
+
+  test("lowering carries the numeric intent into the descriptor and wire validators accept it", () => {
+    const state = { weight: "62.5" };
+    const screen = defineScreen({ name: "W", initialState: () => state, actions: {},
+      view: () => jsx(TextField, { id: "weight", value: state.weight, label: "Weight",
+        keyboardType: "decimal", onChanged: (value: string) => { state.weight = value; } }) });
+    const app = new ApplicationRuntime({ screens: { w: screen }, initial: "w", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const op = (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input");
+    expect(op).toMatchObject({ id: "weight", keyboardType: "decimal", returnAction: "done" });
+    expect(validateTextInputOp(op!).keyboardType).toBe("decimal");
+    expect(textInputContractError({ ...op, keyboardType: "phone" })).not.toBe(null);
+    expectCode(() => validateTextInputOp({ ...op, text: "heavy", selection: { base: 5, extent: 5 } }),
+      "INVALID_TEXT_CONTENT");
+  });
+
+  test("numeric fields keep decimal drafts through the session and reject letter edits without adopting them", () => {
+    const state = { weight: "60" };
+    const changed: string[] = [];
+    const screen = defineScreen({ name: "W", initialState: () => state, actions: {},
+      view: () => jsx(TextField, { id: "weight", value: state.weight, label: "Weight",
+        keyboardType: "decimal", onChanged: (value: string) => { changed.push(value); state.weight = value; } }) });
+    const app = new ApplicationRuntime({ screens: { w: screen }, initial: "w", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const scene = (): DisplayListScene => JSON.parse(commits.at(-1)!);
+    const op = (): TextInputOp =>
+      scene().ops.find((op): op is TextInputOp => op.op === "text-input" && op.id === "weight")!;
+    const tap = scene().taps.find((tap) => tap.x === op().x && tap.w === op().w)!;
+    handoff.dispatch("TAP", JSON.stringify(tap.payload));
+    expect(op().focused).toBe(true);
+    const active = op();
+
+    // Trailing separator and locale-comma drafts are ordinary editing intermediates.
+    for (const draft of ["6", "62", "62.", "62,5"]) {
+      handoff.dispatch("TEXT_EDIT", JSON.stringify({ id: "weight", sessionId: active.sessionId,
+        baseRevision: op().revision, text: draft, selection: { base: draft.length, extent: draft.length },
+        composing: null }));
+      expect(state.weight).toBe(draft);
+    }
+
+    // A paste-style letter leak fails closed: rejected, not adopted, authority intact.
+    const authoritative = op();
+    expectCode(() => handoff.dispatch("TEXT_EDIT", JSON.stringify({ id: "weight", sessionId: active.sessionId,
+      baseRevision: authoritative.revision, text: "62,5kg", selection: { base: 6, extent: 6 },
+      composing: null })), "INVALID_TEXT_CONTENT");
+    expect(state.weight).toBe("62,5");
+    expect(op()).toMatchObject({ text: "62,5", revision: authoritative.revision,
+      sessionId: active.sessionId, focused: true });
   });
 });
