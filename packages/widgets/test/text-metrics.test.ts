@@ -219,4 +219,12 @@ describe("review fixes — wrap/ellipsis hardening", () => {
     expect(() => layoutTextLines({ maxLines: null, ellipsis: null }, "some text", ty, 100)).not.toThrow();
     expect(layoutTextLines({ maxLines: null, ellipsis: null }, "some text", ty, 100).lines).toEqual(wrapText("some text", 17, 100));
   });
+
+  test("placement does not over-truncate ellipsized text at its reduced intrinsic width", () => {
+    const text = "a 😀😀😀😀 tail";
+    const { scene } = layoutScreen(theme, Column({ children: [Text({ children: text, maxLines: 1, ellipsis: true })] }), 100);
+    const ops = textOps(scene).filter((op) => op.text.length > 0);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.text).toBe("a 😀😀😀…");
+  });
 });

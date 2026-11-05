@@ -1952,7 +1952,8 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
   switch (kind) {
     case "text": {
       const ty = typography(ctx, props.variant);
-      const { lines } = layoutTextLines(props, textContent(node), ty, w);
+      const maxWrapWidth = Math.max(w, bounds.maxW);
+      const { lines } = layoutTextLines(props, textContent(node), ty, maxWrapWidth);
       const align = props.align === "center" ? "center" : "left";
       const boxWidth = typeof props.width === "number" ? props.width : w;
       lines.forEach((line, index) => {

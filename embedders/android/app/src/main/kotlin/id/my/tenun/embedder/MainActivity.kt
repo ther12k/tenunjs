@@ -109,13 +109,16 @@ class MainActivity : Activity() {
         // the invoked-callback dispatcher (targetSdk 36 no longer routes it
         // through onBackPressed), so register there; the legacy override
         // below keeps older versions covered. A registered callback suppresses
-        // the platform default, so not-handled falls back to finish() — the
-        // same default onBackPressed would apply.
+        // the platform default, so not-handled falls back to moveTaskToBack for
+        // root launcher activity or finish() — matching platform default behavior.
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
                 android.window.OnBackInvokedCallback {
-                    val eng = engine ?: return@OnBackInvokedCallback finish()
+                    val fallback = {
+                        if (isTaskRoot) moveTaskToBack(true) else finish()
+                    }
+                    val eng = engine ?: return@OnBackInvokedCallback fallback()
                     val reply = try {
                         eng.dispatchActionResult("BACK", "{}")
                     } catch (e: Exception) {
@@ -125,7 +128,7 @@ class MainActivity : Activity() {
                     val handled = reply != null && runCatching {
                         org.json.JSONObject(reply).optBoolean("handled", false)
                     }.getOrDefault(false)
-                    if (!handled) return@OnBackInvokedCallback finish()
+                    if (!handled) return@OnBackInvokedCallback fallback()
                     surfaceView?.syncFromScene(eng.getLatestScene())
                     surfaceView?.redraw()
                 },

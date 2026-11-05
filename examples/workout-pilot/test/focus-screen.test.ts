@@ -220,4 +220,21 @@ describe("review fixes — completion and countdown lifecycle", () => {
     const rendered = JSON.stringify(screen.render());
     expect(rendered).toContain("Done — 60 kg × 8");
   });
+
+  test("rebaseClock aligns deadline with the fresh engine's monotonic clock and clears duplicate-tap cooldown", async () => {
+    const ticks: number[] = [];
+    const screen = mountScreen(FocusScreen, {
+      services: { now: () => 100, scheduleRestTick: (delay: number) => ticks.push(delay) },
+    });
+    // Restore state from previous engine with old performance.now() timestamps
+    screen.state.restPhase = "running";
+    screen.state.restRemainingMs = 45_000;
+    screen.state.restDeadline = 645_000; // old engine time origin
+    screen.state.lastCompletedAt = 600_000;
+
+    await screen.press("rebaseClock", 100);
+    expect(screen.state.restDeadline).toBe(100 + 45_000);
+    expect(screen.state.lastCompletedAt).toBeNull();
+    expect(ticks).toEqual([1000]);
+  });
 });

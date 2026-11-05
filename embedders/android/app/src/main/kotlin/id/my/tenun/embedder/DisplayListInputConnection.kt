@@ -37,6 +37,8 @@ class DisplayListInputConnection(
     private var reported = initial.value()
     /** The live descriptor's return action; ENTER maps to it (plan A2 Next/Done). */
     private var returnAction: String = initial.returnAction
+    private var lastRevision: Long = -1L
+    private var lastSessionId: Long = -1L
 
     init {
         applyAuthoritative(initial)
@@ -55,10 +57,22 @@ class DisplayListInputConnection(
         if (!live()) return
         returnAction = input.returnAction
         val next = input.value()
+        // If the descriptor's revision and session are unchanged, this is an
+        // unedited scene re-render (e.g. INSET/VIEWPORT delivery or background repaint).
+        // Never overwrite local buffered edits when authority has not moved.
+        if (input.sessionId == lastSessionId && input.revision == lastRevision) {
+            return
+        }
+        lastSessionId = input.sessionId
+        lastRevision = input.revision
         // Exact acknowledgements and geometry-only paints must not replace
         // the IME's existing composing spans (which can carry its own styles).
         if (value() == next) {
             reported = next
+            return
+        }
+        // If an IME batch edit is in progress, do not clobber pending local edits.
+        if (batchDepth > 0) {
             return
         }
         applying = true

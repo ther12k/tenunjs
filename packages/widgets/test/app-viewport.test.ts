@@ -289,4 +289,34 @@ describe("IME inset (keyboard-aware reveal floor)", () => {
     const bare = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
     expect(() => bare.dispatch("INSET", { ime: 260 })).toThrow("unknown dispatch verb");
   });
+
+  test("INSET commits for wrappers without an invalidation subscription and forwards payload in fallback", () => {
+    const base = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
+    let commits = 0;
+    const wrapped = {
+      render: () => base.render(),
+      dispatch: (action: string, payload?: unknown) => base.dispatch(action, payload),
+      exportState: () => base.exportState(),
+      stateSchema: () => base.stateSchema(),
+      route: () => base.route(),
+      setImeInset: (n: number) => base.setImeInset(n),
+    };
+    const handoff = installHostHandoff({ app: wrapped, commit: () => { commits++; } });
+    expect(commits).toBe(1);
+    handoff.dispatch("INSET", JSON.stringify({ ime: 260 }));
+    expect(commits).toBe(2);
+    expect(JSON.parse(handoff.lastScene()!).contentHeight).toBe(540);
+
+    let receivedFallback: unknown;
+    const custom = {
+      render: () => base.render(),
+      dispatch: (_action: string, payload?: unknown) => { receivedFallback = payload; },
+      exportState: () => base.exportState(),
+      stateSchema: () => base.stateSchema(),
+      route: () => base.route(),
+    };
+    const customHandoff = installHostHandoff({ app: custom });
+    customHandoff.dispatch("INSET", JSON.stringify({ ime: 260 }));
+    expect(receivedFallback).toEqual({ ime: 260 });
+  });
 });

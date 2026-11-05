@@ -13,6 +13,7 @@ import {
   Column,
   installHostHandoff,
   Text,
+  TextField,
 } from "../src/index";
 
 const theme = {
@@ -153,6 +154,63 @@ describe("installHostHandoff — host protocol", () => {
     expect(scene.taps.length).toBe(2); // button + wrapper chrome
     const backId = scene.taps[1].payload.id;
     expect(() => handoff.dispatch("tap", JSON.stringify({ id: backId }))).not.toThrow();
+  });
+
+  test("rejected numeric edit republishes authority and restores wrapper chrome tap runs", () => {
+    let chromeTaps = 0;
+    const base = new ApplicationRuntime({
+      screens: {
+        form: defineScreen({
+          name: "Form",
+          initialState: () => ({ num: "12" }),
+          actions: {
+            setNum: ({ state, input }: { state: { num: string }; input: string }) => { state.num = input; },
+          },
+          view: ({ state, actions }) =>
+            Column({
+              children: [
+                TextField({ id: "num", keyboardType: "number", value: state.num, onChanged: actions.setNum }),
+              ],
+            }) as never,
+        }),
+      },
+      initial: "form",
+      theme,
+    } as never);
+    const wrapped = {
+      render: () => {
+        const out = base.render();
+        out.scene.taps.push({
+          x: 0, y: 0, w: out.scene.designWidth, h: 48,
+          action: "tap", payload: { id: out.tapRuns.length },
+        });
+        out.tapRuns.push(() => { chromeTaps++; });
+        return out;
+      },
+      dispatch: (action: string, payload?: unknown) => base.dispatch(action, payload),
+      exportState: () => base.exportState(),
+      stateSchema: () => base.stateSchema(),
+      route: () => base.route(),
+      onStateInvalidation: (listener: () => void) => base.onStateInvalidation(listener),
+    };
+    const handoff = installHostHandoff({ app: wrapped });
+    // Focus the text field
+    let scene = JSON.parse(handoff.lastScene()!);
+    handoff.dispatch("tap", JSON.stringify(scene.taps[0].payload));
+    scene = JSON.parse(handoff.lastScene()!);
+    const field = scene.ops.find((op: { op: string }) => op.op === "text-input");
+    const chrome = scene.taps.at(-1).payload;
+
+    expect(() => {
+      handoff.dispatch("TEXT_EDIT", JSON.stringify({
+        id: field.id, sessionId: field.sessionId, baseRevision: field.revision,
+        text: "12x", selection: { base: 3, extent: 3 }, composing: null,
+      }));
+    }).toThrow("INVALID_TEXT_CONTENT");
+
+    // The wrapper chrome tap remains valid and callable after the rejected edit
+    expect(() => handoff.dispatch("tap", JSON.stringify(chrome))).not.toThrow();
+    expect(chromeTaps).toBe(1);
   });
 
   test("async action settlement commits a fresh scene out-of-band; dispose stops it", async () => {

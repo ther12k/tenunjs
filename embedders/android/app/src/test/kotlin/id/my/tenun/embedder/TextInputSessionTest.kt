@@ -246,4 +246,18 @@ class TextInputSessionTest {
         rejects { TextInputDescriptor.parse(json().put("keyboardType", "number").put("returnAction", "send")) }
         assertEquals("next", TextInputDescriptor.parse(json().put("returnAction", "next")).returnAction)
     }
+
+    @Test
+    fun geometryUpdatesPreserveSessionWithoutRestart() {
+        val owner = Any()
+        val state = TextInputSessionState()
+        val initial = input()
+        assertTrue(state.adopt(owner, initial))
+        val token = state.token()!!
+        // Geometry change with unchanged revision/sessionId keeps the session intact
+        assertFalse(state.adopt(owner, initial.copy(w = 600f, h = 100f)))
+        assertTrue(state.accepts(token))
+        assertEquals(initial.revision, state.current!!.revision)
+        assertEquals(initial.sessionId, state.current!!.sessionId)
+    }
 }

@@ -210,10 +210,12 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       const inset = typeof (payload as { ime?: unknown } | undefined)?.ime === "number"
         ? ((payload as { ime: number }).ime)
         : Number.NaN;
+      const beforeCommit = last;
       if (typeof app.setImeInset === "function") {
         app.setImeInset(inset);
+        if (last === beforeCommit) commit();
       } else {
-        app.dispatch(normalized, inset);
+        app.dispatch(normalized, payload);
       }
       return JSON.stringify({ route: app.route() });
     }
@@ -248,7 +250,7 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       // transition stamp that commit carried (TN-169) and break the
       // rejected-dispatch-preserves-the-scene invariant.
       if (textInput && error instanceof TextInputError &&
-          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) {
+          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION" || error.code === "INVALID_TEXT_CONTENT")) {
         const fresh = JSON.stringify(app.render().scene);
         const emit = last !== null && withoutTransition(fresh) === withoutTransition(last) ? last : fresh;
         last = emit;

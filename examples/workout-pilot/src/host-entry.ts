@@ -57,9 +57,11 @@ function requestNextWakeup(nowMs: number): void {
   }
 }
 
-function drainTimers(): void {
-  scheduledHostWakeupAt = null;
+function drainTimers(isTimerDispatch = false): void {
   const nowMs = getMonotonicNow();
+  if (isTimerDispatch || (scheduledHostWakeupAt !== null && nowMs >= scheduledHostWakeupAt)) {
+    scheduledHostWakeupAt = null;
+  }
   for (const [id, timer] of Array.from(activeTimers.entries())) {
     if (nowMs >= timer.runAt) {
       activeTimers.delete(id);
@@ -101,19 +103,18 @@ const handoff = installHostHandoff({
 });
 
 host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string => {
-  drainTimers();
   const normalized = action.toUpperCase();
+  drainTimers(normalized === "TIMER");
   // The host scheduler's re-entry verb: due callbacks already ran above.
   if (normalized === "TIMER") {
     return JSON.stringify({ route: app.route() });
   }
   const reply = handoff.dispatch(action, payloadJson);
   if (normalized === "TENUN_RESTORE") {
-    // Review P2: a restored "running" rest has no timer in a fresh runtime.
-    // A synthetic tick recomputes remaining from the restored deadline and
-    // re-arms the ~1 Hz chain (restTick no-ops when rest is not running).
+    // Rebase monotonic timestamps into the fresh engine's time origin
+    // and re-arm the ~1 Hz chain if a rest was in progress.
     try {
-      app.pushTo("focus", "restTick", getMonotonicNow());
+      app.pushTo("focus", "rebaseClock", getMonotonicNow());
     } catch {
       // The restored route is not mounted; nothing to re-arm.
     }

@@ -165,7 +165,10 @@ export const FocusScreen = defineScreen({
       if (expectedSetId !== undefined && active.setId !== expectedSetId) return;
       const record = workoutServices(context);
       const now = record.now();
-      if (state.lastCompletedAt !== null && now - state.lastCompletedAt < 1000) return;
+      if (state.lastCompletedAt !== null) {
+        const elapsed = now - state.lastCompletedAt;
+        if (elapsed >= 0 && elapsed < 1000) return;
+      }
       state.lastCompletedAt = now;
       const entry = FOCUS_WORKOUT.entries[active.entryIndex]!;
       state.completedSets = [...(state.completedSets ?? []), active.setId];
@@ -233,6 +236,15 @@ export const FocusScreen = defineScreen({
       state.restDeadline = null;
       state.restRemainingMs = 0;
       state.restRound = state.restRound + 1;
+    },
+    rebaseClock(context: ScreenActionContext<FocusState>) {
+      const { state, input } = context;
+      const now = checkedNow(input);
+      state.lastCompletedAt = null;
+      if (state.restPhase === "running") {
+        state.restDeadline = now + state.restRemainingMs;
+        workoutServices(context).scheduleRestTick(Math.min(state.restRemainingMs, 1000));
+      }
     },
   },
   view({ state, actions }) {

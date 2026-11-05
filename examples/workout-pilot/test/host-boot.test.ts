@@ -163,4 +163,46 @@ describe("workout host entry boots through the production contract", () => {
     // Growth is strictly bounded (no unbounded runaway re-arm calls):
     expect(scheduleCalls.length).toBeLessThanOrEqual(initialCallCount + 3);
   });
+
+  test("cross-engine TENUN_RESTORE rebases countdown timestamps to new performance origin", async () => {
+    const code = await buildWorkoutBundleCode();
+    let oldClock = 600_000;
+    let oldScene: string | null = null;
+    const oldContext: Record<string, unknown> = {
+      performance: { now: () => oldClock },
+      tenun_commit: (json: string) => { oldScene = json; },
+      tenun_host_call: () => "true",
+    };
+    runInNewContext(code, oldContext, { filename: "workout-app.js", timeout: 5000 });
+    const oldDispatch = oldContext["__tenun_dispatch_action"] as Booted["dispatch"];
+    const oldEntry: Booted = { dispatch: oldDispatch, lastScene: () => oldScene };
+    completeFirstSet(oldEntry);
+    const snapshot = oldDispatch("__TENUN_EXPORT", "{}");
+    expect(JSON.parse(snapshot).states.focus.completedSets).toEqual(["set-1-1"]);
+
+    // Boot a fresh engine starting at monotonic origin 100
+    let freshClock = 100;
+    let freshScene: string | null = null;
+    const freshContext: Record<string, unknown> = {
+      performance: { now: () => freshClock },
+      tenun_commit: (json: string) => { freshScene = json; },
+      tenun_host_call: () => "true",
+    };
+    runInNewContext(code, freshContext, { filename: "workout-app.js", timeout: 5000 });
+    const freshDispatch = freshContext["__tenun_dispatch_action"] as Booted["dispatch"];
+    freshDispatch("TENUN_RESTORE", snapshot);
+
+    const restoredState = JSON.parse(freshDispatch("__TENUN_EXPORT", "{}")).states.focus;
+    expect(restoredState.restRemainingMs).toBe(90_000);
+    expect(restoredState.restDeadline).toBe(100 + 90_000);
+    expect(restoredState.lastCompletedAt).toBeNull();
+
+    // 30 seconds later, completing the next set legitimately succeeds:
+    freshClock += 30_000;
+    const completeNode = (JSON.parse(freshScene!) as Scene).semantics?.nodes?.find((n) => n.id?.endsWith(".complete"));
+    expect(completeNode?.actions?.[0]?.tapId).toBeDefined();
+    freshDispatch("TAP", JSON.stringify({ id: completeNode!.actions![0]!.tapId }));
+    const afterSecondSet = JSON.parse(freshDispatch("__TENUN_EXPORT", "{}")).states.focus;
+    expect(afterSecondSet.completedSets).toEqual(["set-1-1", "set-1-2"]);
+  });
 });
