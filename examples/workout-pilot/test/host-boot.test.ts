@@ -210,4 +210,62 @@ describe("workout host entry boots through the production contract", () => {
     const afterSecondSet = JSON.parse(freshDispatch("__TENUN_EXPORT", "{}")).states.focus;
     expect(afterSecondSet.completedSets).toEqual(["set-1-1", "set-1-2"]);
   });
+
+  test("completing the next set before the previous rest deadline callback fires does not duplicate wakeups", async () => {
+    const code = await buildWorkoutBundleCode();
+    let now = 0;
+    let lastScene = "";
+    let calls = 0;
+    let queue: number[] = [];
+    const context: Record<string, unknown> = {
+      performance: { now: () => now },
+      tenun_commit: (json: string) => { lastScene = json; },
+      tenun_host_call: (service: string, method: string, json: string) => {
+        if (service === "system" && method === "scheduleTimer") {
+          calls++;
+          queue.push(now + Math.max(10, JSON.parse(json).delayMs));
+        }
+        return "true";
+      },
+    };
+    runInNewContext(code, context, { filename: "workout-app.js", timeout: 5000 });
+    const dispatch = context["__tenun_dispatch_action"] as Booted["dispatch"];
+    const entry: Booted = { dispatch, lastScene: () => lastScene };
+
+    // Complete set 1 -> rest starts (90,000ms duration)
+    completeFirstSet(entry);
+    expect(queue.length).toBe(1);
+
+    // Fast-forward through normal ticks to 89,000ms
+    for (now = 1000; now <= 89000; now += 1000) {
+      const due = queue.filter((at) => at <= now);
+      queue = queue.filter((at) => at > now);
+      for (const _ of due) dispatch("TIMER", "{}");
+    }
+    expect(queue).toEqual([90000]);
+
+    // Complete set 2 at 90,001ms BEFORE the 90,000ms callback was delivered
+    now = 90001;
+    const completeNode = (JSON.parse(lastScene) as Scene).semantics?.nodes?.find((n) => n.id?.endsWith(".complete"));
+    expect(completeNode?.actions?.[0]?.tapId).toBeDefined();
+    dispatch("TAP", JSON.stringify({ id: completeNode!.actions![0]!.tapId }));
+
+    // Deliver the old native callback
+    const due = queue.filter((at) => at <= now);
+    queue = queue.filter((at) => at > now);
+    for (const _ of due) dispatch("TIMER", "{}");
+
+    // Queue has transferred smoothly to the new rest tick without multiplying
+    expect(queue.length).toBe(1);
+    expect(queue[0]).toBe(91001);
+
+    // Subsequent seconds stay strictly bounded to 1 pending native wakeup
+    for (let i = 1; i <= 3; i++) {
+      now += 1000;
+      const dueNext = queue.filter((at) => at <= now);
+      queue = queue.filter((at) => at > now);
+      for (const _ of dueNext) dispatch("TIMER", "{}");
+      expect(queue.length).toBe(1);
+    }
+  });
 });

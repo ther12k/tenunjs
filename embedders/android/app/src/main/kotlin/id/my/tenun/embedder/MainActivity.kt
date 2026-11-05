@@ -300,14 +300,15 @@ class MainActivity : Activity() {
                             String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
                         }
                         "scheduleTimer" -> {
+                            val targetEngine = this@MainActivity.engine ?: return null
                             try {
                                 val delay = org.json.JSONObject(payloadJson).optLong("delayMs", 0L)
                                 mainHandler.postDelayed({
-                                    this@MainActivity.engine?.let { eng ->
-                                        eng.dispatchAction("TIMER", "{}")
-                                        surfaceView?.syncFromScene(eng.getLatestScene())
-                                        surfaceView?.redraw()
-                                    }
+                                    val current = this@MainActivity.engine
+                                    if (current == null || current !== targetEngine || current.isDisposed) return@postDelayed
+                                    current.dispatchAction("TIMER", "{}")
+                                    surfaceView?.syncFromScene(current.getLatestScene())
+                                    surfaceView?.redraw()
                                 }, Math.max(10L, delay))
                                 "true"
                             } catch (e: Exception) {

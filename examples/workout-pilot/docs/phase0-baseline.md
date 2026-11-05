@@ -102,7 +102,7 @@ All five first-batch items are implemented on `feat/workout-pilot-gate-a`
 | 4. Focus/inset coordination + Focus-workout journey | slices B/C | Focus journey + `inputAction: "next"` transfer + `INSET` reveal floor |
 | 5. Essential motion/countdown slice (Gate A) | slice B | deadline + injected-clock countdown, ~1 Hz tick chain, host-painted ring, single completion announcement |
 
-Suite: **720 pass / 0 fail** (61 over baseline 659), `tsc` strict clean across
+Suite: **721 pass / 0 fail** (62 over baseline 659), `tsc` strict clean across
 all five tsconfigs.
 
 ### Review remediations (addressing findings across framework, host, and example)
@@ -137,8 +137,8 @@ all five tsconfigs.
   and view; guarded completion button taps with a set-completion cooldown against rapid duplicate replays;
   guarded view rendering against older snapshots without `results`; captured instant deadline remainder
   on pause; tied timer lifecycle to runtime generation to prevent orphaned callbacks; used monotonic clock
-  (`performance.now()`) by default and bound native wake-up scheduling to prevent wake-up accumulation across non-timer dispatches;
-  rebased countdown deadline and cooldown across fresh engine instantiation on `TENUN_RESTORE`.
+  (`performance.now()`) by default and bound native wake-up scheduling to prevent wake-up accumulation across non-timer dispatches,
+  rest deadline boundaries, and engine swaps; rebased countdown deadline and cooldown across fresh engine instantiation on `TENUN_RESTORE`.
 
 ### Slice E — production boot path (bun tier)
 

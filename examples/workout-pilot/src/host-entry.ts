@@ -39,7 +39,6 @@ function requestNextWakeup(nowMs: number): void {
   let nextAt = Number.POSITIVE_INFINITY;
   for (const timer of activeTimers.values()) nextAt = Math.min(nextAt, timer.runAt);
   if (!Number.isFinite(nextAt) || typeof host.tenun_host_call !== "function") {
-    scheduledHostWakeupAt = null;
     return;
   }
   if (scheduledHostWakeupAt !== null && scheduledHostWakeupAt <= nextAt) {
