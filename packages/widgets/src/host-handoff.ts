@@ -70,6 +70,23 @@ export interface HandoffApplication {
    */
   setEnvironment?(environment: { locale?: string; textScale?: number; platform?: PlatformKind }): void;
   /**
+   * Optional IME-inset adoption: when present, the host's "INSET" dispatch
+   * reserves the given logical px from the next render's viewport height
+   * (keyboard-aware reveal floor). Wrappers may delegate or omit it —
+   * omitted, INSET falls through to dispatch() and surfaces as
+   * UNKNOWN_ACTION; hosts read that as "bundle does not negotiate insets"
+   * and stop delivering them (the VIEWPORT precedent).
+   */
+  setImeInset?(inset: number): void;
+  /**
+   * Optional Back adoption (plan B2): when present, the host's "BACK"
+   * dispatch pops one origin route and answers { handled: boolean } —
+   * false lets the host apply its platform default. Wrappers may delegate
+   * or omit it; omitted, BACK falls through to dispatch() and surfaces as
+   * UNKNOWN_ACTION (the host's "not handled" signal, every press).
+   */
+  goBack?(): boolean;
+  /**
    * Optional out-of-band repaint signal: when application state can
    * change without a synchronous dispatch (async action settlement),
    * the host needs a fresh commit. ApplicationRuntime provides it;
@@ -184,6 +201,43 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       }
       return JSON.stringify({ route: app.route() });
     }
+    if (normalized === "INSET") {
+      // IME inset negotiation (VIEWPORT precedent): a bundle that adopts
+      // host insets re-lays out with the keyboard reserved; one without
+      // setImeInset answers UNKNOWN_ACTION (NULL across JNI) and the host
+      // stops delivering. `ime` is logical px; a malformed payload fails
+      // visibly inside the runtime rather than being silently ignored.
+      const inset = typeof (payload as { ime?: unknown } | undefined)?.ime === "number"
+        ? ((payload as { ime: number }).ime)
+        : Number.NaN;
+      const beforeCommit = last;
+      if (typeof app.setImeInset === "function") {
+        app.setImeInset(inset);
+        if (last === beforeCommit) commit();
+      } else {
+        app.dispatch(normalized, payload);
+        if (last === beforeCommit) commit();
+      }
+      return JSON.stringify({ route: app.route() });
+    }
+    if (normalized === "BACK") {
+      // Plan B2: Back has ONE owner. A bundle WITH goBack answers
+      // { handled } — false means the runtime had no origin to pop and the
+      // HOST applies its platform default (one decision per press, so a
+      // Back press can never commit a navigation twice). A bundle WITHOUT
+      // goBack falls through to dispatch() and surfaces as UNKNOWN_ACTION
+      // (NULL across JNI) — also "not handled, host decides". A HANDLED pop
+      // commits here: wrappers without an invalidation subscription (a
+      // legal HandoffApplication shape) would otherwise report success
+      // while the last committed scene still paints the previous route.
+      if (typeof app.goBack === "function") {
+        const handled = app.goBack();
+        if (handled) commit();
+        return JSON.stringify({ handled, route: app.route() });
+      }
+      app.dispatch(normalized, payload);
+      return JSON.stringify({ route: app.route() });
+    }
     const textInput = normalized === "TEXT_EDIT" || normalized === "TEXT_BLUR" || normalized === "TEXT_SUBMIT";
     try {
       app.dispatch(normalized, payload);
@@ -197,7 +251,7 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
       // transition stamp that commit carried (TN-169) and break the
       // rejected-dispatch-preserves-the-scene invariant.
       if (textInput && error instanceof TextInputError &&
-          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION")) {
+          (error.code === "STALE_TEXT_SESSION" || error.code === "STALE_TEXT_REVISION" || error.code === "INVALID_TEXT_CONTENT")) {
         const fresh = JSON.stringify(app.render().scene);
         const emit = last !== null && withoutTransition(fresh) === withoutTransition(last) ? last : fresh;
         last = emit;

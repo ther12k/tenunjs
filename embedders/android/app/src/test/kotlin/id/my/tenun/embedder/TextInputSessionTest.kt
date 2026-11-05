@@ -1,5 +1,7 @@
 package id.my.tenun.embedder
 
+import android.text.InputType
+import android.view.inputmethod.EditorInfo
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -56,7 +58,7 @@ class TextInputSessionTest {
             { it.put("text", 123) }, { it.put("focused", "true") },
             { it.put("text", "line\nbreak") }, { it.put("text", "line\rbreak") },
             { it.put("readOnly", true) }, { it.put("keyboardType", "password") },
-            { it.put("returnAction", "next") }, { it.put("w", -1) },
+            { it.put("returnAction", "send") }, { it.put("w", -1) },
             { it.put("x", 1e100) }, { it.put("sessionId", 0) },
             { it.put("revision", -1) }, { it.put("revision", 0.5) },
             { it.put("revision", "1") }, { it.put("revision", 9007199254740992L) },
@@ -226,5 +228,36 @@ class TextInputSessionTest {
         assertEquals(wire, String(wire.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
         assertEquals(1L, JSONObject(wire).getLong("sessionId"))
         assertEquals(0L, JSONObject(wire).getLong("baseRevision"))
+    }
+
+    @Test
+    fun acceptsNumericKeyboardIntentsAndMapsEditorInfoInputTypes() {
+        for (kind in listOf("text", "number", "decimal")) {
+            assertEquals(kind, TextInputDescriptor.parse(json().put("keyboardType", kind)).keyboardType)
+        }
+        assertEquals(InputType.TYPE_CLASS_TEXT, inputTypeFor("text"))
+        assertEquals(InputType.TYPE_CLASS_NUMBER, inputTypeFor("number"))
+        assertEquals(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, inputTypeFor("decimal"))
+        assertEquals(InputType.TYPE_CLASS_TEXT, inputTypeFor("password"))
+        assertEquals(EditorInfo.IME_ACTION_DONE, imeActionFor("done"))
+        assertEquals(EditorInfo.IME_ACTION_NEXT, imeActionFor("next"))
+        assertEquals(EditorInfo.IME_ACTION_DONE, imeActionFor("send"))
+        rejects { TextInputDescriptor.parse(json().put("keyboardType", "phone")) }
+        rejects { TextInputDescriptor.parse(json().put("keyboardType", "number").put("returnAction", "send")) }
+        assertEquals("next", TextInputDescriptor.parse(json().put("returnAction", "next")).returnAction)
+    }
+
+    @Test
+    fun geometryUpdatesPreserveSessionWithoutRestart() {
+        val owner = Any()
+        val state = TextInputSessionState()
+        val initial = input()
+        assertTrue(state.adopt(owner, initial))
+        val token = state.token()!!
+        // Geometry change with unchanged revision/sessionId keeps the session intact
+        assertFalse(state.adopt(owner, initial.copy(w = 600f, h = 100f)))
+        assertTrue(state.accepts(token))
+        assertEquals(initial.revision, state.current!!.revision)
+        assertEquals(initial.sessionId, state.current!!.sessionId)
     }
 }

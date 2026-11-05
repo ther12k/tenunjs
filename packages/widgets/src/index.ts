@@ -176,6 +176,10 @@ export interface TextProps {
   color?: string | ColorRef;
   /** TN-179: stable semantic id for accessibility focus (bounds-derived by default). */
   semanticsId?: string;
+  /** Positive integer line cap; measured height never exceeds maxLines × lineHeight. */
+  maxLines?: number;
+  /** Append a "…" marker to the last kept line when maxLines dropped content. */
+  ellipsis?: boolean;
   children?: WidgetChild;
 }
 

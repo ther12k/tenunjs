@@ -60,12 +60,15 @@ import {
 import type { DisplayListScene, LayoutViewport, PlatformKind, SceneTransition, SceneTransitionRequest, WidgetContext } from "./display-list";
 import type { ThemeConfig } from "./index";
 import type { ThemePalette } from "./theme-slots";
-import { TextInputError, nextTextRevision, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
+import { TextInputError, nextTextRevision, numericDraftError, validateTextEditEvent, validateTextInputIdentity } from "./text-input";
 import type { TextFieldBinding, TextInputIdentity, TextInputSessionState } from "./text-input";
 
 /** Snapshot contract version. Bump only with a deliberate migration design:
  *  hosts carry state across a bundle swap only when both sides match. */
 export const APPLICATION_STATE_SCHEMA = 1;
+
+/** Plan B2: the back stack is a bounded origin list, not an unbounded history. */
+const BACK_STACK_CAP = 64;
 
 /**
  * TN-187: the host's environment descriptor — every field optional;
@@ -140,6 +143,7 @@ export type ApplicationErrorCode =
   | "TAP_TARGET_UNKNOWN"
   | "INVALID_VIEW"
   | "INVALID_THEME"
+  | "INVALID_INSET"
   | "SNAPSHOT_INVALID"
   | "SNAPSHOT_SCHEMA_MISMATCH"
   | "RUNTIME_DISPOSED";
@@ -218,6 +222,10 @@ export class ApplicationRuntime {
   private readonly services: ApplicationServices;
   private readonly designWidth: number | undefined;
   private viewport: Readonly<LayoutViewport> | undefined;
+  /** Host-delivered IME inset in logical px; renders reserve it from the viewport height. */
+  private imeInset = 0;
+  /** Origin routes recorded by navigate(); goBack pops LIFO. Never in snapshots. */
+  private backStack: string[] = [];
   private readonly onAsyncActionError:
     | ((info: { screen: string; action: string; error: unknown }) => void)
     | undefined;
@@ -302,6 +310,24 @@ export class ApplicationRuntime {
     this.viewport = next;
     // Coordinates from the previous layout cannot target the new surface.
     // A subscribed handoff rebuilds this table synchronously on invalidation.
+    this.lastTapRuns = [];
+    this.notifyStale();
+  }
+
+  /**
+   * IME inset (logical px) delivered by the host (verb "INSET", VIEWPORT
+   * negotiation precedent). The next render lays the scene out in a viewport
+   * whose height is reduced by the inset, so bottom-anchored chrome and
+   * content sit above the keyboard ("keyboard-aware reveal" floor). Not part
+   * of state snapshots; 0 restores the full viewport.
+   */
+  setImeInset(inset: number): void {
+    this.assertLive();
+    if (typeof inset !== "number" || !Number.isFinite(inset) || inset < 0) {
+      throw new ApplicationRuntimeError("INVALID_INSET", "IME inset must be a finite nonnegative number");
+    }
+    if (this.imeInset === inset) return;
+    this.imeInset = inset;
     this.lastTapRuns = [];
     this.notifyStale();
   }
@@ -445,19 +471,33 @@ export class ApplicationRuntime {
     this.pendingTransition = options?.transition === undefined
       ? null
       : normalizeSceneTransition(options.transition);
-    if (this.current !== name) this.endTextInput();
+    if (this.current !== name) {
+      this.endTextInput();
+      // Plan B2: Back routes through one owner. Every route CHANGE records
+      // the origin for goBack() — same-name navigation never grows the
+      // stack. Bounded: a long-lived session cycling routes cannot grow it
+      // without limit; the oldest origins drop past the cap.
+      this.backStack.push(this.current);
+      if (this.backStack.length > BACK_STACK_CAP) this.backStack.shift();
+    }
     this.current = name;
+    this.activateRoute(name);
+  }
+
+  /**
+   * Route activation shared by navigate() and goBack(): mount if needed,
+   * drop stale tap/field tables, and TN-142-replay every cached state
+   * channel the screen implements — the "no stale hero after Back" property
+   * (goBack reactivation MUST see the same state reality a fresh navigate
+   * would; otherwise cached device state goes stale on the way back).
+   */
+  private activateRoute(name: string): void {
     if (!this.sessions.has(name)) this.sessions.set(name, this.mount(name));
     // The new screen has not rendered yet: tap ids from the PREVIOUS
     // scene's committed table must not dispatch against it. render()
     // repopulates the table for the new scene.
     this.lastTapRuns = [];
     this.textFields.clear();
-    // TN-142: replay every cached state channel the newly active screen
-    // implements — the "no blank hero after navigate" property. Screens
-    // that never subscribed to a channel are skipped; transient pushes
-    // are never replayed. Invalidation fires once after the replay loop
-    // (coalesced), so invalidation-driven hosts repaint a single time.
     if (this.stateChannels.size > 0) {
       const session = this.sessions.get(name)!;
       let delivered = false;
@@ -470,6 +510,34 @@ export class ApplicationRuntime {
       }
       if (delivered) this.notifyStale();
     }
+  }
+
+  /** Whether goBack() has an origin to pop (plan B2 back ownership). */
+  canGoBack(): boolean {
+    this.assertLive();
+    return this.backStack.length > 0;
+  }
+
+  /**
+   * Plan B2: Android Back routes through ONE owner. Pops the most recent
+   * origin route and returns true; with an empty stack returns false WITHOUT
+   * touching state (the host then applies its platform default, e.g. finish).
+   * The popped screen's mounted session — and its controller state — is
+   * reactivated through the SAME activation path as navigate (channel replay
+   * included), never remounted. The stack is not part of state snapshots;
+   * restore keeps the current stack. goBack itself carries no transition;
+   * apps that want one navigate with explicit options.
+   */
+  goBack(): boolean {
+    this.assertLive();
+    const origin = this.backStack.pop();
+    if (origin === undefined) return false;
+    this.pendingTransition = null;
+    if (this.current !== origin) this.endTextInput();
+    this.current = origin;
+    this.activateRoute(origin);
+    this.notifyStale();
+    return true;
   }
 
   /**
@@ -497,7 +565,13 @@ export class ApplicationRuntime {
         `screen "${session.name}" produced a null view`
       );
     }
-    const { scene, semanticScene, tapRuns, textFields } = layoutScreen(this.theme, tree, this.viewport ?? this.designWidth, {
+    // The IME inset reserves the bottom of the viewport for the keyboard:
+    // the scene lays out (and bottom-anchored chrome anchors) above it.
+    const base = this.viewport ?? this.designWidth;
+    const effective = this.imeInset > 0 && typeof base === "object"
+      ? { width: base.width, height: Math.max(1, base.height - this.imeInset) }
+      : base;
+    const { scene, semanticScene, tapRuns, textFields } = layoutScreen(this.theme, tree, effective, {
       active: this.activeTextInput,
       focus: (id) => this.focusTextInput(id),
     }, {
@@ -554,6 +628,11 @@ export class ApplicationRuntime {
       // that newer value/removal/readOnly state before accepting an old IME echo.
       this.render();
       const field = this.requireTextInput(edit);
+      // Numeric-intent fields fail closed on out-of-contract content (a paste or
+      // IME leaking letters into a number field). The draft is not adopted; the
+      // handoff republishes authority so the host resyncs its editable.
+      const contentError = numericDraftError(field.props.keyboardType, edit.text);
+      if (contentError !== null) throw new TextInputError("INVALID_TEXT_CONTENT", contentError);
       const previous = this.activeTextInput!;
       const next: TextInputSessionState = {
         id: edit.id, sessionId: edit.sessionId, revision: nextTextRevision(previous.revision),
@@ -577,7 +656,18 @@ export class ApplicationRuntime {
       this.render();
       const field = this.requireTextInput(identity);
       this.endTextInput();
-      if (normalized === "TEXT_SUBMIT") field.props.onSubmitted?.();
+      if (normalized === "TEXT_SUBMIT") {
+        // Plan A2: "next" advances focus to the following editable field in
+        // layout order — but ONLY on the same screen. onSubmitted may
+        // navigate; an automatic transfer must never land on a DIFFERENT
+        // route's field that happens to sort after the origin id.
+        const originRoute = this.current;
+        field.props.onSubmitted?.();
+        if (field.props.inputAction === "next" && this.current === originRoute) {
+          this.render();
+          this.transferTextInputFocus(field.props.id);
+        }
+      }
       return;
     }
     if (normalized === "TAP" || normalized === "LONG-PRESS") {
@@ -614,6 +704,21 @@ export class ApplicationRuntime {
     const text = field.props.value;
     this.activeTextInput = { id, sessionId, revision: 0, text,
       selection: { base: text.length, extent: text.length }, composing: null };
+  }
+
+  /** IME "next": advance to the following editable field in layout order. */
+  private transferTextInputFocus(fromId: string): void {
+    this.assertLive();
+    const ids = [...this.textFields.keys()];
+    const origin = ids.indexOf(fromId);
+    if (origin < 0) return; // the submitted field left the scene during submit
+    for (let cursor = origin + 1; cursor < ids.length; cursor++) {
+      const candidate = this.textFields.get(ids[cursor]!);
+      if (candidate && !candidate.props.readOnly) {
+        this.focusTextInput(ids[cursor]!);
+        return;
+      }
+    }
   }
 
   private requireTextInput(identity: TextInputIdentity): TextFieldBinding {

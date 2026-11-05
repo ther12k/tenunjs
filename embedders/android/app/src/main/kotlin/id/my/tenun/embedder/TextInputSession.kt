@@ -1,9 +1,12 @@
 package id.my.tenun.embedder
 
+import android.text.InputType
+import android.view.inputmethod.EditorInfo
 import org.json.JSONObject
 
 /** All text offsets are UTF-16 code-unit offsets, matching Android and JavaScript. */
 data class TextInputSelection(val base: Int, val extent: Int)
+
 data class TextInputComposition(val start: Int, val end: Int)
 data class TextInputValue(
     val text: String,
@@ -32,6 +35,24 @@ fun textInputEventJson(value: JSONObject): String {
         index++
     }
     return result.toString()
+}
+
+/**
+ * EditorInfo input type for a descriptor keyboard intent (pure, JVM-testable).
+ * "number" is digits only; "decimal" adds the decimal separator flag. The
+ * content contract is owned by the framework's numeric draft gate — this only
+ * picks the keyboard the IME shows.
+ */
+fun inputTypeFor(keyboardType: String): Int = when (keyboardType) {
+    "number" -> InputType.TYPE_CLASS_NUMBER
+    "decimal" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+    else -> InputType.TYPE_CLASS_TEXT
+}
+
+/** EditorInfo IME action for a descriptor return action (pure, JVM-testable). */
+fun imeActionFor(returnAction: String): Int = when (returnAction) {
+    "next" -> EditorInfo.IME_ACTION_NEXT
+    else -> EditorInfo.IME_ACTION_DONE
 }
 
 /** Required, nonpainting display-list operation. Ordinary paint ops draw the field. */
@@ -120,7 +141,10 @@ data class TextInputDescriptor(
             }
             val keyboardType = string("keyboardType")
             val returnAction = string("returnAction")
-            if (keyboardType != "text" || returnAction != "done") invalid("unsupported keyboard type or return action")
+            if ((keyboardType != "text" && keyboardType != "number" && keyboardType != "decimal") ||
+                (returnAction != "done" && returnAction != "next")) {
+                invalid("unsupported keyboard type or return action")
+            }
             val fixed = if (json.has("fixed")) boolean("fixed") else false
             val anchor = if (json.has("anchor")) string("anchor") else null
             if (anchor != null && anchor != "bottom" && anchor != "center") invalid("unsupported anchor")
@@ -158,7 +182,10 @@ class TextInputSessionState {
         val old = current
         val identityChanged = this.owner !== nextOwner || old?.id != next?.id || old?.sessionId != next?.sessionId
         val editingChanged = old?.value() != next?.value() || old?.revision != next?.revision
-        val restart = identityChanged || (!ownEdit && editingChanged) || (forceRestart && next != null)
+        // Keyboard/action intent drives EditorInfo; a focused field whose
+        // intent changed needs restartInput or the IME keeps the old keyboard.
+        val intentChanged = old?.keyboardType != next?.keyboardType || old?.returnAction != next?.returnAction
+        val restart = identityChanged || (!ownEdit && editingChanged) || intentChanged || (forceRestart && next != null)
         if (restart) generation++
         this.owner = nextOwner
         current = next

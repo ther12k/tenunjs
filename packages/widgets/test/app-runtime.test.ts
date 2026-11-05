@@ -886,3 +886,82 @@ describe("ApplicationRuntime — controller load hook (TN-153)", () => {
     expect(JSON.stringify(target.render().scene)).toContain("n 99");
   });
 });
+
+describe("plan B2 — Back routes through one owner", () => {
+  function backFixture() {
+    const state = { focusEdits: 0, homeEdits: 0 };
+    const focus = defineScreen({
+      name: "Focus", initialState: () => ({ edits: 0 }),
+      actions: { edit: ({ state: s }: ScreenActionContext<{ edits: number }>) => { s.edits++; } },
+      view: () => jsx("text", { children: "Focus screen" }),
+    });
+    const home = defineScreen({
+      name: "Home", initialState: () => ({ edits: 0 }),
+      actions: { edit: ({ state: s }: ScreenActionContext<{ edits: number }>) => { s.edits++; } },
+      view: () => jsx("text", { children: "Home screen" }),
+    });
+    const app = new ApplicationRuntime({ screens: { home, focus }, initial: "home", theme,
+      viewport: { width: 320, height: 480 } });
+    return { app };
+  }
+
+  test("navigate records origins; goBack pops LIFO and reactivates the mounted session", () => {
+    const { app } = backFixture();
+    expect(app.canGoBack()).toBe(false);
+    expect(app.goBack()).toBe(false); // empty stack: not handled, state untouched
+    app.navigate("focus");
+    expect(app.canGoBack()).toBe(true);
+    // Mutate the focus screen's mounted session state, then leave and come back.
+    app.pushTo("focus", "edit");
+    app.pushState("edit", 99); // cached channel input delivered on activation
+    app.navigate("home");
+    expect(app.route()).toBe("home");
+    app.pushState("edit", 42); // newer channel reality while away
+    expect(app.goBack()).toBe(true);
+    expect(app.route()).toBe("focus");
+    // The replay delivered the LATEST input (42), not the stale pre-departure
+    // state: edits counts 1 (direct pushTo) + 1 (pushState 99 delivered live)
+    // + 1 (the Back activation replaying the latest cached input, 42).
+    expect(app.exportState().states["focus"]).toEqual({ edits: 3 });
+    // Same mounted session, never remounted (edits accumulated across the
+    // round trip instead of resetting to a fresh mount's 0).
+    expect(app.goBack()).toBe(true);
+    expect(app.route()).toBe("home");
+    expect(app.goBack()).toBe(false);
+    expect(app.canGoBack()).toBe(false);
+  });
+
+  test("same-name navigation never grows the stack", () => {
+    const { app } = backFixture();
+    app.navigate("focus");
+    for (let index = 0; index < 5; index++) app.navigate("focus");
+    expect(app.canGoBack()).toBe(true);
+    expect(app.goBack()).toBe(true);
+    expect(app.route()).toBe("home");
+    expect(app.goBack()).toBe(false);
+  });
+
+  test("the stack is bounded, not part of snapshots, and restore keeps the current stack", () => {
+    const { app } = backFixture();
+    for (let index = 0; index < 70; index++) {
+      app.navigate(index % 2 === 0 ? "focus" : "home");
+    }
+    // Bounded: repeated cycling cannot grow it past the cap.
+    let pops = 0;
+    while (app.goBack()) pops++;
+    expect(pops).toBeLessThanOrEqual(64);
+    app.navigate("focus");
+    const snapshot = app.exportState();
+    expect(JSON.stringify(snapshot)).not.toContain("backStack");
+    app.restore(snapshot);
+    expect(app.canGoBack()).toBe(true); // restore keeps the CURRENT stack
+  });
+
+  test("dispose rejects later Back ownership", () => {
+    const { app } = backFixture();
+    app.navigate("focus");
+    app.dispose();
+    expect(() => app.goBack()).toThrow(ApplicationRuntimeError);
+    expect(() => app.canGoBack()).toThrow(ApplicationRuntimeError);
+  });
+});

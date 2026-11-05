@@ -949,6 +949,29 @@ export function wrapText(text: string, size: number, maxWidth: number): string[]
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
+    if (textWidth(word, size) > maxWidth) {
+      // A single word wider than the line (a CJK run without break
+      // spaces, a long URL) must still fill lines: hard-break between
+      // grapheme clusters, wherever the word appears. Without this the
+      // word overflows every line it lands on; without cluster awareness
+      // it would split accents, ZWJ emoji, and flags mid-character.
+      if (current.length > 0) {
+        lines.push(current);
+        current = "";
+      }
+      let chunk = "";
+      for (const cluster of graphemeClusters(word)) {
+        const next = chunk + cluster;
+        if (chunk.length > 0 && textWidth(next, size) > maxWidth) {
+          lines.push(chunk);
+          chunk = cluster;
+        } else {
+          chunk = next;
+        }
+      }
+      current = chunk;
+      continue;
+    }
     const candidate = current.length > 0 ? `${current} ${word}` : word;
     if (textWidth(candidate, size) <= maxWidth || current.length === 0) {
       current = candidate;
@@ -959,6 +982,110 @@ export function wrapText(text: string, size: number, maxWidth: number): string[]
   }
   if (current.length > 0) lines.push(current);
   return lines;
+}
+
+/** Validated maxLines prop; absent (or an explicit null, which the runtime prop codec accepts as absent) means unbounded. */
+function maxLinesOf(props: Record<string, unknown>): number {
+  const value = props.maxLines;
+  if (value === undefined || value === null) return Number.MAX_SAFE_INTEGER;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new LayoutError("INVALID_CONSTRAINT", `Text maxLines must be a positive integer, got ${String(value)}`);
+  }
+  return value;
+}
+
+/**
+ * Approximate grapheme clustering for hard breaks: combining marks, ZWJ
+ * sequences, skin-tone modifiers, variation selectors, and regional-indicator
+ * (flag) pairs stay attached to their base instead of splitting across
+ * lines. Full UAX-29 segmentation remains TN-075's contract; this only
+ * guarantees the estimator never separates user-visible characters the
+ * common fixtures exercise.
+ */
+function isExtendCodePoint(codePoint: number, previous: number): boolean {
+  if (codePoint === 0x200d || previous === 0x200d) return true; // ZWJ joins both directions
+  if (codePoint >= 0x0300 && codePoint <= 0x036f) return true; // combining diacritics
+  if (codePoint >= 0x064b && codePoint <= 0x065f) return true; // Arabic vowel marks
+  if (codePoint === 0x0670) return true; // Arabic dagger alif
+  if (codePoint >= 0x1ab0 && codePoint <= 0x1aff) return true;
+  if (codePoint >= 0x1dc0 && codePoint <= 0x1dff) return true; // combining diacritical marks supplement
+  if (codePoint >= 0x20d0 && codePoint <= 0x20ff) return true;
+  if (codePoint >= 0xfe00 && codePoint <= 0xfe0f) return true; // variation selectors
+  if (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff) return true; // skin-tone modifiers
+  return false;
+}
+
+/** Splits a word into never-separated clusters (approximate; see above). */
+function graphemeClusters(word: string): string[] {
+  const clusters: string[] = [];
+  let current = "";
+  let previousCodePoint = 0;
+  let consecutiveRIs = 0;
+  for (const codePointText of word) {
+    const codePoint = codePointText.codePointAt(0)!;
+    const isRI = codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff;
+    let extend = false;
+    if (current.length > 0) {
+      if (isRI) {
+        // UAX #29: regional indicator pairs form flags in pairs of 2.
+        if (consecutiveRIs % 2 === 1) {
+          extend = true;
+        }
+      } else if (isExtendCodePoint(codePoint, previousCodePoint)) {
+        extend = true;
+      }
+    }
+    if (extend) {
+      current += codePointText;
+    } else {
+      if (current.length > 0) clusters.push(current);
+      current = codePointText;
+    }
+    consecutiveRIs = isRI ? consecutiveRIs + 1 : 0;
+    previousCodePoint = codePoint;
+  }
+  if (current.length > 0) clusters.push(current);
+  return clusters;
+}
+
+/**
+ * The single source of truth for painted Text lines — measure and place both
+ * call this, so the laid-out height and the emitted line ops can never
+ * disagree. Applies maxLines, then an ellipsis marker when lines were
+ * dropped and ellipsis is requested; the marker always fits the line budget
+ * (trailing content yields before it overflows into a sibling). Returns the
+ * full text for semantics.
+ */
+export function layoutTextLines(
+  props: Record<string, unknown>,
+  text: string,
+  typography: { size: number; lineHeight: number },
+  maxWidth: number,
+): { lines: string[]; truncated: boolean } {
+  const maxLines = maxLinesOf(props);
+  if (props.ellipsis !== undefined && props.ellipsis !== null && typeof props.ellipsis !== "boolean") {
+    throw new LayoutError("INVALID_CONSTRAINT", "Text ellipsis must be a boolean");
+  }
+  const lines = wrapText(text, typography.size, Math.max(maxWidth, 1));
+  if (lines.length <= maxLines) return { lines, truncated: false };
+  const cut = lines.slice(0, maxLines);
+  if (props.ellipsis === true) {
+    const budget = Math.max(maxWidth, 1);
+    const marker = "…";
+    const markerWidth = textWidth(marker, typography.size);
+    if (markerWidth > budget) {
+      // Sub-marker width: even the ellipsis alone exceeds the line budget;
+      // suppress it so we never violate the maxWidth guarantee.
+      cut[maxLines - 1] = "";
+    } else {
+      let clusters = graphemeClusters(cut[maxLines - 1]!);
+      while (clusters.length > 0 && textWidth(`${clusters.join("")}${marker}`, typography.size) > budget) {
+        clusters.pop();
+      }
+      cut[maxLines - 1] = `${clusters.join("")}${marker}`;
+    }
+  }
+  return { lines: cut, truncated: true };
 }
 
 /** ---------- widget-tree helpers ---------- */
@@ -1469,7 +1596,7 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
   switch (kind) {
     case "text": {
       const ty = typography(ctx, props.variant);
-      const lines = wrapText(textContent(node), ty.size, Math.max(bounds.maxW, 1));
+      const { lines } = layoutTextLines(props, textContent(node), ty, bounds.maxW);
       const widest = Math.max(...lines.map((line) => textWidth(line, ty.size)));
       return constrain({ w: Math.min(widest, bounds.maxW), h: lines.length * ty.lineHeight }, bounds);
     }
@@ -1825,7 +1952,8 @@ function place(ctx: InternalContext, node: AnyNode, x: number, y: number, frame:
   switch (kind) {
     case "text": {
       const ty = typography(ctx, props.variant);
-      const lines = wrapText(textContent(node), ty.size, Math.max(w, 1));
+      const maxWrapWidth = Math.max(w, bounds.maxW);
+      const { lines } = layoutTextLines(props, textContent(node), ty, maxWrapWidth);
       const align = props.align === "center" ? "center" : "left";
       const boxWidth = typeof props.width === "number" ? props.width : w;
       lines.forEach((line, index) => {

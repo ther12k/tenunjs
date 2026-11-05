@@ -25,6 +25,12 @@ export interface TextEditingValue {
   readonly composing: TextComposingRange | null;
 }
 
+/** Keyboard intent for a field. Numeric values are intents (and content gates), not validators. */
+export type TextKeyboardType = "text" | "number" | "decimal";
+
+/** IME action intent: "done" submits and ends the session; "next" submits and advances focus. */
+export type TextInputAction = "done" | "next";
+
 /** Required host capability marker: older hosts reject this unknown operation. */
 export interface TextInputOp extends FixedPosition, TextEditingValue {
   readonly op: "text-input";
@@ -37,8 +43,8 @@ export interface TextInputOp extends FixedPosition, TextEditingValue {
   /** Zero while unfocused; positive, runtime-local activation identity otherwise. */
   readonly sessionId: number;
   readonly revision: number;
-  readonly keyboardType: "text";
-  readonly returnAction: "done";
+  readonly keyboardType: TextKeyboardType;
+  readonly returnAction: TextInputAction;
   readonly readOnly: boolean;
   readonly label: string;
 }
@@ -62,12 +68,16 @@ export interface TextFieldProps {
   readonly placeholder?: string;
   readonly readOnly?: boolean;
   readonly onSubmitted?: () => void;
+  /** Keyboard intent; default "text". Numeric fields keep editing drafts ("", "12.") and reject other content. */
+  readonly keyboardType?: TextKeyboardType;
+  /** IME action intent; default "done". "next" advances focus to the next editable field on submit. */
+  readonly inputAction?: TextInputAction;
 }
 
 export type TextInputErrorCode =
   | "INVALID_TEXT_FIELD" | "DUPLICATE_TEXT_FIELD" | "INVALID_TEXT_EDIT"
-  | "INVALID_TEXT_INPUT" | "STALE_TEXT_SESSION" | "STALE_TEXT_REVISION"
-  | "TEXT_INPUT_RUNTIME_REQUIRED";
+  | "INVALID_TEXT_INPUT" | "INVALID_TEXT_CONTENT" | "STALE_TEXT_SESSION"
+  | "STALE_TEXT_REVISION" | "TEXT_INPUT_RUNTIME_REQUIRED";
 
 export class TextInputError extends Error {
   constructor(readonly code: TextInputErrorCode, message: string) {
@@ -82,6 +92,28 @@ export interface ResolvedTextFieldProps extends TextFieldProps {
   readonly label: string;
   readonly placeholder: string;
   readonly readOnly: boolean;
+  readonly keyboardType: TextKeyboardType;
+  readonly inputAction: TextInputAction;
+}
+
+/**
+ * Fail-closed numeric draft gate. A numeric-intent field keeps ordinary editing
+ * intermediates (empty, a lone sign, a trailing separator such as "12." or the
+ * locale separator "12,5") but never adopts letters or a doubled separator.
+ * Committed-value validation (ranges, precision, separator normalization)
+ * stays application-owned.
+ */
+const NUMERIC_DRAFT_PATTERNS: Record<Exclude<TextKeyboardType, "text">, RegExp> = {
+  number: /^-?[0-9]*$/,
+  decimal: /^-?[0-9]*([.,][0-9]*)?$/,
+};
+
+/** Returns null when the draft is admissible for the keyboard intent, or a reason string. */
+export function numericDraftError(keyboardType: TextKeyboardType, text: string): string | null {
+  if (keyboardType === "text") return null;
+  return NUMERIC_DRAFT_PATTERNS[keyboardType].test(text)
+    ? null
+    : `numeric "${keyboardType}" draft ${JSON.stringify(text)} is not admissible`;
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -106,7 +138,8 @@ function integer(value: unknown, minimum: number, code: TextInputErrorCode, name
 /** Snapshot first: validation and subsequent rendering use the same values. */
 export function resolveTextFieldProps(value: unknown): Readonly<ResolvedTextFieldProps> {
   if (!record(value)) fail("INVALID_TEXT_FIELD", "TextField props must be an object");
-  const { id, value: text, onChanged, label = "", placeholder = "", readOnly = false, onSubmitted } = value;
+  const { id, value: text, onChanged, label = "", placeholder = "", readOnly = false, onSubmitted,
+    keyboardType = "text", inputAction = "done" } = value;
   const fieldId = identifier(id, "INVALID_TEXT_FIELD");
   if (typeof text !== "string" || typeof label !== "string" || typeof placeholder !== "string" ||
       typeof readOnly !== "boolean" || typeof onChanged !== "function" ||
@@ -114,7 +147,15 @@ export function resolveTextFieldProps(value: unknown): Readonly<ResolvedTextFiel
     fail("INVALID_TEXT_FIELD", "TextField requires string value/labels, boolean readOnly, and typed callbacks");
   }
   if (/[\r\n]/.test(text)) fail("INVALID_TEXT_FIELD", "Single-line TextField value must not contain CR or LF");
-  return Object.freeze({ id: fieldId, value: text, label, placeholder, readOnly,
+  if (keyboardType !== "text" && keyboardType !== "number" && keyboardType !== "decimal") {
+    fail("INVALID_TEXT_FIELD", "keyboardType must be \"text\", \"number\", or \"decimal\"");
+  }
+  if (inputAction !== "done" && inputAction !== "next") {
+    fail("INVALID_TEXT_FIELD", "inputAction must be \"done\" or \"next\"");
+  }
+  const contentError = numericDraftError(keyboardType, text);
+  if (contentError !== null) fail("INVALID_TEXT_CONTENT", contentError);
+  return Object.freeze({ id: fieldId, value: text, label, placeholder, readOnly, keyboardType, inputAction,
     onChanged: onChanged as (value: string) => void,
     ...(onSubmitted === undefined ? {} : { onSubmitted: onSubmitted as () => void }) });
 }
@@ -165,7 +206,8 @@ export function validateTextInputOp(value: unknown): Readonly<TextInputOp> {
   const { op, id, x, y, w, h, focused, sessionId, revision, keyboardType, returnAction, readOnly, label,
     fixed, anchor, anchorSize } = copy;
   if (op !== "text-input" || typeof focused !== "boolean" || typeof readOnly !== "boolean" ||
-      typeof label !== "string" || keyboardType !== "text" || returnAction !== "done") {
+      typeof label !== "string" || (keyboardType !== "text" && keyboardType !== "number" && keyboardType !== "decimal") ||
+      (returnAction !== "done" && returnAction !== "next")) {
     fail(code, "invalid text-input descriptor flags, label, or keyboard intent");
   }
   for (const [name, dimension] of Object.entries({ x, y, w, h })) {
@@ -175,6 +217,8 @@ export function validateTextInputOp(value: unknown): Readonly<TextInputOp> {
   const sid = integer(sessionId, 0, code, "sessionId");
   const rev = integer(revision, 0, code, "revision");
   const state = editingValue(copy, code);
+  const contentError = numericDraftError(keyboardType as TextKeyboardType, state.text);
+  if (contentError !== null) fail("INVALID_TEXT_CONTENT", contentError);
   if ((focused && (sid === 0 || readOnly)) ||
       (!focused && (sid !== 0 || rev !== 0 || state.composing !== null))) {
     fail(code, "focus, session, revision, readOnly and composition disagree");
@@ -237,5 +281,5 @@ export function textInputDescriptor(
     composing: echoed ? active.composing : null,
     focused, sessionId: focused ? active.sessionId : 0,
     revision: focused ? (echoed ? active.revision : nextTextRevision(active.revision)) : 0,
-    keyboardType: "text", returnAction: "done", readOnly: props.readOnly, label: props.label });
+    keyboardType: props.keyboardType, returnAction: props.inputAction, readOnly: props.readOnly, label: props.label });
 }

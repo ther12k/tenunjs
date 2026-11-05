@@ -35,6 +35,10 @@ class DisplayListInputConnection(
     private var operationDepth = 0
     private var batchDepth = 0
     private var reported = initial.value()
+    /** The live descriptor's return action; ENTER maps to it (plan A2 Next/Done). */
+    private var returnAction: String = initial.returnAction
+    private var lastRevision: Long = -1L
+    private var lastSessionId: Long = -1L
 
     init {
         applyAuthoritative(initial)
@@ -42,16 +46,33 @@ class DisplayListInputConnection(
 
     private fun live(): Boolean = !closed && isCurrent()
 
+    /** The IME action this field's descriptor carries: NEXT advances focus, DONE submits. */
+    private fun editorAction(): Int =
+        if (returnAction == "next") EditorInfo.IME_ACTION_NEXT else EditorInfo.IME_ACTION_DONE
+
     override fun getEditable(): Editable? = if (live()) content else null
 
     /** Acknowledgements are copied; never predict the runtime's next revision. */
     fun applyAuthoritative(input: TextInputDescriptor) {
         if (!live()) return
+        returnAction = input.returnAction
         val next = input.value()
+        // If the descriptor's revision and session are unchanged, this is an
+        // unedited scene re-render (e.g. INSET/VIEWPORT delivery or background repaint).
+        // Never overwrite local buffered edits when authority has not moved.
+        if (input.sessionId == lastSessionId && input.revision == lastRevision) {
+            return
+        }
+        lastSessionId = input.sessionId
+        lastRevision = input.revision
         // Exact acknowledgements and geometry-only paints must not replace
         // the IME's existing composing spans (which can carry its own styles).
         if (value() == next) {
             reported = next
+            return
+        }
+        // If an IME batch edit is in progress, do not clobber pending local edits.
+        if (batchDepth > 0) {
             return
         }
         applying = true
@@ -160,7 +181,8 @@ class DisplayListInputConnection(
         if (text == null) false else commitText(text.text, 1)
 
     override fun performEditorAction(actionCode: Int): Boolean {
-        if (!live() || (actionCode != EditorInfo.IME_ACTION_DONE && actionCode != EditorInfo.IME_ACTION_UNSPECIFIED)) {
+        if (!live() || (actionCode != EditorInfo.IME_ACTION_DONE &&
+                actionCode != EditorInfo.IME_ACTION_NEXT && actionCode != EditorInfo.IME_ACTION_UNSPECIFIED)) {
             return false
         }
         // An editor action must observe every pending edit even if an IME
@@ -185,7 +207,7 @@ class DisplayListInputConnection(
                 else if (event.keyCode == KeyEvent.KEYCODE_DEL) deleteSurroundingTextInCodePoints(1, 0)
                 else deleteSurroundingTextInCodePoints(0, 1)
             }
-            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> performEditorAction(EditorInfo.IME_ACTION_DONE)
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> performEditorAction(editorAction())
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 val base = Selection.getSelectionStart(content)
                 val extent = Selection.getSelectionEnd(content)

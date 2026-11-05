@@ -13,6 +13,7 @@ import {
   Column,
   installHostHandoff,
   Text,
+  TextField,
 } from "../src/index";
 
 const theme = {
@@ -155,6 +156,63 @@ describe("installHostHandoff — host protocol", () => {
     expect(() => handoff.dispatch("tap", JSON.stringify({ id: backId }))).not.toThrow();
   });
 
+  test("rejected numeric edit republishes authority and restores wrapper chrome tap runs", () => {
+    let chromeTaps = 0;
+    const base = new ApplicationRuntime({
+      screens: {
+        form: defineScreen({
+          name: "Form",
+          initialState: () => ({ num: "12" }),
+          actions: {
+            setNum: ({ state, input }: { state: { num: string }; input: string }) => { state.num = input; },
+          },
+          view: ({ state, actions }) =>
+            Column({
+              children: [
+                TextField({ id: "num", keyboardType: "number", value: state.num, onChanged: actions.setNum }),
+              ],
+            }) as never,
+        }),
+      },
+      initial: "form",
+      theme,
+    } as never);
+    const wrapped = {
+      render: () => {
+        const out = base.render();
+        out.scene.taps.push({
+          x: 0, y: 0, w: out.scene.designWidth, h: 48,
+          action: "tap", payload: { id: out.tapRuns.length },
+        });
+        out.tapRuns.push(() => { chromeTaps++; });
+        return out;
+      },
+      dispatch: (action: string, payload?: unknown) => base.dispatch(action, payload),
+      exportState: () => base.exportState(),
+      stateSchema: () => base.stateSchema(),
+      route: () => base.route(),
+      onStateInvalidation: (listener: () => void) => base.onStateInvalidation(listener),
+    };
+    const handoff = installHostHandoff({ app: wrapped });
+    // Focus the text field
+    let scene = JSON.parse(handoff.lastScene()!);
+    handoff.dispatch("tap", JSON.stringify(scene.taps[0].payload));
+    scene = JSON.parse(handoff.lastScene()!);
+    const field = scene.ops.find((op: { op: string }) => op.op === "text-input");
+    const chrome = scene.taps.at(-1).payload;
+
+    expect(() => {
+      handoff.dispatch("TEXT_EDIT", JSON.stringify({
+        id: field.id, sessionId: field.sessionId, baseRevision: field.revision,
+        text: "12x", selection: { base: 3, extent: 3 }, composing: null,
+      }));
+    }).toThrow("INVALID_TEXT_CONTENT");
+
+    // The wrapper chrome tap remains valid and callable after the rejected edit
+    expect(() => handoff.dispatch("tap", JSON.stringify(chrome))).not.toThrow();
+    expect(chromeTaps).toBe(1);
+  });
+
   test("async action settlement commits a fresh scene out-of-band; dispose stops it", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -203,5 +261,76 @@ describe("installHostHandoff — host protocol", () => {
     const before = committed.length;
     handoff.dispatch("__TENUN_STATE_SCHEMA", "");
     expect(committed.length).toBe(before); // no further out-of-band commits
+  });
+});
+
+describe("plan B2 — BACK verb negotiation", () => {
+  function wrapperFor(app: ReturnType<typeof counterApp>, commit: (json: string) => void, hideBack = false) {
+    return {
+      route: () => app.route(),
+      render: () => app.render(),
+      exportState: () => app.exportState(),
+      stateSchema: () => app.stateSchema(),
+      dispatch: (action: string, payload?: unknown) => app.dispatch(action, payload),
+      onStateInvalidation: (listener: () => void) => app.onStateInvalidation(listener),
+      commit,
+      ...(hideBack ? {} : { goBack: () => app.goBack() }),
+    };
+  }
+
+  test("an adopting bundle answers handled true/false and one press pops once", () => {
+    const other = defineScreen({
+      name: "Other", initialState: () => ({}), actions: {},
+      view: () => jsx(Text, { children: "Other screen" }) as never,
+    });
+    const counter = defineScreen({
+      name: "Counter", initialState: () => ({ count: 0 }), actions: {},
+      view: () => jsx(Text, { children: "Counter screen" }) as never,
+    });
+    const app = new ApplicationRuntime({
+      screens: { counter, other }, initial: "counter", theme,
+      viewport: { width: 320, height: 480 },
+    } as never);
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined) });
+    // Same-name navigation records no origin: Back is not handled.
+    app.navigate("counter");
+    const reply1 = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply1.handled).toBe(false);
+    // One route change, one origin: the first press pops it, the second is not handled.
+    app.navigate("other");
+    const reply2 = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply2.handled).toBe(true);
+    expect(JSON.parse(adopt.dispatch("BACK", "{}")).handled).toBe(false);
+  });
+
+  test("a HANDLED back commits even for wrappers without an invalidation subscription", () => {
+    const other = defineScreen({
+      name: "Other", initialState: () => ({}), actions: {},
+      view: () => jsx(Text, { children: "Other screen" }) as never,
+    });
+    const counter = defineScreen({
+      name: "Counter", initialState: () => ({ count: 0 }), actions: {},
+      view: () => jsx(Text, { children: "Counter screen" }) as never,
+    });
+    const app = new ApplicationRuntime({
+      screens: { counter, other }, initial: "counter", theme,
+      viewport: { width: 320, height: 480 },
+    } as never);
+    // No onStateInvalidation on the wrapper: BACK must still commit the
+    // popped route or the reply would claim success over a stale scene.
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined) });
+    const before = adopt.lastScene();
+    app.navigate("other");
+    const reply = JSON.parse(adopt.dispatch("BACK", "{}"));
+    expect(reply.handled).toBe(true);
+    const committed = JSON.parse(adopt.lastScene()!);
+    expect(committed.ops.some((op: { op?: string; text?: string }) => op.text === "Counter screen")).toBe(true);
+    expect(before).not.toBeNull();
+  });
+
+  test("a bundle without goBack surfaces UNKNOWN_ACTION (NULL across JNI = not handled)", () => {
+    const app = counterApp();
+    const adopt = installHostHandoff({ app: wrapperFor(app, () => undefined, true) });
+    expect(() => adopt.dispatch("BACK", "{}")).toThrow("unknown dispatch verb");
   });
 });

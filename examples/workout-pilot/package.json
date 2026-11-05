@@ -1,0 +1,18 @@
+{
+  "name": "@tenunjs-examples/workout-pilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workout pilot — the openGym-shaped acceptance journeys (Gate A: Focus workout) on public TenunJS APIs",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/widgets": "workspace:*",
+    "@tenunjs-examples/ui-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs-examples/test-support": "workspace:*",
+    "@tenunjs/cli": "workspace:*"
+  }
+}

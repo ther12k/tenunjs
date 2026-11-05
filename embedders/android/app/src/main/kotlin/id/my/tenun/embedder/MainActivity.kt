@@ -59,6 +59,10 @@ class MainActivity : Activity() {
     private var trialConfirmed = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    /** Requester-bound TIMER wake-ups (see newEngine/scheduleEngineTimer). */
+    private val timerScheduler = RequesterBoundScheduler { action, delayMs ->
+        mainHandler.postDelayed({ action() }, delayMs)
+    }
     private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "tenun-dev-reload").apply { isDaemon = true }
     }
@@ -104,6 +108,42 @@ class MainActivity : Activity() {
         }
 
         setContentView(surfaceView)
+
+        // Plan B2: Back has ONE owner. API 33+ delivers system Back through
+        // the invoked-callback dispatcher (targetSdk 36 no longer routes it
+        // through onBackPressed), so register there; the legacy override
+        // below keeps older versions covered. A registered callback suppresses
+        // the platform default, so not-handled falls back to moveTaskToBack for
+        // root launcher activity or finish() — matching platform default behavior.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                android.window.OnBackInvokedCallback {
+                    val fallback: () -> Unit = {
+                        if (isTaskRoot) moveTaskToBack(true) else finish()
+                    }
+                    val eng = engine ?: run {
+                        fallback()
+                        return@OnBackInvokedCallback
+                    }
+                    val reply = try {
+                        eng.dispatchActionResult("BACK", "{}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "BACK dispatch failed: ${e.message}")
+                        null
+                    }
+                    val handled = reply != null && runCatching {
+                        org.json.JSONObject(reply).optBoolean("handled", false)
+                    }.getOrDefault(false)
+                    if (!handled) {
+                        fallback()
+                        return@OnBackInvokedCallback
+                    }
+                    surfaceView?.syncFromScene(eng.getLatestScene())
+                    surfaceView?.redraw()
+                },
+            )
+        }
 
         // First scene from boot is on screen (surface attach synced it).
         if (engine?.getLatestScene()?.isNotEmpty() == true) trialHealth.onSceneCommitted()
@@ -202,7 +242,7 @@ class MainActivity : Activity() {
         private set
 
     /** Boots stored (confirmed) OTA bundle, falling back to packaged asset. */
-    private fun bootEngine(): TenunEngine? {
+    fun bootEngine(): TenunEngine? {
         val store = bundleStore
         if (store != null) {
             val stored = store.activeBundleBytes()
@@ -210,7 +250,7 @@ class MainActivity : Activity() {
                 try {
                     Log.i(TAG, "booting confirmed OTA bundle v${store.installedVersion()}")
                     bootBundleSha = sha256Hex(stored)
-                    return TenunEngine(stored, hostRegistry).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
+                    return newEngine(stored).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
                 } catch (e: Exception) {
                     Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
                     // Confirmed-but-broken is treated like a failed trial.
@@ -220,7 +260,7 @@ class MainActivity : Activity() {
         }
         bootBundleSha = sha256Hex(assetBundleBytes)
         return try {
-            TenunEngine(assetBundleBytes, hostRegistry).also { lastBootCorrelation = "packaged" }
+            newEngine(assetBundleBytes).also { lastBootCorrelation = "packaged" }
         } catch (e: Exception) {
             // The structured native attribution lines (stage/attempt) are
             // in logcat under TenunEngine; the panel keeps only the boot
@@ -256,27 +296,15 @@ class MainActivity : Activity() {
                 }
             }
             hostRegistry.register("ble", bleService!!)
+            // "system.scheduleTimer" is intercepted per-engine (newEngine):
+            // the shared registry has no caller identity, and the timer's
+            // owner must be the engine that REQUESTED it.
             hostRegistry.register("system", object : NativeService {
                 override fun invoke(method: String, payloadJson: String): String? {
                     return when (method) {
                         "clockNow" -> {
                             val c = Calendar.getInstance()
                             String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
-                        }
-                        "scheduleTimer" -> {
-                            try {
-                                val delay = org.json.JSONObject(payloadJson).optLong("delayMs", 0L)
-                                mainHandler.postDelayed({
-                                    this@MainActivity.engine?.let { eng ->
-                                        eng.dispatchAction("TIMER", "{}")
-                                        surfaceView?.syncFromScene(eng.getLatestScene())
-                                        surfaceView?.redraw()
-                                    }
-                                }, Math.max(10L, delay))
-                                "true"
-                            } catch (e: Exception) {
-                                null
-                            }
                         }
                         "editProgram" -> {
                             mainHandler.post {
@@ -288,6 +316,48 @@ class MainActivity : Activity() {
                     }
                 }
             })
+        }
+    }
+
+    /**
+     * Engine construction with a REQUESTER-bound host handler. Each engine's
+     * native handle owns the handler instance it was created with (TN-154),
+     * so a per-engine wrapper supplies the caller's identity on every
+     * tenun_host_call — something the shared registry cannot. Timer wake-ups
+     * bind to the requesting engine: OTA/hot-reload candidates restore state
+     * (re-arming countdown timers) BEFORE they are published as this.engine,
+     * so binding to the visible engine would capture the OLD engine and the
+     * post-swap identity guard would drop the restored countdown (review fix).
+     */
+    private fun newEngine(bytes: ByteArray?): TenunEngine {
+        var bound: TenunEngine? = null
+        val scoped = HostServiceHandler { service, method, payloadJson ->
+            if (service == "system" && method == "scheduleTimer") {
+                scheduleEngineTimer(bound, payloadJson)
+            } else {
+                hostRegistry.onHostCall(service, method, payloadJson)
+            }
+        }
+        return TenunEngine(bytes, scoped).also { bound = it }
+    }
+
+    /** Timer wake-up on behalf of [requesting]; delivered only while that
+     *  engine is still the live, undisposed activity engine. */
+    private fun scheduleEngineTimer(requesting: TenunEngine?, payloadJson: String): String? {
+        if (requesting == null) return null
+        return try {
+            val delay = org.json.JSONObject(payloadJson).optLong("delayMs", 0L)
+            val scheduled = timerScheduler.schedule(
+                requesting, Math.max(10L, delay),
+                { eng -> eng === this.engine && !eng.isDisposed },
+            ) {
+                requesting.dispatchAction("TIMER", "{}")
+                surfaceView?.syncFromScene(requesting.getLatestScene())
+                surfaceView?.redraw()
+            }
+            if (scheduled) "true" else null
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -312,7 +382,7 @@ class MainActivity : Activity() {
         } ?: -1L
 
         val candidate = try {
-            TenunEngine(bytes, hostRegistry)
+            newEngine(bytes)
         } catch (e: Exception) {
             Log.w(TAG, "OTA bundle v${metadata.sequence} failed to initialize: ${e.message}")
             return false // old engine never touched
@@ -501,7 +571,7 @@ class MainActivity : Activity() {
         } ?: -1L
 
         val candidate = try {
-            TenunEngine(bytes, hostRegistry)
+            newEngine(bytes)
         } catch (e: Exception) {
             Log.w(TAG, "hot reload bundle failed to initialize; keeping current: ${e.message}")
             return
@@ -603,6 +673,27 @@ class MainActivity : Activity() {
     // BLE runtime-permission dialog result: a granted set auto-resumes a
     // connect() that was parked behind the dialog; a denial reports guidance
     // (and opens this app's settings page when the OS marked it permanent).
+    override fun onBackPressed() {
+        // Plan B2: Back has ONE owner — the bundle's runtime. One dispatch per
+        // press; the { handled } reply decides between the runtime's pop and
+        // the platform default, so a press can never commit a navigation
+        // twice. A bundle without goBack answers NULL (UNKNOWN_ACTION), which
+        // is also "not handled". Predictive-back animation is a follow-up.
+        val eng = engine ?: return super.onBackPressed()
+        val reply = try {
+            eng.dispatchActionResult("BACK", "{}")
+        } catch (e: Exception) {
+            Log.w(TAG, "BACK dispatch failed: ${e.message}")
+            null
+        }
+        val handled = reply != null && runCatching {
+            org.json.JSONObject(reply).optBoolean("handled", false)
+        }.getOrDefault(false)
+        if (!handled) return super.onBackPressed()
+        surfaceView?.syncFromScene(eng.getLatestScene())
+        surfaceView?.redraw()
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,

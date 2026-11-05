@@ -3,8 +3,8 @@ import { defineScreen } from "@tenunjs/core";
 import { jsx, jsxs, type WidgetNode } from "@tenunjs/jsx-runtime";
 import {
   ApplicationRuntime, ApplicationRuntimeError, Canvas, Column, Container, SizedBox, Text,
-  TextField, TextInputError, installHostHandoff, layoutScreen,
-  textInputContractError, validateTextEditEvent, validateTextInputOp,
+  TextField, TextInputError, installHostHandoff, layoutScreen, numericDraftError,
+  resolveTextFieldProps, textInputContractError, validateTextEditEvent, validateTextInputOp,
   type CanvasProps, type DisplayListScene, type TextEditEvent, type TextFieldProps,
   type TextInputErrorCode, type TextInputOp,
 } from "../src/index";
@@ -103,7 +103,7 @@ describe("TN-160 text input boundary", () => {
       { composing: { start: 4, end: 2 } }, { composing: { start: 0, end: 99 } },
       { composing: undefined }, { focused: true, sessionId: 0 }, { focused: false },
       { sessionId: Number.MAX_SAFE_INTEGER + 1 }, { revision: -1 }, { revision: 1.2 },
-      { readOnly: true }, { keyboardType: "password" }, { returnAction: "next" },
+      { readOnly: true }, { keyboardType: "password" }, { returnAction: "send" },
       { label: null }, { fixed: 1 }, { anchor: "left" }, { anchorSize: Infinity },
     ]) {
       expectCode(() => validateTextInputOp({ ...descriptor(), ...patch }), "INVALID_TEXT_INPUT");
@@ -415,5 +415,211 @@ describe("TN-160 revisioned controlled edit sessions", () => {
     expect(() => f.dispatch("TEXT_EDIT", edit(last, "disposed"))).toThrow(ApplicationRuntimeError);
     expect(f.commits).toHaveLength(before);
     expect(f.changed).toEqual(["valid"]);
+  });
+});
+
+describe("TN-160 numeric keyboard intent", () => {
+  test("props default to text, reject unknown intents, and gate the initial value", () => {
+    expectCode(() => resolveTextFieldProps({ id: "w", value: "0", onChanged: () => undefined,
+      keyboardType: "phone" }), "INVALID_TEXT_FIELD");
+    expectCode(() => resolveTextFieldProps({ id: "w", value: "abc", onChanged: () => undefined,
+      keyboardType: "number" }), "INVALID_TEXT_CONTENT");
+    const resolved = resolveTextFieldProps({ id: "w", value: "12.5", onChanged: () => undefined,
+      keyboardType: "decimal" });
+    expect(resolved.keyboardType).toBe("decimal");
+    expect(resolveTextFieldProps({ id: "w", value: "x", onChanged: () => undefined }).keyboardType).toBe("text");
+  });
+
+  test("draft gate keeps editing intermediates and rejects out-of-contract content", () => {
+    for (const draft of ["", "-", "42", "007", "-3"]) {
+      expect(numericDraftError("number", draft)).toBe(null);
+      expect(numericDraftError("decimal", draft)).toBe(null);
+    }
+    for (const draft of ["12.", "12,5", ".5", "-,", "12.", "1.0", "1,0"]) {
+      expect(numericDraftError("decimal", draft)).toBe(null);
+    }
+    for (const [type, draft] of [
+      ["number", "4.2"], ["number", "4,2"], ["number", "abc"], ["number", "1 2"], ["number", "1-2"],
+      ["decimal", "1.2.3"], ["decimal", "1,2.3"], ["decimal", "12 kg"], ["decimal", "abc"], ["decimal", "1 2"],
+    ] as const) {
+      expect(numericDraftError(type, draft)).not.toBe(null);
+    }
+    expect(numericDraftError("text", "any text 🙂")).toBe(null);
+  });
+
+  test("lowering carries the numeric intent into the descriptor and wire validators accept it", () => {
+    const state = { weight: "62.5" };
+    const screen = defineScreen({ name: "W", initialState: () => state, actions: {},
+      view: () => jsx(TextField, { id: "weight", value: state.weight, label: "Weight",
+        keyboardType: "decimal", onChanged: (value: string) => { state.weight = value; } }) });
+    const app = new ApplicationRuntime({ screens: { w: screen }, initial: "w", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const op = (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input");
+    expect(op).toMatchObject({ id: "weight", keyboardType: "decimal", returnAction: "done" });
+    expect(validateTextInputOp(op!).keyboardType).toBe("decimal");
+    expect(textInputContractError({ ...op, keyboardType: "phone" })).not.toBe(null);
+    expectCode(() => validateTextInputOp({ ...op, text: "heavy", selection: { base: 5, extent: 5 } }),
+      "INVALID_TEXT_CONTENT");
+  });
+
+  test("numeric fields keep decimal drafts through the session and reject letter edits without adopting them", () => {
+    const state = { weight: "60" };
+    const changed: string[] = [];
+    const screen = defineScreen({ name: "W", initialState: () => state, actions: {},
+      view: () => jsx(TextField, { id: "weight", value: state.weight, label: "Weight",
+        keyboardType: "decimal", onChanged: (value: string) => { changed.push(value); state.weight = value; } }) });
+    const app = new ApplicationRuntime({ screens: { w: screen }, initial: "w", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const scene = (): DisplayListScene => JSON.parse(commits.at(-1)!);
+    const op = (): TextInputOp =>
+      scene().ops.find((op): op is TextInputOp => op.op === "text-input" && op.id === "weight")!;
+    const tap = scene().taps.find((tap) => tap.x === op().x && tap.w === op().w)!;
+    handoff.dispatch("TAP", JSON.stringify(tap.payload));
+    expect(op().focused).toBe(true);
+    const active = op();
+
+    // Trailing separator and locale-comma drafts are ordinary editing intermediates.
+    for (const draft of ["6", "62", "62.", "62,5"]) {
+      handoff.dispatch("TEXT_EDIT", JSON.stringify({ id: "weight", sessionId: active.sessionId,
+        baseRevision: op().revision, text: draft, selection: { base: draft.length, extent: draft.length },
+        composing: null }));
+      expect(state.weight).toBe(draft);
+    }
+
+    // A paste-style letter leak fails closed: rejected, not adopted, authority intact.
+    const authoritative = op();
+    expectCode(() => handoff.dispatch("TEXT_EDIT", JSON.stringify({ id: "weight", sessionId: active.sessionId,
+      baseRevision: authoritative.revision, text: "62,5kg", selection: { base: 6, extent: 6 },
+      composing: null })), "INVALID_TEXT_CONTENT");
+    expect(state.weight).toBe("62,5");
+    expect(op()).toMatchObject({ text: "62,5", revision: authoritative.revision,
+      sessionId: active.sessionId, focused: true });
+  });
+});
+
+describe("TN-160 input action and focus transfer", () => {
+  test("props default to done, reject unknown actions, and the descriptor carries next", () => {
+    expectCode(() => resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined,
+      inputAction: "previous" }), "INVALID_TEXT_FIELD");
+    const resolved = resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined,
+      inputAction: "next" });
+    expect(resolved.inputAction).toBe("next");
+    expect(resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined }).inputAction).toBe("done");
+    const op = validateTextInputOp({ ...descriptor(), returnAction: "next" });
+    expect(op.returnAction).toBe("next");
+    expect(textInputContractError({ ...descriptor(), returnAction: "send" })).not.toBe(null);
+  });
+
+  test("submit with next advances to the following editable field and stops at the end", () => {
+    const state = { one: "1", two: "2", three: "3", locked: "r" };
+    const screen = defineScreen({ name: "Flow", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "one", value: state.one, inputAction: "next", onChanged: (v: string) => { state.one = v; } }),
+        jsx(TextField, { id: "two", value: state.two, inputAction: "next", onChanged: (v: string) => { state.two = v; } }),
+        jsx(TextField, { id: "locked", value: state.locked, readOnly: true, onChanged: (v: string) => { state.locked = v; } }),
+        jsx(TextField, { id: "three", value: state.three, onChanged: (v: string) => { state.three = v; } }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { flow: screen }, initial: "flow", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const fieldOp = (id: string): TextInputOp => {
+      const op = (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id);
+      if (!op) throw new Error(`Missing field ${id}`);
+      return op;
+    };
+    const focusViaTap = (id: string): TextInputOp => {
+      const op = fieldOp(id);
+      const tap = (JSON.parse(commits.at(-1)!).taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h);
+      handoff.dispatch("TAP", JSON.stringify(tap!.payload));
+      return fieldOp(id);
+    };
+    const active = focusViaTap("one");
+    expect(active.returnAction).toBe("next");
+    // IME NEXT: TEXT_SUBMIT advances past the readOnly field to "three"... no —
+    // to the NEXT editable field in layout order, which is "two" ("locked" follows later).
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    const afterOne = fieldOp("two");
+    expect(afterOne.focused).toBe(true);
+    expect(afterOne.sessionId).toBeGreaterThan(active.sessionId);
+    expect(fieldOp("one").focused).toBe(false);
+    // Chain: "two" also carries next → submit lands on "three".
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: afterOne.id, sessionId: afterOne.sessionId, baseRevision: afterOne.revision }));
+    expect(fieldOp("three").focused).toBe(true);
+    expect(fieldOp("three").returnAction).toBe("done");
+    // Submitting the last field just ends the session.
+    const last = fieldOp("three");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: last.id, sessionId: last.sessionId, baseRevision: last.revision }));
+    expect(fieldOp("three").focused).toBe(false);
+  });
+
+  test("submit with next when the origin field disappears leaves no session", () => {
+    const state = { visible: true, a: "a", b: "b" };
+    const screen = defineScreen({ name: "Vanish", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        state.visible ? jsx(TextField, { id: "a", value: state.a, inputAction: "next",
+          onSubmitted: () => { state.visible = false; }, onChanged: (v: string) => { state.a = v; } }) : null,
+        jsx(TextField, { id: "b", value: state.b, onChanged: (v: string) => { state.b = v; } }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { v: screen }, initial: "v", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const focusViaTap = (id: string): TextInputOp => {
+      const scene = JSON.parse(commits.at(-1)!);
+      const op = (scene.ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+      const tap = (scene.taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h)!;
+      handoff.dispatch("TAP", JSON.stringify(tap.payload));
+      return (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+    };
+    const active = focusViaTap("a");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    // onSubmitted removed the field; the transfer no-ops instead of focusing a stale table entry.
+    const scene = JSON.parse(commits.at(-1)!);
+    expect((scene.ops as TextInputOp[]).some((op) => op.op === "text-input" && op.focused)).toBe(false);
+  });
+});
+
+describe("review fix — Next transfer never crosses a navigation", () => {
+  test("submitting a next field whose onSubmitted navigates leaves the destination unfocused", () => {
+    const state = { a: "a" };
+    let navigateApp: ApplicationRuntime | null = null;
+    const a = defineScreen({ name: "A", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "shared", value: state.a, inputAction: "next",
+          onSubmitted: () => { navigateApp?.navigate("b"); },
+          onChanged: (v: string) => { state.a = v; } }),
+        jsx(TextField, { id: "follower", value: "x", onChanged: () => undefined }),
+      ] }) });
+    const b = defineScreen({ name: "B", initialState: () => ({}), actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "shared", value: "b-value", onChanged: () => undefined }),
+        jsx(TextField, { id: "destination", value: "target", onChanged: () => undefined }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { a, b }, initial: "a", theme,
+      viewport: { width: 320, height: 480 } });
+    navigateApp = app;
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const scene = () => JSON.parse(commits.at(-1)!);
+    const focusViaTap = (id: string): TextInputOp => {
+      const current = scene();
+      const op = (current.ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+      const tap = (current.taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h)!;
+      handoff.dispatch("TAP", JSON.stringify(tap.payload));
+      return (scene().ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+    };
+    const active = focusViaTap("shared");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    // The submit navigated: no automatic transfer onto screen B's "shared"/"destination".
+    expect(app.route()).toBe("b");
+    expect((scene().ops as TextInputOp[]).some((op) => op.op === "text-input" && op.focused)).toBe(false);
   });
 });

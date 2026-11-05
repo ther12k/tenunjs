@@ -146,6 +146,12 @@ class TenunSurfaceView @JvmOverloads constructor(
             // TN-158: a swapped engine re-negotiates viewport delivery —
             // support is a property of the bundle, not the view.
             viewportDriven = false
+            // IME-inset support is likewise a property of the bundle; a
+            // swapped application re-negotiates the INSET verb.
+            imeInsetNegotiated = false
+            imeInsetUnsupported = false
+            lastImeInset = -1
+            reservedBottomInset = 0f
             // TN-165: scroll offsets belong to the engine that produced
             // them — a swapped-in bundle whose regions reuse the same ids
             // must not inherit another application's scroll positions.
@@ -365,12 +371,60 @@ class TenunSurfaceView @JvmOverloads constructor(
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // Keyboard-aware reveal (plan A2): the host owns the IME inset and
+            // delivers it through the "INSET" verb (VIEWPORT negotiation
+            // precedent). A bundle without setImeInset answers NULL across
+            // JNI and is not asked again until it negotiates successfully.
+            setOnApplyWindowInsetsListener { _, insets ->
+                deliverImeInset(insets.getInsets(android.view.WindowInsets.Type.ime()).bottom)
+                insets
+            }
+        }
     }
 
     companion object {
         private const val TAG = "TenunSurfaceView"
         /** TN-169: transition frame cadence (~60 fps). */
         private const val FRAME_DELAY_MS = 16L
+    }
+
+    /** IME-inset negotiation: deliver until the first success, then only on change. */
+    private var imeInsetNegotiated = false
+    private var imeInsetUnsupported = false
+    private var lastImeInset = -1
+    /** The inset the runtime reserved (design units); fixed anchors subtract it. */
+    private var reservedBottomInset = 0f
+
+    private fun deliverImeInset(insetPx: Int) {
+        if (imeInsetUnsupported) return
+        val eng = engine ?: return
+        val density = resources.displayMetrics.density
+        if (density <= 0f) return
+        // Compare in ONE unit space: the stored value is logical (design units).
+        val logical = (insetPx / density).toInt()
+        if (imeInsetNegotiated && logical == lastImeInset) return
+        val delivered = try {
+            eng.dispatchActionResult("INSET", "{\"ime\":$logical}") != null
+        } catch (e: Exception) {
+            Log.w(TAG, "inset delivery failed: ${e.message}")
+            false
+        }
+        if (!delivered) {
+            if (imeInsetNegotiated) {
+                Log.w(TAG, "INSET dispatch rejected; keeping last committed inset")
+            } else {
+                // A bundle without setImeInset is not asked again (until engine swap).
+                imeInsetUnsupported = true
+                imeInsetNegotiated = true
+            }
+            return
+        }
+        imeInsetNegotiated = true
+        lastImeInset = logical
+        reservedBottomInset = logical.toFloat()
+        syncFromScene(eng.getLatestScene())
+        redraw()
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -475,8 +529,9 @@ class TenunSurfaceView @JvmOverloads constructor(
             val owner = engine ?: return null
             if (!isCurrentTextInput(owner, token)) return null
             textInputConnection?.invalidate()
-            outAttrs.inputType = InputType.TYPE_CLASS_TEXT
-            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+            outAttrs.inputType = inputTypeFor(input.keyboardType)
+            outAttrs.imeOptions = imeActionFor(input.returnAction) or
+                EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
             outAttrs.initialSelStart = input.selection.base
             outAttrs.initialSelEnd = input.selection.extent
             outAttrs.hintText = input.label
@@ -927,6 +982,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun drawSceneLayer(canvas: Canvas, scene: DisplayListScene, dx: Float, alpha: Float, scrollY: Float) {
         val scale = if (scene.designWidth > 0) width / scene.designWidth else 1f
         val visibleHeight = height / scale
+        val anchorBase = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
         canvas.save()
         var layered = false
         if (alpha < 1f) {
@@ -935,7 +991,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         canvas.translate(dx, 0f)
         canvas.clipRect(-dx, 0f, -dx + scene.designWidth, visibleHeight)
-        renderDisplayListOps(canvas, scene, visibleHeight, scrollY)
+        renderDisplayListOps(canvas, scene, visibleHeight, scrollY, anchorBase)
         if (layered) canvas.restore()
         canvas.restore()
     }
@@ -944,7 +1000,13 @@ class TenunSurfaceView @JvmOverloads constructor(
      * shared by plain rendering and transition layers. The scrollable body
      * translates by -scrollY INSIDE the caller's viewport clip (the settled
      * renderDisplayList rule); fixed overlays stay viewport-pinned. */
-    private fun renderDisplayListOps(canvas: Canvas, dl: DisplayListScene, visibleHeight: Float, scrollY: Float) {
+    private fun renderDisplayListOps(
+        canvas: Canvas,
+        dl: DisplayListScene,
+        visibleHeight: Float,
+        scrollY: Float,
+        anchorBase: Float = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
+    ) {
         canvas.save()
         canvas.translate(0f, -scrollY)
         for (op in dl.ops) {
@@ -952,7 +1014,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         canvas.restore()
         for (op in dl.ops) {
-            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+            if (op.isFixed()) paintDisplayOp(canvas, op, anchorBase)
         }
     }
 
@@ -1070,7 +1132,9 @@ class TenunSurfaceView @JvmOverloads constructor(
         val dl = sceneHolder.current ?: return false
         val designX = x / dlScale
         val viewportY = y / dlScale
-        val visibleHeight = height / dlScale
+        // Hit regions mirror the paint anchors: fixed taps live above the
+        // reserved IME inset, never behind the keyboard.
+        val anchorBase = (height / dlScale - reservedBottomInset).coerceAtLeast(0f)
         // Topmost painted region wins: the LAST containing region is the
         // one the user sees — required for overlays. TN-161: taps tagged
         // with a scroll region resolve in that region's CONTENT space (the
@@ -1084,7 +1148,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         val hit = dl.taps.lastOrNull { tap ->
             if (tap.action != action) return@lastOrNull false
             if (tap.scroll == null) {
-                return@lastOrNull tap.contains(designX, viewportY, visibleHeight, scrollY)
+                return@lastOrNull tap.contains(designX, viewportY, anchorBase, scrollY)
             }
             val region = regions[tap.scroll] ?: return@lastOrNull false
             val regionTop = region.y - scrollY
@@ -1290,6 +1354,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun renderDisplayList(canvas: Canvas, dl: DisplayListScene) {
         recomputeScrollExtent(dl)
         val visibleHeight = height / dlScale
+        // Fixed anchors anchor against the space the RUNTIME laid out for:
+        // the IME inset the bundle reserved comes off the bottom (plan A2),
+        // so bottom chrome paints above the keyboard instead of behind it.
+        val anchorBase = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
         scrollY = scrollY.coerceIn(0f, maxScroll)
 
         canvas.drawColor(Color.parseColor(dl.background))
@@ -1311,7 +1379,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         canvas.scale(dlScale, dlScale)
         canvas.clipRect(0f, 0f, dl.designWidth, visibleHeight)
         for (op in dl.ops) {
-            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+            if (op.isFixed()) paintDisplayOp(canvas, op, anchorBase)
         }
         canvas.restore()
     }

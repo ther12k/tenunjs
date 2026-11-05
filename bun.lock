@@ -201,6 +201,20 @@
         "@tenunjs/cli": "workspace:*",
       },
     },
+    "examples/workout-pilot": {
+      "name": "@tenunjs-examples/workout-pilot",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs-examples/test-support": "workspace:*",
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@tenunjs/cli",
       "version": "0.1.0",
@@ -281,6 +295,8 @@
     "@tenunjs-examples/ui-kit": ["@tenunjs-examples/ui-kit@workspace:examples/ui-kit"],
 
     "@tenunjs-examples/votol": ["@tenunjs-examples/votol@workspace:examples/votol"],
+
+    "@tenunjs-examples/workout-pilot": ["@tenunjs-examples/workout-pilot@workspace:examples/workout-pilot"],
 
     "@tenunjs/cli": ["@tenunjs/cli@workspace:packages/cli"],
 
