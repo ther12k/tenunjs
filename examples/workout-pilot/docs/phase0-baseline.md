@@ -102,8 +102,22 @@ All five first-batch items are implemented on `feat/workout-pilot-gate-a`
 | 4. Focus/inset coordination + Focus-workout journey | slices B/C | Focus journey + `inputAction: "next"` transfer + `INSET` reveal floor |
 | 5. Essential motion/countdown slice (Gate A) | slice B | deadline + injected-clock countdown, ~1 Hz tick chain, host-painted ring, single completion announcement |
 
-Suite: **692 pass / 0 fail** (39 from baseline 659), `tsc` strict clean across
+Suite: **695 pass / 0 fail** (36 over baseline 659), `tsc` strict clean across
 all five tsconfigs.
+
+### Slice E — production boot path (bun tier)
+
+- `src/host-entry.ts` installs the QuickJS `setTimeout` shim (polytron-entry
+  precedent) so the countdown's tick chain survives bundling; the dispatch
+  entry drains due timers on every host re-entry and passes `TIMER` through.
+- `scripts/build-host.ts` builds and boot-verifies the IIFE bundle in a bare
+  (QuickJS-like) context.
+- `test/host-boot.test.ts` drives the production contract three ways: module
+  boot + frozen identifiers; bun-global timer path (~1s tick repaints the
+  ring); and the **QuickJS shim path** — the built bundle in a no-timer-globals
+  VM requests `system.scheduleTimer` through the fake host bridge, and the
+  TIMER re-entry drains the tick and visibly advances the countdown.
+- Still device-gated: real QuickJS engine, JNI transport, paint, IME.
 
 ### Evidence boundaries (unchanged rules, explicit)
 
