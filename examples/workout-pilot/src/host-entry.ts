@@ -15,12 +15,13 @@ import { createWorkoutRuntime } from "./runtime";
 
 const host = globalThis as Record<string, unknown>;
 
-let monotonicLast = 0;
-/** Ratcheted wall clock: non-decreasing (review P2 — no backward jumps). */
-function monotonicNow(): number {
-  const current = Date.now();
-  return current > monotonicLast ? (monotonicLast = current) : monotonicLast;
-}
+/** Monotonic clock: uses performance.now() when available (QuickJS/browser/Bun) to avoid wall-clock jumps. */
+const getMonotonicNow = (): number => {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return Math.round(performance.now());
+  }
+  return Date.now();
+};
 
 interface ActiveTimer {
   id: number;
@@ -30,13 +31,21 @@ interface ActiveTimer {
 
 let nextTimerId = 1;
 const activeTimers = new Map<number, ActiveTimer>();
+let scheduledHostWakeupAt: number | null = null;
 
-/** Asks the native scheduler for the next wake-up when timers remain, so a
- *  drained entry never strands a timer without a pending host wake-up. */
+/** Asks the native scheduler for the next wake-up when timers remain, without
+ *  accumulating redundant wake-up calls. */
 function requestNextWakeup(nowMs: number): void {
   let nextAt = Number.POSITIVE_INFINITY;
   for (const timer of activeTimers.values()) nextAt = Math.min(nextAt, timer.runAt);
-  if (!Number.isFinite(nextAt) || typeof host.tenun_host_call !== "function") return;
+  if (!Number.isFinite(nextAt) || typeof host.tenun_host_call !== "function") {
+    scheduledHostWakeupAt = null;
+    return;
+  }
+  if (scheduledHostWakeupAt !== null && scheduledHostWakeupAt <= nextAt) {
+    return;
+  }
+  scheduledHostWakeupAt = nextAt;
   try {
     (host.tenun_host_call as (s: string, m: string, p: string) => string | null)(
       "system",
@@ -49,7 +58,8 @@ function requestNextWakeup(nowMs: number): void {
 }
 
 function drainTimers(): void {
-  const nowMs = monotonicNow();
+  scheduledHostWakeupAt = null;
+  const nowMs = getMonotonicNow();
   for (const [id, timer] of Array.from(activeTimers.entries())) {
     if (nowMs >= timer.runAt) {
       activeTimers.delete(id);
@@ -70,8 +80,9 @@ if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
   ) => {
     const id = nextTimerId++;
     const delay = Math.max(0, ms);
-    activeTimers.set(id, { id, runAt: monotonicNow() + delay, fn });
-    requestNextWakeup(monotonicNow());
+    const now = getMonotonicNow();
+    activeTimers.set(id, { id, runAt: now + delay, fn });
+    requestNextWakeup(now);
     return id;
   };
   (host as { clearTimeout: (id: number) => void }).clearTimeout = (id: number) => {
@@ -79,7 +90,7 @@ if (typeof (host as { setTimeout?: unknown }).setTimeout !== "function") {
   };
 }
 
-const app = createWorkoutRuntime(undefined, { now: monotonicNow });
+const app = createWorkoutRuntime(undefined, { now: getMonotonicNow });
 const handoff = installHostHandoff({
   app,
   commit(json) {
@@ -102,7 +113,7 @@ host["__tenun_dispatch_action"] = (action: string, payloadJson: string): string 
     // A synthetic tick recomputes remaining from the restored deadline and
     // re-arms the ~1 Hz chain (restTick no-ops when rest is not running).
     try {
-      app.pushTo("focus", "restTick", monotonicNow());
+      app.pushTo("focus", "restTick", getMonotonicNow());
     } catch {
       // The restored route is not mounted; nothing to re-arm.
     }

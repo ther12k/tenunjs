@@ -148,16 +148,29 @@ describe("A1 documented metric approximation", () => {
 });
 
 describe("review fixes — wrap/ellipsis hardening", () => {
-  test("the ellipsis marker always fits the line budget", () => {
+  test("the ellipsis marker always fits the line budget and never introduces malformed surrogates", () => {
     const { lines } = layoutTextLines({ maxLines: 1, ellipsis: true }, "M".repeat(20), { size: 17, lineHeight: 24 }, 100);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.endsWith("…")).toBe(true);
     expect(textWidth(lines[0]!, 17)).toBeLessThanOrEqual(100);
+
+    // Multi-byte emoji trimming never leaves an unpaired high surrogate.
+    const emojiTrim = layoutTextLines({ maxLines: 1, ellipsis: true }, "😀😀😀", { size: 17, lineHeight: 24 }, 40);
+    expect(emojiTrim.lines).toHaveLength(1);
+    expect(emojiTrim.lines[0]!.endsWith("…")).toBe(true);
+    // Unpaired surrogates fail isWellFormed check.
+    if (typeof (emojiTrim.lines[0] as unknown as { isWellFormed?: () => boolean }).isWellFormed === "function") {
+      expect((emojiTrim.lines[0] as unknown as { isWellFormed: () => boolean }).isWellFormed()).toBe(true);
+    }
+    // Sub-marker width: if the marker itself exceeds the budget, it is suppressed to prevent overflow.
+    const subMarker = layoutTextLines({ maxLines: 1, ellipsis: true }, "abc", { size: 17, lineHeight: 24 }, 1);
+    expect(subMarker.lines).toHaveLength(1);
+    expect(textWidth(subMarker.lines[0]!, 17)).toBeLessThanOrEqual(1);
   });
 
   test("hard breaks never split graphemes: accents, ZWJ emoji, and flags stay whole", () => {
     // Combining accent: every wrapped line rejoins to the original text, and
-    // no line ENDS with a bare combining mark.
+    // no line STARTS with a bare combining mark.
     const accented = "Cafe\u0301";
     const lines = wrapText(accented, 17, 40);
     expect(lines.join("")).toBe(accented);
@@ -166,6 +179,10 @@ describe("review fixes — wrap/ellipsis hardening", () => {
       // a cluster like "e\u0301" may legitimately END with one.
       expect(/^[\u0300-\u036f]/.test(line)).toBe(false);
     }
+    // Arabic vowel mark and combining diacritical marks supplement stay with base.
+    expect(wrapText("a\u1dc0b", 17, 10)).toEqual(["a\u1dc0", "b"]);
+    expect(wrapText("ب\u064eب", 17, 10)).toEqual(["ب\u064e", "ب"]);
+
     // ZWJ family emoji: one cluster, never split across lines.
     const family = "👨\u200d👩\u200d👧\u200d👦";
     const familyLines = wrapText(`${family} ${family}`, 17, Math.ceil(textWidth(family, 17)));
@@ -174,11 +191,11 @@ describe("review fixes — wrap/ellipsis hardening", () => {
     }
     expect(wrapText(`${family} ${family}`, 17, Math.ceil(textWidth(family, 17))).join(" ").split(/\s+/).filter(Boolean).join(" "))
       .toBe(`${family} ${family}`);
-    // Flags: RI pairs stay paired.
+
+    // Flags: regional indicator pair parity (each flag is a pair of 2).
     const flags = "🇮🇩🇯🇵🇩🇪";
-    const flagLines = wrapText(flags, 17, Math.ceil(textWidth("🇮🇩", 17)));
-    expect(flagLines.join("")).toBe(flags);
-    for (const line of flagLines) expect(line.length % 2 === 0 || /[\u{1F1E6}-\u{1F1FF}]/u.test(line)).toBe(true);
+    const flagLines = wrapText(flags, 17, 39);
+    expect(flagLines).toEqual(["🇮🇩", "🇯🇵", "🇩🇪"]);
   });
 
   test("an oversized word hard-breaks even after earlier words fill a line", () => {

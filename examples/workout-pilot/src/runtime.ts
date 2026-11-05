@@ -11,12 +11,17 @@ export interface WorkoutRuntimeOptions {
   schedule?: (callback: () => void, delayMs: number) => void;
 }
 
+export const getMonotonicTime = (): number =>
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? Math.round(performance.now())
+    : Date.now();
+
 /** One composition shared by the browser host, QuickJS, and journey tests. */
 export function createWorkoutRuntime(
   viewport: LayoutViewport = WORKOUT_VIEWPORT,
   options: WorkoutRuntimeOptions = {},
 ): ApplicationRuntime {
-  const now = options.now ?? (() => Date.now());
+  const now = options.now ?? getMonotonicTime;
   const schedule = options.schedule ?? ((callback, delayMs) => { setTimeout(callback, delayMs); });
   // TN-170: the runtime owns the theme; the toggle service swaps it through
   // the invalidation channel — no screen state, no remounts.

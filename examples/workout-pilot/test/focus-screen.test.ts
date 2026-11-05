@@ -150,15 +150,22 @@ describe("review fixes — completion and countdown lifecycle", () => {
   });
 
   test("a stale duplicate completion tap does not complete the next set", async () => {
-    const { services } = restServices(1_000);
-    const screen = mountScreen(FocusScreen, { services });
+    let now = 1_000;
+    const screen = mountScreen(FocusScreen, {
+      services: { now: () => now, scheduleRestTick: () => undefined },
+    });
     // First press carries the set the button was rendered for; a replay of
     // the SAME press (stale transport duplicate) still names set-1-1, but the
     // active set is now set-1-2 — the guard ignores it.
     await screen.press("completeSet", "set-1-1");
     await screen.press("completeSet", "set-1-1");
     expect(screen.state.completedSets).toEqual(["set-1-1"]);
-    await screen.press("completeSet", "set-1-2"); // fresh press on the real button
+    // A rapid duplicate tap on the newly rendered button (within cooldown) is also debounced.
+    await screen.press("completeSet", "set-1-2");
+    expect(screen.state.completedSets).toEqual(["set-1-1"]);
+    // After completing set 2 legitimately (time advances past cooldown), completion succeeds.
+    now += 30_000;
+    await screen.press("completeSet", "set-1-2");
     expect(screen.state.completedSets).toEqual(["set-1-1", "set-1-2"]);
     await expect(screen.press("completeSet", 42)).rejects.toThrow("strings");
   });
@@ -193,5 +200,24 @@ describe("review fixes — completion and countdown lifecycle", () => {
     expect(screen.state.restPhase).toBe("idle");
     expect(screen.state.restDeadline).toBeNull();
     expect(screen.render()).not.toBeNull();
+  });
+
+  test("previously valid snapshots without results property restore and render safely", () => {
+    const screen = mountScreen(FocusScreen, {
+      services: { now: () => 1_000, scheduleRestTick: () => undefined },
+    });
+    // Simulate a snapshot from an earlier commit where results was not present.
+    const oldSnapshotState = {
+      entryIndex: 0, setIndex: 1, weightDraft: "62.5", repsDraft: "8",
+      weightError: null, repsError: null, completedSets: ["set-1-1"],
+      restPhase: "idle", restDeadline: null, restRemainingMs: 0, restRound: 1,
+      workoutComplete: false, lastCompletedAt: null,
+      // results is omitted intentionally
+    };
+    Object.assign(screen.state, oldSnapshotState);
+    delete (screen.state as unknown as Record<string, unknown>).results;
+    expect(() => screen.render()).not.toThrow();
+    const rendered = JSON.stringify(screen.render());
+    expect(rendered).toContain("Done — 60 kg × 8");
   });
 });

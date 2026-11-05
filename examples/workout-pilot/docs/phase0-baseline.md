@@ -102,7 +102,7 @@ All five first-batch items are implemented on `feat/workout-pilot-gate-a`
 | 4. Focus/inset coordination + Focus-workout journey | slices B/C | Focus journey + `inputAction: "next"` transfer + `INSET` reveal floor |
 | 5. Essential motion/countdown slice (Gate A) | slice B | deadline + injected-clock countdown, ~1 Hz tick chain, host-painted ring, single completion announcement |
 
-Suite: **713 pass / 0 fail** (54 over baseline 659), `tsc` strict clean across
+Suite: **715 pass / 0 fail** (56 over baseline 659), `tsc` strict clean across
 all five tsconfigs.
 
 ### Review remediations (addressing findings across framework, host, and example)
@@ -110,23 +110,27 @@ all five tsconfigs.
 - **Android compilation & IME lifecycle:** Fixed compile failure in `DisplayListInputConnection`
   where `returnAction` was read from an undefined variable; `TextInputSession.adopt` now restarts
   IME input when `keyboardType` or `returnAction` intent changes; resolved contradictory JVM assertion
-  in `TextInputSessionTest` for `"next"`.
-- **Keyboard insets & fixed anchors:** Normalized unit comparisons for `INSET` delivery; track
-  unsupported negotiation to avoid repeated calls; adjusted native fixed-anchor painting and hit-testing
-  to take `reservedBottomInset` into account so bottom chrome does not sit behind the soft keyboard.
-- **Android Back (API 33+):** Registered `OnBackInvokedCallback` on `MainActivity` for modern
-  predictive-back routing alongside `onBackPressed()`.
+  in `TextInputSessionTest` for `"next"`. Corrected `OnBackInvokedDispatcher.PRIORITY_DEFAULT` in `MainActivity.kt`.
+- **Keyboard insets & fixed anchors:** Normalized unit comparisons for `INSET` delivery; only mark
+  unsupported if initial negotiation fails (do not permanently disable on transient errors); adjusted
+  native fixed-anchor painting in settled frames and transition frames (`drawSceneLayer`) as well as
+  hit-testing to take `reservedBottomInset` into account so bottom chrome does not sit behind the soft keyboard.
+- **Android Back (API 33+):** Registered `OnBackInvokedCallback` on `MainActivity` using official
+  `OnBackInvokedDispatcher.PRIORITY_DEFAULT` for modern predictive-back routing alongside `onBackPressed()`.
 - **Navigation & focus guards:** `goBack()` now triggers route-activation channel replay (TN-142
   conformance); `TEXT_SUBMIT` next-focus transfer is restricted to the originating route to prevent
   accidental cross-screen focus jumping; `installHostHandoff` commits handled Back events even without
   an explicit invalidation subscription.
 - **Text wrap & metrics:** Hard-break logic respects grapheme clusters (diacritics, ZWJ sequences,
-  flags); ellipsis calculations reserve space within max width; prop codecs/layout tolerate `null`
-  values; JSX intrinsic typing updated for `<text>`; metric tolerance tests reflect honest formula assertions.
+  flags with Regional Indicator pair parity); ellipsis calculations reserve space within max width by
+  popping whole clusters (avoiding malformed UTF-16 surrogates) and safely suppressing when budget is smaller
+  than marker width; prop codecs/layout tolerate `null` values; JSX intrinsic typing updated for `<text>`;
+  metric tolerance tests reflect honest formula assertions.
 - **Workout journey state & countdown:** Preserved user-entered weights/reps in completed set records
-  and view; guarded completion button taps against duplicate delivery; captured instant deadline
-  remainder on pause; tied timer lifecycle to runtime generation to prevent orphaned callbacks;
-  added ratcheted monotonic clock and restore re-arm logic.
+  and view; guarded completion button taps with a set-completion cooldown against rapid duplicate replays;
+  guarded view rendering against older snapshots without `results`; captured instant deadline remainder
+  on pause; tied timer lifecycle to runtime generation to prevent orphaned callbacks; used monotonic clock
+  (`performance.now()`) by default and bound native wake-up scheduling to prevent wake-up accumulation.
 
 ### Slice E — production boot path (bun tier)
 

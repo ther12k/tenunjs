@@ -1005,12 +1005,13 @@ function maxLinesOf(props: Record<string, unknown>): number {
 function isExtendCodePoint(codePoint: number, previous: number): boolean {
   if (codePoint === 0x200d || previous === 0x200d) return true; // ZWJ joins both directions
   if (codePoint >= 0x0300 && codePoint <= 0x036f) return true; // combining diacritics
+  if (codePoint >= 0x064b && codePoint <= 0x065f) return true; // Arabic vowel marks
+  if (codePoint === 0x0670) return true; // Arabic dagger alif
   if (codePoint >= 0x1ab0 && codePoint <= 0x1aff) return true;
+  if (codePoint >= 0x1dc0 && codePoint <= 0x1dff) return true; // combining diacritical marks supplement
   if (codePoint >= 0x20d0 && codePoint <= 0x20ff) return true;
   if (codePoint >= 0xfe00 && codePoint <= 0xfe0f) return true; // variation selectors
   if (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff) return true; // skin-tone modifiers
-  if (codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff &&
-      previous >= 0x1f1e6 && previous <= 0x1f1ff) return true; // flag pair
   return false;
 }
 
@@ -1019,14 +1020,28 @@ function graphemeClusters(word: string): string[] {
   const clusters: string[] = [];
   let current = "";
   let previousCodePoint = 0;
+  let consecutiveRIs = 0;
   for (const codePointText of word) {
     const codePoint = codePointText.codePointAt(0)!;
-    if (current.length > 0 && isExtendCodePoint(codePoint, previousCodePoint)) {
+    const isRI = codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff;
+    let extend = false;
+    if (current.length > 0) {
+      if (isRI) {
+        // UAX #29: regional indicator pairs form flags in pairs of 2.
+        if (consecutiveRIs % 2 === 1) {
+          extend = true;
+        }
+      } else if (isExtendCodePoint(codePoint, previousCodePoint)) {
+        extend = true;
+      }
+    }
+    if (extend) {
       current += codePointText;
     } else {
       if (current.length > 0) clusters.push(current);
       current = codePointText;
     }
+    consecutiveRIs = isRI ? consecutiveRIs + 1 : 0;
     previousCodePoint = codePoint;
   }
   if (current.length > 0) clusters.push(current);
@@ -1056,11 +1071,19 @@ export function layoutTextLines(
   const cut = lines.slice(0, maxLines);
   if (props.ellipsis === true) {
     const budget = Math.max(maxWidth, 1);
-    let last = cut[maxLines - 1]!;
-    while (last.length > 0 && textWidth(`${last}…`, typography.size) > budget) {
-      last = last.slice(0, Math.max(0, last.length - 1));
+    const marker = "…";
+    const markerWidth = textWidth(marker, typography.size);
+    if (markerWidth > budget) {
+      // Sub-marker width: even the ellipsis alone exceeds the line budget;
+      // suppress it so we never violate the maxWidth guarantee.
+      cut[maxLines - 1] = "";
+    } else {
+      let clusters = graphemeClusters(cut[maxLines - 1]!);
+      while (clusters.length > 0 && textWidth(`${clusters.join("")}${marker}`, typography.size) > budget) {
+        clusters.pop();
+      }
+      cut[maxLines - 1] = `${clusters.join("")}${marker}`;
     }
-    cut[maxLines - 1] = `${last}…`;
   }
   return { lines: cut, truncated: true };
 }

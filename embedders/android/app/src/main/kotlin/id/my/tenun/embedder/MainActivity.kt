@@ -113,7 +113,7 @@ class MainActivity : Activity() {
         // same default onBackPressed would apply.
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedCallbackPriority.DEFAULT,
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
                 android.window.OnBackInvokedCallback {
                     val eng = engine ?: return@OnBackInvokedCallback finish()
                     val reply = try {

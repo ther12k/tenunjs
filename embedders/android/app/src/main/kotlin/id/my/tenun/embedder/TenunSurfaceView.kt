@@ -411,10 +411,13 @@ class TenunSurfaceView @JvmOverloads constructor(
             false
         }
         if (!delivered) {
-            if (imeInsetNegotiated) Log.w(TAG, "INSET dispatch rejected; keeping last committed inset")
-            // A bundle without setImeInset is not asked again (until engine swap).
-            imeInsetUnsupported = true
-            imeInsetNegotiated = true
+            if (imeInsetNegotiated) {
+                Log.w(TAG, "INSET dispatch rejected; keeping last committed inset")
+            } else {
+                // A bundle without setImeInset is not asked again (until engine swap).
+                imeInsetUnsupported = true
+                imeInsetNegotiated = true
+            }
             return
         }
         imeInsetNegotiated = true
@@ -979,6 +982,7 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun drawSceneLayer(canvas: Canvas, scene: DisplayListScene, dx: Float, alpha: Float, scrollY: Float) {
         val scale = if (scene.designWidth > 0) width / scene.designWidth else 1f
         val visibleHeight = height / scale
+        val anchorBase = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
         canvas.save()
         var layered = false
         if (alpha < 1f) {
@@ -987,7 +991,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         canvas.translate(dx, 0f)
         canvas.clipRect(-dx, 0f, -dx + scene.designWidth, visibleHeight)
-        renderDisplayListOps(canvas, scene, visibleHeight, scrollY)
+        renderDisplayListOps(canvas, scene, visibleHeight, scrollY, anchorBase)
         if (layered) canvas.restore()
         canvas.restore()
     }
@@ -996,7 +1000,13 @@ class TenunSurfaceView @JvmOverloads constructor(
      * shared by plain rendering and transition layers. The scrollable body
      * translates by -scrollY INSIDE the caller's viewport clip (the settled
      * renderDisplayList rule); fixed overlays stay viewport-pinned. */
-    private fun renderDisplayListOps(canvas: Canvas, dl: DisplayListScene, visibleHeight: Float, scrollY: Float) {
+    private fun renderDisplayListOps(
+        canvas: Canvas,
+        dl: DisplayListScene,
+        visibleHeight: Float,
+        scrollY: Float,
+        anchorBase: Float = (visibleHeight - reservedBottomInset).coerceAtLeast(0f)
+    ) {
         canvas.save()
         canvas.translate(0f, -scrollY)
         for (op in dl.ops) {
@@ -1004,7 +1014,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
         canvas.restore()
         for (op in dl.ops) {
-            if (op.isFixed()) paintDisplayOp(canvas, op, visibleHeight)
+            if (op.isFixed()) paintDisplayOp(canvas, op, anchorBase)
         }
     }
 

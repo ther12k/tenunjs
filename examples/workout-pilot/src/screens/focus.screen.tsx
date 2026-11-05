@@ -34,6 +34,8 @@ export interface FocusState {
   /** Increments on every rest completion; the alert text change announces once. */
   restRound: number;
   workoutComplete: boolean;
+  /** Cooldown timestamp to prevent duplicate completion replays. */
+  lastCompletedAt: number | null;
 }
 
 function initialDrafts(entryIndex = 0, setIndex = 0): { weightDraft: string; repsDraft: string } {
@@ -47,6 +49,7 @@ export function initialFocusState(): FocusState {
     weightError: null, repsError: null, completedSets: [], results: {},
     restPhase: "idle", restDeadline: null, restRemainingMs: REST_DURATION_MS, restRound: 0,
     workoutComplete: false,
+    lastCompletedAt: null,
   };
 }
 
@@ -160,10 +163,14 @@ export const FocusScreen = defineScreen({
       const active = activeSet(state);
       if (active === null || state.workoutComplete) return;
       if (expectedSetId !== undefined && active.setId !== expectedSetId) return;
+      const record = workoutServices(context);
+      const now = record.now();
+      if (state.lastCompletedAt !== null && now - state.lastCompletedAt < 1000) return;
+      state.lastCompletedAt = now;
       const entry = FOCUS_WORKOUT.entries[active.entryIndex]!;
-      state.completedSets = [...state.completedSets, active.setId];
+      state.completedSets = [...(state.completedSets ?? []), active.setId];
       // Commit what the user entered, keyed by set id (review P1).
-      state.results = { ...state.results, [active.setId]: {
+      state.results = { ...(state.results ?? {}), [active.setId]: {
         weight: formatWeight(weight), reps: formatReps(Math.round(reps)),
       } };
       state.weightError = null;
@@ -180,7 +187,6 @@ export const FocusScreen = defineScreen({
       // Foreground rest countdown: a deadline plus injected now. Ticks chain
       // at ~1 Hz (see restTick) so the host-painted ring advances without
       // per-frame JS work; the tick at/past the deadline completes the rest.
-      const record = workoutServices(context);
       state.restPhase = "running";
       state.restRemainingMs = entry.restSeconds * 1000;
       state.restDeadline = record.now() + state.restRemainingMs;
@@ -331,8 +337,8 @@ export const FocusScreen = defineScreen({
             <ScrollView id="workout-sets">
               <Column gap="sm" align="stretch">
                 {entry.sets.map((item, index) => {
-                  const done = state.completedSets.includes(item.id);
-                  const result = state.results[item.id];
+                  const done = (state.completedSets ?? []).includes(item.id);
+                  const result = (state.results ?? {})[item.id];
                   return (
                     <Row key={item.id} gap="md">
                       <Text variant="caption">Set {index + 1}</Text>
@@ -340,7 +346,7 @@ export const FocusScreen = defineScreen({
                         {done && result
                           ? `Done — ${result.weight} kg × ${result.reps}`
                           : done
-                            ? "Done"
+                            ? `Done — ${formatWeight(item.weight)} kg × ${formatReps(item.reps)}`
                             : "Ready"}
                       </Text>
                     </Row>

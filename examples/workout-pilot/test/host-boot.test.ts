@@ -120,4 +120,47 @@ describe("workout host entry boots through the production contract", () => {
     const ring = (JSON.parse(committed.at(-1)!) as Scene).ops.find((op) => op.op === "ring") as { progress: number };
     expect(ring.progress).toBeLessThan(1);
   });
+
+  test("built bundle debounces duplicate completion tap and bounds native timer requests", async () => {
+    const code = await buildWorkoutBundleCode();
+    let lastSceneJson = "";
+    const scheduleCalls: number[] = [];
+    const context: Record<string, unknown> = {
+      tenun_commit: (json: string) => { lastSceneJson = json; },
+      tenun_host_call: (svc: string, method: string, payload: string): string | null => {
+        if (svc === "system" && method === "scheduleTimer") {
+          scheduleCalls.push(JSON.parse(payload).delayMs);
+        }
+        return "true";
+      },
+    };
+    runInNewContext(code, context, { filename: "workout-app.js", timeout: 5000 });
+    const dispatch = context["__tenun_dispatch_action"] as Booted["dispatch"];
+    const entry: Booted = { dispatch, lastScene: () => lastSceneJson };
+
+    // Complete first set:
+    completeFirstSet(entry);
+    const state = () => JSON.parse(dispatch("__TENUN_EXPORT", "{}")).states.focus;
+    expect(state().completedSets).toEqual(["set-1-1"]);
+
+    // Rapid duplicate tap delivery with the SAME tap id before moving on:
+    const completeNode = (JSON.parse(lastSceneJson) as Scene).semantics?.nodes
+      ?.find((n) => n.id?.endsWith(".complete"));
+    const tapId = completeNode?.actions?.[0]?.tapId;
+    expect(tapId).toBeDefined();
+    dispatch("TAP", JSON.stringify({ id: tapId }));
+    // Cooldown debounces rapid duplicate tap; next set is NOT completed:
+    expect(state().completedSets).toEqual(["set-1-1"]);
+
+    // Timer calls: initially exactly 1 timer is scheduled.
+    const initialCallCount = scheduleCalls.length;
+    expect(initialCallCount).toBeGreaterThanOrEqual(1);
+
+    // Simulated 3 seconds of TIMER re-entry: call count only increases linearly, not exponentially.
+    dispatch("TIMER", "{}");
+    dispatch("TIMER", "{}");
+    dispatch("TIMER", "{}");
+    // Growth is strictly bounded (no unbounded runaway re-arm calls):
+    expect(scheduleCalls.length).toBeLessThanOrEqual(initialCallCount + 3);
+  });
 });
