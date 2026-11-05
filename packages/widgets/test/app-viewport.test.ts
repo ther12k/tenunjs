@@ -308,15 +308,23 @@ describe("IME inset (keyboard-aware reveal floor)", () => {
     expect(JSON.parse(handoff.lastScene()!).contentHeight).toBe(540);
 
     let receivedFallback: unknown;
+    let customCommits = 0;
     const custom = {
       render: () => base.render(),
-      dispatch: (_action: string, payload?: unknown) => { receivedFallback = payload; },
+      dispatch: (action: string, payload?: unknown) => {
+        receivedFallback = payload;
+        if (action === "INSET") base.setImeInset((payload as { ime: number }).ime);
+        else base.dispatch(action, payload);
+      },
       exportState: () => base.exportState(),
       stateSchema: () => base.stateSchema(),
       route: () => base.route(),
     };
-    const customHandoff = installHostHandoff({ app: custom });
+    const customHandoff = installHostHandoff({ app: custom, commit: () => { customCommits++; } });
+    expect(customCommits).toBe(1);
     customHandoff.dispatch("INSET", JSON.stringify({ ime: 260 }));
     expect(receivedFallback).toEqual({ ime: 260 });
+    expect(customCommits).toBe(2);
+    expect(JSON.parse(customHandoff.lastScene()!).contentHeight).toBe(540);
   });
 });

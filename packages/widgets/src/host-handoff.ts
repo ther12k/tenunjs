@@ -216,6 +216,7 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
         if (last === beforeCommit) commit();
       } else {
         app.dispatch(normalized, payload);
+        if (last === beforeCommit) commit();
       }
       return JSON.stringify({ route: app.route() });
     }

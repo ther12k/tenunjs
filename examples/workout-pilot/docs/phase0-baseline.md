@@ -120,12 +120,13 @@ all five tsconfigs.
   the parsed payload in the non-negotiating fallback.
 - **Android Back (API 33+):** Registered `OnBackInvokedCallback` on `MainActivity` using official
   `OnBackInvokedDispatcher.PRIORITY_DEFAULT` for modern predictive-back routing alongside `onBackPressed()`.
-  Fallback on unhandled Back delegates to `moveTaskToBack(true)` for the root launcher task, matching platform default.
+  Fallback on unhandled Back delegates to `moveTaskToBack(true)` for the root launcher task, matching platform default,
+  with explicit `Unit` callback return typing.
 - **Navigation & focus guards:** `goBack()` now triggers route-activation channel replay (TN-142
   conformance); `TEXT_SUBMIT` next-focus transfer is restricted to the originating route to prevent
   accidental cross-screen focus jumping; `installHostHandoff` commits handled Back events even without
   an explicit invalidation subscription; text input error recovery republishes authority and restores wrapper
-  tap runs on `INVALID_TEXT_CONTENT`.
+  tap runs on `INVALID_TEXT_CONTENT`; custom INSET fallback handlers commit the resized frame when unmonitored by invalidation listeners.
 - **Text wrap & metrics:** Hard-break logic respects grapheme clusters (diacritics, ZWJ sequences,
   flags with Regional Indicator pair parity); ellipsis calculations reserve space within max width by
   popping whole clusters (avoiding malformed UTF-16 surrogates) and safely suppressing when budget is smaller

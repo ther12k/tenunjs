@@ -162,6 +162,11 @@ describe("workout host entry boots through the production contract", () => {
     dispatch("TIMER", "{}");
     // Growth is strictly bounded (no unbounded runaway re-arm calls):
     expect(scheduleCalls.length).toBeLessThanOrEqual(initialCallCount + 3);
+
+    // Non-timer dispatch arriving after deadline does not accumulate duplicate wakeups:
+    const countBeforeOverdueInput = scheduleCalls.length;
+    dispatch("TAP", JSON.stringify({ id: tapId }));
+    expect(scheduleCalls.length).toBe(countBeforeOverdueInput);
   });
 
   test("cross-engine TENUN_RESTORE rebases countdown timestamps to new performance origin", async () => {

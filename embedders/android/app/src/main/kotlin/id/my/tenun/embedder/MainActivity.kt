@@ -115,10 +115,13 @@ class MainActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
                 android.window.OnBackInvokedCallback {
-                    val fallback = {
+                    val fallback: () -> Unit = {
                         if (isTaskRoot) moveTaskToBack(true) else finish()
                     }
-                    val eng = engine ?: return@OnBackInvokedCallback fallback()
+                    val eng = engine ?: run {
+                        fallback()
+                        return@OnBackInvokedCallback
+                    }
                     val reply = try {
                         eng.dispatchActionResult("BACK", "{}")
                     } catch (e: Exception) {
@@ -128,7 +131,10 @@ class MainActivity : Activity() {
                     val handled = reply != null && runCatching {
                         org.json.JSONObject(reply).optBoolean("handled", false)
                     }.getOrDefault(false)
-                    if (!handled) return@OnBackInvokedCallback fallback()
+                    if (!handled) {
+                        fallback()
+                        return@OnBackInvokedCallback
+                    }
                     surfaceView?.syncFromScene(eng.getLatestScene())
                     surfaceView?.redraw()
                 },

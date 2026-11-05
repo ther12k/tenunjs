@@ -59,7 +59,7 @@ function requestNextWakeup(nowMs: number): void {
 
 function drainTimers(isTimerDispatch = false): void {
   const nowMs = getMonotonicNow();
-  if (isTimerDispatch || (scheduledHostWakeupAt !== null && nowMs >= scheduledHostWakeupAt)) {
+  if (isTimerDispatch) {
     scheduledHostWakeupAt = null;
   }
   for (const [id, timer] of Array.from(activeTimers.entries())) {
