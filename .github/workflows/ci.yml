@@ -153,7 +153,14 @@ jobs:
         run: python3 ./.github/scripts/verify-manifest.py
 
   verify-evidence:
-    runs-on: ubuntu-latest
+    # review-5: replayed artifacts must be BIT-IDENTICAL to the committed
+    # manifests. The packets were generated on ubuntu-24.04; ubuntu-latest
+    # rolled to 26.04 (2026-11-05) and its newer system gcc recompiles the
+    # embedded QuickJS C inside the spike cdylib to different bytes even with
+    # the exact pinned rustc + Cargo.lock. Pin the whole replay environment
+    # to the generation image; revisit only with a full packet regeneration
+    # on the new image.
+    runs-on: ubuntu-24.04
     env:
       # BINDGEN_EXTRA_CLANG_ARGS intentionally NOT set here: gcc's math.h
       # NAN resolves double-typed and breaks yoga's generated const; bindgen
