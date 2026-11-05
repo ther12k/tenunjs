@@ -8,13 +8,19 @@ WORK_DIR="/tmp/tenun-android-test"
 mkdir -p "$WORK_DIR"
 
 echo "== 1. Compiling Android native bridge with embedded QuickJS =="
-# -Wno-discarded-qualifiers: vendored quickjs.c assigns strrchr(base_name) on a
-# const input (module normalize); newer runner gcc (ubuntu-26.04) promotes that
-# warning to an error under -Werror. Suppressed like the other vendored-code
-# warnings above; no suppression of project-source warnings.
+# Vendored quickjs.c's strrchr-on-const (module normalize) trips newer gcc's
+# -Wdiscarded-qualifiers under -Werror (ubuntu-26.04 runners). The option is
+# GCC-only — clang (also when cc is clang) rejects it fatally under -Werror,
+# so PROBE the host compiler instead of assuming. The NDK clang invocations
+# below never pass it: clang does not emit that diagnostic for this source
+# (proven by the green device-acceptance builds on NDK 30).
+if cc -x c -fsyntax-only -Werror -Wno-discarded-qualifiers - </dev/null 2>/dev/null; then
+  HOST_WARN_FLAGS="-Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter -Wno-implicit-fallthrough -Wno-discarded-qualifiers"
+else
+  HOST_WARN_FLAGS="-Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter -Wno-implicit-fallthrough"
+fi
 cc -std=c11 -O2 -D_GNU_SOURCE -DTENUN_TEST_INJECTION -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
-  -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter -Wno-implicit-fallthrough \
-  -Wno-discarded-qualifiers \
+  $HOST_WARN_FLAGS \
   -I"$SCRIPT_DIR/app/src/main/cpp" \
   -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
   "$SCRIPT_DIR/app/src/main/cpp/tenun_android_bridge.c" \
@@ -91,7 +97,6 @@ if [ -n "$NDK_DIR" ] && [ -d "$NDK_DIR" ]; then
     "$NDK_CLANG" --target=aarch64-linux-android26 \
       -std=c11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
       -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter \
-      -Wno-discarded-qualifiers \
       -fPIC -shared \
       -I"$SCRIPT_DIR/app/src/main/cpp" \
       -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
@@ -109,7 +114,6 @@ if [ -n "$NDK_DIR" ] && [ -d "$NDK_DIR" ]; then
     "$NDK_CLANG" --target=x86_64-linux-android26 \
       -std=c11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION=\"2024-01-13\" -DCONFIG_BIGNUM \
       -Wall -Wextra -Werror -Wno-sign-compare -Wno-unused-parameter \
-      -Wno-discarded-qualifiers \
       -fPIC -shared \
       -I"$SCRIPT_DIR/app/src/main/cpp" \
       -I"$SCRIPT_DIR/app/src/main/cpp/quickjs" \
