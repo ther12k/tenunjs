@@ -213,3 +213,25 @@ describe("Gate A — Focus workout journey", () => {
       .toBe("62.5");
   });
 });
+
+describe("Gate A — focus transfer (slice C)", () => {
+  test("IME Next chains weight → reps and Done on reps ends the session", () => {
+    const clock = fakeClock();
+    const app = createWorkoutRuntime(WORKOUT_VIEWPORT, clock.options);
+    const entry = FOCUS_WORKOUT.entries[0]!;
+    const weightId = fieldAction(entry.id, entry.sets[0]!.id, "weight");
+    const repsId = fieldAction(entry.id, entry.sets[0]!.id, "reps");
+    let scene = dispatch(app, tapForField(app.render().scene, weightId));
+    const active = field(scene, weightId);
+    expect(active.returnAction).toBe("next");
+    app.dispatch("TEXT_SUBMIT", { id: active.id, sessionId: active.sessionId, baseRevision: active.revision });
+    scene = app.render().scene;
+    const next = field(scene, repsId);
+    expect(next.focused).toBe(true);
+    expect(next.sessionId).toBeGreaterThan(active.sessionId);
+    expect(next.returnAction).toBe("done");
+    // Done on reps: session ends, no accidental duplicate field activation.
+    app.dispatch("TEXT_SUBMIT", { id: next.id, sessionId: next.sessionId, baseRevision: next.revision });
+    expect(field(app.render().scene, repsId).focused).toBe(false);
+  });
+});

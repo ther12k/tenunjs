@@ -245,3 +245,48 @@ describe("host VIEWPORT dispatch (TN-158)", () => {
     expect(() => handoff.dispatch("VIEWPORT", "not json at all")).toThrow(LayoutError);
   });
 });
+
+describe("IME inset (keyboard-aware reveal floor)", () => {
+  function insetScreen(): ApplicationRuntimeOptions {
+    return options({});
+  }
+
+  test("setImeInset shrinks the rendered viewport height and 0 restores it", () => {
+    const app = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
+    const base = app.render().scene;
+    expect(base.contentHeight).toBe(800);
+    app.setImeInset(280);
+    const reserved = app.render().scene;
+    expect(reserved.contentHeight).toBe(520);
+    expect(reserved.designWidth).toBe(400);
+    // Anchored bottom chrome sits above the keyboard: a bottom-fixed op's
+    // y + h lands at the reduced height, not the full one.
+    app.setImeInset(0);
+    expect(app.render().scene.contentHeight).toBe(800);
+  });
+
+  test("invalid insets fail closed; a snapshot never carries the inset; disposal rejects", () => {
+    const app = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
+    expect(() => app.setImeInset(-1)).toThrow(ApplicationRuntimeError);
+    expect(() => app.setImeInset(Number.NaN)).toThrow(ApplicationRuntimeError);
+    app.setImeInset(120);
+    const snapshot = app.exportState();
+    expect(JSON.stringify(snapshot)).not.toContain("imeInset");
+    app.setImeInset(120); // idempotent: same inset commits nothing new
+    app.dispose();
+    expect(() => app.setImeInset(0)).toThrow(ApplicationRuntimeError);
+  });
+
+  test("the handoff negotiates the INSET verb like VIEWPORT and rejects unknown bundles", () => {
+    const adopting = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app: adopting, commit: (json) => commits.push(json) });
+    handoff.dispatch("INSET", JSON.stringify({ ime: 260 }));
+    expect(adopting.render().scene.contentHeight).toBe(540);
+    // Unknown (non-adopting) dispatch target: ApplicationRuntime.dispatch
+    // itself has no INSET verb — a bare runtime answers UNKNOWN_ACTION, which
+    // is the NULL-across-JNI signal hosts read as "stop delivering".
+    const bare = new ApplicationRuntime({ ...insetScreen(), viewport: { width: 400, height: 800 } });
+    expect(() => bare.dispatch("INSET", { ime: 260 })).toThrow("unknown dispatch verb");
+  });
+});

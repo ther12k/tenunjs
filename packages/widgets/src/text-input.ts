@@ -28,6 +28,9 @@ export interface TextEditingValue {
 /** Keyboard intent for a field. Numeric values are intents (and content gates), not validators. */
 export type TextKeyboardType = "text" | "number" | "decimal";
 
+/** IME action intent: "done" submits and ends the session; "next" submits and advances focus. */
+export type TextInputAction = "done" | "next";
+
 /** Required host capability marker: older hosts reject this unknown operation. */
 export interface TextInputOp extends FixedPosition, TextEditingValue {
   readonly op: "text-input";
@@ -41,7 +44,7 @@ export interface TextInputOp extends FixedPosition, TextEditingValue {
   readonly sessionId: number;
   readonly revision: number;
   readonly keyboardType: TextKeyboardType;
-  readonly returnAction: "done";
+  readonly returnAction: TextInputAction;
   readonly readOnly: boolean;
   readonly label: string;
 }
@@ -67,6 +70,8 @@ export interface TextFieldProps {
   readonly onSubmitted?: () => void;
   /** Keyboard intent; default "text". Numeric fields keep editing drafts ("", "12.") and reject other content. */
   readonly keyboardType?: TextKeyboardType;
+  /** IME action intent; default "done". "next" advances focus to the next editable field on submit. */
+  readonly inputAction?: TextInputAction;
 }
 
 export type TextInputErrorCode =
@@ -88,6 +93,7 @@ export interface ResolvedTextFieldProps extends TextFieldProps {
   readonly placeholder: string;
   readonly readOnly: boolean;
   readonly keyboardType: TextKeyboardType;
+  readonly inputAction: TextInputAction;
 }
 
 /**
@@ -133,7 +139,7 @@ function integer(value: unknown, minimum: number, code: TextInputErrorCode, name
 export function resolveTextFieldProps(value: unknown): Readonly<ResolvedTextFieldProps> {
   if (!record(value)) fail("INVALID_TEXT_FIELD", "TextField props must be an object");
   const { id, value: text, onChanged, label = "", placeholder = "", readOnly = false, onSubmitted,
-    keyboardType = "text" } = value;
+    keyboardType = "text", inputAction = "done" } = value;
   const fieldId = identifier(id, "INVALID_TEXT_FIELD");
   if (typeof text !== "string" || typeof label !== "string" || typeof placeholder !== "string" ||
       typeof readOnly !== "boolean" || typeof onChanged !== "function" ||
@@ -144,9 +150,12 @@ export function resolveTextFieldProps(value: unknown): Readonly<ResolvedTextFiel
   if (keyboardType !== "text" && keyboardType !== "number" && keyboardType !== "decimal") {
     fail("INVALID_TEXT_FIELD", "keyboardType must be \"text\", \"number\", or \"decimal\"");
   }
+  if (inputAction !== "done" && inputAction !== "next") {
+    fail("INVALID_TEXT_FIELD", "inputAction must be \"done\" or \"next\"");
+  }
   const contentError = numericDraftError(keyboardType, text);
   if (contentError !== null) fail("INVALID_TEXT_CONTENT", contentError);
-  return Object.freeze({ id: fieldId, value: text, label, placeholder, readOnly, keyboardType,
+  return Object.freeze({ id: fieldId, value: text, label, placeholder, readOnly, keyboardType, inputAction,
     onChanged: onChanged as (value: string) => void,
     ...(onSubmitted === undefined ? {} : { onSubmitted: onSubmitted as () => void }) });
 }
@@ -198,7 +207,7 @@ export function validateTextInputOp(value: unknown): Readonly<TextInputOp> {
     fixed, anchor, anchorSize } = copy;
   if (op !== "text-input" || typeof focused !== "boolean" || typeof readOnly !== "boolean" ||
       typeof label !== "string" || (keyboardType !== "text" && keyboardType !== "number" && keyboardType !== "decimal") ||
-      returnAction !== "done") {
+      (returnAction !== "done" && returnAction !== "next")) {
     fail(code, "invalid text-input descriptor flags, label, or keyboard intent");
   }
   for (const [name, dimension] of Object.entries({ x, y, w, h })) {
@@ -272,5 +281,5 @@ export function textInputDescriptor(
     composing: echoed ? active.composing : null,
     focused, sessionId: focused ? active.sessionId : 0,
     revision: focused ? (echoed ? active.revision : nextTextRevision(active.revision)) : 0,
-    keyboardType: props.keyboardType, returnAction: "done", readOnly: props.readOnly, label: props.label });
+    keyboardType: props.keyboardType, returnAction: props.inputAction, readOnly: props.readOnly, label: props.label });
 }

@@ -234,6 +234,7 @@ export const FocusScreen = defineScreen({
                     id={fieldAction(entry.id, set.id, "weight")}
                     label="Weight (kg)"
                     keyboardType="decimal"
+                    inputAction="next"
                     value={state.weightDraft}
                     onChanged={actions.editWeight}
                   />

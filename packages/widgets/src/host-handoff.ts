@@ -70,6 +70,15 @@ export interface HandoffApplication {
    */
   setEnvironment?(environment: { locale?: string; textScale?: number; platform?: PlatformKind }): void;
   /**
+   * Optional IME-inset adoption: when present, the host's "INSET" dispatch
+   * reserves the given logical px from the next render's viewport height
+   * (keyboard-aware reveal floor). Wrappers may delegate or omit it —
+   * omitted, INSET falls through to dispatch() and surfaces as
+   * UNKNOWN_ACTION; hosts read that as "bundle does not negotiate insets"
+   * and stop delivering them (the VIEWPORT precedent).
+   */
+  setImeInset?(inset: number): void;
+  /**
    * Optional out-of-band repaint signal: when application state can
    * change without a synchronous dispatch (async action settlement),
    * the host needs a fresh commit. ApplicationRuntime provides it;
@@ -181,6 +190,22 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
         app.setEnvironment(payload as { locale?: string; textScale?: number; platform?: PlatformKind });
       } else {
         app.dispatch(normalized, payload);
+      }
+      return JSON.stringify({ route: app.route() });
+    }
+    if (normalized === "INSET") {
+      // IME inset negotiation (VIEWPORT precedent): a bundle that adopts
+      // host insets re-lays out with the keyboard reserved; one without
+      // setImeInset answers UNKNOWN_ACTION (NULL across JNI) and the host
+      // stops delivering. `ime` is logical px; a malformed payload fails
+      // visibly inside the runtime rather than being silently ignored.
+      const inset = typeof (payload as { ime?: unknown } | undefined)?.ime === "number"
+        ? ((payload as { ime: number }).ime)
+        : Number.NaN;
+      if (typeof app.setImeInset === "function") {
+        app.setImeInset(inset);
+      } else {
+        app.dispatch(normalized, inset);
       }
       return JSON.stringify({ route: app.route() });
     }

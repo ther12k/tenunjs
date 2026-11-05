@@ -42,6 +42,10 @@ class DisplayListInputConnection(
 
     private fun live(): Boolean = !closed && isCurrent()
 
+    /** The IME action this field's descriptor carries: NEXT advances focus, DONE submits. */
+    private fun editorAction(): Int =
+        if (input.returnAction == "next") EditorInfo.IME_ACTION_NEXT else EditorInfo.IME_ACTION_DONE
+
     override fun getEditable(): Editable? = if (live()) content else null
 
     /** Acknowledgements are copied; never predict the runtime's next revision. */
@@ -160,7 +164,8 @@ class DisplayListInputConnection(
         if (text == null) false else commitText(text.text, 1)
 
     override fun performEditorAction(actionCode: Int): Boolean {
-        if (!live() || (actionCode != EditorInfo.IME_ACTION_DONE && actionCode != EditorInfo.IME_ACTION_UNSPECIFIED)) {
+        if (!live() || (actionCode != EditorInfo.IME_ACTION_DONE &&
+                actionCode != EditorInfo.IME_ACTION_NEXT && actionCode != EditorInfo.IME_ACTION_UNSPECIFIED)) {
             return false
         }
         // An editor action must observe every pending edit even if an IME
@@ -185,7 +190,7 @@ class DisplayListInputConnection(
                 else if (event.keyCode == KeyEvent.KEYCODE_DEL) deleteSurroundingTextInCodePoints(1, 0)
                 else deleteSurroundingTextInCodePoints(0, 1)
             }
-            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> performEditorAction(EditorInfo.IME_ACTION_DONE)
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> performEditorAction(editorAction())
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 val base = Selection.getSelectionStart(content)
                 val extent = Selection.getSelectionEnd(content)

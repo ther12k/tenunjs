@@ -146,6 +146,10 @@ class TenunSurfaceView @JvmOverloads constructor(
             // TN-158: a swapped engine re-negotiates viewport delivery —
             // support is a property of the bundle, not the view.
             viewportDriven = false
+            // IME-inset support is likewise a property of the bundle; a
+            // swapped application re-negotiates the INSET verb.
+            imeInsetNegotiated = false
+            lastImeInset = -1
             // TN-165: scroll offsets belong to the engine that produced
             // them — a swapped-in bundle whose regions reuse the same ids
             // must not inherit another application's scroll positions.
@@ -365,12 +369,50 @@ class TenunSurfaceView @JvmOverloads constructor(
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // Keyboard-aware reveal (plan A2): the host owns the IME inset and
+            // delivers it through the "INSET" verb (VIEWPORT negotiation
+            // precedent). A bundle without setImeInset answers NULL across
+            // JNI and is not asked again until it negotiates successfully.
+            setOnApplyWindowInsetsListener { _, insets ->
+                deliverImeInset(insets.getInsets(android.view.WindowInsets.Type.ime()).bottom)
+                insets
+            }
+        }
     }
 
     companion object {
         private const val TAG = "TenunSurfaceView"
         /** TN-169: transition frame cadence (~60 fps). */
         private const val FRAME_DELAY_MS = 16L
+    }
+
+    /** IME-inset negotiation: deliver until the first success, then only on change. */
+    private var imeInsetNegotiated = false
+    private var lastImeInset = -1
+
+    private fun deliverImeInset(insetPx: Int) {
+        if (imeInsetNegotiated && insetPx == lastImeInset) return
+        val eng = engine ?: return
+        val density = resources.displayMetrics.density
+        if (density <= 0f) return
+        val logical = (insetPx / density).toInt()
+        if (imeInsetNegotiated && logical == lastImeInset) return
+        val delivered = try {
+            eng.dispatchActionResult("INSET", "{\"ime\":$logical}") != null
+        } catch (e: Exception) {
+            Log.w(TAG, "inset delivery failed: ${e.message}")
+            false
+        }
+        if (!delivered) {
+            if (imeInsetNegotiated) Log.w(TAG, "INSET dispatch rejected; keeping last committed inset")
+            imeInsetNegotiated = true // a bundle without setImeInset is not asked again
+            return
+        }
+        imeInsetNegotiated = true
+        lastImeInset = logical
+        syncFromScene(eng.getLatestScene())
+        redraw()
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -476,7 +518,8 @@ class TenunSurfaceView @JvmOverloads constructor(
             if (!isCurrentTextInput(owner, token)) return null
             textInputConnection?.invalidate()
             outAttrs.inputType = inputTypeFor(input.keyboardType)
-            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
+            outAttrs.imeOptions = imeActionFor(input.returnAction) or
+                EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
             outAttrs.initialSelStart = input.selection.base
             outAttrs.initialSelEnd = input.selection.extent
             outAttrs.hintText = input.label

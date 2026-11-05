@@ -103,7 +103,7 @@ describe("TN-160 text input boundary", () => {
       { composing: { start: 4, end: 2 } }, { composing: { start: 0, end: 99 } },
       { composing: undefined }, { focused: true, sessionId: 0 }, { focused: false },
       { sessionId: Number.MAX_SAFE_INTEGER + 1 }, { revision: -1 }, { revision: 1.2 },
-      { readOnly: true }, { keyboardType: "password" }, { returnAction: "next" },
+      { readOnly: true }, { keyboardType: "password" }, { returnAction: "send" },
       { label: null }, { fixed: 1 }, { anchor: "left" }, { anchorSize: Infinity },
     ]) {
       expectCode(() => validateTextInputOp({ ...descriptor(), ...patch }), "INVALID_TEXT_INPUT");
@@ -498,5 +498,90 @@ describe("TN-160 numeric keyboard intent", () => {
     expect(state.weight).toBe("62,5");
     expect(op()).toMatchObject({ text: "62,5", revision: authoritative.revision,
       sessionId: active.sessionId, focused: true });
+  });
+});
+
+describe("TN-160 input action and focus transfer", () => {
+  test("props default to done, reject unknown actions, and the descriptor carries next", () => {
+    expectCode(() => resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined,
+      inputAction: "previous" }), "INVALID_TEXT_FIELD");
+    const resolved = resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined,
+      inputAction: "next" });
+    expect(resolved.inputAction).toBe("next");
+    expect(resolveTextFieldProps({ id: "a", value: "x", onChanged: () => undefined }).inputAction).toBe("done");
+    const op = validateTextInputOp({ ...descriptor(), returnAction: "next" });
+    expect(op.returnAction).toBe("next");
+    expect(textInputContractError({ ...descriptor(), returnAction: "send" })).not.toBe(null);
+  });
+
+  test("submit with next advances to the following editable field and stops at the end", () => {
+    const state = { one: "1", two: "2", three: "3", locked: "r" };
+    const screen = defineScreen({ name: "Flow", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        jsx(TextField, { id: "one", value: state.one, inputAction: "next", onChanged: (v: string) => { state.one = v; } }),
+        jsx(TextField, { id: "two", value: state.two, inputAction: "next", onChanged: (v: string) => { state.two = v; } }),
+        jsx(TextField, { id: "locked", value: state.locked, readOnly: true, onChanged: (v: string) => { state.locked = v; } }),
+        jsx(TextField, { id: "three", value: state.three, onChanged: (v: string) => { state.three = v; } }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { flow: screen }, initial: "flow", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const fieldOp = (id: string): TextInputOp => {
+      const op = (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id);
+      if (!op) throw new Error(`Missing field ${id}`);
+      return op;
+    };
+    const focusViaTap = (id: string): TextInputOp => {
+      const op = fieldOp(id);
+      const tap = (JSON.parse(commits.at(-1)!).taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h);
+      handoff.dispatch("TAP", JSON.stringify(tap!.payload));
+      return fieldOp(id);
+    };
+    const active = focusViaTap("one");
+    expect(active.returnAction).toBe("next");
+    // IME NEXT: TEXT_SUBMIT advances past the readOnly field to "three"... no —
+    // to the NEXT editable field in layout order, which is "two" ("locked" follows later).
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    const afterOne = fieldOp("two");
+    expect(afterOne.focused).toBe(true);
+    expect(afterOne.sessionId).toBeGreaterThan(active.sessionId);
+    expect(fieldOp("one").focused).toBe(false);
+    // Chain: "two" also carries next → submit lands on "three".
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: afterOne.id, sessionId: afterOne.sessionId, baseRevision: afterOne.revision }));
+    expect(fieldOp("three").focused).toBe(true);
+    expect(fieldOp("three").returnAction).toBe("done");
+    // Submitting the last field just ends the session.
+    const last = fieldOp("three");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: last.id, sessionId: last.sessionId, baseRevision: last.revision }));
+    expect(fieldOp("three").focused).toBe(false);
+  });
+
+  test("submit with next when the origin field disappears leaves no session", () => {
+    const state = { visible: true, a: "a", b: "b" };
+    const screen = defineScreen({ name: "Vanish", initialState: () => state, actions: {},
+      view: () => jsxs(Column, { padding: 8, gap: 8, children: [
+        state.visible ? jsx(TextField, { id: "a", value: state.a, inputAction: "next",
+          onSubmitted: () => { state.visible = false; }, onChanged: (v: string) => { state.a = v; } }) : null,
+        jsx(TextField, { id: "b", value: state.b, onChanged: (v: string) => { state.b = v; } }),
+      ] }) });
+    const app = new ApplicationRuntime({ screens: { v: screen }, initial: "v", theme,
+      viewport: { width: 320, height: 480 } });
+    const commits: string[] = [];
+    const handoff = installHostHandoff({ app, commit: (json) => commits.push(json) });
+    const focusViaTap = (id: string): TextInputOp => {
+      const scene = JSON.parse(commits.at(-1)!);
+      const op = (scene.ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+      const tap = (scene.taps as Array<{ x: number; y: number; w: number; h: number; payload: { id: number } }>)
+        .find((tap) => tap.x === op.x && tap.y === op.y && tap.w === op.w && tap.h === op.h)!;
+      handoff.dispatch("TAP", JSON.stringify(tap.payload));
+      return (JSON.parse(commits.at(-1)!).ops as TextInputOp[]).find((op) => op.op === "text-input" && op.id === id)!;
+    };
+    const active = focusViaTap("a");
+    handoff.dispatch("TEXT_SUBMIT", JSON.stringify({ id: active.id, sessionId: active.sessionId, baseRevision: active.revision }));
+    // onSubmitted removed the field; the transfer no-ops instead of focusing a stale table entry.
+    const scene = JSON.parse(commits.at(-1)!);
+    expect((scene.ops as TextInputOp[]).some((op) => op.op === "text-input" && op.focused)).toBe(false);
   });
 });

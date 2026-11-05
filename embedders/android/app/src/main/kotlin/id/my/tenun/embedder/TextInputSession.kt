@@ -1,6 +1,7 @@
 package id.my.tenun.embedder
 
 import android.text.InputType
+import android.view.inputmethod.EditorInfo
 import org.json.JSONObject
 
 /** All text offsets are UTF-16 code-unit offsets, matching Android and JavaScript. */
@@ -46,6 +47,12 @@ fun inputTypeFor(keyboardType: String): Int = when (keyboardType) {
     "number" -> InputType.TYPE_CLASS_NUMBER
     "decimal" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
     else -> InputType.TYPE_CLASS_TEXT
+}
+
+/** EditorInfo IME action for a descriptor return action (pure, JVM-testable). */
+fun imeActionFor(returnAction: String): Int = when (returnAction) {
+    "next" -> EditorInfo.IME_ACTION_NEXT
+    else -> EditorInfo.IME_ACTION_DONE
 }
 
 /** Required, nonpainting display-list operation. Ordinary paint ops draw the field. */
@@ -135,7 +142,7 @@ data class TextInputDescriptor(
             val keyboardType = string("keyboardType")
             val returnAction = string("returnAction")
             if ((keyboardType != "text" && keyboardType != "number" && keyboardType != "decimal") ||
-                returnAction != "done") {
+                (returnAction != "done" && returnAction != "next")) {
                 invalid("unsupported keyboard type or return action")
             }
             val fixed = if (json.has("fixed")) boolean("fixed") else false

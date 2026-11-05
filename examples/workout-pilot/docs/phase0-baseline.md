@@ -45,9 +45,9 @@ contract, known gaps), **missing**, **blocked** (naming the blocker).
 | Environment dispatch: locale/font-scale/platform (TN-187) | implemented | `ApplicationRuntime.setEnvironment`; host `maybeDeliverEnvironment` |
 | Viewport negotiation (TN-158) | implemented | `VIEWPORT` verb, logical px |
 | Controlled single-line text input (TN-160) | implemented | revisioned sessions, composition, stale guards; `keyboardType` locked to `"text"`, `returnAction` locked to `"done"` |
-| Numeric keyboard intent | **missing** → this pilot adds it | plan A2; extends TN-160's contract (this branch, slice A) |
-| Focus traversal (Next/Done), focus restoration | **missing** (only text-input focus sessions exist) | plan A2; slice C adds `returnAction: "next"` + runtime transfer; full TN-081 tree stays open |
-| Keyboard insets / keyboard-aware reveal | **missing** (no `WindowInsets` handling in host) | plan A2; slice C adds a minimal IME-inset dispatch |
+| Numeric keyboard intent | **added** (slice A) | plan A2; extends TN-160's contract: `number`/`decimal` intents, fail-closed draft gate, host inputType mapping |
+| Focus transfer (Next/Done) | **added, bounded** (slice C) | `inputAction: "next"` submits and advances to the next editable field in layout order; host maps it to `IME_ACTION_NEXT`. Full TN-081 focus tree/restoration stays open |
+| Keyboard insets | **added, floor** (slice C) | host `WindowInsets` ime listener (API 30+) dispatches `INSET` (VIEWPORT negotiation precedent); the render reserves logical px from the viewport height. Auto-reveal scrolling of a field under the keyboard remains a TN-081 follow-up |
 | Independent scroll regions (TN-161) | implemented (drag only) | offsets host-owned, content-space taps, region-id keyed; **no fling physics, no virtualization** (TN-083/084/085 remain open) |
 | Route transitions (TN-169) | implemented (slide/fade, host-evaluated, ≤10s cap) | `scene.transition` burst semantics; not a general animation system |
 | General animation surface (TN-086/087) | **missing** → pilot adds only the smallest countdown slice (plan A3: deadline + injected clock + host-painted ring re-commit) | no per-frame JS contract claimed |
