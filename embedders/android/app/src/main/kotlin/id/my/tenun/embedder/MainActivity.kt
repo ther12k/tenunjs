@@ -331,14 +331,28 @@ class MainActivity : Activity() {
      */
     private fun newEngine(bytes: ByteArray?): TenunEngine {
         var bound: TenunEngine? = null
+        // Bundle evaluation and the bootstrap job drain finish BEFORE the
+        // TenunEngine constructor returns, so timer requests made during
+        // startup arrive with the requester still unbound. Buffer them and
+        // schedule against the requester the moment construction completes —
+        // refusing them silently dropped every bootstrap timeout (review fix).
+        val deferred = DeferredTimerRequests()
         val scoped = HostServiceHandler { service, method, payloadJson ->
             if (service == "system" && method == "scheduleTimer") {
-                scheduleEngineTimer(bound, payloadJson)
+                val requester = bound
+                if (requester == null) {
+                    if (deferred.offer(payloadJson)) "true" else null
+                } else {
+                    scheduleEngineTimer(requester, payloadJson)
+                }
             } else {
                 hostRegistry.onHostCall(service, method, payloadJson)
             }
         }
-        return TenunEngine(bytes, scoped).also { bound = it }
+        return TenunEngine(bytes, scoped).also { engine ->
+            bound = engine
+            for (payloadJson in deferred.drain()) scheduleEngineTimer(engine, payloadJson)
+        }
     }
 
     /** Timer wake-up on behalf of [requesting]; delivered only while that
