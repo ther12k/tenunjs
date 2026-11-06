@@ -260,4 +260,32 @@ class TextInputSessionTest {
         assertEquals(initial.revision, state.current!!.revision)
         assertEquals(initial.sessionId, state.current!!.sessionId)
     }
+
+    @Test
+    fun logicalSessionIdentitySurvivesAnIntentOnlyRestartButNotRealSessionChanges() {
+        val owner = Any()
+        val state = TextInputSessionState()
+        val initial = input()
+        assertTrue(state.adopt(owner, initial))
+        val token = state.token()!!
+        // Intent-only ack restart (an editor action's own flush, review P2):
+        // the accepted value keeps id/sessionId; only the keyboard intent
+        // moves, retiring the generation but not the logical session.
+        val flipped = initial.copy(keyboardType = "number", revision = 1)
+        assertTrue(state.adopt(owner, flipped, ownEdit = true))
+        assertFalse("intent restart retires the captured generation", state.accepts(token))
+        assertTrue("logical identity continues", state.acceptsLogicalSession(token))
+        // A real session change breaks logical identity too.
+        state.adopt(owner, initial.copy(sessionId = 2), ownEdit = true)
+        assertFalse(state.acceptsLogicalSession(token))
+        // So does an owner (engine) swap.
+        val otherOwner = Any()
+        state.adopt(otherOwner, initial.copy(sessionId = 3), ownEdit = true)
+        assertFalse(state.acceptsLogicalSession(token))
+        val replacement = state.token()!!
+        assertTrue(state.acceptsLogicalSession(replacement))
+        // And an ended session.
+        state.adopt(otherOwner, null)
+        assertFalse(state.acceptsLogicalSession(replacement))
+    }
 }

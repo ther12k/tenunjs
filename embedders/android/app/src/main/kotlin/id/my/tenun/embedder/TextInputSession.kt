@@ -200,6 +200,17 @@ class TextInputSessionState {
     fun accepts(token: Token): Boolean = owner === token.owner && generation == token.generation &&
         current?.id == token.id && current?.sessionId == token.sessionId
 
+    /**
+     * Session identity WITHOUT the generation guard: true when [token] names
+     * the CURRENT logical session (owner + field id + sessionId) even though
+     * an intent-only restart retired the connection object holding it. Used
+     * solely to deliver an editor action whose own flush triggered that
+     * restart (review P2) — a real session change (new field, new sessionId,
+     * owner swap, ended session) still fails here.
+     */
+    fun acceptsLogicalSession(token: Token): Boolean =
+        owner === token.owner && current?.id == token.id && current?.sessionId == token.sessionId
+
     fun invalidate() {
         generation++
         owner = null

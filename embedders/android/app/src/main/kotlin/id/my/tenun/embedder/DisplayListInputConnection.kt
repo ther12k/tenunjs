@@ -25,6 +25,10 @@ class DisplayListInputConnection(
     val token: TextInputSessionState.Token,
     initial: TextInputDescriptor,
     private val isCurrent: () -> Boolean,
+    /** True when an editor submit may still be delivered after this object
+     *  was retired mid-action by an intent-only restart of the SAME logical
+     *  session (see performEditorAction). */
+    private val canDeliverPendingSubmit: () -> Boolean,
     private val onEdit: (TextInputValue) -> Boolean,
     private val onCommand: (String) -> Boolean
 ) : BaseInputConnection(view, true) {
@@ -39,6 +43,9 @@ class DisplayListInputConnection(
     private var returnAction: String = initial.returnAction
     private var lastRevision: Long = -1L
     private var lastSessionId: Long = -1L
+    /** Newest authority deferred while an IME batch is open (see
+     *  applyAuthoritative); applied at the batch boundary. */
+    private var pendingAuthoritative: TextInputDescriptor? = null
 
     init {
         applyAuthoritative(initial)
@@ -63,18 +70,34 @@ class DisplayListInputConnection(
         if (input.sessionId == lastSessionId && input.revision == lastRevision) {
             return
         }
-        lastSessionId = input.sessionId
-        lastRevision = input.revision
         // Exact acknowledgements and geometry-only paints must not replace
         // the IME's existing composing spans (which can carry its own styles).
         if (value() == next) {
+            lastSessionId = input.sessionId
+            lastRevision = input.revision
             reported = next
+            // The buffer already mirrors this NEWER authority, so anything
+            // still deferred from an earlier replacement is superseded: at
+            // the batch boundary it would roll the editor BACK over this
+            // acknowledgement (review fix — the equality path used to leave
+            // the older deferred value queued, and draining it then let the
+            // next keystroke overwrite the accepted newer text).
+            pendingAuthoritative = null
             return
         }
-        // If an IME batch edit is in progress, do not clobber pending local edits.
+        // A moved revision whose content differs is genuine new authority —
+        // an accepted external ACTION_SET_TEXT replacement. Mid-batch it must
+        // not clobber the composing buffer NOW, but it also may not be DROPPED:
+        // dropping it let the stale local buffer overwrite the accepted value
+        // on the next keystroke, and later same-revision paints skip too
+        // (review P1). Defer to the batch boundary; the deferred drain re-runs
+        // this full path with the batch closed.
         if (batchDepth > 0) {
+            pendingAuthoritative = input
             return
         }
+        lastSessionId = input.sessionId
+        lastRevision = input.revision
         applying = true
         try {
             reported = next
@@ -85,6 +108,19 @@ class DisplayListInputConnection(
         } finally {
             applying = false
         }
+    }
+
+    /** Applies an authority update deferred by an open IME batch; called at
+     *  the batch boundary and before an in-batch editor action. The deferred
+     *  replacement wins over the un-flushed local buffer — an external
+     *  ACTION_SET_TEXT is a full replacement by Android contract — but never
+     *  over a NEWER acknowledgement recorded meanwhile: authority may not
+     *  move backwards (review fix). */
+    private fun drainDeferredAuthority() {
+        val pending = pendingAuthoritative ?: return
+        pendingAuthoritative = null
+        if (pending.sessionId == lastSessionId && pending.revision < lastRevision) return
+        applyAuthoritative(pending)
     }
 
     private fun value(): TextInputValue {
@@ -128,6 +164,7 @@ class DisplayListInputConnection(
     override fun endBatchEdit(): Boolean {
         if (!live() || batchDepth == 0) return false
         batchDepth--
+        if (batchDepth == 0) drainDeferredAuthority()
         flush()
         return batchDepth > 0
     }
@@ -189,8 +226,14 @@ class DisplayListInputConnection(
         // issues it before closing its batch.
         val previousBatchDepth = batchDepth
         batchDepth = 0
+        drainDeferredAuthority()
         val finished = finishComposingText()
-        if (!finished || !live()) return false
+        // The flush itself can retire THIS connection: an accepted edit whose
+        // keyboard/return intent changed (e.g. text -> number) triggers an
+        // intent-only restart, invalidating this object mid-action. The
+        // logical session continues, so the user's Done must still be
+        // delivered — the host's command guard decides (review P2).
+        if (!finished || (!live() && !canDeliverPendingSubmit())) return false
         batchDepth = previousBatchDepth
         return onCommand("TEXT_SUBMIT")
     }

@@ -76,4 +76,32 @@ class RequesterBoundSchedulerTest {
         assertFalse(scheduler.schedule<Any>(null, 10, { true }) { })
         assertTrue(queue.pending.isEmpty())
     }
+
+    // ---------------------------------------------------------------------
+    // DeferredTimerRequests: construction-phase scheduleTimer calls (bundle
+    // evaluation + bootstrap job drain finish before TenunEngine's
+    // constructor returns). Refusing them dropped every bootstrap timeout.
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun deferredRequestsBufferInArrivalOrderAndDrainOnce() {
+        val deferred = DeferredTimerRequests()
+        assertTrue(deferred.offer("""{"delayMs":20}"""))
+        assertTrue(deferred.offer("""{"delayMs":40}"""))
+        assertEquals(listOf("""{"delayMs":20}""", """{"delayMs":40}"""), deferred.drain())
+        assertTrue(deferred.drain().isEmpty())
+        // Offers after a drain keep working (each engine construction owns a
+        // fresh queue; the class itself must stay usable).
+        assertTrue(deferred.offer("""{"delayMs":60}"""))
+        assertEquals(listOf("""{"delayMs":60}"""), deferred.drain())
+    }
+
+    @Test
+    fun malformedDeferredPayloadIsRefusedLikeTheBoundPath() {
+        val deferred = DeferredTimerRequests()
+        assertFalse(deferred.offer("not json"))
+        assertFalse(deferred.offer("""{"delayMs":}"""))
+        assertFalse(deferred.offer(""))
+        assertTrue(deferred.drain().isEmpty())
+    }
 }

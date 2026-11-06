@@ -142,6 +142,59 @@ all five tsconfigs.
   across non-timer dispatches, rest deadline boundaries, and engine swaps; rebased countdown deadline and
   cooldown across fresh engine instantiation on `TENUN_RESTORE`.
 
+### Post-merge review remediations (2026-11-06, against `8f3f336`)
+
+- **External replacement dropped mid-batch (P1):** an accepted accessibility `ACTION_SET_TEXT` landing
+  while an IME batch edit was open was classified as an exact acknowledgement, so the connection survived —
+  and the new batch guard then DROPPED the newer authority without reconciliation, letting the stale local
+  buffer overwrite it on the next keystroke. `applyAuthoritative` now DEFERS a moved-revision replacement
+  to the batch boundary (`endBatchEdit`, or before an in-batch editor action), where it is applied in full
+  — Android's full-replacement contract — instead of being lost. Device test drives the real
+  provider `ACTION_SET_TEXT` path against a live, batched connection.
+- **Editor submit swallowed by its own intent-only restart (P2):** when the final edit an editor action
+  flushes changes `keyboardType`/`returnAction` (e.g. text → number), the exact acknowledgement triggers
+  an intent-only restart that retired the connection mid-action, so the trailing `TEXT_SUBMIT` was dropped
+  even though the logical session and accepted revision stayed valid. The submit now gates on LOGICAL
+  session identity (`TextInputSessionState.acceptsLogicalSession` — owner + id + sessionId, no generation)
+  with a `pendingSubmitContinuation` flag that only an intent-only ack restart sets; real session changes
+  still refuse. Device test covers Done-during-batch with an intent flip.
+- **Bootstrap timer requests refused (P2):** bundle evaluation and the bootstrap job drain finish BEFORE
+  `TenunEngine`'s constructor returns, so `newEngine`'s requester binding is still null and the requester-
+  bound scheduler refused every startup `system.scheduleTimer` — breaking valid bundles that schedule
+  bootstrap timeouts (proven with a real native QuickJS probe: old policy delivered the callback, the
+  requester-bound policy delivered none). Construction-time requests are now validated and buffered
+  (`DeferredTimerRequests`) and scheduled against the requesting engine the moment it is bound; the
+  requester/liveness delivery guard is unchanged. No shipped boot path currently requests bootstrap
+  timers (workout starts idle; Polytron's timers begin after `BLE_LINK`).
+- **QuickJS-scale hard-break aborted layout (P3):** hard-breaking a long token in a narrow column could
+  produce more lines than QuickJS accepts as call arguments (65535); the widest-line `Math.max(...lines)`
+  then threw `RangeError` and the whole layout failed (70k-char token at width 10: parent committed one
+  op, the hard-break revision threw). The widest line is now computed with an explicit loop; a bun test
+  lays out the same shape through `layoutScreen` at BOTH the 70k (QuickJS arg-limit) and 1M-character
+  (V8/JSC spread-budget) tiers, so the reduction cannot silently regress to a variadic call on either
+  engine.
+
+### Second review round (2026-11-06, PR #276 head `08abcff`)
+
+- **Deferred replacement could roll authority backwards (P1):** the first-round batch reconciliation
+  introduced its own ordering defect — an exact acknowledgement (an accepted replacement EQUAL to the
+  live buffer) recorded the newer revision but left an OLDER deferred replacement queued, and draining
+  it at the batch boundary rolled the editor back over the newer authority; the next keystroke then
+  overwrote the accepted text in the runtime (differential: buffer "B" on `8f3f336`, "A" on `08abcff`;
+  real runtime then accepted "A2" at baseRevision 2). The equality path now RETIRES any superseded
+  deferred authority, and `drainDeferredAuthority` refuses to move authority backwards. Device test
+  drives two provider `ACTION_SET_TEXT` replacements in one batch (deferred "900", then an exact
+  acknowledgement) and asserts the boundary keeps the newest authority.
+- **Bootstrap timers / widest-line loop:** no additional actionable defect (independent bounded review;
+  native QuickJS probe reconfirms the 70k layout succeeds now and fails when the variadic reduction is
+  restored).
+- **Container evidence rehearsal (local, diagnostic only):** full replay inside an `ubuntu:24.04`
+  container passes strict manifests for quickjs/taffy but STILL mismatches yoga (524,704 vs 524,728
+  bytes) with identical recorded tool versions, and the libclang base-patch pin did not change the
+  hash; the differing native build input (C++ toolchain/libstdc++/CRT surface, none recorded by the
+  evidence harness) remains unidentified. Bit-identical replay is NOT proven on Docker until this is
+  root-caused or packets are regenerated in a container environment that CI can also reproduce.
+
 ### Slice E — production boot path (bun tier)
 
 - `src/host-entry.ts` installs the QuickJS `setTimeout` shim (polytron-entry

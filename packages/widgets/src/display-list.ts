@@ -1597,7 +1597,15 @@ function measureNode(ctx: InternalContext, node: AnyNode, bounds: Constraints): 
     case "text": {
       const ty = typography(ctx, props.variant);
       const { lines } = layoutTextLines(props, textContent(node), ty, bounds.maxW);
-      const widest = Math.max(...lines.map((line) => textWidth(line, ty.size)));
+      // Widest line via an explicit loop, never a variadic call: hard-breaking
+      // a long token in a narrow column can produce more lines than engines
+      // accept as call arguments (QuickJS caps them at 65535), which aborted
+      // the whole layout instead of laying the text out.
+      let widest = 0;
+      for (const line of lines) {
+        const width = textWidth(line, ty.size);
+        if (width > widest) widest = width;
+      }
       return constrain({ w: Math.min(widest, bounds.maxW), h: lines.length * ty.lineHeight }, bounds);
     }
     case "button": {
