@@ -179,6 +179,12 @@ class TenunSurfaceView @JvmOverloads constructor(
     private var textInputConnection: DisplayListInputConnection? = null
     private var acceptsTextInput = true
 
+    /** Set while the latest adoption restarted the connection ONLY because
+     *  the accepted edit changed keyboard/return intent — the logical session
+     *  continues, so the editor action flushed by that same edit must still
+     *  deliver its submit (review P2). Refreshed by every adoption. */
+    private var pendingSubmitContinuation = false
+
     private data class TextEditResponse(
         val previous: TextInputDescriptor,
         val proposed: TextInputValue,
@@ -538,6 +544,7 @@ class TenunSurfaceView @JvmOverloads constructor(
             val connection = DisplayListInputConnection(
                 this, token, input,
                 isCurrent = { isCurrentTextInput(owner, token) },
+                canDeliverPendingSubmit = { isPendingSubmitDeliverable(owner, token) },
                 onEdit = { value -> dispatchTextEdit(owner, token, value) },
                 onCommand = { action -> dispatchTextCommand(owner, token, action) }
             )
@@ -699,6 +706,12 @@ class TenunSurfaceView @JvmOverloads constructor(
     private fun isCurrentTextInput(owner: TenunEngine, token: TextInputSessionState.Token): Boolean =
         acceptsTextInput && engine === owner && !owner.isDisposed && textInputSession.accepts(token)
 
+    /** Whether a pending editor submit may still cross an intent-only
+     *  restart: same logical session, same live engine, focused window. */
+    private fun isPendingSubmitDeliverable(owner: TenunEngine, token: TextInputSessionState.Token): Boolean =
+        pendingSubmitContinuation && acceptsTextInput && engine === owner && !owner.isDisposed &&
+            textInputSession.acceptsLogicalSession(token)
+
     /** Called only after native dispatch returns; never from tenun_host_call. */
     private fun adoptDisplayTextInput(scene: DisplayListScene, editResponse: TextEditResponse? = null) {
         val owner = engine?.takeUnless { it.isDisposed }
@@ -712,6 +725,14 @@ class TenunSurfaceView @JvmOverloads constructor(
         // the IME has already mutated its own local composition. A controlled
         // transformation likewise is not an acknowledgement of that edit.
         val restart = textInputSession.adopt(owner, input, ownEdit, forceRestart = editResponse != null && !ownEdit)
+        // restart && ownEdit isolates the intent-only ack restart: an exact
+        // acknowledgement keeps id/sessionId, so only a keyboard/return intent
+        // change can have caused it. The logical session continues, and the
+        // editor action that flushed this very edit must still deliver its
+        // submit through the retired connection (review P2). Every other
+        // restart (real session change, transformed value, rejected edit)
+        // leaves nothing deliverable.
+        pendingSubmitContinuation = restart && ownEdit
         if (restart) {
             textInputConnection?.invalidate()
             textInputConnection = null
@@ -749,7 +770,12 @@ class TenunSurfaceView @JvmOverloads constructor(
     }
 
     private fun dispatchTextCommand(owner: TenunEngine, token: TextInputSessionState.Token, action: String): Boolean {
-        if (!isCurrentTextInput(owner, token)) return false
+        // The captured-token check retires with the connection; an editor
+        // action whose flush triggered an intent-only restart arrives from
+        // that retired connection for the SAME logical session and must be
+        // delivered (review P2). Everything else still requires the full
+        // captured-token check.
+        if (!isCurrentTextInput(owner, token) && !isPendingSubmitDeliverable(owner, token)) return false
         val input = textInputSession.current ?: return false
         return dispatchTextEvent(owner, action, textInputEventJson(input.eventIdentity()))
     }

@@ -1,5 +1,6 @@
 package id.my.tenun.embedder
 
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -228,6 +229,86 @@ class DisplayListTextInputTest {
         }
     }
 
+    @Test
+    fun editorActionSurvivesAnIntentOnlyRestartOfItsOwnFlush() {
+        instrumentation.runOnMainSync {
+            val engine = TenunEngine(BUNDLE.toByteArray(Charsets.UTF_8))
+            val view = TenunSurfaceView(instrumentation.targetContext)
+            try {
+                view.engine = engine
+                val ic = connection(view)
+                // The next accepted edit flips keyboard intent (text -> number):
+                // the exact acknowledgement retires THIS connection mid-action.
+                command(view, "TEST_FLIP_INTENT")
+                assertTrue(ic.beginBatchEdit())
+                assertTrue(ic.commitText("2", 1))
+                // Done arrives before the batch closes (IMEs do this): the
+                // flush adopts "A😀2BC" AND flips the intent. Pre-fix, the
+                // retired connection refused its own trailing submit and the
+                // Done press was silently swallowed.
+                assertTrue(ic.performEditorAction(EditorInfo.IME_ACTION_DONE))
+                assertEquals("A😀2BC", descriptor(view).text)
+                assertFalse("submit ended the session", descriptor(view).focused)
+                assertFalse("retired connection is inert", ic.commitText("after", 1))
+                assertNull(view.onCreateInputConnection(EditorInfo()))
+            } finally {
+                view.engine = null
+                engine.destroy()
+            }
+        }
+    }
+
+    @Test
+    fun accessibilityReplacementDuringABatchReconcilesAtTheBoundaryAndIsNotOverwritten() {
+        instrumentation.runOnMainSync {
+            val engine = TenunEngine(A11Y_BATCH_BUNDLE.toByteArray(Charsets.UTF_8))
+            val view = TenunSurfaceView(instrumentation.targetContext)
+            try {
+                view.engine = engine
+                val ic = connection(view)
+                val provider = view.accessibilityNodeProvider!!
+                val (nodeId, _) = findNodeByLabel(provider, "Title")
+                assertTrue(ic.beginBatchEdit())
+                assertTrue(ic.setComposingText("k", 1))
+                // Accessibility ACTION_SET_TEXT lands THROUGH the revisioned
+                // contract WHILE the IME batch is open: accepted authority is
+                // "900" but this connection's batch guard used to drop it
+                // permanently, so the stale buffer overwrote it on the next
+                // keystroke.
+                assertTrue(provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArguments("900")))
+                assertEquals("900", descriptor(view).text)
+                // Mid-batch the editor still shows its own buffered content —
+                // the replacement must defer, not clobber.
+                assertEquals("A😀kBC", ic.getExtractedText(null, 0)!!.text.toString())
+                ic.endBatchEdit()
+                // At the boundary the deferred replacement is applied; flush
+                // sends nothing (the editor mirrors authority).
+                assertEquals("900", ic.getExtractedText(null, 0)!!.text.toString())
+                assertEquals("900", descriptor(view).text)
+                // Subsequent typing builds on the accepted value.
+                assertTrue(ic.commitText("2", 1))
+                assertEquals("9002", descriptor(view).text)
+            } finally {
+                view.engine = null
+                engine.destroy()
+            }
+        }
+    }
+
+    private fun findNodeByLabel(provider: android.view.accessibility.AccessibilityNodeProvider, label: String): Pair<Int, android.view.accessibility.AccessibilityNodeInfo> {
+        var id = 1
+        while (id < 64) {
+            val info = provider.createAccessibilityNodeInfo(id) ?: continue
+            if (label == info.hintText?.toString() || label == info.contentDescription?.toString()) return id to info
+            id++
+        }
+        throw AssertionError("no semantic node with hint/contentDescription \"$label\"")
+    }
+
+    private fun setTextArguments(text: String): android.os.Bundle = android.os.Bundle().apply {
+        putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+    }
+
     private fun nestedDescriptor(view: TenunSurfaceView): TextInputDescriptor =
         view.committedSceneForTest().first!!
             .ops.filterIsInstance<DisplayListScene.Op.ScrollRegionOp>().single()
@@ -264,7 +345,7 @@ class DisplayListTextInputTest {
 
         private val BUNDLE = """
             (function () {
-              var nextSession = 1, present = true, transformNextEdit = false;
+              var nextSession = 1, present = true, transformNextEdit = false, flipNextEdit = false;
               var input = {op:'text-input', id:'title', x:10, y:20, w:280, h:64,
                 text:'A😀BC', selection:{base:3,extent:3}, composing:null,
                 focused:true, sessionId:1, revision:0, keyboardType:'text',
@@ -286,10 +367,14 @@ class DisplayListTextInputTest {
                     if (transformNextEdit) {
                       input.text=input.text.toUpperCase(); input.composing=null; transformNextEdit=false;
                     }
+                    if (flipNextEdit) {
+                      input.keyboardType='number'; flipNextEdit=false;
+                    }
                   } else blur();
                 } else if (action === 'TEST_VALUE') {
                   input.text=p.text; input.selection=p.selection; input.composing=null; input.revision++;
                 } else if (action === 'TEST_TRANSFORM') { transformNextEdit=true;
+                } else if (action === 'TEST_FLIP_INTENT') { flipNextEdit=true;
                 } else if (action === 'TEST_FOCUS') {
                   present=true; input.id=p.id; input.focused=true; input.readOnly=false;
                   input.sessionId=++nextSession; input.revision=0; input.composing=null;
@@ -298,6 +383,45 @@ class DisplayListTextInputTest {
                 } else if (action === 'TEST_REMOVE') { blur(); present=false;
                 } else if (action !== 'VIEWPORT') throw new Error('unknown action');
                 commit(); return JSON.stringify({route:'adapter-test'});
+              };
+              commit();
+            })();
+        """.trimIndent()
+
+        /**
+         * A textfield WITH a semantics projection, mirroring what a real
+         * controller commits for an accessibility ACTION_SET_TEXT: the
+         * replacement adopts with selection collapsed to the end and no
+         * composition. Used to drive the real setSemanticText path against
+         * a live, batched IME connection.
+         */
+        private val A11Y_BATCH_BUNDLE = """
+            (function () {
+              var input = {op:'text-input', id:'title', x:10, y:20, w:280, h:64,
+                text:'A😀BC', selection:{base:3,extent:3}, composing:null,
+                focused:true, sessionId:1, revision:0, keyboardType:'text',
+                returnAction:'done', readOnly:false, label:'Title'};
+              function commit() {
+                tenun_commit(JSON.stringify({tenun:'display-list', version:1,
+                  designWidth:320, contentHeight:480, background:'#101014',
+                  ops:[input],
+                  taps:[{x:10,y:20,w:280,h:64,action:'tap',payload:{id:0}}],
+                  semantics:{semanticsVersion:1, nodes:[
+                    {id:'title', role:'textfield', label:'Title', value:input.text,
+                     state:{focused:input.focused, readOnly:input.readOnly},
+                     bounds:{x:10,y:20,w:280,h:64},
+                     actions:[{name:'press', tapId:0}]}
+                  ]}}));
+              }
+              globalThis.__tenun_dispatch_action = function (action, payloadJson) {
+                var p=JSON.parse(payloadJson || '{}');
+                if (action === 'TEXT_EDIT') {
+                  if (!input.focused || p.id !== input.id || p.sessionId !== input.sessionId || p.baseRevision !== input.revision)
+                    throw new Error('stale text session/revision');
+                  input.text=p.text; input.composing=null; input.revision++;
+                  input.selection={base:input.text.length, extent:input.text.length};
+                } else throw new Error('unknown action ' + action);
+                commit(); return JSON.stringify({route:'a11y-batch'});
               };
               commit();
             })();
