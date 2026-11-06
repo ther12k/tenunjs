@@ -227,4 +227,23 @@ describe("review fixes — wrap/ellipsis hardening", () => {
     expect(ops).toHaveLength(1);
     expect(ops[0]!.text).toBe("a 😀😀😀…");
   });
+
+  test("a QuickJS-scale hard-broken token lays out: widest line is a loop, not a variadic call", () => {
+    // QuickJS caps variadic calls at 65535 arguments; feeding Math.max the
+    // widths of >65k hard-broken lines aborted the whole layout instead of
+    // laying the text out (review P3). 70k characters in a 10-unit column
+    // is exactly the shape that used to throw on the embedded engine.
+    const huge = "x".repeat(70_000);
+    const ty = { size: 17, lineHeight: 24 };
+    const laid = layoutTextLines({}, huge, ty, 10);
+    expect(laid.truncated).toBe(false);
+    expect(laid.lines.length).toBeGreaterThan(65_535);
+    expect(laid.lines.every((line) => textWidth(line, 17) <= 10)).toBe(true);
+    // Design-width mode (unbounded root height) so the natural block height
+    // — lines × lineHeight — is observable in the committed scene.
+    const { scene } = layoutScreen(theme, Column({ children: [Text({ children: huge })] }), 10);
+    const ops = textOps(scene).filter((op) => op.text.length > 0);
+    expect(ops.length).toBe(laid.lines.length);
+    expect(scene.contentHeight).toBe(laid.lines.length * 24);
+  });
 });
