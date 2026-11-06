@@ -295,6 +295,50 @@ class DisplayListTextInputTest {
         }
     }
 
+    @Test
+    fun newerEqualityAcknowledgementDuringABatchSupersedesOlderDeferredReplacement() {
+        instrumentation.runOnMainSync {
+            val engine = TenunEngine(A11Y_BATCH_BUNDLE.toByteArray(Charsets.UTF_8))
+            val view = TenunSurfaceView(instrumentation.targetContext)
+            try {
+                view.engine = engine
+                val ic = connection(view)
+                val provider = view.accessibilityNodeProvider!!
+                val (nodeId, _) = findNodeByLabel(provider, "Title")
+                // Move the cursor to the end (a real, exactly-acknowledged
+                // TEXT_EDIT), so a later full replacement EQUAL to the buffer
+                // becomes an exact acknowledgement (value() == next) — the
+                // path where an older deferred replacement must be retired.
+                assertTrue(ic.setSelection(5, 5))
+                assertEquals(1, descriptor(view).revision)
+                assertTrue(ic.beginBatchEdit())
+                // An older external replacement is accepted and DEFERRED...
+                assertTrue(provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArguments("900")))
+                assertEquals(2, descriptor(view).revision)
+                // ...then a NEWER replacement equals the live buffer: an exact
+                // acknowledgement that must RETIRE the deferred "900".
+                // Draining the older replacement at the boundary used to roll
+                // the editor back over this newer authority, and the next
+                // keystroke then overwrote it in the runtime (review fix).
+                assertTrue(provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArguments("A😀BC")))
+                assertEquals("A😀BC", descriptor(view).text)
+                assertEquals(3, descriptor(view).revision)
+                ic.endBatchEdit()
+                // The boundary keeps the NEWEST authority: the buffer mirrors
+                // it exactly and nothing is dispatched.
+                assertEquals("A😀BC", ic.getExtractedText(null, 0)!!.text.toString())
+                assertEquals("A😀BC", descriptor(view).text)
+                // Subsequent typing builds on the newest authority — pre-fix
+                // this committed "9002", silently overwriting "A😀BC".
+                assertTrue(ic.commitText("2", 1))
+                assertEquals("A😀BC2", descriptor(view).text)
+            } finally {
+                view.engine = null
+                engine.destroy()
+            }
+        }
+    }
+
     private fun findNodeByLabel(provider: android.view.accessibility.AccessibilityNodeProvider, label: String): Pair<Int, android.view.accessibility.AccessibilityNodeInfo> {
         var id = 1
         while (id < 64) {

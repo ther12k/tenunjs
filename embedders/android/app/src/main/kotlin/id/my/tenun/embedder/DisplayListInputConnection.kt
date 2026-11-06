@@ -76,6 +76,13 @@ class DisplayListInputConnection(
             lastSessionId = input.sessionId
             lastRevision = input.revision
             reported = next
+            // The buffer already mirrors this NEWER authority, so anything
+            // still deferred from an earlier replacement is superseded: at
+            // the batch boundary it would roll the editor BACK over this
+            // acknowledgement (review fix — the equality path used to leave
+            // the older deferred value queued, and draining it then let the
+            // next keystroke overwrite the accepted newer text).
+            pendingAuthoritative = null
             return
         }
         // A moved revision whose content differs is genuine new authority —
@@ -106,10 +113,13 @@ class DisplayListInputConnection(
     /** Applies an authority update deferred by an open IME batch; called at
      *  the batch boundary and before an in-batch editor action. The deferred
      *  replacement wins over the un-flushed local buffer — an external
-     *  ACTION_SET_TEXT is a full replacement by Android contract. */
+     *  ACTION_SET_TEXT is a full replacement by Android contract — but never
+     *  over a NEWER acknowledgement recorded meanwhile: authority may not
+     *  move backwards (review fix). */
     private fun drainDeferredAuthority() {
         val pending = pendingAuthoritative ?: return
         pendingAuthoritative = null
+        if (pending.sessionId == lastSessionId && pending.revision < lastRevision) return
         applyAuthoritative(pending)
     }
 
