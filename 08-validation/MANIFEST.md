@@ -304,9 +304,9 @@ status: accepted
 | 06-issues/tn-190-discovery-capability.md | 069cd6553a44f7a3aa1c7efe70770bdf6c2c1e0a551829fa32c0079f4674524c |
 | 06-issues/tn-191-tvremote-example.md | a592a06306ce43c509bc97875456859431423b0a0ae973d329899aa2935d1077 |
 | 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |
-| 06-issues/tn-193-media-host-service-media3-and-textureview-compositing.md | e3f49f2b1d7ac1dc80a086b5edf6bee7c01a7b5497b2bfd70ffd6bb68f171ffe |
-| 06-issues/tn-194-generic-key-action-dispatch-from-android-host.md | ba728826251c6e7615e7b68b2a4b778c5cdfe959bbc88c719843917f6f68b82b |
-| 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | c5f0d2c8f11bd1c94494175391f33e20f43e110d3d7c10ee15d0b207c3ddfc6a |
+| 06-issues/tn-193-media-host-service-media3-and-textureview-compositing.md | cd1c74ed9eda70c1f478e49be424c135f482a305198f4156405b94c0d7ef3661 |
+| 06-issues/tn-194-generic-key-action-dispatch-from-android-host.md | ac7ddfefd8d66c0cefd6511da5c2dc15b389a59ccc4293c8db3d4746e01c701b |
+| 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | e7dc04cce90cf07e870c5f1e37c751caf2a39bf52ceabb7d78a402e86985da4b |
 | 06-issues/tn-196-tenun-tv-example-app-and-device-bringup.md | 2bc6f1fb4cccf077cc01df26aeda091d561294954ad069d1a4a47909bd718aa3 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |

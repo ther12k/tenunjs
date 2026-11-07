@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-195: TV embedder flavor — leanback packaging and armeabi-v7a"
 summary: "Add a `tv` product flavor to the Android embedder: applicationId id.my.tenun.tvplayer, label Tenun TV, armeabi-v7a added to abiFilters (target TV hardware), and a flavor manifest overlay with LEANBACK_LAUNCHER, leanback uses-feature, and a banner drawable. The touch flavor stays untouched."
 type: issue
-status: ready
+status: in-progress
 issue_id: "TN-195"
 milestone: "M5"
 priority: "P1"
@@ -34,5 +34,5 @@ initiative's device gate.
    drawable (x1dp `banner`, 320×180).
 3. The tv flavor's bundled asset is the TV player bundle produced by
    TN-196's build pipeline.
-4. Gate: `./gradlew :app:assembleTvvDebug` builds; the APK installs on
+4. Gate: `./gradlew :app:assembleTvDebug` builds; the APK installs on
    the Mi TV and appears in the Android TV launcher with its banner.

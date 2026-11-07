@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-193: Media host service — Media3 playback, TextureView overlay compositing, and fetchText"
 summary: "Deliver the media capability of ADR-0028: a `media` NativeService wrapping Media3 ExoPlayer+HLS (prepare/play/pause/stop/setRect/status), a TextureView video surface layered over TenunSurfaceView in a FrameLayout and positioned in design units, MEDIA_STATE event push, and a bounded fetchText so bundles can load playlists before the net capability lands."
 type: issue
-status: ready
+status: in-progress
 issue_id: "TN-193"
 milestone: "M5"
 priority: "P0"

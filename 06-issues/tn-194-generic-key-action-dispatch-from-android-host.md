@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-194: Generic KEY action dispatch from the Android host"
 summary: "Android key events that the IME path does not consume are dispatched to the runtime as generic KEY actions {keyCode, phase} instead of being logged and dropped; BACK keeps its existing host handling. A framework focus model stays future work — v1 apps build their own focus helper over these actions."
 type: issue
-status: ready
+status: in-progress
 issue_id: "TN-194"
 milestone: "M5"
 priority: "P1"
