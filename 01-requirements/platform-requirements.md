@@ -31,3 +31,14 @@ The frozen OS, device, GPU, and toolchain baseline for both platforms lives in [
 ## Shared
 
 The engine API shall not assume identical OS behavior. Shared widgets define user intent; embedders implement platform contracts and expose documented differences where necessary.
+
+## Connectivity and background
+
+Companion-device capabilities (TCP/TLS sessions with client-certificate
+pairing, OS-keystore identities, mDNS/NSD discovery) and the
+foreground-scoped socket-survival policy v1 are specified by
+[ADR-0027](../03-decisions/adr-0027-companion-connectivity-capabilities.md)
+and the capability references under [04-api](../04-api/index.md)
+(`net.md`, `keys.md`, `discovery.md`); their host integrations are
+tracked as TN-188..TN-190. This section is a pointer, not a second
+specification: those documents own the contracts.
