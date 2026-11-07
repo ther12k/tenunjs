@@ -57,7 +57,9 @@ class MediaService(
         /**
          * Derives the contract's state string. "ready" (prepared, never
          * played) vs "paused" (played, then paused) cannot be read from
-         * Player alone, so the previous derived state disambiguates.
+         * Player alone — both look like READY + playWhenReady=false — so
+         * [hasPlayed] disambiguates: the service sets it on the first
+         * playing observation and clears it on prepare/stop.
          */
         fun deriveState(
             previous: String,
@@ -65,6 +67,7 @@ class MediaService(
             isPlaying: Boolean,
             playWhenReady: Boolean,
             error: Boolean,
+            hasPlayed: Boolean,
         ): String = when {
             error -> "error"
             isPlaying -> "playing"
@@ -72,10 +75,11 @@ class MediaService(
             playbackState == Player.STATE_ENDED -> "ended"
             playbackState == Player.STATE_IDLE -> "idle"
             // STATE_READY: playing is about to start; otherwise paused
-            // only if we were on the play path, else freshly prepared.
+            // only if this item actually played before, else freshly
+            // prepared.
             else -> when {
                 playWhenReady -> "playing"
-                previous == "playing" || previous == "buffering" || previous == "paused" -> "paused"
+                hasPlayed || previous == "playing" || previous == "paused" -> "paused"
                 else -> "ready"
             }
         }
@@ -125,6 +129,9 @@ class MediaService(
     @Volatile private var player: ExoPlayer? = null
     @Volatile private var currentUrl: String? = null
     @Volatile private var derivedState = "idle"
+    /** True once the current item has actually played (media.md's
+     *  ready/paused split); main-thread confined, cleared on prepare/stop. */
+    private var hasPlayed = false
     private var pendingRect: Rect4? = null
 
     /** Design-unit rect as last set by the app (TN-193 setRect). */
@@ -134,20 +141,21 @@ class MediaService(
         override fun onPlaybackStateChanged(playbackState: Int) {
             val p = player ?: return
             updateState(
-                deriveState(derivedState, playbackState, p.isPlaying, p.playWhenReady, error = false)
+                deriveState(derivedState, playbackState, p.isPlaying, p.playWhenReady, error = false, hasPlayed = hasPlayed)
             )
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val p = player ?: return
+            if (isPlaying) hasPlayed = true
             updateState(
-                deriveState(derivedState, p.playbackState, isPlaying, p.playWhenReady, error = false)
+                deriveState(derivedState, p.playbackState, isPlaying, p.playWhenReady, error = false, hasPlayed = hasPlayed)
             )
         }
 
         override fun onPlayerError(error: PlaybackException) {
             updateState(
-                deriveState(derivedState, Player.STATE_IDLE, false, false, error = true),
+                deriveState(derivedState, Player.STATE_IDLE, false, false, error = true, hasPlayed = hasPlayed),
                 message = error.message,
             )
         }
@@ -203,6 +211,7 @@ class MediaService(
             p.playWhenReady = false
             p.prepare()
             currentUrl = url
+            hasPlayed = false
             textureView.visibility = android.view.View.GONE
             applyPendingRect()
             updateState("buffering")
@@ -224,6 +233,7 @@ class MediaService(
             p.stop()
             p.clearMediaItems()
             currentUrl = null
+            hasPlayed = false
             textureView.visibility = android.view.View.GONE
             updateState("idle")
         }

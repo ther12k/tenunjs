@@ -22,29 +22,33 @@ class MediaServiceLogicTest {
         isPlaying: Boolean = false,
         playWhenReady: Boolean = false,
         error: Boolean = false,
-    ): String = MediaService.deriveState(previous, state, isPlaying, playWhenReady, error)
+        hasPlayed: Boolean = false,
+    ): String = MediaService.deriveState(previous, state, isPlaying, playWhenReady, error, hasPlayed)
 
     @Test
     fun `prepare reaches ready without playing`() {
         assertEquals("buffering", derive("idle", Player.STATE_BUFFERING))
-        assertEquals("ready", derive("buffering", Player.STATE_READY, playWhenReady = false))
+        // Freshly prepared: READY + not playing + never played = ready.
+        assertEquals("ready", derive("buffering", Player.STATE_READY, playWhenReady = false, hasPlayed = false))
     }
 
     @Test
     fun `play and pause distinguish themselves through the previous state`() {
         assertEquals("playing", derive("ready", Player.STATE_READY, playWhenReady = true))
         assertEquals("playing", derive("playing", Player.STATE_READY, isPlaying = true, playWhenReady = true))
-        assertEquals("paused", derive("playing", Player.STATE_READY, playWhenReady = false))
-        // Re-buffering while paused lands back on paused, not ready.
+        assertEquals("paused", derive("playing", Player.STATE_READY, playWhenReady = false, hasPlayed = true))
+        // Re-buffering while paused lands back on paused, not ready —
+        // the same READY + !playWhenReady shape as a fresh prepare, so
+        // hasPlayed (not `previous`) is what tells the cases apart.
         assertEquals("buffering", derive("paused", Player.STATE_BUFFERING))
-        assertEquals("paused", derive("buffering", Player.STATE_READY, playWhenReady = false))
+        assertEquals("paused", derive("buffering", Player.STATE_READY, playWhenReady = false, hasPlayed = true))
     }
 
     @Test
     fun `ended, idle, and error are terminal reads`() {
         assertEquals("ended", derive("playing", Player.STATE_ENDED))
         assertEquals("idle", derive("ended", Player.STATE_IDLE))
-        assertEquals("error", derive("playing", Player.STATE_READY, error = true))
+        assertEquals("error", derive("playing", Player.STATE_READY, error = true, hasPlayed = true))
     }
 
     @Test
