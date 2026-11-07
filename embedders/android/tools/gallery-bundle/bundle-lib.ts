@@ -16,6 +16,7 @@ export const repoRoot = path.resolve(here, "../../../..");
 const entry = path.join(here, "device-entry.ts");
 const counterEntry = path.join(here, "counter-entry.ts");
 const polytronEntry = path.join(here, "polytron-entry.ts");
+const tvplayerEntry = path.join(here, "tvplayer-entry.ts");
 const previewEntry = path.join(repoRoot, "examples/gallery-preview/app-entry.ts");
 const previewShellEntry = path.join(repoRoot, "examples/gallery-preview/preview.ts");
 const showcasePreviewEntry = path.join(repoRoot, "examples/flutter-showcase-preview/app-entry.ts");
@@ -26,6 +27,7 @@ export const watchedDirs = [
   path.join(here),
   path.join(repoRoot, "examples/gallery/src"),
   path.join(repoRoot, "examples/polytron/src"),
+  path.join(repoRoot, "examples/tvplayer/src"),
   path.join(repoRoot, "examples/flutter-showcase/src"),
   path.join(repoRoot, "examples/flutter-showcase-preview"),
   path.join(repoRoot, "examples/ui-kit/src"),
@@ -228,6 +230,34 @@ export async function buildPolytronBundle(): Promise<BundleArtifact> {
     code = `(function(){\n${code}\n})();`;
   }
   smokeRun(code, "polytron_app.js", ['"text":"Fungsi mesin"', '"text":"STOP MESIN"']);
+  return {
+    code,
+    hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
+    builtAtMtime: latestSourceMtime(),
+  };
+}
+
+/**
+ * Builds the TN-196 Tenun TV bundle: the TvplayerRuntime composition
+ * (screens + media host-service bridge + KEY focus path) through the
+ * public host-handoff contract, as the tv flavor's bundled APK asset.
+ */
+export async function buildTvplayerBundle(): Promise<BundleArtifact> {
+  const result = await build({
+    entrypoints: [tvplayerEntry],
+    target: "browser",
+    format: "esm",
+    minify: false,
+    external: [],
+  });
+  if (!result.success) {
+    throw new Error(`tvplayer bundle build failed:\n${result.logs.map(String).join("\n")}`);
+  }
+  let code = await result.outputs[0].text();
+  if (/^\s*(import|export)\s/m.test(code)) {
+    code = `(function(){\n${code}\n})();`;
+  }
+  smokeRun(code, "tvplayer_app.js", ['"text":"Tenun TV"', 'TVRI Nasional']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),

@@ -180,6 +180,19 @@
         "@tenunjs/cli": "workspace:*",
       },
     },
+    "examples/tvplayer": {
+      "name": "@tenunjs-examples/tvplayer",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/platform": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "examples/ui-kit": {
       "name": "@tenunjs-examples/ui-kit",
       "version": "0.1.0",
@@ -291,6 +304,8 @@
     "@tenunjs-examples/theme-contract": ["@tenunjs-examples/theme-contract@workspace:examples/theme-contract"],
 
     "@tenunjs-examples/todo-list": ["@tenunjs-examples/todo-list@workspace:examples/todo-list"],
+
+    "@tenunjs-examples/tvplayer": ["@tenunjs-examples/tvplayer@workspace:examples/tvplayer"],
 
     "@tenunjs-examples/ui-kit": ["@tenunjs-examples/ui-kit@workspace:examples/ui-kit"],
 

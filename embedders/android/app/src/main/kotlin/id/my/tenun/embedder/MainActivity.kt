@@ -544,17 +544,26 @@ class MainActivity : Activity() {
 
     private fun readAssetBundle(): ByteArray? {
         return try {
-            assets.open("polytron_app.js").use { it.readBytes() }
+            // TN-196: tvplayer_app.js lives in src/tv/assets — ONLY tv
+            // flavor builds package it, so this branch is inert for the
+            // touch flavor.
+            assetBundleName = "tvplayer_app.js"
+            assets.open("tvplayer_app.js").use { it.readBytes() }
         } catch (e0: Exception) {
             try {
-                assetBundleName = "gallery_app.js"
-                assets.open("gallery_app.js").use { it.readBytes() }
+                assetBundleName = "polytron_app.js"
+                assets.open("polytron_app.js").use { it.readBytes() }
             } catch (e: Exception) {
                 try {
-                    assetBundleName = "tenun_app.js"
-                    assets.open("tenun_app.js").use { it.readBytes() }
+                    assetBundleName = "gallery_app.js"
+                    assets.open("gallery_app.js").use { it.readBytes() }
                 } catch (e2: Exception) {
-                    null
+                    try {
+                        assetBundleName = "tenun_app.js"
+                        assets.open("tenun_app.js").use { it.readBytes() }
+                    } catch (e3: Exception) {
+                        null
+                    }
                 }
             }
         }

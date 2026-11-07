@@ -48,6 +48,7 @@ describe("examples are valid application projects", () => {
       "navigation-demo",
       "polytron",
       "todo-list",
+      "tvplayer",
       "votol",
     ]);
   });

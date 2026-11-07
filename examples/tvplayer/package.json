@@ -1,0 +1,17 @@
+{
+  "name": "@tenunjs-examples/tvplayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tenun TV (TN-196): generic m3u/m3u8 live-TV player on the media capability + KEY D-pad focus — ADR-0028's first TV application",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/platform": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs/cli": "workspace:*"
+  }
+}
