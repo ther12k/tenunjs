@@ -249,8 +249,9 @@ export class TvplayerRuntime {
   }
 
   /** Plays channel [index]: prepare (releases any previous item — one
-   *  player per host), then play; failures surface through the pushed
-   *  MEDIA_STATE events, never a throw past the seam. */
+   *  player per host), then play. A refused prepare is FAIL-VISIBLE: it
+   *  surfaces as a pushed error state (the browser preview's stub answers
+   *  unsupported, and the scene must say so — never a silent idle). */
   zapTo(index: number): void {
     const channel = this.channels[index];
     if (!channel) return;
@@ -260,7 +261,13 @@ export class TvplayerRuntime {
     this.pushFocus();
     this.ensureVideoRect();
     void this.media.prepare(channel.url).then((prepared) => {
-      if (!prepared.ok) return; // MEDIA_STATE(error) will carry it, or the stub stayed silent
+      if (!prepared.ok) {
+        this.mediaPush({
+          state: "error",
+          message: prepared.failure.message ?? prepared.failure.kind,
+        });
+        return;
+      }
       return this.media.play();
     });
   }

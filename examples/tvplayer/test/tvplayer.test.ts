@@ -75,19 +75,18 @@ describe("TN-196 tvplayer boot", () => {
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "Tenun TV")).toBe(true);
     expect(textsInclude(texts, "TVRI Nasional")).toBe(true);
-    // (the sidebar width wraps "(dev)" onto its own painted line, so
-    // the assertion sticks to the unwrapped prefix)
-    expect(textsInclude(texts, "Mux Test Stream")).toBe(true);
-    expect(textsInclude(texts, "media: idle")).toBe(true);
+    expect(textsInclude(texts, "Mux Test")).toBe(true);
+    expect(textsInclude(texts, "IDLE")).toBe(true); // the top-bar state pill
     expect(runtime.route()).toBe("player");
   });
 
-  test("the video region matches the scene layout contract", () => {
-    // The rect the runtime asserts via setRect is the same constant the
-    // player screen composes around — one source of truth.
-    expect(VIDEO_RECT.x).toBe(248);
-    expect(VIDEO_RECT.y).toBe(96);
-    expect(VIDEO_RECT.w + VIDEO_RECT.x).toBeLessThanOrEqual(960);
+  test("the video region is derived from the scene geometry it overlays", () => {
+    // The slot the scene reserves (padding-lg | sidebar | gap-sm) and the
+    // rect the runtime asserts via setRect are the SAME derivation —
+    // the 2026-11-07 hand-written rect overlapped the sidebar by 16px.
+    expect(VIDEO_RECT.x).toBe(24 + 240 + 8);
+    expect(VIDEO_RECT.w).toBe(960 - (24 + 240 + 8) - 24);
+    expect(VIDEO_RECT.x + VIDEO_RECT.w).toBe(960 - 24);
   });
 });
 
@@ -103,7 +102,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     expect(calls).toContain(`prepare:${MUX}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "UP/DOWN: zap")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "↑↓ zap")).toBe(true);
   });
 
   test("zapping moves the visible now-playing line and the live-row highlight", async () => {
@@ -117,7 +116,8 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     // Regression (device finding 2026-11-07): the label bound to the
     // screen's stale index — the TV showed "TVRI" while Mux played.
-    expect(textsInclude(sceneTexts(runtime), "Now playing: Mux Test Stream (dev)")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "Mux Test")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "TVRI Nasional")).toBe(false); // the old label must be gone
   });
 
   test("no sidebar: UP/DOWN zap directly, phase up never consumes", async () => {
@@ -166,27 +166,33 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 });
 
 describe("TN-196 media orchestration", () => {
-  test("MEDIA_STATE events repaint the status line", () => {
+  test("MEDIA_STATE events repaint the state pill and the placeholder", () => {
     const { media } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     runtime.dispatch("MEDIA_STATE", { type: "MEDIA_STATE", state: "playing", url: TVRI });
-    expect(textsInclude(sceneTexts(runtime), "media: playing")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "● LIVE")).toBe(true);
 
     runtime.dispatch("MEDIA_STATE", {
       type: "MEDIA_STATE",
       state: "error",
       message: "HTTP 404",
     });
-    expect(textsInclude(sceneTexts(runtime), "media error: HTTP 404")).toBe(true);
+    const texts = sceneTexts(runtime);
+    expect(textsInclude(texts, "ERROR")).toBe(true);
+    expect(textsInclude(texts, "No signal")).toBe(true);
+    expect(textsInclude(texts, "HTTP 404")).toBe(true);
   });
 
-  test("zap against the unsupported stub fails closed — no throw, no play", async () => {
+  test("zap against the unsupported stub fails VISIBLE — the placeholder carries the reason", async () => {
     const runtime = new TvplayerRuntime(); // unsupportedMedia
     expect(runtime.keyPress(23, "down")).toBe(true); // OK → close sidebar
     expect(runtime.keyPress(20, "down")).toBe(true); // zap attempt
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
-    expect(textsInclude(sceneTexts(runtime), "Tenun TV")).toBe(true);
+    const texts = sceneTexts(runtime);
+    expect(textsInclude(texts, "Tenun TV")).toBe(true);
+    expect(textsInclude(texts, "No signal")).toBe(true);
+    expect(textsInclude(texts, "media")).toBe(true); // the stub's message names the seam
   });
 
   test("loadPlaylist adopts a fetched playlist and plays its first channel", async () => {

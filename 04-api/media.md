@@ -77,9 +77,9 @@ Registered as the `"media"` host service wrapping Media3 ExoPlayer +
 HLS; the surface is a `TextureView` overlaying `TenunSurfaceView` in
 the activity's `FrameLayout`, attached and visible from boot — a
 `GONE`/`INVISIBLE` overlay never creates its `SurfaceTexture`, so the
-player would have no video surface and no first frame; the video
-region is scene-empty by contract, so the empty overlay is
-indistinguishable from the scene background until real frames arrive.
+player would have no video surface and no first frame. Applications
+paint their idle/error placeholder inside the rect; the overlay covers
+it whenever frames render.
 `fetchText` is an async ticket on this host — the invoke replies
 `{ok:true, value:{ticket}}` and completion arrives as a `MEDIA_TEXT`
 event (`{ticket, ok, text|message}`), because a blocking GET on the

@@ -23,7 +23,7 @@ export const STARTER_PLAYLIST: readonly PlaylistEntry[] = [
   {
     // Public mux HLS test stream — the development stream the device
     // acceptance journey plays first (MediaServicePlaybackTest uses it).
-    title: "Mux Test Stream (dev)",
+    title: "Mux Test",
     url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
     group: "Test",
     tvgName: null,

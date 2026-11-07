@@ -7,13 +7,28 @@
 export const DESIGN_WIDTH = 960;
 
 /**
- * The video region in design units — sidebar (240 + 8 gap) and the top
- * bar (24 padding + 38 title + 16 gap) stay clear of it; the status
- * line renders below. ADR-0028 documented ceiling: ONE static rect;
- * the scene composes AROUND the video (no scene-graph ordering,
- * clipping, or transitions over it in v1).
+ * Layout geometry, DERIVED so the scene and the native video overlay can
+ * never drift apart (the 2026-11-07 device finding: a hand-written rect
+ * overlapped the sidebar's edge by 16px). The player screen is
+ *   padding-lg(24) | sidebar(240) | gap-sm(8) | video slot | padding-lg(24)
+ * and the video slot is exactly VIDEO_RECT — the same box the runtime
+ * asserts via media.setRect and the TextureView occupies on device.
  */
-export const VIDEO_RECT = { x: 248, y: 96, w: 704, h: 360 } as const;
+export const PAD_LG = 24;
+export const SIDEBAR_W = 240;
+export const GAP_SM = 8;
+
+/** The video region in design units. ADR-0028 documented ceiling: ONE
+ *  static rect — the scene composes AROUND the video (no scene-graph
+ *  ordering, clipping, or transitions over it in v1). The app paints an
+ *  idle/error placeholder INSIDE the slot; the native overlay covers it
+ *  whenever frames render. */
+export const VIDEO_RECT = {
+  x: PAD_LG + SIDEBAR_W + GAP_SM,
+  y: 96,
+  w: DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG,
+  h: 360,
+} as const;
 
 /** android.view.KeyEvent codes the helper consumes (mirrored app-side). */
 export const KEY_DPAD_UP = 19;
