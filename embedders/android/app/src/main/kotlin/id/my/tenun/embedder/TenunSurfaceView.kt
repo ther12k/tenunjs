@@ -123,6 +123,29 @@ class SceneHolder {
 }
 
 /**
+ * TN-194: the generic KEY dispatch policy, isolated so its exclusion
+ * list is testable on the JVM and impossible to drift from its
+ * documentation. Every entry has an owner whose behavior would break
+ * if the runtime answered first:
+ *  - BACK — the HOST owns it: MainActivity dispatches a BACK action and
+ *    honors the {handled} reply, with platform-default fallback;
+ *  - VOLUME_UP / VOLUME_DOWN / VOLUME_MUTE — the system's volume UX;
+ *    consuming them in-app would break hardware volume everywhere.
+ * Everything else dispatches when the IME path declines the key.
+ */
+internal object KeyDispatchPolicy {
+    fun isExcluded(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_BACK ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
+
+    /** The KEY action payload: {keyCode, phase:"down"|"up"}. */
+    fun payload(keyCode: Int, phase: String): String =
+        JSONObject().put("keyCode", keyCode).put("phase", phase).toString()
+}
+
+/**
  * TenunSurfaceView renders the TenunJS UI scene onto an Android SurfaceView,
  * dispatches touch events to native button actions, and bridges Android IME (InputConnection).
  */
@@ -592,15 +615,46 @@ class TenunSurfaceView @JvmOverloads constructor(
     // Input-path diagnostics: whether hardware key events reach this view
     // directly (instead of being routed through the IME session) is the
     // discriminating signal for IME delivery issues.
+    //
+    // TN-194: keys the IME path does not consume are dispatched to the
+    // runtime as generic KEY actions {keyCode, phase} (ADR-0028) instead
+    // of being logged and dropped — the D-pad path TV apps are built on.
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (sceneHolder.current != null && event != null && textInputConnection?.sendKeyEvent(event) == true) return true
         Log.d(TAG, "view onKeyDown keyCode=$keyCode")
+        if (!KeyDispatchPolicy.isExcluded(keyCode) && dispatchKeyAction(keyCode, "down")) return true
         return super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         Log.d(TAG, "view onKeyUp keyCode=$keyCode")
+        if (!KeyDispatchPolicy.isExcluded(keyCode) && dispatchKeyAction(keyCode, "up")) return true
         return super.onKeyUp(keyCode, event)
+    }
+
+    /**
+     * TN-194: generic KEY dispatch, following the BACK reply protocol
+     * (MainActivity): a {handled:true} reply consumes the key and
+     * redraws the committed scene; anything else — including a bundle
+     * that knows no KEY verb — falls through to the platform. There is
+     * deliberately NO framework focus model here: v1 applications
+     * build their own focus helper over these actions (ADR-0028).
+     */
+    private fun dispatchKeyAction(keyCode: Int, phase: String): Boolean {
+        val eng = engine ?: return false
+        val reply = try {
+            eng.dispatchActionResult("KEY", KeyDispatchPolicy.payload(keyCode, phase))
+        } catch (e: Exception) {
+            Log.w(TAG, "KEY dispatch failed: ${e.message}")
+            null
+        }
+        val handled = reply != null && runCatching {
+            JSONObject(reply).optBoolean("handled", false)
+        }.getOrDefault(false)
+        if (!handled) return false
+        syncFromScene(eng.getLatestScene())
+        redraw()
+        return true
     }
 
     private fun dispatchActiveFieldChange() {
