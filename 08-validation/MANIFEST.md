@@ -75,7 +75,8 @@ status: accepted
 | 03-decisions/adr-0025-scene-semantics-wire-v1.md | 7b16a0cda20347a39bef78dc41327426d34a73b1de664248a6b55d7e53ab81a4 |
 | 03-decisions/adr-0026-staged-skia-adoption.md | f9da28ccac0a4a97f0a9f3ca2a18d107387c06a34090811d342e73c9e5f1b446 |
 | 03-decisions/adr-0027-companion-connectivity-capabilities.md | ec5e35766d31467a00266df27ff2821b507e290f5e10e1def3271fab846a29f9 |
-| 03-decisions/index.md | dc01bb76aedf133a17c8e68a1d61986d78fe253bb94707bf3e9cb47ae58f7de5 |
+| 03-decisions/adr-0028-media-and-tv-capabilities.md | a41616c58783d7dd97774141d218f27b4059073fb07df42002b82ed55e6bf01e |
+| 03-decisions/index.md | 19f7487677571dbf75bdfb28dfe37ec7614f7a317e96388afe7d65fbed90392f |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |
@@ -84,8 +85,9 @@ status: accepted
 | 04-api/discovery.md | 3aab447eaf28328a135284c4f508f87968ea219e6b846dce9ffa291d61de7e46 |
 | 04-api/external-consumer-guide.md | 5a95464af0a9426c2edab968824967480e72f4bbed899760a181c0068e086af0 |
 | 04-api/flutter-migration.md | fcf7f9141e6e150ba4e6a10d35fc44634157ceb28a9d21e2fcacd29ce0415aef |
-| 04-api/index.md | 955097c4b68065796a3b552c19be5969391c86d2a78b081e80ece2e52e2679b1 |
+| 04-api/index.md | 02cd92bafa21e2f6f43a23c1f9d402c49983fc2d39bac716c6d99befbe7e6c5c |
 | 04-api/keys.md | da3c08bacd870faf1ca4d8d76fd5ff3b3eaf64e7c8c863d85d4ce479ef7c00d1 |
+| 04-api/media.md | dbd25760cde116503714a255fc744a6107c96dfbc8ea20f2cb99f0f778a403b5 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/net.md | a170d6308153c89f5611ea7d0fce58595f04bcd7acc16a3a227e326365dab449 |
@@ -101,7 +103,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | ae14c85947d979c23734f5e7be832234d2c3872d9c0befeaa93ba267175d15ea |
+| 06-issues/index.md | b67cfdfa7df26efa59e444367ab0f674f0db79761909f7800e0e2533335b49e8 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -302,6 +304,10 @@ status: accepted
 | 06-issues/tn-190-discovery-capability.md | 069cd6553a44f7a3aa1c7efe70770bdf6c2c1e0a551829fa32c0079f4674524c |
 | 06-issues/tn-191-tvremote-example.md | a592a06306ce43c509bc97875456859431423b0a0ae973d329899aa2935d1077 |
 | 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |
+| 06-issues/tn-193-media-host-service-media3-and-textureview-compositing.md | e3f49f2b1d7ac1dc80a086b5edf6bee7c01a7b5497b2bfd70ffd6bb68f171ffe |
+| 06-issues/tn-194-generic-key-action-dispatch-from-android-host.md | ba728826251c6e7615e7b68b2a4b778c5cdfe959bbc88c719843917f6f68b82b |
+| 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | c5f0d2c8f11bd1c94494175391f33e20f43e110d3d7c10ee15d0b207c3ddfc6a |
+| 06-issues/tn-196-tenun-tv-example-app-and-device-bringup.md | 2bc6f1fb4cccf077cc01df26aeda091d561294954ad069d1a4a47909bd718aa3 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

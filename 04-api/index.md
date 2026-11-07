@@ -25,3 +25,4 @@ These examples are design targets, not a promise that names will never change be
 - [Net capability](net.md)
 - [Keys capability](keys.md)
 - [Discovery capability](discovery.md)
+- [Media capability (TV)](media.md)

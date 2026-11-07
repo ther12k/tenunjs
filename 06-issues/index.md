@@ -292,3 +292,16 @@ not to a milestone.
 | [TN-190](tn-190-discovery-capability.md) | P1 | TN-141 | Discovery capability — mDNS/NSD browse and resolve |
 | [TN-191](tn-191-tvremote-example.md) | P1 | TN-188, TN-189, TN-190 | examples/tvremote — companion-class vertical slice against a real Android TV |
 | [TN-192](tn-192-companion-latency-harness.md) | P2 | TN-188, TN-191 | Companion latency harness — measured end-to-end event latency |
+## Media and TV capability follow-ups (2026-11-07)
+
+Filed with ADR-0028 — media host service, overlay compositing, generic
+KEY dispatch, and a TV embedder flavor — to build a first TV
+application on real hardware (a 2019 Android TV set). TN-188–TN-192
+are reserved by the companion-connectivity branch, hence the numbering.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-193](tn-193-media-host-service-media3-and-textureview-compositing.md) | P0 | — | Media host service — Media3 playback, TextureView overlay compositing, and fetchText |
+| [TN-194](tn-194-generic-key-action-dispatch-from-android-host.md) | P1 | — | Generic KEY action dispatch from the Android host |
+| [TN-195](tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md) | P1 | — | TV embedder flavor — leanback packaging and armeabi-v7a |
+| [TN-196](tn-196-tenun-tv-example-app-and-device-bringup.md) | P0 | TN-193, TN-194, TN-195 | Tenun TV — example live-TV player app and device bring-up |
