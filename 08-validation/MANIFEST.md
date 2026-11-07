@@ -307,7 +307,7 @@ status: accepted
 | 06-issues/tn-193-media-host-service-media3-and-textureview-compositing.md | cd1c74ed9eda70c1f478e49be424c135f482a305198f4156405b94c0d7ef3661 |
 | 06-issues/tn-194-generic-key-action-dispatch-from-android-host.md | ac7ddfefd8d66c0cefd6511da5c2dc15b389a59ccc4293c8db3d4746e01c701b |
 | 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | e7dc04cce90cf07e870c5f1e37c751caf2a39bf52ceabb7d78a402e86985da4b |
-| 06-issues/tn-196-tenun-tv-example-app-and-device-bringup.md | 2bc6f1fb4cccf077cc01df26aeda091d561294954ad069d1a4a47909bd718aa3 |
+| 06-issues/tn-196-tenun-tv-example-app-and-device-bringup.md | 3c96a38f11cdfaf55b2b80072562861a1370d97bd8a0ec53396ebff9de576879 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

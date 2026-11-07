@@ -3,7 +3,7 @@ okf_version: 0.2
 title: "TN-196: Tenun TV — example live-TV player app and device bring-up"
 summary: "Build examples/tvplayer on the TN-193..195 capabilities: a pure-TS M3U parser, player screen with D-pad channel sidebar (app-level focus over KEY actions), settings screen with playlist-URL entry over the existing IME widgets, official-free-streams starter playlist, IIFE bundle pipeline for the tv flavor, and Mi TV device acceptance. Generic player only — no third-party panel integration (ADR-0028 content boundary)."
 type: issue
-status: ready
+status: in-progress
 issue_id: "TN-196"
 milestone: "M7"
 priority: "P0"
