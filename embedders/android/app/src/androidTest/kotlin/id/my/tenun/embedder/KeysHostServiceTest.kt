@@ -45,7 +45,7 @@ class KeysHostServiceTest {
         JSONObject(response).getJSONObject("failure").getString("kind")
 
     private fun generate(): JSONObject =
-        JSONObject(call("generateIdentity", """{"alias":"$alias"}")!!).getJSONObject("value")
+        JSONObject(call("generateIdentity", """{"alias":"$alias"}""")!!).getJSONObject("value")
 
     private fun pemBytes(pem: String): ByteArray {
         val body = pem
@@ -63,7 +63,7 @@ class KeysHostServiceTest {
         assertTrue(pem.startsWith("-----BEGIN CERTIFICATE-----"))
         assertTrue(pem.endsWith("-----END CERTIFICATE-----\n"))
         val certificate = CertificateFactory.getInstance("X.509")
-            .generateCertificate(ByteArrayInputStream(pemBytes(pem)))
+            .generateCertificate(ByteArrayInputStream(pemBytes(pem))) as java.security.cert.X509Certificate
         assertEquals("EC", certificate.publicKey.algorithm)
         assertEquals(alias, certificate.subjectX500Principal.name.substringAfter("CN=").substringBefore(','))
     }
