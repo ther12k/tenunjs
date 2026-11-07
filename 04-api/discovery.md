@@ -9,7 +9,12 @@ status: accepted
 # Discovery capability
 
 ```ts
-import type { CapabilityAvailability, CapabilityResult } from "./capability";
+import type {
+  CapabilityAvailability,
+  CapabilityCancelSignal,
+  CapabilityResult,
+  PermissionPrerequisite,
+} from "./capability";
 
 export const DISCOVERY_PERMISSIONS: readonly PermissionPrerequisite[] = [
   // android: CHANGE_WIFI_MULTICAST_STATE (multicast lock while browsing);
@@ -40,7 +45,7 @@ export interface DiscoveryCapability {
   readonly contractVersion: 1;
   availability(): CapabilityAvailability;
   permissionPrerequisites(): readonly PermissionPrerequisite[];
-  browse(options: { serviceType: string; signal?: AbortSignal }):
+  browse(options: { serviceType: string; signal?: CapabilityCancelSignal }):
     Promise<CapabilityResult<DiscoveryBrowse>>;
   resolve(service: DiscoveredService): Promise<CapabilityResult<ResolvedEndpoint>>;
 }

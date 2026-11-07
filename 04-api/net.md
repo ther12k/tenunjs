@@ -9,7 +9,13 @@ status: accepted
 # Net capability
 
 ```ts
-import type { CapabilityAvailability, CapabilityResult } from "./capability";
+import type { KeyHandle } from "./keys";
+import type {
+  CapabilityAvailability,
+  CapabilityCancelSignal,
+  CapabilityResult,
+  PermissionPrerequisite,
+} from "./capability";
 
 export const NET_PERMISSIONS: readonly PermissionPrerequisite[] = [
   // android: INTERNET; ios: none (Network.framework); web: none (shim)
@@ -29,7 +35,7 @@ export interface NetConnectOptions {
   port: number;
   tls?: NetTlsOptions;
   timeoutMs?: number;
-  signal?: AbortSignal;
+  signal?: CapabilityCancelSignal;
 }
 
 export type NetLinkState = "offline" | "searching" | "linked";
@@ -70,6 +76,10 @@ export interface NetCapability {
 - **Sockets are foreground-scoped** (ADR-0027): what happens across
   background/foreground is host-documented; reconnection is application
   policy driven by the link state.
+- **The receive side is bounded.** The host may coalesce chunks but
+  must cap the bytes buffered ahead of the runtime; an overflowing
+  receive buffer is a `link-lost` failure — never silent truncation,
+  never unbounded growth.
 - **Binary end to end.** Payloads are `Uint8Array`, the same
   representation BLE notifications already use; framing and codecs
   (protobuf, line protocols) are application policy and stay out of the

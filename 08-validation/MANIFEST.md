@@ -81,14 +81,14 @@ status: accepted
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
-| 04-api/discovery.md | b937a3b7abc74701ae14af229bd32a84feaf97d1bfe75b2536d243faedfa4800 |
+| 04-api/discovery.md | 3aab447eaf28328a135284c4f508f87968ea219e6b846dce9ffa291d61de7e46 |
 | 04-api/external-consumer-guide.md | 5a95464af0a9426c2edab968824967480e72f4bbed899760a181c0068e086af0 |
 | 04-api/flutter-migration.md | fcf7f9141e6e150ba4e6a10d35fc44634157ceb28a9d21e2fcacd29ce0415aef |
 | 04-api/index.md | 955097c4b68065796a3b552c19be5969391c86d2a78b081e80ece2e52e2679b1 |
-| 04-api/keys.md | bfda96bc754d3c6db2e46896996119baa227dd06107d15807148c6bf897a24c4 |
+| 04-api/keys.md | da3c08bacd870faf1ca4d8d76fd5ff3b3eaf64e7c8c863d85d4ce479ef7c00d1 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
-| 04-api/net.md | a5e6bec9d86bef543d16101e2a57fe936b13cfd9ac66ab918ca008120e8dccf4 |
+| 04-api/net.md | a170d6308153c89f5611ea7d0fce58595f04bcd7acc16a3a227e326365dab449 |
 | 04-api/single-file-screen.md | faeeec8af9cd79580a0221883fa4181fc30a9eedc270f1aabaf051e03a05029d |
 | 04-api/split-controller-view.md | 8fa4af86fa781072ea9b537006821bd9d336e62988de00baabd5177b42736683 |
 | 04-api/widgets-and-styling.md | 8c8c0ab54fe5e731552b1b8afa3e7d98ab5cb5b5d3135538f5ef82e2c2fe3add |
@@ -101,7 +101,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 0daa1316abc2977e5103497cda0b2111e21aad26c4dbe635effb2e6e92332735 |
+| 06-issues/index.md | ae14c85947d979c23734f5e7be832234d2c3872d9c0befeaa93ba267175d15ea |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -298,7 +298,7 @@ status: accepted
 | 06-issues/tn-186-a11y-set-text.md | cb82474fd9621ed7b74fa2f38e7c8a8f9ff3b782a4ef1435979070add8741936 |
 | 06-issues/tn-187-environment-dispatch.md | 72920a7e140b3696f036138690798f30c137f854a1a08ed20d5c8643e4e4b25d |
 | 06-issues/tn-188-net-capability.md | 6606fa8a493b5033211015903c28d0a04254d38abe3e20a40695447ee56398fd |
-| 06-issues/tn-189-keys-capability.md | 8e1143a3b377a0109612081eff86fbbe422cf8a8be391158bc3ce87520fc69b7 |
+| 06-issues/tn-189-keys-capability.md | 0091d46e1112f3ef95b8b11449a68985ce1cd8f9fddffc85e30dd23164af7aca |
 | 06-issues/tn-190-discovery-capability.md | 069cd6553a44f7a3aa1c7efe70770bdf6c2c1e0a551829fa32c0079f4674524c |
 | 06-issues/tn-191-tvremote-example.md | a592a06306ce43c509bc97875456859431423b0a0ae973d329899aa2935d1077 |
 | 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |

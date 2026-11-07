@@ -36,6 +36,8 @@ must make exporting them impossible rather than discouraged.
 - Headless tests: generate → sign → verify (with the exported cert),
   PEM export round-trips, duplicate alias is invalid-argument, remove
   then sign is not-found, nothing key-shaped ever appears in a result.
+  The signature is asserted to be exactly 64 raw `r || s` bytes for
+  P-256 on every host, verified against the exported certificate.
 - Android device gate: identity survives process restart; Keystore
    attestation that the key is non-exportable where the device supports
   it.

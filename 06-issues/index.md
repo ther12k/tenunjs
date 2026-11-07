@@ -281,7 +281,9 @@ Filed with ADR-0027 and the companion-class review (2026-11-07): the
 companion-device app class — a phone that pairs with and controls one
 nearby device over LAN or BLE — needs three more capability seams and a
 vertical slice that proves them, using the same evidence discipline as
-rendering.
+rendering. These are deliberately filed without a `milestone:` field:
+they belong to the review-driven track that follows the M0–M6 program,
+not to a milestone.
 
 | Issue | Priority | Depends on | Title |
 | --- | --- | --- | --- |

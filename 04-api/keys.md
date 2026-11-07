@@ -9,7 +9,11 @@ status: accepted
 # Keys capability
 
 ```ts
-import type { CapabilityAvailability, CapabilityResult } from "./capability";
+import type {
+  CapabilityAvailability,
+  CapabilityResult,
+  PermissionPrerequisite,
+} from "./capability";
 
 export const KEYS_PERMISSIONS: readonly PermissionPrerequisite[] = [];
 
@@ -41,8 +45,12 @@ export interface KeysCapability {
   export, import, or raw-key operation; adding one is a contract break.
 - **`sign` is the only use of the private key**, and the host performs
   it in place. The signature algorithm follows the generated key
-  (ECDSA P-256 unless a host documents otherwise) and is returned raw;
-  DER-wrapping is application policy.
+  (ECDSA P-256 unless a host documents otherwise). The returned wire
+  format is pinned for host parity: the fixed-width raw concatenation
+  `r || s` — for P-256, 32 bytes each, big-endian, 64 bytes total.
+  Providers that emit DER (Java `Signature.sign`) convert before
+  returning; wrapping for a specific wire protocol is application
+  policy on top.
 - **`alias` is caller-chosen and stable**: regenerating with an existing
   alias is an invalid-argument failure, not a silent replace —
   identities in a pairing flow are precious and mistakes should be loud.
