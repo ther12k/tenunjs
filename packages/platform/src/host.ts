@@ -19,12 +19,15 @@ import type { CameraCapability } from "./camera";
 import { CAMERA_PERMISSIONS } from "./camera";
 import type { LauncherCapability } from "./launcher";
 import { LAUNCHER_PERMISSIONS } from "./launcher";
+import type { KeysCapability } from "./keys";
+import { KEYS_PERMISSIONS } from "./keys";
 
 export interface HostCapabilities {
   readonly ble: BleCapability;
   readonly storage: StorageCapability;
   readonly camera: CameraCapability;
   readonly launcher: LauncherCapability;
+  readonly keys: KeysCapability;
 }
 
 /** What a host actually implements; gaps become unsupported stubs. */
@@ -73,6 +76,18 @@ export function unsupportedLauncher(reason?: string): LauncherCapability {
   };
 }
 
+export function unsupportedKeys(reason?: string): KeysCapability {
+  return {
+    contractVersion: 1,
+    availability: () => ({ status: "unsupported", reason }),
+    permissionPrerequisites: () => KEYS_PERMISSIONS,
+    generateIdentity: () => fail(unsupportedFailure("keys", reason)),
+    sign: () => fail(unsupportedFailure("keys", reason)),
+    exportCertificatePem: () => fail(unsupportedFailure("keys", reason)),
+    removeIdentity: () => fail(unsupportedFailure("keys", reason)),
+  };
+}
+
 /**
  * Composes a host's implemented capabilities with unsupported stubs for
  * the rest. Hosts build this once at boot and hand it to the
@@ -87,5 +102,6 @@ export function defineHostCapabilities(
     storage: implemented.storage ?? unsupportedStorage(unsupportedReason),
     camera: implemented.camera ?? unsupportedCamera(unsupportedReason),
     launcher: implemented.launcher ?? unsupportedLauncher(unsupportedReason),
+    keys: implemented.keys ?? unsupportedKeys(unsupportedReason),
   };
 }

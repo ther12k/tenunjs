@@ -1,7 +1,7 @@
 {
   "name": "@tenunjs/platform",
   "version": "0.1.0",
-  "description": "Platform capability seam contracts (ble, storage, camera) for TenunJS applications and hosts — versioned, fail-closed, permission-declaring (TN-141)",
+  "description": "Platform capability seam contracts (ble, storage, camera, launcher, keys) for TenunJS applications and hosts — versioned, fail-closed, permission-declaring (TN-141); ships the preview-tier keyring (TN-189)",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

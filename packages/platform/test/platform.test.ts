@@ -118,6 +118,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.storage).toBeDefined();
     expect(host.camera).toBeDefined();
     expect(host.launcher).toBeDefined();
+    expect(host.keys).toBeDefined();
   });
 
   test("every storage operation returns a structured unsupported failure", async () => {
