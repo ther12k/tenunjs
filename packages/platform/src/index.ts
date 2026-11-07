@@ -55,6 +55,13 @@ export type {
   LauncherLaunchOptions,
   LauncherCapability,
 } from "./launcher";
+export { unsupportedMedia } from "./media";
+export type {
+  MediaState,
+  MediaStatus,
+  MediaStateEvent,
+  MediaCapability,
+} from "./media";
 export {
   defineHostCapabilities,
   unsupportedBle,

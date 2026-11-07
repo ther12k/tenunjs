@@ -13,6 +13,8 @@ import {
   type CapabilityFailureKind,
   type HostCapabilities,
   type LauncherCapability,
+  type MediaCapability,
+  type MediaStatus,
   type StorageCapability,
 } from "../src/index";
 
@@ -118,6 +120,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.storage).toBeDefined();
     expect(host.camera).toBeDefined();
     expect(host.launcher).toBeDefined();
+    expect(host.media).toBeDefined();
   });
 
   test("every storage operation returns a structured unsupported failure", async () => {
@@ -352,6 +355,91 @@ describe("TN-141 frozen vocabulary (contract freeze evidence)", () => {
       { platform: "ios", permissions: [] },
       { platform: "web", permissions: [] },
     ]);
+  });
+});
+
+describe("TN-193 media seam", () => {
+  /** Fixture: a media capability typed against the contract (ADR-0028). */
+  function fakeMedia(): MediaCapability & { rect: [number, number, number, number] | null } {
+    let status: MediaStatus = { state: "idle" };
+    const media: MediaCapability & { rect: [number, number, number, number] | null } = {
+      rect: null,
+      contractVersion: 1,
+      async prepare(url) {
+        if (url === "") return { ok: false, failure: { kind: "invalid-argument" } };
+        status = { state: "ready", url };
+        return { ok: true, value: status };
+      },
+      async play() {
+        status = { ...status, state: "playing" };
+        return { ok: true, value: status };
+      },
+      async pause() {
+        status = { ...status, state: "paused" };
+        return { ok: true, value: status };
+      },
+      async stop() {
+        status = { state: "idle" };
+        return { ok: true, value: status };
+      },
+      async setRect(x, y, w, h) {
+        media.rect = [x, y, w, h];
+        return { ok: true, value: null };
+      },
+      async status() {
+        return { ok: true, value: status };
+      },
+      async fetchText(url) {
+        return { ok: true, value: `#EXTM3U from ${url}` };
+      },
+    };
+    return media;
+  }
+
+  test("every operation of an unprovided media host fails closed as unsupported", async () => {
+    const host = defineHostCapabilities({}, "test host: nothing bound");
+    const results = [
+      await host.media.prepare("https://example.invalid/live.m3u8"),
+      await host.media.play(),
+      await host.media.pause(),
+      await host.media.stop(),
+      await host.media.setRect(0, 0, 320, 180),
+      await host.media.status(),
+      await host.media.fetchText("https://example.invalid/list.m3u"),
+    ];
+    expect(results.length).toBe(7);
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.failure.kind).toBe("unsupported");
+        expect(result.failure.message).toBe("test host: nothing bound");
+      }
+    }
+  });
+
+  test("an implemented media capability passes through the aggregate untouched", async () => {
+    const media = fakeMedia();
+    const host = defineHostCapabilities({ media });
+    expect(host.media).toBe(media);
+
+    const prepared = await host.media.prepare("https://example.invalid/live.m3u8");
+    expect(prepared.ok).toBe(true);
+    if (prepared.ok) expect(prepared.value.state).toBe("ready");
+
+    await host.media.play();
+    const rect = await host.media.setRect(16, 16, 288, 162);
+    expect(rect).toEqual({ ok: true, value: null });
+    expect(media.rect).toEqual([16, 16, 288, 162]);
+
+    const snapshot = await host.media.status();
+    expect(snapshot.ok).toBe(true);
+    if (snapshot.ok) expect(snapshot.value.state).toBe("playing");
+  });
+
+  test("an implementing host may enforce contract validation (empty url)", async () => {
+    const result = await fakeMedia().prepare("");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.kind).toBe("invalid-argument");
   });
 });
 

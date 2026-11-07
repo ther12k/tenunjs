@@ -53,10 +53,18 @@ abstract class DeviceAcceptanceBase {
         var result: T? = null
         scenario.onActivity { activity ->
             val content = activity.findViewById<ViewGroup>(android.R.id.content)
-            result = block(content.getChildAt(0) as TenunSurfaceView)
+            // TN-193: the content root is a FrameLayout layering the media
+            // TextureView over the surface — find the surface by traversal.
+            result = block(findSurface(content) ?: error("no TenunSurfaceView in content hierarchy"))
         }
         @Suppress("UNCHECKED_CAST")
         return result as T
+    }
+
+    private fun findSurface(view: android.view.View): TenunSurfaceView? = when (view) {
+        is TenunSurfaceView -> view
+        is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { findSurface(view.getChildAt(it)) }
+        else -> null
     }
 
     protected fun findSurface(scenario: ActivityScenario<MainActivity>): TenunSurfaceView =

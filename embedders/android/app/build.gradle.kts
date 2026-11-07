@@ -55,6 +55,11 @@ android {
 }
 
 dependencies {
+    // TN-193 media host service: ExoPlayer core + HLS playback
+    // (04-api/media.md; the TextureView overlay needs no media3-ui).
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 

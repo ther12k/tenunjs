@@ -19,12 +19,15 @@ import type { CameraCapability } from "./camera";
 import { CAMERA_PERMISSIONS } from "./camera";
 import type { LauncherCapability } from "./launcher";
 import { LAUNCHER_PERMISSIONS } from "./launcher";
+import type { MediaCapability } from "./media";
+import { unsupportedMedia } from "./media";
 
 export interface HostCapabilities {
   readonly ble: BleCapability;
   readonly storage: StorageCapability;
   readonly camera: CameraCapability;
   readonly launcher: LauncherCapability;
+  readonly media: MediaCapability;
 }
 
 /** What a host actually implements; gaps become unsupported stubs. */
@@ -87,5 +90,6 @@ export function defineHostCapabilities(
     storage: implemented.storage ?? unsupportedStorage(unsupportedReason),
     camera: implemented.camera ?? unsupportedCamera(unsupportedReason),
     launcher: implemented.launcher ?? unsupportedLauncher(unsupportedReason),
+    media: implemented.media ?? unsupportedMedia(unsupportedReason),
   };
 }

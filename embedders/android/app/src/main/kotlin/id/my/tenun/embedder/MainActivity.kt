@@ -8,6 +8,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.TextureView
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -51,6 +55,10 @@ class MainActivity : Activity() {
     // TN-154: Host Service Bridge registry and native BLE service
     private val hostRegistry = HostServiceRegistry()
     private var bleService: PolytronBleService? = null
+
+    // TN-193: media host service + the overlay video surface it composites
+    private var mediaService: MediaService? = null
+    private var mediaTextureView: TextureView? = null
 
     // OTA trial-confirm criterion state (see scheduleTrialConfirm).
     // Session-scoped: a swap (OTA apply, hot reload) clears the evidence
@@ -107,7 +115,32 @@ class MainActivity : Activity() {
             onFirstSuccessfulDispatch = { onTrialHealthSignal() }
         }
 
-        setContentView(surfaceView)
+        // TN-193: the video surface layers OVER the scene. A FrameLayout
+        // hosts TenunSurfaceView with the media TextureView on top — GONE
+        // until the player renders its first frame, positioned by the
+        // media service in design units (ADR-0028 overlay compositing;
+        // no display-list protocol op).
+        val textureView = mediaTextureView
+        setContentView(
+            FrameLayout(this).apply {
+                addView(
+                    surfaceView,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                if (textureView != null) {
+                    addView(
+                        textureView,
+                        FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ),
+                    )
+                }
+            },
+        )
 
         // Plan B2: Back has ONE owner. API 33+ delivers system Back through
         // the invoked-callback dispatcher (targetSdk 36 no longer routes it
@@ -316,6 +349,32 @@ class MainActivity : Activity() {
                     }
                 }
             })
+        }
+
+        // TN-193: the "media" host service — Media3 playback with the
+        // TextureView overlay composited over the scene (ADR-0028). The
+        // video view is created HERE because registration precedes view
+        // construction (capabilities must resolve during bundle
+        // evaluation); onCreate attaches it above TenunSurfaceView.
+        if (mediaService == null) {
+            if (mediaTextureView == null) {
+                mediaTextureView = TextureView(this).apply { visibility = View.GONE }
+            }
+            mediaService = MediaService(
+                this,
+                { action, payloadJson ->
+                    mainHandler.post {
+                        this.engine?.let { eng ->
+                            eng.dispatchAction(action, payloadJson)
+                            surfaceView?.syncFromScene(eng.getLatestScene())
+                            surfaceView?.redraw()
+                        }
+                    }
+                },
+                mediaTextureView!!,
+                { surfaceView?.designScalePx ?: 1f },
+            )
+            hostRegistry.register("media", mediaService!!)
         }
     }
 
@@ -724,6 +783,8 @@ class MainActivity : Activity() {
         super.onDestroy()
         bleService?.shutdown()
         bleService = null
+        mediaService?.release()
+        mediaService = null
         // TN-135: kill the OTA pipeline first — a fetch finishing after
         // this point must not boot a candidate into a dying surface.
         otaManager?.stop()

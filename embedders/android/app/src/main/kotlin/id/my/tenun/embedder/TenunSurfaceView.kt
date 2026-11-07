@@ -200,6 +200,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     // [SceneHolder]. Null while the legacy notes scene drives the view.
     private val sceneHolder = SceneHolder()
     private var dlScale = 1f
+
+    /** Design-unit → pixel scale of the committed display-list scene.
+     *  Read by the TN-193 media overlay to position its video rect. */
+    val designScalePx: Float get() = dlScale
     private var scrollY = 0f
     private var maxScroll = 0f
     private var touchDownX = 0f

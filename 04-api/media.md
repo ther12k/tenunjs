@@ -76,3 +76,8 @@ service's native→JS event pattern):
 Registered as the `"media"` host service wrapping Media3 ExoPlayer +
 HLS; the surface is a `TextureView` overlaying `TenunSurfaceView` in
 the activity's `FrameLayout`, hidden until the first frame is ready.
+`fetchText` is an async ticket on this host — the invoke replies
+`{ok:true, value:{ticket}}` and completion arrives as a `MEDIA_TEXT`
+event (`{ticket, ok, text|message}`), because a blocking GET on the
+engine's dispatch thread would exceed the JS entry time budget; the
+TS glue resolves the promise from the event.

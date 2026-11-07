@@ -87,7 +87,7 @@ status: accepted
 | 04-api/flutter-migration.md | fcf7f9141e6e150ba4e6a10d35fc44634157ceb28a9d21e2fcacd29ce0415aef |
 | 04-api/index.md | 02cd92bafa21e2f6f43a23c1f9d402c49983fc2d39bac716c6d99befbe7e6c5c |
 | 04-api/keys.md | da3c08bacd870faf1ca4d8d76fd5ff3b3eaf64e7c8c863d85d4ce479ef7c00d1 |
-| 04-api/media.md | dbd25760cde116503714a255fc744a6107c96dfbc8ea20f2cb99f0f778a403b5 |
+| 04-api/media.md | 298aaff67438592479f4552c6e9656baa45f683259074f952f2d3cbd8fca53f1 |
 | 04-api/native-module.md | 8cd19205b7152a072a9f5eb0d2fef527c3bb4899bf049c9624afd56e785f21d5 |
 | 04-api/navigation.md | 88b2f5c3bb1e7c75c164a981284e1c1f848f4b2bc20ec448ff1a4ad40f4e2c9a |
 | 04-api/net.md | a170d6308153c89f5611ea7d0fce58595f04bcd7acc16a3a227e326365dab449 |
