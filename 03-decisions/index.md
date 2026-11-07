@@ -34,3 +34,6 @@ status: accepted
 | [ADR-0022](adr-0022-m0-gates-blocked-on-device-availability.md) | M0 selection gates blocked on device availability; provisional embedder runtime | accepted |
 | [ADR-0023](adr-0023-android-device-unblocks-android-half-evidence.md) | Android device in the dev loop; Android-half device evidence unblocked | accepted |
 | [ADR-0024](adr-0024-semantic-color-slots-before-widget-freeze.md) | Semantic color slots retained through commit-time baking; TN-143 decision precedes TN-068 implementation | accepted |
+| [ADR-0025](adr-0025-scene-semantics-wire-v1.md) | Scene semantics wire v1 | accepted |
+| [ADR-0026](adr-0026-staged-skia-adoption.md) | Staged Skia adoption | accepted |
+| [ADR-0027](adr-0027-companion-connectivity-capabilities.md) | Companion-connectivity capabilities: net, keys, discovery | accepted |

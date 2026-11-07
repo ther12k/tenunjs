@@ -274,3 +274,21 @@ of that experience become the priority over gallery expansion.
 | [TN-159](tn-159-harden-native-ble-lifecycle-and-connect-ux.md) | P0 | TN-154 | Harden native BLE lifecycle and connect UX (review follow-ups) |
 | [TN-160](tn-160-deliver-controlled-widget-text-input.md) | P0 | TN-158 | Deliver controlled widget text input and the Day Plan editing path |
 | [TN-161](tn-161-deliver-independent-scroll-regions.md) | P1 | TN-156, TN-157 | Deliver independent scroll regions |
+
+## Companion-connectivity follow-ups (2026-11-07)
+
+Filed with ADR-0027 and the companion-class review (2026-11-07): the
+companion-device app class — a phone that pairs with and controls one
+nearby device over LAN or BLE — needs three more capability seams and a
+vertical slice that proves them, using the same evidence discipline as
+rendering. These are deliberately filed without a `milestone:` field:
+they belong to the review-driven track that follows the M0–M6 program,
+not to a milestone.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-188](tn-188-net-capability.md) | P1 | TN-141, TN-189 | Net capability — TCP and TLS sessions with client-certificate pairing |
+| [TN-189](tn-189-keys-capability.md) | P1 | TN-141 | Keys capability — Keystore-held device identities |
+| [TN-190](tn-190-discovery-capability.md) | P1 | TN-141 | Discovery capability — mDNS/NSD browse and resolve |
+| [TN-191](tn-191-tvremote-example.md) | P1 | TN-188, TN-189, TN-190 | examples/tvremote — companion-class vertical slice against a real Android TV |
+| [TN-192](tn-192-companion-latency-harness.md) | P2 | TN-188, TN-191 | Companion latency harness — measured end-to-end event latency |

@@ -22,3 +22,6 @@ These examples are design targets, not a promise that names will never change be
 - [Animation](animation.md)
 - [Native module](native-module.md)
 - [Canvas escape hatch](canvas.md)
+- [Net capability](net.md)
+- [Keys capability](keys.md)
+- [Discovery capability](discovery.md)
