@@ -106,6 +106,20 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     expect(textsInclude(sceneTexts(runtime), "UP/DOWN: zap")).toBe(true);
   });
 
+  test("zapping moves the visible now-playing line and the live-row highlight", async () => {
+    const { media } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+
+    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> Mux
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play Mux, close sidebar
+    await settle();
+
+    // Regression (device finding 2026-11-07): the label bound to the
+    // screen's stale index — the TV showed "TVRI" while Mux played.
+    expect(textsInclude(sceneTexts(runtime), "Now playing: Mux Test Stream (dev)")).toBe(true);
+  });
+
   test("no sidebar: UP/DOWN zap directly, phase up never consumes", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });

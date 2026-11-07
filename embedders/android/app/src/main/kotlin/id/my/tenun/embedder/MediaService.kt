@@ -129,6 +129,17 @@ class MediaService(
     @Volatile private var player: ExoPlayer? = null
     @Volatile private var currentUrl: String? = null
     @Volatile private var derivedState = "idle"
+    /**
+     * TN-196 device finding: set SYNCHRONOUSLY on the engine thread when
+     * a prepare invoke ACCEPTS its request. The player itself is created
+     * in prepare's main-thread post, so an op checking `player != null`
+     * from the engine thread races the first prepare (a prepare→play
+     * chain arrives before the post runs and play fails "unavailable",
+     * leaving the item prepared but never playing). Ops gate on this
+     * flag instead; the FIFO main queue then guarantees prepare's post
+     * runs before any later op's post.
+     */
+    @Volatile private var prepareRequested = false
     /** True once the current item has actually played (media.md's
      *  ready/paused split); main-thread confined, cleared on prepare/stop. */
     private var hasPlayed = false
@@ -145,6 +156,16 @@ class MediaService(
             )
         }
 
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // A play/pause that only flips playWhenReady (no playback-state
+            // change yet) must still reach the app: without this, the UI
+            // sat on "ready" between prepare and the first isPlaying flip.
+            val p = player ?: return
+            updateState(
+                deriveState(derivedState, p.playbackState, p.isPlaying, playWhenReady, error = false, hasPlayed = hasPlayed)
+            )
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val p = player ?: return
             if (isPlaying) hasPlayed = true
@@ -154,6 +175,7 @@ class MediaService(
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            Log.w(TAG, "player error: ${error.errorCodeName}: ${error.message}")
             updateState(
                 deriveState(derivedState, Player.STATE_IDLE, false, false, error = true, hasPlayed = hasPlayed),
                 message = error.message,
@@ -161,16 +183,18 @@ class MediaService(
         }
 
         override fun onRenderedFirstFrame() {
-            // ADR-0028: the video surface stays GONE until real pixels
-            // exist — never a black hole over the scene.
-            mainHandler.post {
-                if (pendingRect != null) textureView.visibility = android.view.View.VISIBLE
-            }
+            // Diagnostics only: the overlay is always attached+visible —
+            // a GONE/INVISIBLE TextureView never creates its
+            // SurfaceTexture, so ExoPlayer has no video surface and the
+            // first frame never arrives (the black-video device finding).
+            // The scene never paints inside the video rect, so an empty
+            // overlay is indistinguishable from the scene background.
+            Log.i(TAG, "first frame rendered")
         }
     }
 
     override fun invoke(method: String, payloadJson: String): String? {
-        return when (method) {
+        val reply = when (method) {
             "prepare" -> prepare(payloadJson)
             "play" -> playPause(play = true)
             "pause" -> playPause(play = false)
@@ -180,6 +204,10 @@ class MediaService(
             "fetchText" -> fetchText(payloadJson)
             else -> null
         }
+        // Device-gate diagnostics: the TV's logcat buffer rotates fast,
+        // so every invoke leaves one traceable line (method + reply head).
+        Log.i(TAG, "invoke $method reply=${reply?.take(120)}")
+        return reply
     }
 
     private fun ok(value: JSONObject): String = JSONObject().put("ok", true).put("value", value).toString()
@@ -199,6 +227,7 @@ class MediaService(
             return fail("invalid-argument", "payload must be {url}")
         }
         urlError(url)?.let { return fail("invalid-argument", it) }
+        prepareRequested = true
         mainHandler.post {
             // One player per host: prepare releases any previous item
             // (media.md) and hides the surface until the next first frame.
@@ -212,7 +241,6 @@ class MediaService(
             p.prepare()
             currentUrl = url
             hasPlayed = false
-            textureView.visibility = android.view.View.GONE
             applyPendingRect()
             updateState("buffering")
         }
@@ -220,21 +248,24 @@ class MediaService(
     }
 
     private fun playPause(play: Boolean): String {
-        val p = player ?: return fail("unavailable", "no media prepared")
+        // Engine-thread gate: see prepareRequested. `player` may still be
+        // null here on the FIRST zap (creation is queued behind prepare's
+        // post) — the FIFO queue makes the posted block safe either way.
+        if (!prepareRequested) return fail("unavailable", "no media prepared")
         mainHandler.post {
-            p.playWhenReady = play
+            player?.playWhenReady = play
         }
         return statusJson()
     }
 
     private fun stop(): String {
-        val p = player ?: return fail("unavailable", "no media prepared")
+        if (!prepareRequested) return fail("unavailable", "no media prepared")
         mainHandler.post {
-            p.stop()
-            p.clearMediaItems()
+            player?.stop()
+            player?.clearMediaItems()
             currentUrl = null
             hasPlayed = false
-            textureView.visibility = android.view.View.GONE
+            prepareRequested = false
             updateState("idle")
         }
         return ok(JSONObject().put("state", "idle"))
@@ -285,6 +316,7 @@ class MediaService(
 
     private fun updateState(state: String, message: String? = null) {
         if (state == derivedState) return
+        Log.i(TAG, "MEDIA_STATE $derivedState -> $state${message?.let { " ($it)" } ?: ""}")
         derivedState = state
         val payload = JSONObject()
             .put("type", "MEDIA_STATE")

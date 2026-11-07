@@ -55,7 +55,13 @@ class MediaServicePlaybackTest {
         scenario = ActivityScenario.launch(MainActivity::class.java)
 
         scenario!!.onActivity { activity ->
-            val tv = TextureView(activity).apply { visibility = View.GONE }
+            // The overlay is always attached and visible: a GONE/INVISIBLE
+            // TextureView never creates its SurfaceTexture, so ExoPlayer
+            // would have no video surface and no first frame ever (the
+            // black-video device finding, 2026-11-07). The video region is
+            // scene-empty by contract, so an empty overlay is invisible
+            // against the scene background.
+            val tv = TextureView(activity)
             textureView = tv
             activity.addContentView(
                 tv,
@@ -99,7 +105,7 @@ class MediaServicePlaybackTest {
         assertTrue(JSONObject(media.invoke("play", "{}")!!).optBoolean("ok"))
         awaitState("playing")
 
-        // The overlay surfaces only once real pixels exist (first frame).
+        // The overlay stays visible throughout (see the constructor note).
         instrumentation.runOnMainSync {
             assertEquals(View.VISIBLE, textureView!!.visibility)
         }
@@ -107,7 +113,7 @@ class MediaServicePlaybackTest {
         assertTrue(JSONObject(media.invoke("stop", "{}")!!).optBoolean("ok"))
         awaitState("idle")
         instrumentation.runOnMainSync {
-            assertEquals(View.GONE, textureView!!.visibility)
+            assertEquals(View.VISIBLE, textureView!!.visibility)
         }
     }
 }

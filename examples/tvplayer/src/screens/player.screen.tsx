@@ -57,6 +57,10 @@ export const PlayerScreen = defineScreen({
     channel: defineAction<PlayerState, NowPlaying>({
       run({ input, state }) {
         state.now = input;
+        // The now-playing line and the live-row highlight read
+        // state.index; the "channel" push is what moves it on a zap
+        // (the "channels" push only flows on boot / playlist load).
+        state.index = input.index;
       },
     }),
     focus: defineAction<PlayerState, FocusState>({

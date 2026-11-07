@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.TextureView
-import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import java.io.ByteArrayOutputStream
@@ -358,7 +357,12 @@ class MainActivity : Activity() {
         // evaluation); onCreate attaches it above TenunSurfaceView.
         if (mediaService == null) {
             if (mediaTextureView == null) {
-                mediaTextureView = TextureView(this).apply { visibility = View.GONE }
+                // Always attached and visible: a GONE/INVISIBLE
+                // TextureView never creates its SurfaceTexture (no video
+                // surface, no first frame). The scene never paints inside
+                // the video rect, so the empty overlay is indistinguishable
+                // from the scene background until real frames arrive.
+                mediaTextureView = TextureView(this)
             }
             mediaService = MediaService(
                 this,
