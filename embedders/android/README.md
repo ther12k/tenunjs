@@ -48,8 +48,8 @@ Four steps, all enforced by the `verify-android` CI job:
    round-trips, and a JS-only customization with zero C changes.
 2. Runs the JVM unit tests for the Kotlin editing model (composition
    replacement vs append, focus transfer, scene sync).
-3. Assembles the debug APK via `./gradlew :app:assembleDebug` and prints its
-   size and SHA-256.
+3. Assembles the debug APK via `./gradlew :app:assembleTouchDebug` and prints
+   its size and SHA-256.
 4. Verifies NDK cross-compilation for both ABIs.
 
 Expected final line: `ALL ANDROID VERIFICATIONS AND ARTIFACTS PASS`.
@@ -72,15 +72,24 @@ echo "hw.keyboard=no" >> "$HOME/.android/avd/tenun-dev.avd/config.ini"
 "$ANDROID_HOME"/emulator/emulator -avd tenun-dev -accel on -no-snapshot &
 
 cd embedders/android
-./gradlew :app:assembleDebug
+./gradlew :app:assembleTouchDebug
 "$ANDROID_HOME"/platform-tools/adb install -r \
-  app/build/outputs/apk/debug/app-debug.apk
+  app/build/outputs/apk/touch/debug/app-touch-debug.apk
 "$ANDROID_HOME"/platform-tools/adb shell am start \
   -n id.my.tenun.embedder/.MainActivity
 ```
 
 Tap a field, type with the soft keyboard, tap **Add Entry** — the entry
 appears in the list and both inputs clear.
+
+**TV flavor (TN-195):** the embedder has two product flavors — `touch`
+(the default above, behavior-identical to the pre-flavor build) and
+`tv`, which retargets the app at Android TV hardware (the 2019
+armeabi-v7a Mi TV): its own `applicationId id.my.tenun.tvplayer`, a
+LEANBACK_LAUNCHER entry point with banner (`src/tv/`), and
+`armeabi-v7a` added to the ABIs. Build it with
+`./gradlew :app:assembleTvDebug`
+(`app/build/outputs/apk/tv/debug/app-tv-debug.apk`).
 
 **Known limitation:** without `/dev/kvm` the emulator cannot complete
 Android 11 boot (software QEMU dies in `system_server`); this is an
@@ -132,7 +141,7 @@ renderer draws them.
 
 ```bash
 bun embedders/android/tools/gallery-bundle/build.mjs   # -> app/src/main/assets/gallery_app.js
-cd embedders/android && ./gradlew :app:assembleDebug
+cd embedders/android && ./gradlew :app:assembleTouchDebug
 ```
 
 - `MainActivity` prefers `gallery_app.js` and falls back to the notes
@@ -192,9 +201,9 @@ dev server — new code, old state:
 # laptop: serve the bundle and keep rebuilding on source changes
 bun embedders/android/tools/gallery-bundle/dev-server.ts          # :8898
 
-# laptop: bake the dev server URL into the APK (once, before assembleDebug)
+# laptop: bake the dev server URL into the APK (once, before assembleTouchDebug)
 TENUN_DEV_SERVER=http://<laptop-ip>:8898 bun embedders/android/tools/gallery-bundle/build.mjs
-cd embedders/android && ./gradlew :app:assembleDebug
+cd embedders/android && ./gradlew :app:assembleTouchDebug
 
 # edit any screen / widget / runtime source — the phone picks it up
 # within ~2.5s (polls /hash, fetches the bundle, restores screen state)
@@ -234,7 +243,7 @@ node embedders/android/tools/gallery-bundle/publish-update.mjs \
 # -> examples/gallery-preview/.out/ota/{update-manifest.json,update-bundle.js,update_channel.json}
 
 # bake the channel into the APK (once): copy update_channel.json to
-# app/src/main/assets/ and assembleDebug — then run the dev server
+# app/src/main/assets/ and assembleTouchDebug — then run the dev server
 bun embedders/android/tools/gallery-bundle/dev-server.ts   # serves /update-*
 ```
 

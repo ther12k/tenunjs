@@ -258,13 +258,13 @@ else
   echo "TENUN_SKIP_SKIA_HOST=1: skia-host parity lib NOT built; SkiaHostParityTest will fail" \
     >>"$OUT_DIR/environment.txt"
 fi
-if ! ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest >"$OUT_DIR/gradle_assemble.txt" 2>&1; then
+if ! ./gradlew :app:assembleTouchDebug :app:assembleTouchDebugAndroidTest >"$OUT_DIR/gradle_assemble.txt" 2>&1; then
   tail -60 "$OUT_DIR/gradle_assemble.txt"
-  accept_fail ":app:assembleDebug / :app:assembleDebugAndroidTest failed"
+  accept_fail ":app:assembleTouchDebug / :app:assembleTouchDebugAndroidTest failed"
 fi
 tail -3 "$OUT_DIR/gradle_assemble.txt"
-STD_APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-TEST_APK="$SCRIPT_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+STD_APK="$SCRIPT_DIR/app/build/outputs/apk/touch/debug/app-touch-debug.apk"
+TEST_APK="$SCRIPT_DIR/app/build/outputs/apk/androidTest/touch/debug/app-touch-debug-androidTest.apk"
 [ -f "$STD_APK" ] && [ -f "$TEST_APK" ] || accept_fail "expected APK artifacts were not produced"
 unzip -l "$STD_APK" >"$OUT_DIR/apk_contents.txt" 2>&1 || true
 grep -E "tenun_app.js|libtenun_android" "$OUT_DIR/apk_contents.txt" || true
@@ -543,12 +543,12 @@ cp "$STD_APK" "$STD_APK_KEEP"
 GALLERY_ASSET_SRC="$SCRIPT_DIR/app/src/main/assets/gallery_app.js"
 rm -f "$GALLERY_ASSET_SRC"
 
-if ! ./gradlew -Ptenun.testInjection=true :app:assembleDebug \
+if ! ./gradlew -Ptenun.testInjection=true :app:assembleTouchDebug \
   >"$OUT_DIR/gradle_assemble_injection.txt" 2>&1; then
   tail -40 "$OUT_DIR/gradle_assemble_injection.txt"
-  accept_fail ":app:assembleDebug with -Ptenun.testInjection=true failed"
+  accept_fail ":app:assembleTouchDebug with -Ptenun.testInjection=true failed"
 fi
-INJ_APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+INJ_APK="$SCRIPT_DIR/app/build/outputs/apk/touch/debug/app-touch-debug.apk"
 [ -f "$INJ_APK" ] || accept_fail "injection APK was not produced"
 unzip -l "$INJ_APK" >"$OUT_DIR/apk_contents_injection.txt" 2>&1 || true
 if grep -q "assets/gallery_app.js" "$OUT_DIR/apk_contents_injection.txt"; then

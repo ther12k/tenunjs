@@ -44,6 +44,30 @@ android {
         }
     }
 
+    // TN-195 (ADR-0028): TV packaging. The touch flavor carries NO
+    // overrides — its variants are behavior-identical to the pre-flavor
+    // build; only the task names change (assembleDebug ->
+    // assembleTouchDebug). The tv flavor re-targets the app at the 2019
+    // armeabi-v7a Mi TV: its own applicationId, a leanback entry point
+    // and banner (src/tv/AndroidManifest.xml), and the 32-bit ABI.
+    flavorDimensions += "app"
+    productFlavors {
+        create("touch") {
+            dimension = "app"
+        }
+        create("tv") {
+            dimension = "app"
+            applicationId = "id.my.tenun.tvplayer"
+            ndk {
+                // Declared as the full set so the variant does not depend
+                // on flavor/defaultConfig collection-merge semantics; this
+                // is defaultConfig's arm64-v8a + x86_64 PLUS the TV's
+                // armeabi-v7a (TN-195).
+                abiFilters.addAll(listOf("arm64-v8a", "x86_64", "armeabi-v7a"))
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

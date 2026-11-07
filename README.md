@@ -83,7 +83,7 @@ WebView:
 
 ```sh
 cd embedders/android
-./gradlew :app:assembleDebug
+./gradlew :app:assembleTouchDebug
 ```
 
 ### The headline demo — Day Plan

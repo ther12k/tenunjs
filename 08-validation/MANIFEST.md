@@ -319,7 +319,7 @@ status: accepted
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |
 | CONTRIBUTING.md | 4c0cace7528d2660fe223bc5dae2cb666515c7e75668727af7bec34851b42884 |
-| README.md | af125d4740565ed373a824ee82ed0469bac6665e72cc3929a1ea10067933f4c2 |
+| README.md | c2d03f0cd610cfbf341c14c0b9ca4ea068e8493e0ee0a597038e31c965ce143b |
 | index.md | f1952fc49182e6d5132d3e733c0d025d5881b63ceeb18353d5e595d30b8524af |
 | log.md | 176396687e309073cb61eafeefd618dc27602cfea5f23f7c98722ac767c6a862 |
 | references/technology-notes.md | 5cc47a642063b773c9b1d31fde3ce1125a13192d2e0a2ec82211a701b6b0bfe7 |

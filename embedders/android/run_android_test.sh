@@ -76,10 +76,10 @@ if [ -x "$SCRIPT_DIR/gradlew" ] && [ -d "$ANDROID_SDK" ]; then
   # above: the PRODUCTION PolytronBleService + GattWriteLedger against
   # hand-written android.* fakes on a virtual-time scheduler.
 
-  echo "== 4. Building packaged Android debug APK (:app:assembleDebug) =="
-  (cd "$SCRIPT_DIR" && export ANDROID_HOME="$ANDROID_SDK" && ./gradlew :app:assembleDebug)
+  echo "== 4. Building packaged Android debug APK (:app:assembleTouchDebug) =="
+  (cd "$SCRIPT_DIR" && export ANDROID_HOME="$ANDROID_SDK" && ./gradlew :app:assembleTouchDebug)
 
-  APK_PATH="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+  APK_PATH="$SCRIPT_DIR/app/build/outputs/apk/touch/debug/app-touch-debug.apk"
   if [ -f "$APK_PATH" ]; then
     echo "Packaged APK: $APK_PATH ($(ls -lh "$APK_PATH" | awk '{print $5}'))"
     echo "APK SHA-256: $(sha256sum "$APK_PATH" | awk '{print $1}')"
