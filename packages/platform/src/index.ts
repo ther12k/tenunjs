@@ -55,11 +55,16 @@ export type {
   LauncherLaunchOptions,
   LauncherCapability,
 } from "./launcher";
+export { KEYS_PERMISSIONS } from "./keys";
+export type { KeyHandle, KeyIdentity, KeysCapability } from "./keys";
+export { previewKeyring } from "./keys-preview";
+export type { PreviewKeysCapability } from "./keys-preview";
 export {
   defineHostCapabilities,
   unsupportedBle,
   unsupportedStorage,
   unsupportedCamera,
   unsupportedLauncher,
+  unsupportedKeys,
 } from "./host";
 export type { HostCapabilities, PartialHostCapabilities } from "./host";
