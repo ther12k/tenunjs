@@ -103,7 +103,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | b67cfdfa7df26efa59e444367ab0f674f0db79761909f7800e0e2533335b49e8 |
+| 06-issues/index.md | 5acc43a61655b3a2432599c344f1d0e535db90c15ea70df13230fdeea1f84e20 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |

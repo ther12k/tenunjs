@@ -292,6 +292,67 @@ not to a milestone.
 | [TN-190](tn-190-discovery-capability.md) | P1 | TN-141 | Discovery capability — mDNS/NSD browse and resolve |
 | [TN-191](tn-191-tvremote-example.md) | P1 | TN-188, TN-189, TN-190 | examples/tvremote — companion-class vertical slice against a real Android TV |
 | [TN-192](tn-192-companion-latency-harness.md) | P2 | TN-188, TN-191 | Companion latency harness — measured end-to-end event latency |
+## Readiness-review and framework-feel completion follow-ups (2026-10-29)
+
+Filed from the 2026-10-29 production-readiness review (TN-162–TN-165
+blockers, with TN-166–TN-168 as their browser/bridge/widget twins) and
+the TN-155 slices that closed the framework-feel milestone (TN-169–TN-171).
+TN-162–TN-187 in this and the two following sections are backfilled on
+2026-11-07 — their PRs added the files and manifest rows but never
+reached this index.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-162](tn-162-attribute-gatt-write-completions-to-their-submission.md) | P1 | — | Attribute GATT write completions to their submission |
+| [TN-163](tn-163-refuse-engine-swap-when-restore-is-not-acknowledged.md) | P1 | — | Refuse the engine swap when TENUN_RESTORE is not acknowledged |
+| [TN-164](tn-164-scope-the-js-time-budget-to-the-native-entry.md) | P1 | — | Scope the JS time budget to the native entry |
+| [TN-165](tn-165-fix-android-scroll-region-origin-input-discovery-and-offset-lifecycle.md) | P1 | — | Fix Android scroll-region paint origin, nested input discovery, and offset lifecycle |
+| [TN-166](tn-166-fix-browser-scroll-region-twins-of-tn-165.md) | P1 | — | Fix the browser scroll-region twins of TN-165 |
+| [TN-167](tn-167-refuse-same-engine-reentry-visibly.md) | P1 | — | Refuse same-engine reentry visibly instead of deadlocking |
+| [TN-168](tn-168-harden-scrollview-children-and-theme-baker-nested-ops.md) | P2 | — | Harden ScrollView child normalization and theme-baker nested ops |
+| [TN-169](tn-169-deliver-host-evaluated-route-transitions.md) | P1 | — | Deliver host-evaluated route transitions (TN-155 slice 5) |
+| [TN-170](tn-170-deliver-runtime-theme-switching-and-palette-themes.md) | P1 | — | Deliver runtime theme switching and palette-derived themes (TN-155 slice 6) |
+| [TN-171](tn-171-deliver-device-journey-and-readme-recording.md) | P1 | — | Deliver the same-code device journey and README recording (TN-155 closure) |
+
+## Theme-token, host-hardening, and semantics follow-ups (2026-10-30)
+
+Filed from the 2026-10-30 theme-token adoption wave (TN-173–TN-175,
+ADR-0024 slices), the same-day host-hardening fixes (TN-176–TN-178),
+and the scene-semantics wire plus its first Android slice
+(TN-179–TN-180, ADR-0025 and TN-091 slice 1). TN-172 fixes the spike
+adapter's slot recycling found by the same wave.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-172](tn-172-fix-spike-adapter-stale-destroy-recycling.md) | P2 | — | Fix the spike adapter's stale-destroy slot recycling |
+| [TN-173](tn-173-adopt-colorref-props-with-commit-time-resolution.md) | P1 | — | Adopt ColorRef props in ordinary widgets with commit-time resolution |
+| [TN-174](tn-174-theme-driven-spacing-radius-typography-tokens.md) | P1 | — | Make spacing, radius, and typography tokens flow from the theme |
+| [TN-175](tn-175-scoped-token-measurement-validation-parity.md) | P1 | — | Scoped tokens must apply to measurement, validation, and the implicit body variant |
+| [TN-176](tn-176-jni-host-handler-reentry-guard.md) | P1 | — | JNI host-handler setter and destroy must refuse same-engine reentry |
+| [TN-177](tn-177-gatt-completion-watchdog-attribution.md) | P1 | — | Only the live submission's GATT completion may retire its write watchdog |
+| [TN-178](tn-178-release-dev-reload-separation.md) | P1 | — | Development hot reload must be debug-build-only and absent from release packages |
+| [TN-179](tn-179-scene-semantics-wire-v1.md) | P1 | — | Scene semantics wire v1 — accessibility projection on the display-list scene |
+| [TN-180](tn-180-android-accessibility-node-provider-bridge.md) | P1 | — | Android accessibility node provider bridge over scene.semantics |
+
+## Skia adoption and accessibility follow-ups (2026-10-30/31)
+
+Filed with ADR-0026's staged Skia adoption — GPU hardware-canvas raster
+(TN-181, stage 1), the framework-owned skia-host rasterizer and its
+review fixes (TN-182–TN-184, stage 2), and the on-device parity harness
+(TN-185, stage 3 slice 1) — plus the 2026-10-30 Android host review
+fixes carried in TN-183, accessibility ACTION_SET_TEXT (TN-186,
+TN-091 remainder), and host ENVIRONMENT dispatch (TN-187).
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-181](tn-181-gpu-hardware-canvas-rasterization.md) | P1 | — | GPU rasterization — draw through Android's hardware canvas |
+| [TN-182](tn-182-framework-owned-skia-rasterizer.md) | P1 | — | Framework-owned Skia rasterizer for display-list scenes |
+| [TN-183](tn-183-android-canvas-fallback-and-transition-scroll.md) | P1 | — | Android canvas null-fallback and route-transition scroll parity |
+| [TN-184](tn-184-skia-host-scene-parity.md) | P1 | — | skia-host scene parity — the wire's full vocabulary paints |
+| [TN-185](tn-185-android-skia-parity-harness.md) | P1 | — | Android skia-host parity harness — the cdylib on the device gate |
+| [TN-186](tn-186-a11y-set-text.md) | P1 | — | Accessibility ACTION_SET_TEXT through the revisioned text contract |
+| [TN-187](tn-187-environment-dispatch.md) | P1 | — | Host ENVIRONMENT dispatch — device locale and font scale reach the runtime |
+
 ## Media and TV capability follow-ups (2026-11-07)
 
 Filed with ADR-0028 — media host service, overlay compositing, generic
