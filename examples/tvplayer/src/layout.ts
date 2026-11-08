@@ -15,9 +15,11 @@ export const DESIGN_WIDTH = 960;
  * asserts via media.setRect and the TextureView occupies on device.
  */
 export const PAD_LG = 24;
-/** Wide enough for tile + full titles (the reference UI's proportions:
- *  the list takes a third, the video the rest). */
-export const SIDEBAR_W = 320;
+/** The reference UI's proportions: a compact list rail, the video as
+ *  the hero. 256 leaves titles one ellipsized line (maxLines:1) and
+ *  gives the video slot 648 of the 960 design units (~16:9 at 648×330).
+ */
+export const SIDEBAR_W = 256;
 export const GAP_SM = 8;
 export const GAP_MD = 16;
 
@@ -80,6 +82,11 @@ export const KEY_DPAD_LEFT = 21;
 export const KEY_DPAD_RIGHT = 22;
 export const KEY_DPAD_CENTER = 23;
 export const KEYCODE_ENTER = 66;
+/** CH+/CH- — the classic TV remote zap keys (many remotes ship them
+ *  beside the D-pad); the app treats them as next/prev channel from
+ *  any zone, fullscreen included. */
+export const KEYCODE_CHANNEL_UP = 166;
+export const KEYCODE_CHANNEL_DOWN = 167;
 
 export interface FocusState {
   readonly index: number;

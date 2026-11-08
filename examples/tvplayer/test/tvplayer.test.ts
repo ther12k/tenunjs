@@ -134,11 +134,61 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     // Any key returns to the browse layout; playback continues.
     calls.length = 0;
-    expect(runtime.keyPress(20, "down")).toBe(true);
+    expect(runtime.keyPress(21, "down")).toBe(true); // LEFT exits (UP/DOWN zap)
     await settle();
-    expect(calls).toContain("rect:352,146,584,330");
+    expect(calls).toContain("rect:288,146,648,330");
     expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
     expect(calls).not.toContain("play"); // no restart on exit
+  });
+
+  test("fullscreen UP/DOWN zaps channels WITHOUT leaving the video (the remote-pad flow)", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+
+    runtime.keyPress(20, "down"); // focus → 02
+    runtime.keyPress(23, "down"); // OK: play 02 fullscreen
+    await settle();
+    calls.length = 0;
+
+    // DOWN in fullscreen: next channel, STILL fullscreen — no browse
+    // rect, empty scene (media playing), playback switched.
+    expect(runtime.keyPress(20, "down")).toBe(true);
+    await settle();
+    expect(calls).toContain(`prepare:${THIRD.url}`);
+    expect(calls).toContain("play");
+    expect(calls).not.toContain("rect:288,146,648,330"); // never left fullscreen
+    expect(sceneTexts(runtime)).toHaveLength(0);
+
+    expect(runtime.keyPress(19, "down")).toBe(true); // UP: back to 02, still fullscreen
+    await settle();
+    expect(calls).toContain(`prepare:${SECOND.url}`);
+    expect(sceneTexts(runtime)).toHaveLength(0);
+
+    runtime.keyPress(21, "down"); // LEFT: back to the browse layout
+    await settle();
+    expect(calls).toContain("rect:288,146,648,330");
+  });
+
+  test("CH+/CH- zap the live channel from browse without moving the view", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+
+    expect(runtime.keyPress(166, "down")).toBe(true); // CH+ tunes 01 (fresh boot)
+    await settle();
+    expect(calls).toContain(`prepare:${FIRST.url}`);
+    expect(runtime.keyPress(166, "down")).toBe(true); // CH+ → 02
+    await settle();
+    expect(calls).toContain(`prepare:${SECOND.url}`);
+    expect(runtime.keyPress(167, "down")).toBe(true); // CH- → back to 01
+    await settle();
+    expect(calls).toContain(`prepare:${FIRST.url}`);
+
+    // Browse chrome intact throughout — no fullscreen, live caption moved.
+    const texts = sceneTexts(runtime);
+    expect(textsInclude(texts, "TENUN TV")).toBe(true);
+    expect(textsInclude(texts, "01 · TVRI Nasional")).toBe(true);
   });
 
   test("browsing the visible list while playing never touches the player", async () => {
@@ -149,7 +199,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     // Play 02 (fullscreen), then return to browse.
     runtime.keyPress(20, "down");
     runtime.keyPress(23, "down");
-    runtime.keyPress(20, "down"); // exit fullscreen → browse at live row
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen → browse at live row
     await settle();
     calls.length = 0;
 
@@ -178,7 +228,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     const prepares = calls.filter((c) => c.startsWith("prepare:")).length;
     expect(prepares).toBe(1);
 
-    runtime.keyPress(20, "down"); // exit fullscreen
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen
     expect(runtime.keyPress(20, "up")).toBe(false); // phase "up": never acts
     expect(runtime.keyPress(23, "down")).toBe(true); // OK on live → fullscreen, no re-prepare
     await settle();
@@ -192,7 +242,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     expect(runtime.keyPress(20, "down")).toBe(true); // focus -> 02
     expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02, fullscreen
-    runtime.keyPress(20, "down"); // back to browse
+    runtime.keyPress(21, "down"); // LEFT back to browse
     await settle();
 
     // Regression (device finding 2026-11-07): the label bound to the
@@ -223,10 +273,10 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     const { media } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     runtime.keyPress(23, "down"); // OK: play + fullscreen
-    runtime.keyPress(19, "down"); // UP exits fullscreen → browse at live row
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen → browse at live row
     // (no channels means no zap, no throw — the zero-channel path is
     // covered through loadPlaylist's failure result below)
-    expect(runtime.keyPress(19, "down")).toBe(true);
+    expect(runtime.keyPress(19, "down")).toBe(true); // UP off the top → chips
   });
 });
 
@@ -252,7 +302,7 @@ describe("TN-196 media orchestration", () => {
     const runtime = new TvplayerRuntime(); // unsupportedMedia
     expect(runtime.keyPress(20, "down")).toBe(true); // focus -> 02
     expect(runtime.keyPress(23, "down")).toBe(true); // OK: switch attempt + fullscreen
-    runtime.keyPress(20, "down"); // exit fullscreen to see the placeholder
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen to see the placeholder
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
     const texts = sceneTexts(runtime);
@@ -366,7 +416,7 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     // Play channel 02 (DKI), then back to browse.
     runtime.keyPress(20, "down");
     runtime.keyPress(23, "down");
-    runtime.keyPress(20, "down"); // exit fullscreen
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen
     await settle();
     calls.length = 0;
 
@@ -387,7 +437,7 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     expect(runtime.keyPress(23, "down")).toBe(true); // OK plays Mux + fullscreen
     await settle();
     expect(calls).toContain(`prepare:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`);
-    runtime.keyPress(19, "down"); // exit fullscreen → browse at live row
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen → browse at live row
     await settle();
     calls.length = 0;
 

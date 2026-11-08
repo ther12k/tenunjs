@@ -1,6 +1,7 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
 import { Column, Container, GestureDetector, Row, Scaffold, SizedBox, Text } from "@tenunjs/widgets";
 import {
+  FULLSCREEN_RECT,
   GAP_SM,
   SIDEBAR_W,
   VIDEO_RECT,
@@ -172,29 +173,43 @@ function ChannelRow(props: {
   );
 }
 
-/** The idle/error placeholder painted inside the video slot. */
-function VideoPlaceholder({ media, now }: { media: MediaStatus | null; now: NowPlaying | null }) {
+/**
+ * The idle/error placeholder painted inside the video slot. Idle, it
+ * previews the FOCUSED row ("NN · title") so the slot reads as the
+ * about-to-play channel, not a dead box; `preview` is that caption
+ * (null on an empty list). Height is a prop — the same placeholder
+ * paints the browse slot, the phone hero, and the fullscreen rect.
+ */
+function VideoPlaceholder(props: {
+  media: MediaStatus | null;
+  now: NowPlaying | null;
+  h: number;
+  preview?: string | null;
+}) {
+  const { media, now, h, preview } = props;
   if (media?.state === "playing" || media?.state === "paused") {
     // On device the overlay covers the slot with real frames; nothing
     // to draw. (The preview cannot reach these states — its media seam
     // is the fail-closed stub.)
-    return <SizedBox height={media.state === "playing" ? VIDEO_RECT.h : VIDEO_RECT.h} />;
+    return <SizedBox height={h} />;
   }
   const isErr = media?.state === "error";
   const glyph = isErr ? "✕" : media?.state === "buffering" ? "…" : "▶";
-  const title = isErr ? "No signal" : now ? `${channelNo(now.index)} · ${now.title}` : "No channel";
+  const title = isErr ? "No signal" : (preview ?? "No channel");
   const caption = isErr
     ? (media.message ?? "playback failed")
     : media?.state === "buffering"
-      ? now?.title ?? ""
-      : "OK opens the channel list";
+      ? (preview ?? now?.title ?? "")
+      : preview
+        ? "OK to watch"
+        : "OK opens the channel list";
   return (
-    <Container color="surfaceRaised" radius={16} height={VIDEO_RECT.h}>
+    <Container color="surfaceRaised" radius={16} height={h}>
       <Column align="center" justify="center" gap="md">
         <Text variant="display" color={isErr ? "danger" : "outline"}>
           {glyph}
         </Text>
-        <Text variant="title" color={isErr ? "danger" : "text"}>
+        <Text variant="title" color={isErr ? "danger" : "text"} maxLines={1} ellipsis>
           {title}
         </Text>
         <Text variant="caption" color="textDim">
@@ -278,12 +293,32 @@ export const PlayerScreen = defineScreen({
     const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
     const onChips = state.focus.zone === "chips";
     const focusedChip = onChips ? state.focus.index : null;
+    // The focused row's caption — the idle video slot previews it, so
+    // the placeholder reads as the about-to-play channel.
+    const focused = count > 0 ? state.channels[state.focus.index] : undefined;
+    const previewTitle = focused ? `${channelNo(state.focus.index)} · ${focused.title}` : null;
 
     // Fullscreen playback: the video overlay covers the screen — the
-    // scene renders nothing (any scene op would sit off-screen beside
-    // the full-bleed rect). Any key returns to browse (runtime).
+    // scene renders nothing while frames are on air (any scene op
+    // would sit off-screen beside the full-bleed rect). When they are
+    // NOT (idle / error / the preview's fail-closed stub), paint the
+    // placeholder INSIDE the rect: the video covers it whenever frames
+    // render, and a zap that fails in fullscreen stays visible instead
+    // of a bare black screen. Any key returns to browse (runtime).
     if (state.form === "tv" && state.focus.fullscreen) {
-      return <Scaffold />;
+      if (onAir(state.media)) return <Scaffold />;
+      return (
+        <Scaffold>
+          <SizedBox width={FULLSCREEN_RECT.w} height={FULLSCREEN_RECT.h}>
+            <VideoPlaceholder
+              media={state.media}
+              now={state.now}
+              h={FULLSCREEN_RECT.h}
+              preview={previewTitle}
+            />
+          </SizedBox>
+        </Scaffold>
+      );
     }
 
     if (state.form === "phone") {
@@ -297,7 +332,12 @@ export const PlayerScreen = defineScreen({
                 native TextureView composites here; the placeholder
                 shows through whenever no frames render. */}
             <SizedBox width={VIDEO_RECT_PHONE.w} height={VIDEO_RECT_PHONE.h}>
-              <VideoPlaceholder media={state.media} now={state.now} />
+              <VideoPlaceholder
+                media={state.media}
+                now={state.now}
+                h={VIDEO_RECT_PHONE.h}
+                preview={previewTitle}
+              />
             </SizedBox>
             <Column padding="md" gap="md">
               <Row gap="md" align="center" justify="between">
@@ -419,7 +459,12 @@ export const PlayerScreen = defineScreen({
                 TextureView composites here; the placeholder shows
                 through whenever no frames render. */}
             <SizedBox width={VIDEO_RECT.w}>
-              <VideoPlaceholder media={state.media} now={state.now} />
+              <VideoPlaceholder
+                media={state.media}
+                now={state.now}
+                h={VIDEO_RECT.h}
+                preview={previewTitle}
+              />
             </SizedBox>
           </Row>
           {/* Status line — count + group left, key hints right. */}

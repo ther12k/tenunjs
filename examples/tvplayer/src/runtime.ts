@@ -6,6 +6,8 @@ import {
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
   FULLSCREEN_RECT,
+  KEYCODE_CHANNEL_DOWN,
+  KEYCODE_CHANNEL_UP,
   KEYCODE_ENTER,
   KEY_DPAD_CENTER,
   KEY_DPAD_DOWN,
@@ -46,6 +48,8 @@ export {
   KEY_DPAD_RIGHT,
   KEY_DPAD_CENTER,
   KEYCODE_ENTER,
+  KEYCODE_CHANNEL_UP,
+  KEYCODE_CHANNEL_DOWN,
 } from "./layout";
 export type { FormFactor } from "./layout";
 export type { FocusState, NowPlaying, LoadResult } from "./layout";
@@ -252,11 +256,27 @@ export class TvplayerRuntime {
   }
 
   private playerKey(keyCode: number): boolean {
-    // Fullscreen playback (TV): the video covers the screen and the
-    // scene renders nothing — ANY key returns to the browse layout
-    // with playback continuing (BACK arrives through goBack()).
+    // Fullscreen playback (TV): the classic IPTV remote flow — UP/DOWN
+    // and CH+/CH- zap the prev/next channel and STAY fullscreen (browse
+    // without leaving the video); any OTHER key returns to the browse
+    // layout with playback continuing (BACK arrives through goBack()).
     if (this.fullscreen) {
+      if (keyCode === KEY_DPAD_DOWN || keyCode === KEYCODE_CHANNEL_UP) {
+        this.zapStep(1);
+        return true;
+      }
+      if (keyCode === KEY_DPAD_UP || keyCode === KEYCODE_CHANNEL_DOWN) {
+        this.zapStep(-1);
+        return true;
+      }
       this.exitFullscreen();
+      return true;
+    }
+
+    // CH+/CH- zap from the browse zones too: playback switches, the
+    // view stays put (the live-row highlight follows; focus follows it).
+    if (keyCode === KEYCODE_CHANNEL_UP || keyCode === KEYCODE_CHANNEL_DOWN) {
+      this.zapStep(keyCode === KEYCODE_CHANNEL_UP ? 1 : -1);
       return true;
     }
 
@@ -343,6 +363,20 @@ export class TvplayerRuntime {
     return this.activeGroup === null ? 0 : 1 + this.groups().indexOf(this.activeGroup);
   }
 
+  /** Zaps ±1 from the LIVE channel (CH± keys; UP/DOWN in fullscreen).
+   *  No current channel (fresh boot) tunes channel 01; a single-channel
+   *  list is a no-op (a re-prepare of the same url would flicker). */
+  private zapStep(dir: number): void {
+    const count = this.vis.length;
+    if (count === 0) return;
+    if (this.currentIndex < 0) {
+      this.zapTo(0);
+      return;
+    }
+    const next = (this.currentIndex + dir + count) % count;
+    if (next !== this.currentIndex) this.zapTo(next);
+  }
+
   /** Cycles the group filter; NEVER touches playback. */
   private cycleGroup(dir: number): void {
     this.setGroupAt((this.chipPosition() + dir + this.groups().length + 1) % (this.groups().length + 1));
@@ -390,7 +424,20 @@ export class TvplayerRuntime {
         });
         return;
       }
-      return this.media.play();
+      return this.media.play().then((played) => {
+        // The invoke reply carries the post-play status snapshot; the
+        // MEDIA_STATE events remain the live source on device (the two
+        // agree — media.md). Pushing the reply keeps the pill/scene
+        // honest on hosts that are slow to send the first event.
+        if (!played.ok) {
+          this.mediaPush({
+            state: "error",
+            message: played.failure.message ?? played.failure.kind,
+          });
+          return;
+        }
+        this.mediaPush(played.value);
+      });
     });
   }
 

@@ -149,6 +149,8 @@ const KEY_MAP: Record<string, number> = {
   ArrowRight: 22,
   Enter: 23,
   " ": 23,
+  PageUp: 166, // CH+ / CH- — same zap keys a TV remote ships
+  PageDown: 167,
 };
 window.addEventListener("keydown", (event) => {
   const keyCode = KEY_MAP[event.key];
