@@ -28,6 +28,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509ExtendedKeyManager
+import javax.net.ssl.X509TrustManager
 
 /**
  * TN-188 device gate: the compiled PUBLIC TypeScript adapter → real
@@ -70,7 +71,7 @@ class NetBridgeTest {
         // Accept LOOP (the TLS server's proven pattern), and every
         // test-spawned thread catches Throwable: an uncaught exception in a
         // non-instrumentation thread CRASHES the whole process on Android.
-        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val echoStarted = CountDownLatch(1)
         val echoThread = Thread {
             try {
@@ -137,7 +138,7 @@ class NetBridgeTest {
 
     @Test
     fun remoteCloseDeliversOfflineThroughTheBridge() {
-        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val accepted = CountDownLatch(1)
         val serverThread = Thread {
             try {
@@ -272,17 +273,29 @@ internal class NetBridgeFixture : AutoCloseable {
     private val engineHolder = AtomicReference<TenunEngine?>(null)
     private val eventLog = CopyOnWriteArrayList<String>()
 
+    // QuickJS records its stack-overflow guard against the thread that
+    // created the runtime; re-entry from ANY other thread trips "Maximum
+    // call stack size exceeded" (reproduced on the API-30 emulator: a
+    // NET_EVENT pushed from a NetService io thread never reached JS).
+    // Production avoids this by driving the engine from the thread that
+    // created it (MainActivity posts to mainHandler). The fixture mirrors
+    // that discipline: bundle evaluation, every dispatch, and every
+    // NET_EVENT re-entry run on ONE dedicated engine thread.
+    private val engineThread = android.os.HandlerThread("tenun-net-fixture").apply { start() }
+    private val engineHandler = android.os.Handler(engineThread.looper)
+
     private val registry = HostServiceRegistry().apply {
         register("keys", keysService)
         register(
             "net",
             NetService(
                 onEvent = { _, payloadJson ->
-                    // Socket threads re-enter the engine synchronously: the
-                    // engine is lock-protected, and each push resolves the
-                    // pending connect/settle promises inside its dispatch.
+                    // Socket threads never re-enter JS directly: the event is
+                    // queued onto the engine thread in arrival order.
                     eventLog.add(payloadJson)
-                    engineHolder.get()?.dispatchActionResult("NET_EVENT", payloadJson)
+                    engineHolder.get()?.let { engine ->
+                        engineHandler.post { engine.dispatchActionResult("NET_EVENT", payloadJson) }
+                    }
                 },
                 keyResolver = keysService::identityEntry,
             ),
@@ -304,11 +317,31 @@ internal class NetBridgeFixture : AutoCloseable {
             }
             buffer.toByteArray()
         }
-        engine = TenunEngine(bundle, registry).also { engineHolder.set(it) }
+        val created = CountDownLatch(1)
+        var createdEngine: TenunEngine? = null
+        engineHandler.post {
+            try {
+                createdEngine = TenunEngine(bundle, registry)
+                engineHolder.set(createdEngine)
+            } finally {
+                created.countDown()
+            }
+        }
+        check(created.await(15, TimeUnit.SECONDS)) { "fixture engine creation failed" }
+        engine = createdEngine!!
     }
 
     fun dispatch(action: String, payload: JSONObject = JSONObject()): JSONObject {
-        val json = engine.dispatchActionResult(action, payload.toString())
+        val done = CountDownLatch(1)
+        var json: String? = null
+        engineHandler.post {
+            try {
+                json = engine.dispatchActionResult(action, payload.toString())
+            } finally {
+                done.countDown()
+            }
+        }
+        check(done.await(15, TimeUnit.SECONDS)) { "fixture dispatch '$action' never completed" }
         assertNotNull("compiled net fixture must return a synchronous string for $action", json)
         return JSONObject(json!!)
     }
@@ -347,7 +380,18 @@ internal class NetBridgeFixture : AutoCloseable {
         return null
     }
 
-    override fun close() = engine.destroy()
+    override fun close() {
+        val done = CountDownLatch(1)
+        engineHandler.post {
+            try {
+                engine.destroy()
+            } finally {
+                done.countDown()
+            }
+        }
+        done.await(10, TimeUnit.SECONDS)
+        engineThread.quitSafely()
+    }
 }
 
 /** Independent TLS evidence: JCA verification and a deterministic single-alias server. */
@@ -382,8 +426,12 @@ internal object NetBridgeEvidence {
 
         init {
             val context = SSLContext.getInstance("TLS")
-            context.init(arrayOf(SingleAliasKeyManager(entry)), null, null)
-            serverSocket = context.serverSocketFactory.createServerSocket(0, 8, InetAddress.getLoopbackAddress()) as SSLServerSocket
+            // Accept-all trust: the test server must ACCEPT the client's
+            // self-signed Keystore identity (identity equality is asserted
+            // independently from peerCertificates) — the JSSE default would
+            // reject it for having no CA anchor.
+            context.init(arrayOf(SingleAliasKeyManager(entry)), arrayOf(AcceptAllTrustManager()), null)
+            serverSocket = context.serverSocketFactory.createServerSocket(0, 8, InetAddress.getByName("127.0.0.1")) as SSLServerSocket
             serverSocket.wantClientAuth = true
         }
 
@@ -413,8 +461,8 @@ internal object NetBridgeEvidence {
                                     socket.getOutputStream().write(buffer, 0, read)
                                     socket.getOutputStream().flush()
                                 }
-                            } catch (ignored: Exception) {
-                                // The wrong-pin connect fails here on purpose.
+                            } catch (e: Exception) {
+                                android.util.Log.e("TN188TLS", "worker/session error: ${e.javaClass.simpleName}: ${e.message}", e)
                             }
                         }
                     }
@@ -441,15 +489,27 @@ internal object NetBridgeEvidence {
 
     fun tlsServer(entry: KeyStore.PrivateKeyEntry): TlsServer = TlsServer(entry)
 
+    /** Accepts peer certificates unconditionally (evidence is asserted separately). */
+    private class AcceptAllTrustManager : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
     /** Test-local mirror of the production namespace discipline, server-side. */
     private class SingleAliasKeyManager(private val entry: KeyStore.PrivateKeyEntry) : X509ExtendedKeyManager() {
         private val chain = entry.certificateChain.filterIsInstance<X509Certificate>().toTypedArray()
 
+        // TLS 1.2 ("EC") vs TLS 1.3 ("ecdsa_secp256r1_sha256") key types.
+        private fun accepts(keyType: String?): Boolean =
+            keyType != null &&
+                (keyType.equals("EC", ignoreCase = true) || keyType.contains("ecdsa", ignoreCase = true))
+
         override fun getServerAliases(keyType: String, issuers: Array<out Principal>?): Array<String>? =
-            if (keyType.startsWith("EC")) arrayOf(ALIAS) else null
+            if (accepts(keyType)) arrayOf(ALIAS) else null
 
         override fun chooseServerAlias(keyType: String?, issuers: Array<out Principal>?, socket: java.net.Socket?): String? =
-            if (keyType != null && keyType.startsWith("EC")) ALIAS else null
+            if (accepts(keyType)) ALIAS else null
 
         override fun chooseEngineServerAlias(keyType: String?, issuers: Array<out Principal>?, engine: javax.net.ssl.SSLEngine?): String? =
             chooseServerAlias(keyType, issuers, null)

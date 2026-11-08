@@ -125,7 +125,7 @@ class NetServiceFormatTest {
 
     @Test
     fun plainTcpRoundTripLinkStatesAndIdempotentClose() {
-        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val accepted = CountDownLatch(1)
         val serverThread = Thread {
             val client = server.accept()
@@ -174,7 +174,7 @@ class NetServiceFormatTest {
 
     @Test
     fun remoteCloseIsAnOfflineEventWithAReason() {
-        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val sink = Sink()
         val service = NetService(sink.onEvent, { null })
         try {
@@ -193,7 +193,7 @@ class NetServiceFormatTest {
 
     @Test
     fun aRefusedConnectIsALinkLostConnectEventNeverASilentSuccess() {
-        val temporary = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val temporary = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val port = temporary.localPort
         temporary.close() // nothing listens now
         val sink = Sink()
@@ -249,7 +249,7 @@ class NetServiceFormatTest {
 
     @Test
     fun anUndrainedRuntimeOverflowsToLinkLostNeverUnboundedGrowth() {
-        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         val sink = Sink()
         val service = NetService(sink.onEvent, { null })
         val flooded = CountDownLatch(1)

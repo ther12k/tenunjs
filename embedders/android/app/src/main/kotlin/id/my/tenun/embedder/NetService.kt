@@ -219,6 +219,9 @@ class NetService(
             emit(JSONObject().put("type", "connect").put("sessionId", live.id).put("ok", true))
             startPumps(live)
         } catch (t: Throwable) {
+            // Transport failures are diagnosable, never silent: the same
+            // event reaches JS as a structured connect failure.
+            android.util.Log.w(TAG, "connect failed (${pending.host}:${pending.port})", t)
             closeQuietly(socket)
             sessions.remove(pending.id)
             pending.abandon()
@@ -485,7 +488,12 @@ class NetService(
         @Volatile var peerSha256: String? = null
 
         override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
-            throw CertificateException("client certificates are not verified by this manager")
+            // JSSE validates the CLIENT's own identity here during TLS 1.3
+            // client authentication. Our client certificate comes from THIS
+            // service's keys namespace (used in place inside the Keystore) —
+            // no third-party validation applies under the pin-or-first-use
+            // trust model; an empty chain is still refused.
+            if (chain.isEmpty()) throw CertificateException("no local certificate chain")
         }
 
         override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
@@ -509,14 +517,19 @@ class NetService(
     private class NamespaceKeyManager(private val entry: KeyStore.PrivateKeyEntry) : X509ExtendedKeyManager() {
         private val chain = entry.certificateChain.filterIsInstance<X509Certificate>().toTypedArray()
 
+        // TLS 1.2 names the key type ("EC"); TLS 1.3 passes signature-scheme
+        // names ("ecdsa_secp256r1_sha256") — both must select our EC identity.
+        private fun accepts(keyType: String): Boolean =
+            keyType.equals("EC", ignoreCase = true) || keyType.contains("ecdsa", ignoreCase = true)
+
         override fun getClientAliases(keyType: String, issuers: Array<out Principal>?): Array<String> =
-            if (keyType.startsWith("EC")) arrayOf(ALIAS) else emptyArray()
+            if (accepts(keyType)) arrayOf(ALIAS) else emptyArray()
 
         override fun chooseClientAlias(
             keyType: Array<out String>,
             issuers: Array<out Principal>?,
             socket: java.net.Socket?,
-        ): String? = if (keyType.any { it.startsWith("EC") }) ALIAS else null
+        ): String? = if (keyType.any { accepts(it) }) ALIAS else null
 
         override fun getCertificateChain(alias: String): Array<X509Certificate> =
             if (alias == ALIAS) chain else emptyArray()
@@ -537,6 +550,7 @@ class NetService(
             issuers: Array<out Principal>?,
             engine: javax.net.ssl.SSLEngine?,
         ): String? = chooseClientAlias(keyType, issuers, null)
+
 
         override fun chooseEngineServerAlias(
             keyType: String?,
@@ -640,6 +654,7 @@ class NetService(
     }
 
     private companion object {
+        const val TAG = "TenunNet"
         const val MAX_SESSIONS = 8
         const val DEFAULT_TIMEOUT_MS = 10_000
         const val MAX_TIMEOUT_MS = 120_000
