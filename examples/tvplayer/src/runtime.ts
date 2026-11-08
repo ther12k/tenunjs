@@ -27,12 +27,17 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 // The shared layout/input constants live in the leaf module (the graph
 // gate forbids cycles); re-exported here for the public surface.
 export {
+  BRAND_H,
+  CHIPS_H,
+  DESIGN_HEIGHT,
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
   FULLSCREEN_RECT,
+  GAP_MD,
   GAP_SM,
   PAD_LG,
   SIDEBAR_W,
+  STATUS_H,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
   KEY_DPAD_UP,

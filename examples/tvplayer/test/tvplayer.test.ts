@@ -3,9 +3,14 @@ import {
   TvplayerRuntime,
   VIDEO_RECT,
   GAP_SM,
+  GAP_MD,
   PAD_LG,
   SIDEBAR_W,
+  BRAND_H,
+  CHIPS_H,
+  STATUS_H,
   DESIGN_WIDTH,
+  DESIGN_HEIGHT,
   type LoadResult,
 } from "../src/runtime";
 import { STARTER_PLAYLIST } from "../src/starter-playlist";
@@ -20,11 +25,12 @@ import type { MediaCapability } from "@tenunjs/platform";
  */
 
 // Derived from the starter playlist so the journeys stay honest as the
-// official channel list grows (24 channels: TVRI Nasional is 01, the
-// mux test stream is last).
+// official channel list grows (TVRI Nasional is 01, the mux test stream
+// is last; the groups cycle in playlist order).
 const FIRST = STARTER_PLAYLIST[0]!;
 const SECOND = STARTER_PLAYLIST[1]!;
 const THIRD = STARTER_PLAYLIST[2]!;
+const GROUPS = [...new Set(STARTER_PLAYLIST.map((c) => c.group))];
 
 /** Lets zapTo's prepare→play promise chain settle. */
 const settle = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -100,6 +106,12 @@ describe("TN-196 tvplayer boot", () => {
     expect(VIDEO_RECT.x).toBe(PAD_LG + SIDEBAR_W + GAP_SM);
     expect(VIDEO_RECT.w).toBe(DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG);
     expect(VIDEO_RECT.x + VIDEO_RECT.w).toBe(DESIGN_WIDTH - PAD_LG);
+    // Vertically: top bar → chips row → content; the video slot ends
+    // above the status line (all derived — the 2026-11-08 chips move).
+    expect(VIDEO_RECT.y).toBe(PAD_LG + BRAND_H + GAP_MD + CHIPS_H + GAP_MD);
+    expect(VIDEO_RECT.h).toBe(
+      DESIGN_HEIGHT - VIDEO_RECT.y - GAP_MD - STATUS_H - PAD_LG
+    );
   });
 });
 
@@ -124,7 +136,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     calls.length = 0;
     expect(runtime.keyPress(20, "down")).toBe(true);
     await settle();
-    expect(calls).toContain("rect:352,96,584,384");
+    expect(calls).toContain("rect:352,146,584,330");
     expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
     expect(calls).not.toContain("play"); // no restart on exit
   });
@@ -321,7 +333,7 @@ describe("TN-196 phone form factor", () => {
     expect(taps.length).toBeGreaterThan(1);
     // Phone taps: the group chips come first (All + one per group),
     // then the visible channel rows.
-    const chips = 1 + 2; // Semua, TVRI, Test
+    const chips = 1 + GROUPS.length;
     const thirdRowTapId = taps[chips + 2]!.payload!.id;
     runtime.dispatch("TAP", { id: thirdRowTapId });
     await settle();
@@ -362,10 +374,11 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     // groups (RIGHT in the rows zone is Settings).
     expect(runtime.keyPress(19, "down")).toBe(true); // row 02 → 01
     expect(runtime.keyPress(19, "down")).toBe(true); // row 01 → chips
-    expect(runtime.keyPress(22, "down")).toBe(true); // All → TVRI
+    expect(runtime.keyPress(22, "down")).toBe(true); // All → first group
     await settle();
     expect(calls).toHaveLength(0); // group switch must not touch the player
-    runtime.keyPress(22, "down"); // TVRI → Test
+    // RIGHT through the remaining groups lands on the LAST (Test).
+    for (let i = 1; i < GROUPS.length; i++) runtime.keyPress(22, "down");
     await settle();
     expect(calls).toHaveLength(0);
 
@@ -379,11 +392,13 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     calls.length = 0;
 
     // Now-playing survives a filter that hides it: cycle back to All.
-    runtime.keyPress(19, "down"); // rows[0] → chips (at Test's position)
-    runtime.keyPress(21, "down"); // Test → TVRI
-    runtime.keyPress(21, "down"); // TVRI → All
+    runtime.keyPress(19, "down"); // rows[0] → chips (at the last group)
+    // LEFT through every group wraps to the All chip.
+    for (let i = 0; i < GROUPS.length; i++) runtime.keyPress(21, "down");
     await settle();
-    expect(textsInclude(sceneTexts(runtime), "24 CHANNELS · Semua")).toBe(true);
+    expect(
+      textsInclude(sceneTexts(runtime), `${STARTER_PLAYLIST.length} CHANNELS · Semua`)
+    ).toBe(true);
     expect(runtime.keyPress(20, "down")).toBe(true); // into rows — still no player calls
     expect(calls).toHaveLength(0);
   });

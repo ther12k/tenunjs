@@ -75,46 +75,63 @@ function channelNo(index: number): string {
  */
 const CHANNEL_WINDOW = 5;
 
-/** The group chips: [All, …groups]; focus/active styling per chip. */
+/**
+ * The group chips: [All, …groups]; focus/active styling per chip.
+ * `perRow` wraps long chip sets (the scene has no flex-wrap in v1, so
+ * the chunks are explicit) — the TV form spans one full-width row of
+ * tabs under the top bar; the phone form wraps at two per row.
+ */
 function GroupChips(props: {
   groups: readonly string[];
   activeGroup: string | null;
   focusedChip: number | null;
-  compact?: boolean;
+  perRow?: number;
   onPick?: (group: string | null) => void;
 }) {
-  const { groups, activeGroup, focusedChip, compact, onPick } = props;
+  const { groups, activeGroup, focusedChip, perRow, onPick } = props;
   const chips: Array<string | null> = [null, ...groups]; // null = All
+  const rows: Array<Array<string | null>> = [];
+  if (perRow === undefined) {
+    rows.push(chips);
+  } else {
+    for (let i = 0; i < chips.length; i += perRow) rows.push(chips.slice(i, i + perRow));
+  }
+  let i = 0; // chip index across the wrapped rows
   return (
-    <Row gap="sm">
-      {chips.map((group, i) => {
-        const active = (group ?? null) === activeGroup;
-        const focused = focusedChip === i;
-        const chip = (
-          <Container
-            color={focused ? "accent" : active ? "secondaryContainer" : "surface"}
-            radius={14}
-            padding={compact ? "sm" : "sm"}
-            borderColor={active && !focused ? "accent" : undefined}
-            borderWidth={active && !focused ? 2 : 0}
-          >
-            <Text
-              variant="caption"
-              color={focused ? "onPrimaryContainer" : active ? "onSecondaryContainer" : "textDim"}
-            >
-              {group ?? "Semua"}
-            </Text>
-          </Container>
-        );
-        return onPick ? (
-          <GestureDetector key={group ?? "__all__"} onTap={() => onPick(group ?? null)}>
-            {chip}
-          </GestureDetector>
-        ) : (
-          chip
-        );
-      })}
-    </Row>
+    <Column gap="sm">
+      {rows.map((row, r) => (
+        <Row key={r} gap="sm">
+          {row.map((group) => {
+            const chipIndex = i++;
+            const active = (group ?? null) === activeGroup;
+            const focused = focusedChip === chipIndex;
+            const chip = (
+              <Container
+                color={focused ? "accent" : active ? "secondaryContainer" : "surface"}
+                radius={14}
+                padding="sm"
+                borderColor={active && !focused ? "accent" : undefined}
+                borderWidth={active && !focused ? 2 : 0}
+              >
+                <Text
+                  variant="caption"
+                  color={focused ? "onPrimaryContainer" : active ? "onSecondaryContainer" : "textDim"}
+                >
+                  {group ?? "Semua"}
+                </Text>
+              </Container>
+            );
+            return onPick ? (
+              <GestureDetector key={group ?? "__all__"} onTap={() => onPick(group ?? null)}>
+                {chip}
+              </GestureDetector>
+            ) : (
+              chip
+            );
+          })}
+        </Row>
+      ))}
+    </Column>
   );
 }
 
@@ -305,7 +322,7 @@ export const PlayerScreen = defineScreen({
                 groups={state.groups}
                 activeGroup={state.activeGroup}
                 focusedChip={focusedChip}
-                compact
+                perRow={2}
                 onPick={(g) => actions.setGroup(g)}
               />
               <Text variant="caption" color="textDim">
@@ -360,17 +377,20 @@ export const PlayerScreen = defineScreen({
               )}
             </Column>
           </Row>
+          {/* The group tabs — full width under the top bar (the
+              reference UI's category row); switching groups NEVER
+              interrupts playback. */}
+          <GroupChips
+            groups={state.groups}
+            activeGroup={state.activeGroup}
+            focusedChip={focusedChip}
+          />
           <Row gap={GAP_SM}>
             {/* The channel list column — ALWAYS visible beside the
                 video (the reference shape); VIDEO_RECT derives from it
                 so the slot never moves. */}
             <SizedBox width={SIDEBAR_W} height={VIDEO_RECT.h}>
               <Column gap="sm">
-                <GroupChips
-                  groups={state.groups}
-                  activeGroup={state.activeGroup}
-                  focusedChip={focusedChip}
-                />
                 {count === 0 && (
                   <Text variant="body" color="textDim">
                     Playlist empty — press → for Settings

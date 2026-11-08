@@ -41,6 +41,9 @@ export const tvTheme = defineTheme({
  */
 export const GROUP_COLORS: Readonly<Record<string, string>> = {
   TVRI: "#00ADB5",
+  Internasional: "#E4572E",
+  Sains: "#4D96FF",
+  Olahraga: "#6BCB77",
   Test: "#CCA700",
 };
 

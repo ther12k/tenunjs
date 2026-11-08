@@ -19,6 +19,23 @@ export const PAD_LG = 24;
  *  the list takes a third, the video the rest). */
 export const SIDEBAR_W = 320;
 export const GAP_SM = 8;
+export const GAP_MD = 16;
+
+/** Design canvas height (1920×1080 host at the 960 design width). */
+export const DESIGN_HEIGHT = 540;
+
+/**
+ * The TV browse layout stacks, top to bottom: top bar → GROUP CHIPS
+ * (full width, the reference UI's category tabs) → the content row
+ * (channel list | video slot) → the status line. Every block's height
+ * is fixed and DERIVED here so VIDEO_RECT — the box the runtime asserts
+ * via media.setRect and the native TextureView occupies — is exactly
+ * the slot the scene draws around (the 2026-11-07 device finding: a
+ * hand-written rect overlapped the sidebar's edge by 16px).
+ */
+export const BRAND_H = 50; // title line 38 + gap-sm 8 + underline 4
+export const CHIPS_H = 40; // caption line 24 + chip padding-sm ×2
+export const STATUS_H = 24; // caption line
 
 /** The video region in design units. ADR-0028 documented ceiling: ONE
  *  static rect — the scene composes AROUND the video (no scene-graph
@@ -27,9 +44,9 @@ export const GAP_SM = 8;
  *  whenever frames render. */
 export const VIDEO_RECT = {
   x: PAD_LG + SIDEBAR_W + GAP_SM,
-  y: 96,
+  y: PAD_LG + BRAND_H + GAP_MD + CHIPS_H + GAP_MD,
   w: DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG,
-  h: 384,
+  h: DESIGN_HEIGHT - (PAD_LG + BRAND_H + GAP_MD + CHIPS_H + GAP_MD) - GAP_MD - STATUS_H - PAD_LG,
 } as const;
 
 /**
@@ -54,7 +71,7 @@ export type FormFactor = "tv" | "phone";
  * renders nothing (the overlay covers everything) and any key returns
  * to the browse layout. Exact for 16:9 hosts (1920×1080 → 960×540).
  */
-export const FULLSCREEN_RECT = { x: 0, y: 0, w: DESIGN_WIDTH, h: 540 } as const;
+export const FULLSCREEN_RECT = { x: 0, y: 0, w: DESIGN_WIDTH, h: DESIGN_HEIGHT } as const;
 
 /** android.view.KeyEvent codes the helper consumes (mirrored app-side). */
 export const KEY_DPAD_UP = 19;
