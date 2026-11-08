@@ -57,10 +57,9 @@ export const KEY_DPAD_CENTER = 23;
 export const KEYCODE_ENTER = 66;
 
 export interface FocusState {
-  readonly sidebar: boolean;
   readonly index: number;
-  /** Which sidebar zone the D-pad ring is on: the group chips or the
-   *  channel rows (TV form; the phone form taps chips directly). */
+  /** Which zone the D-pad ring is on: the group chips or the channel
+   *  rows (TV form; the phone form taps chips directly). */
   readonly zone: "rows" | "chips";
 }
 

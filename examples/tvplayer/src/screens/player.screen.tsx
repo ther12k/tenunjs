@@ -197,7 +197,7 @@ export const PlayerScreen = defineScreen({
     activeGroup: null,
     index: 0,
     now: null,
-    focus: { sidebar: true, index: 0, zone: "rows" },
+    focus: { index: 0, zone: "rows" },
     media: null,
   }),
   actions: {
@@ -259,7 +259,7 @@ export const PlayerScreen = defineScreen({
     // keep true channel numbers.
     const winStart = Math.max(0, Math.min(state.focus.index - 2, count - CHANNEL_WINDOW));
     const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
-    const onChips = state.focus.sidebar && state.focus.zone === "chips";
+    const onChips = state.focus.zone === "chips";
     const focusedChip = onChips ? state.focus.index : null;
 
     if (state.form === "phone") {
@@ -354,40 +354,39 @@ export const PlayerScreen = defineScreen({
             </Column>
           </Row>
           <Row gap={GAP_SM}>
-            {/* The sidebar column is ALWAYS reserved so the video slot
-                never moves (layout.ts derives VIDEO_RECT from it). */}
+            {/* The channel list column — ALWAYS visible beside the
+                video (the reference shape); VIDEO_RECT derives from it
+                so the slot never moves. */}
             <SizedBox width={SIDEBAR_W} height={VIDEO_RECT.h}>
-              {state.focus.sidebar && (
-                <Column gap="sm">
-                  <GroupChips
-                    groups={state.groups}
-                    activeGroup={state.activeGroup}
-                    focusedChip={focusedChip}
-                  />
-                  {count === 0 && (
-                    <Text variant="body" color="textDim">
-                      Playlist empty — press → for Settings
-                    </Text>
-                  )}
-                  {count > 0 && (
-                    <Column gap="sm">
-                      {window_.map((channel, k) => (
-                        <ChannelRow
-                          key={channel.url}
-                          channel={channel}
-                          index={winStart + k}
-                          focused={winStart + k === state.focus.index}
-                          live={
-                            liveVisible !== null &&
-                            liveVisible !== undefined &&
-                            channel.url === liveVisible.url
-                          }
-                        />
-                      ))}
-                    </Column>
-                  )}
-                </Column>
-              )}
+              <Column gap="sm">
+                <GroupChips
+                  groups={state.groups}
+                  activeGroup={state.activeGroup}
+                  focusedChip={focusedChip}
+                />
+                {count === 0 && (
+                  <Text variant="body" color="textDim">
+                    Playlist empty — press → for Settings
+                  </Text>
+                )}
+                {count > 0 && (
+                  <Column gap="sm">
+                    {window_.map((channel, k) => (
+                      <ChannelRow
+                        key={channel.url}
+                        channel={channel}
+                        index={winStart + k}
+                        focused={winStart + k === state.focus.index}
+                        live={
+                          liveVisible !== null &&
+                          liveVisible !== undefined &&
+                          channel.url === liveVisible.url
+                        }
+                      />
+                    ))}
+                  </Column>
+                )}
+              </Column>
             </SizedBox>
             {/* The video slot — exactly VIDEO_RECT. On device the native
                 TextureView composites here; the placeholder shows
@@ -402,11 +401,7 @@ export const PlayerScreen = defineScreen({
               {`${count} CHANNEL${count === 1 ? "" : "S"} · ${state.activeGroup ?? "Semua"}`}
             </Text>
             <Text variant="caption" color="textDim">
-              {onChips
-                ? "←→ group · ↓ channels"
-                : state.focus.sidebar
-                  ? "↑↓ browse · OK watch · ↑ chips · → settings"
-                  : "↑↓ channels · → settings"}
+              {onChips ? "←→ group · ↓ channels" : "↑↓ browse · OK watch · ↑ chips · → settings"}
             </Text>
           </Row>
         </Column>

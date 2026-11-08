@@ -95,7 +95,6 @@ export class TvplayerRuntime {
   private currentUrl: string | null = null;
   private focusIndex = 0;
   private focusZone: "rows" | "chips" = "rows";
-  private sidebar = true; // discoverable first boot: the grid is open
   private status: MediaStatus = { state: "idle" };
 
   /** The channel list under the active group filter. */
@@ -239,9 +238,11 @@ export class TvplayerRuntime {
   }
 
   private playerKey(keyCode: number): boolean {
-    // The chips zone owns LEFT/RIGHT (group cycling); everywhere else
-    // RIGHT opens Settings (rows zone: LEFT closes the list).
-    if (this.sidebar && this.focusZone === "chips") {
+    // The reference shape: the channel list is ALWAYS visible beside
+    // the video — there is no open/close model. The chips zone owns
+    // LEFT/RIGHT (group cycling); in the rows zone RIGHT opens
+    // Settings.
+    if (this.focusZone === "chips") {
       if (keyCode === KEY_DPAD_LEFT) {
         this.cycleGroup(-1);
         return true;
@@ -250,33 +251,6 @@ export class TvplayerRuntime {
         this.cycleGroup(1);
         return true;
       }
-    } else if (keyCode === KEY_DPAD_RIGHT) {
-      this.navigate("settings");
-      return true;
-    }
-
-    if (!this.sidebar) {
-      // YouTube-style: the pad OPENS the list at the live channel —
-      // browsing happens over uninterrupted playback, never a blind
-      // zap. The first press only opens; further presses move.
-      if (keyCode === KEY_DPAD_UP || keyCode === KEY_DPAD_DOWN) {
-        this.sidebar = true;
-        this.focusZone = "rows";
-        this.focusIndex = Math.max(0, this.currentIndex);
-        this.pushFocus();
-        return true;
-      }
-      if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-        this.sidebar = true;
-        this.focusZone = "rows";
-        this.focusIndex = Math.max(0, this.currentIndex);
-        this.pushFocus();
-        return true;
-      }
-      return false;
-    }
-
-    if (this.focusZone === "chips") {
       if (keyCode === KEY_DPAD_DOWN || keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
         this.focusZone = "rows";
         this.focusIndex = 0;
@@ -286,7 +260,13 @@ export class TvplayerRuntime {
       return false; // UP stays on the chips (nothing above)
     }
 
-    // Rows zone.
+    if (keyCode === KEY_DPAD_RIGHT) {
+      this.navigate("settings");
+      return true;
+    }
+
+    // Rows zone. Browsing never touches playback: OK switches only
+    // when the focused row differs from the live channel.
     const count = this.vis.length;
     if (keyCode === KEY_DPAD_UP) {
       if (this.focusIndex <= 0) {
@@ -306,16 +286,10 @@ export class TvplayerRuntime {
     }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
       if (count === 0) return false;
-      // OK on the live channel just closes the list; a different
+      // OK on the live channel is a no-op re-prepare-wise; a different
       // channel switches playback (the old stream runs until the new
-      // prepare lands — one player per host).
+      // prepare lands — one player per host). The list stays visible.
       if (this.focusIndex !== this.currentIndex) this.zapTo(this.focusIndex);
-      this.sidebar = false;
-      this.pushFocus();
-      return true;
-    }
-    if (keyCode === KEY_DPAD_LEFT) {
-      this.sidebar = false;
       this.pushFocus();
       return true;
     }
@@ -421,7 +395,6 @@ export class TvplayerRuntime {
     this.currentUrl = null;
     this.pushChannels();
     this.zapTo(0);
-    this.sidebar = true;
     this.focusZone = "rows";
     this.pushFocus();
     this.navigate("player");
@@ -450,11 +423,7 @@ export class TvplayerRuntime {
   }
 
   private pushFocus(): void {
-    const focus: FocusState = {
-      sidebar: this.sidebar,
-      index: this.focusIndex,
-      zone: this.focusZone,
-    };
+    const focus: FocusState = { index: this.focusIndex, zone: this.focusZone };
     this.app.pushState("focus", focus);
   }
 

@@ -104,62 +104,59 @@ describe("TN-196 tvplayer boot", () => {
 });
 
 describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
-  test("sidebar: DOWN moves focus, OK plays the focused channel and closes the sidebar", async () => {
+  test("DOWN moves focus, OK plays the focused channel — the list STAYS visible", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle(); // boot-time rect assertion
 
-    expect(runtime.keyPress(20, "down")).toBe(true); // DOWN: focus → Mux
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play Mux, close sidebar
+    expect(runtime.keyPress(20, "down")).toBe(true); // focus → 02
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02
     await settle();
 
     expect(calls).toContain(`prepare:${SECOND.url}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true); // hidden-list hint
+    // The reference shape: no open/close — the list renders beside the
+    // playing video (browse hints visible, no empty reserved column).
+    expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
   });
 
-  test("YouTube browsing: while playing, DOWN opens the list AT the live channel without touching the player", async () => {
+  test("browsing the visible list while playing never touches the player", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    // Play Mux (focus -> 1, OK); the list closes over playing video.
+    // Play 02; the list stays beside the video.
     runtime.keyPress(20, "down");
     runtime.keyPress(23, "down");
     await settle();
     calls.length = 0;
 
-    // DOWN over playing video: opens the list AT the live channel —
-    // the first press only opens, browsing never interrupts playback.
+    // Moving the focus ring over the playing video: no player calls.
     expect(runtime.keyPress(20, "down")).toBe(true);
-    expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true); // list visible
+    runtime.keyPress(19, "down");
+    runtime.keyPress(19, "down"); // wrap? no — 1 → 0
+    await settle();
     expect(calls).toHaveLength(0);
-    runtime.keyPress(20, "down"); // now it moves: 1 -> 0 (wrap)
-    await settle();
-    expect(calls).toHaveLength(0); // still browsing, still playing
 
-    // OK switches to the focused channel and closes the list.
-    expect(runtime.keyPress(23, "down")).toBe(true);
+    // OK on a DIFFERENT channel switches playback; the list stays up.
+    expect(runtime.keyPress(23, "down")).toBe(true); // focused row 0 (live is 1)
     await settle();
-    expect(calls).toContain(`prepare:${THIRD.url}`);
+    expect(calls).toContain(`prepare:${FIRST.url}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
   });
 
-  test("OK on the LIVE channel just closes the list — no re-prepare; phase up never consumes", async () => {
+  test("OK on the LIVE channel is a no-op re-prepare; phase up never consumes", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    // Boot: list open at TVRI (0). OK plays TVRI and closes.
-    expect(runtime.keyPress(23, "down")).toBe(true);
+    expect(runtime.keyPress(23, "down")).toBe(true); // boot focus 0: play TVRI
     await settle();
     calls.length = 0;
 
     expect(runtime.keyPress(20, "up")).toBe(false); // phase "up": never acts
-
-    runtime.keyPress(20, "down"); // reopens AT the live channel (0)
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live -> close only
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live again
     await settle();
     expect(calls).toHaveLength(0); // no re-prepare of the live channel
   });
@@ -175,8 +172,10 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     // Regression (device finding 2026-11-07): the label bound to the
     // screen's stale index — the TV showed "TVRI" while Mux played.
-    expect(textsInclude(sceneTexts(runtime), "TVRI DKI")).toBe(true);
-    expect(textsInclude(sceneTexts(runtime), "TVRI Nasional")).toBe(false); // the old label must be gone
+    // (The list is always visible now, so assert on the top-bar
+    // caption "NN · title" rather than bare row titles.)
+    expect(textsInclude(sceneTexts(runtime), "02 · TVRI DKI")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "01 · TVRI Nasional")).toBe(false);
   });
 
   test("RIGHT opens Settings; LEFT (and BACK) return to the player", () => {
@@ -344,10 +343,8 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     await settle();
     calls.length = 0;
 
-    // UP reopens the list at the live row, further UPs reach row 0 and
-    // then the chips; RIGHT there cycles groups (RIGHT in the rows
-    // zone is Settings, so the chips must be reached first).
-    expect(runtime.keyPress(19, "down")).toBe(true); // open at DKI (row 02)
+    // UP to row 0, UP again lands on the chips; RIGHT there cycles
+    // groups (RIGHT in the rows zone is Settings).
     expect(runtime.keyPress(19, "down")).toBe(true); // row 02 → 01
     expect(runtime.keyPress(19, "down")).toBe(true); // row 01 → chips
     expect(runtime.keyPress(22, "down")).toBe(true); // All → TVRI
@@ -358,14 +355,12 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     expect(calls).toHaveLength(0);
 
     // Test group: only the mux stream; play it.
-    expect(runtime.keyPress(20, "down")).toBe(true); // chips → rows
-    runtime.keyPress(20, "down"); // rows[0] focus (1 visible row, wrap)
+    expect(runtime.keyPress(20, "down")).toBe(true); // chips → rows (0)
     expect(runtime.keyPress(23, "down")).toBe(true); // OK plays Mux
     await settle();
     expect(calls).toContain(`prepare:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`);
 
     // Now-playing survives a filter that hides it: cycle back to All.
-    runtime.keyPress(19, "down"); // reopen the list at the live row (Mux, row 0)
     runtime.keyPress(19, "down"); // rows[0] → chips (at Test's position)
     runtime.keyPress(21, "down"); // Test → TVRI
     runtime.keyPress(21, "down"); // TVRI → All
