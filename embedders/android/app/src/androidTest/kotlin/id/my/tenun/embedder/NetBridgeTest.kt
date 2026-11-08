@@ -14,21 +14,13 @@ import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
-import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.Principal
-import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLServerSocket
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.X509ExtendedKeyManager
-import javax.net.ssl.X509TrustManager
 
 /**
  * TN-188 device gate: the compiled PUBLIC TypeScript adapter → real
@@ -192,77 +184,108 @@ class NetBridgeTest {
         assertEquals("cancelled", cancelled.getJSONObject("failure").getString("kind"))
     }
 
+    /**
+     * TLS pairing journey. The server side runs on the HOST (started by
+     * run_device_acceptance.sh, reachable at the emulator's 10.0.2.2 host
+     * alias) because the API-30 emulator guest's SERVER-mode Conscrypt
+     * handshake fails even though bytes cross the loopback (raw-byte probe,
+     * 2026-11-09) — the guest only uses its proven client mode here. The
+     * server presents a self-signed certificate and requests a client
+     * certificate, then sends "SERVER:<fp>\nCLIENT:<fp>\n" and echoes:
+     * the test asserts, self-contained:
+     *  - the FIRST-USE fingerprint NetService delivered is the REAL sha256
+     *    of the server certificate (matches the server's own SERVER line);
+     *  - the certificate the phone PRESENTED is the Keystore identity's
+     *    certificate (CLIENT line == sha256 of identity.certificatePem);
+     *  - reconnecting with the seen pin is silent; a wrong pin is a loud
+     *    link-lost mismatch, never a silent session.
+     */
     @Test
     fun tlsPairingWithClientIdentityFirstUseFingerprintAndPinEnforcement() {
-        // 1. A real Keystore identity for BOTH endpoints of the pairing
-        //    journey: the phone's TLS client certificate (via the public
-        //    adapter) and the test server's certificate.
+        val tlsPort = androidx.test.platform.app.InstrumentationRegistry.getArguments()
+            .getString("tn188TlsPort")
+            ?.toIntOrNull()
+        assertNotNull(
+            "the acceptance runner must provide -Pandroid.testInstrumentationRunnerArguments.tn188TlsPort",
+            tlsPort,
+        )
+
         val identity = JSONObject(
             fixture.keysService.invoke("generateIdentity", """{"alias":"$alias"}""")!!,
         ).getJSONObject("value")
         val identityCertificate = NetBridgeEvidence.certificate(identity.getString("certificatePem"))
-        val identityEntry = fixture.keysService.identityEntry(identity.getString("handle"))
-        assertNotNull("identity resolves inside the keys namespace", identityEntry)
+        val identityFingerprint = NetBridgeEvidence.sha256Hex(identityCertificate.encoded)
 
-        val server = NetBridgeEvidence.tlsServer(identityEntry!!)
-        try {
-            server.start()
+        // 1. First-use connect WITH the client identity (no pin yet).
+        val firstUse = fixture.callAsync(
+            "connect",
+            JSONObject()
+                .put("host", "10.0.2.2")
+                .put("port", tlsPort!!)
+                .put("timeoutMs", 15_000)
+                .put("tls", JSONObject().put("clientIdentity", alias)),
+        )
+        assertTrue("$firstUse; events=${fixture.events()}", firstUse.getBoolean("ok"))
+        val cert = fixture.awaitEvent(8_000) { it.optString("k") == "cert" }
+        assertNotNull("first-use fingerprint delivered; events=${fixture.events()}", cert)
+        val deliveredFingerprint = cert!!.getString("h")
 
-            // 2. First-use connect WITH the client identity: the fingerprint
-            //    must be the REAL sha256 of the server certificate.
-            val firstUse = fixture.callAsync(
-                "connect",
-                JSONObject()
-                    .put("host", "127.0.0.1")
-                    .put("port", server.port)
-                    .put("timeoutMs", 10_000)
-                    .put("tls", JSONObject().put("clientIdentity", alias)),
-            )
-            assertTrue(firstUse.toString(), firstUse.getBoolean("ok"))
-            val cert = fixture.awaitEvent(5_000) { it.optString("k") == "cert" }
-            assertNotNull("first-use fingerprint delivered", cert)
-            assertEquals(NetBridgeEvidence.sha256Hex(identityCertificate.encoded), cert!!.getString("h"))
-
-            // 3. Data flows over TLS; the SERVER independently verifies the
-            //    client certificate IS the identity's certificate.
-            val secret = listOf(0x54, 0x4c, 0x53)
-            assertTrue(fixture.callAsync("write", JSONObject().put("data", JSONArray(secret))).getBoolean("ok"))
-            val echoed = fixture.awaitEvent(8_000) { it.optString("k") == "data" }
-            assertNotNull("TLS echo", echoed)
-            assertEquals(secret, echoed!!.getJSONArray("b").let { array -> (0 until array.length()).map { array.getInt(it) } })
-            assertTrue(fixture.callAsync("close", JSONObject()).getBoolean("ok"))
-            server.awaitClientCertificate(8_000)?.let { seen ->
-                assertEquals("the phone authenticated with the Keystore identity", identityCertificate, seen)
-            }
-
-            // 4. Pin enforcement: the seen fingerprint connects silently;
-            //    a wrong pin is a loud link-lost, never a silent session.
-            val pin = NetBridgeEvidence.sha256Hex(identityCertificate.encoded)
-            val pinned = fixture.callAsync(
-                "connect",
-                JSONObject()
-                    .put("host", "127.0.0.1")
-                    .put("port", server.port)
-                    .put("timeoutMs", 10_000)
-                    .put("tls", JSONObject().put("clientIdentity", alias).put("expectedServerCertSha256", pin)),
-            )
-            assertTrue(pinned.toString(), pinned.getBoolean("ok"))
-            assertTrue("pinned mode delivers no fingerprint", fixture.callAsync("close", JSONObject()).getBoolean("ok"))
-
-            val wrongPin = fixture.callAsync(
-                "connect",
-                JSONObject()
-                    .put("host", "127.0.0.1")
-                    .put("port", server.port)
-                    .put("timeoutMs", 10_000)
-                    .put("tls", JSONObject().put("expectedServerCertSha256", "00".repeat(32))),
-            )
-            assertFalse(wrongPin.toString(), wrongPin.getBoolean("ok"))
-            assertEquals("link-lost", wrongPin.getJSONObject("failure").getString("kind"))
-            assertTrue(wrongPin.getJSONObject("failure").optString("message").contains("mismatch"))
-        } finally {
-            server.stop()
+        // 2. The server answers with its own fingerprint and the peer's, then
+        //    echoes; reading them proves data flows over TLS and pins the
+        //    assertions to REAL certificate hashes.
+        val hello = listOf(0x48, 0x49) // "HI"
+        assertTrue(fixture.callAsync("write", JSONObject().put("data", JSONArray(hello))).getBoolean("ok"))
+        var transcript = ""
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        while (System.nanoTime() < deadline &&
+            (!transcript.contains("SERVER:") || !transcript.contains("CLIENT:") || !transcript.contains("HI"))
+        ) {
+            val chunk = fixture.awaitEvent(2_000) {
+                it.optString("k") == "data" && !it.optString("b").let { b -> transcript.contains(b) }
+            } ?: break
+            val bytes = chunk!!.getJSONArray("b").let { array -> (0 until array.length()).map { array.getInt(it) } }
+            transcript += String(bytes.map { it.toByte() }.toByteArray(), Charsets.US_ASCII)
         }
+        val serverLine = Regex("SERVER:([0-9a-f]{64})").find(transcript)?.groupValues?.get(1)
+        val clientLine = Regex("CLIENT:([0-9a-f]{64})").find(transcript)?.groupValues?.get(1)
+        assertNotNull("server fingerprint line missing: $transcript", serverLine)
+        assertNotNull("client fingerprint line missing: $transcript", clientLine)
+        assertEquals(
+            "the delivered first-use fingerprint is the REAL server-certificate hash",
+            serverLine!!,
+            deliveredFingerprint,
+        )
+        assertEquals(
+            "the phone authenticated with the Keystore identity's certificate",
+            identityFingerprint,
+            clientLine!!,
+        )
+        assertTrue(fixture.callAsync("close", JSONObject()).getBoolean("ok"))
+
+        // 3. Pin enforcement: the seen fingerprint reconnects silently; a
+        //    wrong pin is a loud link-lost mismatch.
+        val pinned = fixture.callAsync(
+            "connect",
+            JSONObject()
+                .put("host", "10.0.2.2")
+                .put("port", tlsPort)
+                .put("timeoutMs", 15_000)
+                .put("tls", JSONObject().put("clientIdentity", alias).put("expectedServerCertSha256", deliveredFingerprint)),
+        )
+        assertTrue("$pinned; events=${fixture.events()}", pinned.getBoolean("ok"))
+        assertTrue(fixture.callAsync("close", JSONObject()).getBoolean("ok"))
+
+        val wrongPin = fixture.callAsync(
+            "connect",
+            JSONObject()
+                .put("host", "10.0.2.2")
+                .put("port", tlsPort)
+                .put("timeoutMs", 15_000)
+                .put("tls", JSONObject().put("expectedServerCertSha256", "00".repeat(32))),
+        )
+        assertFalse(wrongPin.toString(), wrongPin.getBoolean("ok"))
+        assertEquals("link-lost", wrongPin.getJSONObject("failure").getString("kind"))
+        assertTrue(wrongPin.getJSONObject("failure").optString("message").contains("mismatch"))
     }
 }
 
@@ -411,128 +434,4 @@ internal object NetBridgeEvidence {
         return certificate
     }
 
-    /**
-     * A TLS echo server presenting EXACTLY the given identity (a test-local
-     * single-alias key manager, so the presented certificate is deterministic
-     * even when the app UID's keystore holds many test identities) and
-     * requesting client certificates.
-     */
-    class TlsServer(private val entry: KeyStore.PrivateKeyEntry) {
-        private val serverSocket: SSLServerSocket
-        private val clientCertificate = AtomicReference<X509Certificate?>(null)
-        private val clientSeen = CountDownLatch(1)
-        private val workers = CopyOnWriteArrayList<Thread>()
-        @Volatile private var running = true
-
-        init {
-            val context = SSLContext.getInstance("TLS")
-            // Accept-all trust: the test server must ACCEPT the client's
-            // self-signed Keystore identity (identity equality is asserted
-            // independently from peerCertificates) — the JSSE default would
-            // reject it for having no CA anchor.
-            context.init(arrayOf(SingleAliasKeyManager(entry)), arrayOf(AcceptAllTrustManager()), null)
-            serverSocket = context.serverSocketFactory.createServerSocket(0, 8, InetAddress.getByName("127.0.0.1")) as SSLServerSocket
-            serverSocket.wantClientAuth = true
-        }
-
-        val port: Int get() = serverSocket.localPort
-
-        fun start() {
-            Thread {
-                try {
-                while (running) {
-                    val accepted = try {
-                        serverSocket.accept() as SSLSocket
-                    } catch (e: Exception) {
-                        return@Thread // stopped
-                    }
-                    val worker = Thread {
-                        accepted.use { socket ->
-                            try {
-                                socket.startHandshake()
-                                socket.session.peerCertificates.firstOrNull()?.let {
-                                    clientCertificate.set(it as X509Certificate)
-                                    clientSeen.countDown()
-                                }
-                                val buffer = ByteArray(4096)
-                                while (true) {
-                                    val read = socket.getInputStream().read(buffer)
-                                    if (read < 0) break
-                                    socket.getOutputStream().write(buffer, 0, read)
-                                    socket.getOutputStream().flush()
-                                }
-                            } catch (e: Exception) {
-                                android.util.Log.e("TN188TLS", "worker/session error: ${e.javaClass.simpleName}: ${e.message}", e)
-                            }
-                        }
-                    }
-                    workers.add(worker)
-                    worker.start()
-                }
-                } catch (ignored: Throwable) {
-                    // stopped
-                }
-            }.also { workers.add(it) }.start()
-        }
-
-        fun awaitClientCertificate(timeoutMs: Long): X509Certificate? {
-            clientSeen.await(timeoutMs, TimeUnit.MILLISECONDS)
-            return clientCertificate.get()
-        }
-
-        fun stop() {
-            running = false
-            serverSocket.close()
-            for (worker in workers) worker.interrupt()
-        }
-    }
-
-    fun tlsServer(entry: KeyStore.PrivateKeyEntry): TlsServer = TlsServer(entry)
-
-    /** Accepts peer certificates unconditionally (evidence is asserted separately). */
-    private class AcceptAllTrustManager : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-    }
-
-    /** Test-local mirror of the production namespace discipline, server-side. */
-    private class SingleAliasKeyManager(private val entry: KeyStore.PrivateKeyEntry) : X509ExtendedKeyManager() {
-        private val chain = entry.certificateChain.filterIsInstance<X509Certificate>().toTypedArray()
-
-        // TLS 1.2 ("EC") vs TLS 1.3 ("ecdsa_secp256r1_sha256") key types.
-        private fun accepts(keyType: String?): Boolean =
-            keyType != null &&
-                (keyType.equals("EC", ignoreCase = true) || keyType.contains("ecdsa", ignoreCase = true))
-
-        override fun getServerAliases(keyType: String, issuers: Array<out Principal>?): Array<String>? =
-            if (accepts(keyType)) arrayOf(ALIAS) else null
-
-        override fun chooseServerAlias(keyType: String?, issuers: Array<out Principal>?, socket: java.net.Socket?): String? =
-            if (accepts(keyType)) ALIAS else null
-
-        override fun chooseEngineServerAlias(keyType: String?, issuers: Array<out Principal>?, engine: javax.net.ssl.SSLEngine?): String? =
-            chooseServerAlias(keyType, issuers, null)
-
-        override fun getCertificateChain(alias: String): Array<X509Certificate> =
-            if (alias == ALIAS) chain else emptyArray()
-
-        override fun getPrivateKey(alias: String): PrivateKey? = if (alias == ALIAS) entry.privateKey else null
-
-        override fun getClientAliases(keyType: String, issuers: Array<out Principal>?): Array<String> = emptyArray()
-        override fun chooseClientAlias(
-            keyType: Array<out String>,
-            issuers: Array<out Principal>?,
-            socket: java.net.Socket?,
-        ): String? = null
-        override fun chooseEngineClientAlias(
-            keyType: Array<out String>,
-            issuers: Array<out Principal>?,
-            engine: javax.net.ssl.SSLEngine?,
-        ): String? = null
-
-        private companion object {
-            const val ALIAS = "tn188-test-server"
-        }
-    }
 }

@@ -216,10 +216,16 @@ class NetServiceFormatTest {
         )
         assertTrue(reply.toString(), reply.getBoolean("ok"))
         val sessionId = reply.getJSONObject("value").getString("sessionId")
-        val timedOut = sink.await(5_000) { it.optString("type") == "connect" && it.getString("sessionId") == sessionId }
-        assertNotNull(timedOut)
-        assertFalse(timedOut!!.getBoolean("ok"))
-        assertEquals("timeout", timedOut.getJSONObject("failure").getString("kind"))
+        val settled = sink.await(8_000) { it.optString("type") == "connect" && it.getString("sessionId") == sessionId }
+        assertNotNull("the connect must settle, never hang (events=${sink.events})", settled)
+        assertFalse(settled!!.getBoolean("ok"))
+        // The kind depends on what the host network does with TEST-NET-1:
+        // unroutable → the caller's timeout; datacenter-refused → link-lost.
+        // Either way the failure is structured and prompt.
+        assertTrue(
+            "unexpected kind ${settled.getJSONObject("failure")}",
+            settled.getJSONObject("failure").getString("kind") in setOf("timeout", "link-lost"),
+        )
     }
 
     @Test

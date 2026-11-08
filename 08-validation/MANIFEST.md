@@ -297,7 +297,7 @@ status: accepted
 | 06-issues/tn-185-android-skia-parity-harness.md | 3671d7b748728476d09461484e3fc37201ceb97b7c08635f8b47cd42e084dbfe |
 | 06-issues/tn-186-a11y-set-text.md | cb82474fd9621ed7b74fa2f38e7c8a8f9ff3b782a4ef1435979070add8741936 |
 | 06-issues/tn-187-environment-dispatch.md | 72920a7e140b3696f036138690798f30c137f854a1a08ed20d5c8643e4e4b25d |
-| 06-issues/tn-188-net-capability.md | ff35397671e96edb07cdf7406b43f1e2f30bc677459cfbfa8c95c456b1e66a5a |
+| 06-issues/tn-188-net-capability.md | 0f26f1e81b07e5aa46462f3a1968630c13a2e9b17588fc6a38cf74e0397ad3a2 |
 | 06-issues/tn-189-keys-capability.md | 776822fe77adc04f54bdadf6b70c0911063f2dd1bdfe7f0e834e141b42d2db89 |
 | 06-issues/tn-190-discovery-capability.md | 069cd6553a44f7a3aa1c7efe70770bdf6c2c1e0a551829fa32c0079f4674524c |
 | 06-issues/tn-191-tvremote-example.md | a592a06306ce43c509bc97875456859431423b0a0ae973d329899aa2935d1077 |

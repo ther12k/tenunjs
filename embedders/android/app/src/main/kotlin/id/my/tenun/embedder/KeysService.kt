@@ -122,7 +122,12 @@ class KeysService : NativeService {
                 KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
             )
                 .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256)
+                // DIGEST_SHA256 serves ordinary in-place signing; DIGEST_NONE
+                // is REQUIRED for TLS client authentication, where Conscrypt
+                // signs the pre-hashed CertificateVerify via NONEwithECDSA
+                // (without it every handshake fails "Keystore operation
+                // failed" — device-gate evidence, 2026-11-09).
+                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_NONE)
                 .setCertificateSubject(X500Principal("CN=${dnValue(alias)}"))
                 .setCertificateSerialNumber(serialFor(alias))
                 .build()
