@@ -215,8 +215,8 @@ export const PlayerScreen = defineScreen({
           {/* Status line — below the video slot. */}
           <Text variant="caption" color="textDim">
             {state.focus.sidebar
-              ? "↑↓ move · OK play · → settings"
-              : "↑↓ zap · OK channels · → settings"}
+              ? "↑↓ browse · OK watch · ← close · → settings"
+              : "↑↓ channels · → settings"}
           </Text>
         </Column>
       </Scaffold>

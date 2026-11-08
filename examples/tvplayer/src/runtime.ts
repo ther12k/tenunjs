@@ -46,14 +46,16 @@ type AnyScreen = ScreenDefinition<any, any>;
  *    "media" host service bridge; browser/tests: fail-closed stub or
  *    a fake). The runtime has NO player knowledge beyond the contract.
  *
- * D-pad model (TN-196 item 3):
- *   sidebar hidden:  UP/DOWN zap channel, OK opens the sidebar,
- *                    RIGHT opens Settings
- *   sidebar visible: UP/DOWN move the focus highlight, OK plays the
- *                    focused channel and closes the sidebar,
- *                    LEFT closes the sidebar, RIGHT opens Settings
- *   Settings:        LEFT returns to the player; everything else
- *                    belongs to the IME path
+ * D-pad model (TN-196 item 3, the YouTube-TV browsing shape):
+ *   UP/DOWN: opens the channel list AT the live channel when hidden
+ *            (playback never interrupts), then moves the focus ring
+ *   OK:      hidden — opens the list at the live channel; visible —
+ *            switches to the focused channel (the live channel just
+ *            closes the list) and closes it
+ *   LEFT:    closes the list
+ *   RIGHT:   opens Settings
+ *   Settings: LEFT returns to the player; everything else belongs to
+ *            the IME path
  * phase "down" acts; phase "up" never consumes (TN-194 sends both).
  *
  * Data flow is push-driven (TN-142), the polytron pattern: the runtime
@@ -196,40 +198,37 @@ export class TvplayerRuntime {
       return true;
     }
     if (count === 0) return false;
-    if (!this.sidebar) {
-      if (keyCode === KEY_DPAD_UP) {
-        this.zap(-1);
-        return true;
-      }
-      if (keyCode === KEY_DPAD_DOWN) {
-        this.zap(1);
-        return true;
-      }
-      if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-        this.focusIndex = this.currentIndex;
+    const step = keyCode === KEY_DPAD_UP ? -1 : keyCode === KEY_DPAD_DOWN ? 1 : 0;
+    if (step !== 0) {
+      if (!this.sidebar) {
+        // YouTube-style: the pad OPENS the list at the live channel —
+        // browsing happens over uninterrupted playback, never a blind
+        // zap. The first press only opens; further presses move.
         this.sidebar = true;
-        this.pushFocus();
-        return true;
+        this.focusIndex = this.currentIndex;
+      } else {
+        this.focusIndex = (this.focusIndex + step + count) % count;
       }
-      return false;
-    }
-    if (keyCode === KEY_DPAD_UP) {
-      this.focusIndex = (this.focusIndex - 1 + count) % count;
-      this.pushFocus();
-      return true;
-    }
-    if (keyCode === KEY_DPAD_DOWN) {
-      this.focusIndex = (this.focusIndex + 1) % count;
       this.pushFocus();
       return true;
     }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-      this.zapTo(this.focusIndex);
+      if (!this.sidebar) {
+        this.sidebar = true;
+        this.focusIndex = this.currentIndex;
+        this.pushFocus();
+        return true;
+      }
+      // OK on the live channel just closes the list; a different
+      // channel switches playback (the old stream runs until the new
+      // prepare lands — one player per host).
+      if (this.focusIndex !== this.currentIndex) this.zapTo(this.focusIndex);
       this.sidebar = false;
       this.pushFocus();
       return true;
     }
     if (keyCode === KEY_DPAD_LEFT) {
+      if (!this.sidebar) return false;
       this.sidebar = false;
       this.pushFocus();
       return true;
@@ -240,13 +239,6 @@ export class TvplayerRuntime {
   // ------------------------------------------------------------------
   // Media orchestration
   // ------------------------------------------------------------------
-
-  /** Steps the channel by delta (wrapping) and plays it. */
-  private zap(delta: number): void {
-    const count = this.channels.length;
-    if (count === 0) return;
-    this.zapTo((this.currentIndex + delta + count) % count);
-  }
 
   /** Plays channel [index]: prepare (releases any previous item — one
    *  player per host), then play. A refused prepare is FAIL-VISIBLE: it

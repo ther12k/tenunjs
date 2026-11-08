@@ -102,7 +102,53 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     expect(calls).toContain(`prepare:${MUX}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "↑↓ zap")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true); // hidden-list hint
+  });
+
+  test("YouTube browsing: while playing, DOWN opens the list AT the live channel without touching the player", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+
+    // Play Mux (focus -> 1, OK); the list closes over playing video.
+    runtime.keyPress(20, "down");
+    runtime.keyPress(23, "down");
+    await settle();
+    calls.length = 0;
+
+    // DOWN over playing video: opens the list AT the live channel —
+    // the first press only opens, browsing never interrupts playback.
+    expect(runtime.keyPress(20, "down")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true); // list visible
+    expect(calls).toHaveLength(0);
+    runtime.keyPress(20, "down"); // now it moves: 1 -> 0 (wrap)
+    await settle();
+    expect(calls).toHaveLength(0); // still browsing, still playing
+
+    // OK switches to the focused channel and closes the list.
+    expect(runtime.keyPress(23, "down")).toBe(true);
+    await settle();
+    expect(calls).toContain(`prepare:${TVRI}`);
+    expect(calls).toContain("play");
+    expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true);
+  });
+
+  test("OK on the LIVE channel just closes the list — no re-prepare; phase up never consumes", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+
+    // Boot: list open at TVRI (0). OK plays TVRI and closes.
+    expect(runtime.keyPress(23, "down")).toBe(true);
+    await settle();
+    calls.length = 0;
+
+    expect(runtime.keyPress(20, "up")).toBe(false); // phase "up": never acts
+
+    runtime.keyPress(20, "down"); // reopens AT the live channel (0)
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live -> close only
+    await settle();
+    expect(calls).toHaveLength(0); // no re-prepare of the live channel
   });
 
   test("zapping moves the visible now-playing line and the live-row highlight", async () => {
@@ -118,24 +164,6 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     // screen's stale index — the TV showed "TVRI" while Mux played.
     expect(textsInclude(sceneTexts(runtime), "Mux Test")).toBe(true);
     expect(textsInclude(sceneTexts(runtime), "TVRI Nasional")).toBe(false); // the old label must be gone
-  });
-
-  test("no sidebar: UP/DOWN zap directly, phase up never consumes", async () => {
-    const { media, calls } = fakeMedia();
-    const runtime = new TvplayerRuntime({ media });
-    await settle();
-
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK closes sidebar (focus = index 0)
-    calls.length = 0;
-
-    expect(runtime.keyPress(20, "up")).toBe(false); // phase "up": never acts
-    expect(runtime.keyPress(20, "down")).toBe(true); // DOWN: zap to Mux
-    await settle();
-    expect(calls).toContain(`prepare:${MUX}`);
-
-    expect(runtime.keyPress(19, "down")).toBe(true); // UP: wrap back to TVRI
-    await settle();
-    expect(calls).toContain(`prepare:${TVRI}`);
   });
 
   test("RIGHT opens Settings; LEFT (and BACK) return to the player", () => {
@@ -185,8 +213,8 @@ describe("TN-196 media orchestration", () => {
 
   test("zap against the unsupported stub fails VISIBLE — the placeholder carries the reason", async () => {
     const runtime = new TvplayerRuntime(); // unsupportedMedia
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK → close sidebar
-    expect(runtime.keyPress(20, "down")).toBe(true); // zap attempt
+    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> Mux
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: switch attempt
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
     const texts = sceneTexts(runtime);
