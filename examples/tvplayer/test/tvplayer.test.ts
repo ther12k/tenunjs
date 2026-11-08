@@ -94,7 +94,7 @@ describe("TN-196 tvplayer boot", () => {
     const runtime = new TvplayerRuntime(); // no media host: unsupported stub
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "NusaTV")).toBe(true); // status line
-    expect(textsInclude(texts, "TVRI Nasional")).toBe(true); // first card
+    expect(textsInclude(texts, "DW English")).toBe(true); // first card → hero preview
     expect(textsInclude(texts, "IDLE")).toBe(true); // the state pill
     expect(textsInclude(texts, "Live")).toBe(true); // rail items
     expect(textsInclude(texts, "Set")).toBe(true);
@@ -189,7 +189,7 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
     // Browse chrome intact throughout — no fullscreen, live caption moved.
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "NUSA")).toBe(true); // the rail's brand
-    expect(textsInclude(texts, "01 · TVRI Nasional")).toBe(true); // status caption
+    expect(textsInclude(texts, "01 · DW English")).toBe(true); // status caption
   });
 
   test("browsing the cards while playing never touches the player", async () => {
@@ -308,8 +308,8 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
 
     // Regression (device finding 2026-11-07): the caption bound to the
     // screen's stale index — the TV showed "TVRI" while Mux played.
-    expect(textsInclude(sceneTexts(runtime), "02 · TVRI DKI")).toBe(true);
-    expect(textsInclude(sceneTexts(runtime), "01 · TVRI Nasional")).toBe(false);
+    expect(textsInclude(sceneTexts(runtime), "02 · France 24 English")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "01 · DW English")).toBe(false);
   });
 
   test("Settings opens from the rail; BACK ownership stays plan-B2", () => {
@@ -402,7 +402,7 @@ describe("TN-196 media orchestration", () => {
 
     expect(textsInclude(sceneTexts(runtime), "Failed: playlist parsed to zero channels")).toBe(true);
     runtime.navigate("player");
-    expect(textsInclude(sceneTexts(runtime), "TVRI Nasional")).toBe(true); // starter intact
+    expect(textsInclude(sceneTexts(runtime), "DW English")).toBe(true); // starter intact
   });
 });
 
@@ -414,7 +414,7 @@ describe("TN-196 phone form factor", () => {
     expect(calls).toContain("rect:0,0,390,219");
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "NusaTV")).toBe(true); // the phone header brand
-    expect(textsInclude(texts, "TVRI DKI")).toBe(true); // channel rows render below the video
+    expect(textsInclude(texts, "DW English")).toBe(true); // the first row below the video
   });
 
   test("phone: tapping a channel row plays it through the real TAP dispatch", async () => {
@@ -439,7 +439,7 @@ describe("TN-196 phone form factor", () => {
 
     expect(calls).toContain(`prepare:${THIRD.url}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "TVRI Jawa Barat")).toBe(true); // now playing
+    expect(textsInclude(sceneTexts(runtime), "NASA TV Public")).toBe(true); // now playing
   });
 
   test("phone: the D-pad still works — DOWN moves focus, OK plays, RIGHT opens Settings", async () => {
