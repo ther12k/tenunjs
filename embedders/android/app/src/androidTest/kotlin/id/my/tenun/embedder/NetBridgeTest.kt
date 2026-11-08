@@ -249,10 +249,23 @@ internal class NetBridgeFixture : AutoCloseable {
         )
     }
 
-    private val engine = TenunEngine(
-        instrumentation.context.assets.open("net_fixture.js").use { it.readAllBytes() },
-        registry,
-    ).also { engineHolder.set(it) }
+    // Explicit copy loop: InputStream.readAllBytes() is API 33+, and the
+    // API-30 acceptance emulator's ART does not have it (CI-caught).
+    private val engine: TenunEngine
+
+    init {
+        val bundle = instrumentation.context.assets.open("net_fixture.js").use { input ->
+            val buffer = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(8192)
+            while (true) {
+                val read = input.read(chunk)
+                if (read < 0) break
+                buffer.write(chunk, 0, read)
+            }
+            buffer.toByteArray()
+        }
+        engine = TenunEngine(bundle, registry).also { engineHolder.set(it) }
+    }
 
     fun dispatch(action: String, payload: JSONObject = JSONObject()): JSONObject {
         val json = engine.dispatchActionResult(action, payload.toString())
