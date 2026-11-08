@@ -7,18 +7,20 @@ import { defineTheme } from "@tenunjs/widgets";
  */
 export const tvTheme = defineTheme({
   colors: {
-    background: "#101014",
-    surface: "#16161D",
-    surfaceRaised: "#1C1C26",
-    accent: "#00ADB5",
-    primaryContainer: "#00ADB5",
-    onPrimaryContainer: "#101014",
-    secondaryContainer: "#1F2A2C",
-    onSecondaryContainer: "#7FD9DD",
-    outline: "#2A2A35",
-    outlineVariant: "#202028",
-    text: "#F2F2F7",
-    textDim: "#8E8E99",
+    // The IPTV reference palette: near-black canvas, one vivid blue
+    // accent, white text on focused (blue) surfaces.
+    background: "#0B0B0F",
+    surface: "#111116",
+    surfaceRaised: "#16161D",
+    accent: "#1E6FEB",
+    primaryContainer: "#1E6FEB",
+    onPrimaryContainer: "#FFFFFF",
+    secondaryContainer: "#1A2333",
+    onSecondaryContainer: "#8FB8F5",
+    outline: "#232330",
+    outlineVariant: "#1B1B24",
+    text: "#F4F5F7",
+    textDim: "#8A8D98",
     danger: "#E5484D",
     success: "#46A758",
     warning: "#CCA700",
@@ -40,7 +42,7 @@ export const tvTheme = defineTheme({
  * tiles; the group's hue is the identity).
  */
 export const GROUP_COLORS: Readonly<Record<string, string>> = {
-  TVRI: "#00ADB5",
+  TVRI: "#1E6FEB",
   Internasional: "#E4572E",
   Sains: "#4D96FF",
   Olahraga: "#6BCB77",

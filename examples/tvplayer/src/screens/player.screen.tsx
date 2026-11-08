@@ -1,9 +1,12 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
 import { Column, Container, GestureDetector, Row, Scaffold, SizedBox, Text } from "@tenunjs/widgets";
 import {
+  CARD_H,
+  CARD_W,
+  CARDS_VISIBLE,
+  DESIGN_HEIGHT,
   FULLSCREEN_RECT,
-  GAP_SM,
-  SIDEBAR_W,
+  RAIL_W,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
   type FocusState,
@@ -15,18 +18,20 @@ import type { MediaStatus } from "@tenunjs/platform";
 import type { PlaylistEntry } from "../playlist";
 
 /**
- * TN-196 player screen: group chips + channel carousel + video slot.
+ * TN-196 player screen — the IPTV reference shape: a narrow icon RAIL
+ * on the left, the VIDEO as a huge hero right of it, the group TABS
+ * and a horizontal row of channel CARDS below (the list stays visible;
+ * only its arrangement changed from the BitTV-style sidebar).
  *
- * Geometry is DERIVED (layout.ts): the sidebar column is ALWAYS laid
- * out (an empty box while hidden), so the video slot never moves and
- * VIDEO_RECT — what the runtime asserts via media.setRect and the
- * native TextureView occupies — is exactly the slot the scene draws
- * around. ADR-0028 ceiling: one static rect.
+ * Geometry is DERIVED (layout.ts): VIDEO_RECT — what the runtime
+ * asserts via media.setRect and the native TextureView occupies — is
+ * exactly the hero slot the scene draws around. ADR-0028 ceiling: one
+ * static rect (browse hero ↔ fullscreen pair on navigation).
  *
- * Grouping (the reference UI's shape): chips [All + groups] filter the
- * list; switching groups NEVER interrupts playback (the runtime tracks
- * the playing channel by url, not by filtered index). The scene has no
- * image op in v1, so channel logos become GROUP-COLORED number tiles.
+ * Grouping: tabs [All + groups] filter the cards; switching groups
+ * NEVER interrupts playback (the runtime tracks the playing channel by
+ * url, not by filtered index). The scene has no image op in v1, so
+ * channel logos become GROUP-COLORED number tiles.
  *
  * All state arrives via push channels (the runtime owns reality):
  *   "form"/"channels" (visible list + groups + active)/"channel"/"focus"/"media"
@@ -68,19 +73,69 @@ function channelNo(index: number): string {
 }
 
 /**
- * How many channel rows fit the sidebar column without host scrolling:
  * D-pad focus cannot scroll a host-owned scroll region (no
- * ensure-visible API in v1), so long lists render as a WINDOWED
- * CAROUSEL — the classic TV pattern. The window slides with focus and
- * keeps each row's TRUE channel number.
+ * ensure-visible API in v1), so long lists render as WINDOWED CAROUSELS
+ * — the classic TV pattern; the window slides with the cursor and keeps
+ * TRUE channel numbers. The TV cards run horizontally (6 visible), the
+ * phone list keeps its vertical 5-row window.
  */
-const CHANNEL_WINDOW = 5;
+const PHONE_ROWS = 5;
+
+/** The left icon rail: brand tile + nav items (the reference's left
+ *  edge). Items are [Live, Settings]; focus comes from the runtime's
+ *  rail zone (focus.index 0/1). Glyphs are text — the scene has no
+ *  image op in v1. */
+function Rail(props: { focusedItem: number | null }) {
+  const items: Array<{ glyph: string; label: string }> = [
+    { glyph: "▶", label: "Live" },
+    { glyph: "≡", label: "Set" },
+  ];
+  return (
+    <Container width={RAIL_W} height={DESIGN_HEIGHT} color="surface">
+      <Column align="center" padding="sm" gap="md">
+        {/* Brand tile */}
+        <Container color="accent" radius={10} width={44} height={44}>
+          <Column align="center" justify="center">
+            <Text variant="label" color="onPrimaryContainer">
+              TV
+            </Text>
+          </Column>
+        </Container>
+        <Text variant="caption" color="textDim">
+          TENUN
+        </Text>
+        {items.map((item, i) => {
+          const focused = props.focusedItem === i;
+          return (
+            <Column key={item.label} align="center" gap="sm">
+              <Container
+                color={focused ? "accent" : "surfaceRaised"}
+                radius={10}
+                width={44}
+                height={44}
+              >
+                <Column align="center" justify="center">
+                  <Text variant="label" color={focused ? "onPrimaryContainer" : "textDim"}>
+                    {item.glyph}
+                  </Text>
+                </Column>
+              </Container>
+              <Text variant="caption" color={focused ? "text" : "textDim"}>
+                {item.label}
+              </Text>
+            </Column>
+          );
+        })}
+      </Column>
+    </Container>
+  );
+}
 
 /**
- * The group chips: [All, …groups]; focus/active styling per chip.
+ * The group tabs: [All, …groups]; focus/active styling per chip.
  * `perRow` wraps long chip sets (the scene has no flex-wrap in v1, so
- * the chunks are explicit) — the TV form spans one full-width row of
- * tabs under the top bar; the phone form wraps at two per row.
+ * the chunks are explicit) — the TV form spans one full-width row under
+ * the hero; the phone form wraps at two per row.
  */
 function GroupChips(props: {
   groups: readonly string[];
@@ -136,7 +191,7 @@ function GroupChips(props: {
   );
 }
 
-/** One channel row: group-colored number tile + title. */
+/** One phone-list row: group-colored number tile + title. */
 function ChannelRow(props: {
   channel: PlaylistEntry;
   index: number;
@@ -155,7 +210,7 @@ function ChannelRow(props: {
       <Row gap="md" align="center">
         <Container color={groupColor(channel.group)} radius={8} width={40} height={40}>
           <Column align="center" justify="center">
-            <Text variant="label" color="#101014">
+            <Text variant="label" color="#FFFFFF">
               {channelNo(index)}
             </Text>
           </Column>
@@ -173,12 +228,53 @@ function ChannelRow(props: {
   );
 }
 
+/** One TV card (the reference's poster-card shape): a group-colored
+ *  number tile on top, the title below — CARD_W×CARD_H. */
+function ChannelCard(props: {
+  channel: PlaylistEntry;
+  index: number;
+  focused: boolean;
+  live: boolean;
+}) {
+  const { channel, index, focused, live } = props;
+  return (
+    <Container
+      color={focused ? "accent" : "surface"}
+      radius={12}
+      width={CARD_W}
+      height={CARD_H}
+      borderColor={live && !focused ? "accent" : undefined}
+      borderWidth={live && !focused ? 2 : 0}
+    >
+      <Column>
+        <Container color={groupColor(channel.group)} radius={12} width={CARD_W} height={64}>
+          <Column align="center" justify="center">
+            <Text variant="title" color="#FFFFFF">
+              {channelNo(index)}
+            </Text>
+          </Column>
+        </Container>
+        <Column padding="sm">
+          <Text
+            variant="caption"
+            color={focused ? "onPrimaryContainer" : "text"}
+            maxLines={1}
+            ellipsis
+          >
+            {channel.title}
+          </Text>
+        </Column>
+      </Column>
+    </Container>
+  );
+}
+
 /**
  * The idle/error placeholder painted inside the video slot. Idle, it
- * previews the FOCUSED row ("NN · title") so the slot reads as the
+ * previews the CARD cursor ("NN · title") so the slot reads as the
  * about-to-play channel, not a dead box; `preview` is that caption
  * (null on an empty list). Height is a prop — the same placeholder
- * paints the browse slot, the phone hero, and the fullscreen rect.
+ * paints the hero, the phone slot, and the fullscreen rect.
  */
 function VideoPlaceholder(props: {
   media: MediaStatus | null;
@@ -229,7 +325,7 @@ export const PlayerScreen = defineScreen({
     activeGroup: null,
     index: 0,
     now: null,
-    focus: { index: 0, zone: "rows", fullscreen: false },
+    focus: { index: 0, cardIndex: 0, zone: "cards", fullscreen: false },
     media: null,
   }),
   actions: {
@@ -251,7 +347,7 @@ export const PlayerScreen = defineScreen({
     channel: defineAction<PlayerState, NowPlaying>({
       run({ input, state }) {
         state.now = input;
-        // The now-playing line and the live-row highlight read
+        // The now-playing caption and the live-card highlight read
         // state.index; the "channel" push is what moves it on a zap
         // (the "channels" push only flows on boot / playlist load).
         state.index = input.index;
@@ -287,16 +383,25 @@ export const PlayerScreen = defineScreen({
         : null;
     const pill = stateLabel(state.media);
     const count = state.channels.length;
-    // The carousel window: slide with focus, clamp at the list's ends,
-    // keep true channel numbers.
-    const winStart = Math.max(0, Math.min(state.focus.index - 2, count - CHANNEL_WINDOW));
-    const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
-    const onChips = state.focus.zone === "chips";
-    const focusedChip = onChips ? state.focus.index : null;
-    // The focused row's caption — the idle video slot previews it, so
+    const zone = state.focus.zone;
+    // The CARD cursor (kept by the runtime even while the ring is on
+    // the tabs or the rail) drives the windows and the hero preview.
+    const cardIdx = state.focus.cardIndex;
+    const tvWinStart = Math.max(0, Math.min(cardIdx - 2, count - CARDS_VISIBLE));
+    const cardWindow = state.channels.slice(tvWinStart, tvWinStart + CARDS_VISIBLE);
+    const phoneWinStart = Math.max(0, Math.min(cardIdx - 2, count - PHONE_ROWS));
+    const phoneWindow = state.channels.slice(phoneWinStart, phoneWinStart + PHONE_ROWS);
+    // The focused card's caption — the idle video slot previews it, so
     // the placeholder reads as the about-to-play channel.
-    const focused = count > 0 ? state.channels[state.focus.index] : undefined;
-    const previewTitle = focused ? `${channelNo(state.focus.index)} · ${focused.title}` : null;
+    const focusedChannel = count > 0 ? state.channels[cardIdx] : undefined;
+    const previewTitle = focusedChannel
+      ? `${channelNo(cardIdx)} · ${focusedChannel.title}`
+      : null;
+    const hints: Record<typeof zone, string> = {
+      rail: "↑↓ rail · OK open · → tabs",
+      tabs: "←→ group · ↓ cards · ↑ rail",
+      cards: "←→ channels · OK watch · ↑ tabs",
+    };
 
     // Fullscreen playback: the video overlay covers the screen — the
     // scene renders nothing while frames are on air (any scene op
@@ -361,7 +466,7 @@ export const PlayerScreen = defineScreen({
               <GroupChips
                 groups={state.groups}
                 activeGroup={state.activeGroup}
-                focusedChip={focusedChip}
+                focusedChip={zone === "tabs" ? state.focus.index : null}
                 perRow={2}
                 onPick={(g) => actions.setGroup(g)}
               />
@@ -374,14 +479,14 @@ export const PlayerScreen = defineScreen({
                 </Text>
               )}
               <Column gap="sm">
-                {window_.map((channel, k) => {
-                  const i = winStart + k;
+                {phoneWindow.map((channel, k) => {
+                  const i = phoneWinStart + k;
                   return (
                     <GestureDetector key={channel.url} onTap={() => actions.select(i)}>
                       <ChannelRow
                         channel={channel}
                         index={i}
-                        focused={i === state.focus.index}
+                        focused={i === cardIdx}
                         live={liveVisible !== null && liveVisible !== undefined && channel.url === liveVisible.url}
                       />
                     </GestureDetector>
@@ -396,69 +501,16 @@ export const PlayerScreen = defineScreen({
 
     return (
       <Scaffold>
-        <Column padding="lg" gap="md">
-          {/* Top bar — brand + accent underline left, state + now
-              playing right. */}
-          <Row gap="lg" align="center" justify="between">
-            <Column gap="sm">
-              <Text variant="title" color="text">
-                TENUN TV
-              </Text>
-              <Container color="accent" radius={2} width={128} height={4} />
-            </Column>
-            <Column align="end" gap="sm">
-              <Text variant="label" color={pill.color}>
-                {pill.text}
-              </Text>
-              {state.now && (
-                <Text variant="caption" color="textDim" maxLines={1} ellipsis>
-                  {`${channelNo(state.now.index)} · ${state.now.title}`}
-                </Text>
-              )}
-            </Column>
-          </Row>
-          {/* The group tabs — full width under the top bar (the
-              reference UI's category row); switching groups NEVER
-              interrupts playback. */}
-          <GroupChips
-            groups={state.groups}
-            activeGroup={state.activeGroup}
-            focusedChip={focusedChip}
-          />
-          <Row gap={GAP_SM}>
-            {/* The channel list column — ALWAYS visible beside the
-                video (the reference shape); VIDEO_RECT derives from it
-                so the slot never moves. */}
-            <SizedBox width={SIDEBAR_W} height={VIDEO_RECT.h}>
-              <Column gap="sm">
-                {count === 0 && (
-                  <Text variant="body" color="textDim">
-                    Playlist empty — press → for Settings
-                  </Text>
-                )}
-                {count > 0 && (
-                  <Column gap="sm">
-                    {window_.map((channel, k) => (
-                      <ChannelRow
-                        key={channel.url}
-                        channel={channel}
-                        index={winStart + k}
-                        focused={winStart + k === state.focus.index}
-                        live={
-                          liveVisible !== null &&
-                          liveVisible !== undefined &&
-                          channel.url === liveVisible.url
-                        }
-                      />
-                    ))}
-                  </Column>
-                )}
-              </Column>
-            </SizedBox>
-            {/* The video slot — exactly VIDEO_RECT. On device the native
-                TextureView composites here; the placeholder shows
-                through whenever no frames render. */}
-            <SizedBox width={VIDEO_RECT.w}>
+        <Row>
+          {/* The icon rail — brand tile + Live/Set (the reference's
+              left edge); focusable via the runtime's rail zone. */}
+          <Rail focusedItem={zone === "rail" ? state.focus.index : null} />
+          {/* The content column: hero → tabs → cards → status. */}
+          <Column padding="md" gap="sm">
+            {/* The video hero — exactly VIDEO_RECT. On device the
+                native TextureView composites here; the placeholder
+                shows through whenever no frames render. */}
+            <SizedBox width={VIDEO_RECT.w} height={VIDEO_RECT.h}>
               <VideoPlaceholder
                 media={state.media}
                 now={state.now}
@@ -466,17 +518,63 @@ export const PlayerScreen = defineScreen({
                 preview={previewTitle}
               />
             </SizedBox>
-          </Row>
-          {/* Status line — count + group left, key hints right. */}
-          <Row justify="between">
-            <Text variant="caption" color="textDim">
-              {`${count} CHANNEL${count === 1 ? "" : "S"} · ${state.activeGroup ?? "Semua"}`}
-            </Text>
-            <Text variant="caption" color="textDim">
-              {onChips ? "←→ group · ↓ channels" : "↑↓ browse · OK watch · ↑ chips · → settings"}
-            </Text>
-          </Row>
-        </Column>
+            {/* The group tabs — count on the right (the active group
+                is already the highlighted chip); switching groups NEVER
+                interrupts playback. */}
+            <Row justify="between" align="center">
+              <GroupChips
+                groups={state.groups}
+                activeGroup={state.activeGroup}
+                focusedChip={zone === "tabs" ? state.focus.index : null}
+              />
+              {/* Bounded box: the row would otherwise squeeze the
+                  caption to a word-wrapped sliver. */}
+              <SizedBox width={150}>
+                <Text variant="caption" color="textDim" maxLines={1} ellipsis>
+                  {`${count} CHANNEL${count === 1 ? "" : "S"}`}
+                </Text>
+              </SizedBox>
+            </Row>
+            {/* The horizontal channel cards — ALWAYS visible under the
+                hero; the window slides with the card cursor. */}
+            {count === 0 ? (
+              <Text variant="body" color="textDim">
+                Playlist empty — rail → Set to load one
+              </Text>
+            ) : (
+              <Row gap="sm">
+                {cardWindow.map((channel, k) => {
+                  const i = tvWinStart + k;
+                  return (
+                    <ChannelCard
+                      key={channel.url}
+                      channel={channel}
+                      index={i}
+                      focused={zone === "cards" && i === state.focus.index}
+                      live={
+                        liveVisible !== null &&
+                        liveVisible !== undefined &&
+                        channel.url === liveVisible.url
+                      }
+                    />
+                  );
+                })}
+              </Row>
+            )}
+            {/* Status line — state + now playing left (the full width
+                keeps long titles readable), key hints right. */}
+            <Row justify="between">
+              <Text variant="caption" color={pill.color} maxLines={1} ellipsis>
+                {state.now
+                  ? `${pill.text} · ${channelNo(state.now.index)} · ${state.now.title}`
+                  : `TENUN TV · ${pill.text}`}
+              </Text>
+              <Text variant="caption" color="textDim">
+                {hints[zone]}
+              </Text>
+            </Row>
+          </Column>
+        </Row>
       </Scaffold>
     );
   },

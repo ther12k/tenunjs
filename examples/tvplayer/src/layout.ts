@@ -15,11 +15,6 @@ export const DESIGN_WIDTH = 960;
  * asserts via media.setRect and the TextureView occupies on device.
  */
 export const PAD_LG = 24;
-/** The reference UI's proportions: a compact list rail, the video as
- *  the hero. 256 leaves titles one ellipsized line (maxLines:1) and
- *  gives the video slot 648 of the 960 design units (~16:9 at 648×330).
- */
-export const SIDEBAR_W = 256;
 export const GAP_SM = 8;
 export const GAP_MD = 16;
 
@@ -27,17 +22,22 @@ export const GAP_MD = 16;
 export const DESIGN_HEIGHT = 540;
 
 /**
- * The TV browse layout stacks, top to bottom: top bar → GROUP CHIPS
- * (full width, the reference UI's category tabs) → the content row
- * (channel list | video slot) → the status line. Every block's height
- * is fixed and DERIVED here so VIDEO_RECT — the box the runtime asserts
- * via media.setRect and the native TextureView occupies — is exactly
- * the slot the scene draws around (the 2026-11-07 device finding: a
- * hand-written rect overlapped the sidebar's edge by 16px).
+ * TV browse layout — the IPTV reference shape (the 10-screen dark
+ * project): a narrow icon RAIL on the left, the VIDEO as a huge hero
+ * right of it, then the group TABS and a HORIZONTAL row of channel
+ * cards below (the list stays visible; only its arrangement changed).
+ * Every block's geometry is DERIVED here so VIDEO_RECT — the box the
+ * runtime asserts via media.setRect and the native TextureView
+ * occupies — is exactly the slot the scene draws around (the
+ * 2026-11-07 device finding: a hand-written rect overlapped by 16px).
  */
-export const BRAND_H = 50; // title line 38 + gap-sm 8 + underline 4
-export const CHIPS_H = 40; // caption line 24 + chip padding-sm ×2
-export const STATUS_H = 24; // caption line
+export const RAIL_W = 72;
+export const PAD_SM = 16; // the reference's outer breathing room
+
+/** The video hero: full width right of the rail, 300 tall (the
+ *  reference's dominant backdrop block; the player letterboxes). */
+export const HERO_W = DESIGN_WIDTH - RAIL_W - 2 * PAD_SM; // 856
+export const HERO_H = 300;
 
 /** The video region in design units. ADR-0028 documented ceiling: ONE
  *  static rect — the scene composes AROUND the video (no scene-graph
@@ -45,11 +45,17 @@ export const STATUS_H = 24; // caption line
  *  idle/error placeholder INSIDE the slot; the native overlay covers it
  *  whenever frames render. */
 export const VIDEO_RECT = {
-  x: PAD_LG + SIDEBAR_W + GAP_SM,
-  y: PAD_LG + BRAND_H + GAP_MD + CHIPS_H + GAP_MD,
-  w: DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG,
-  h: DESIGN_HEIGHT - (PAD_LG + BRAND_H + GAP_MD + CHIPS_H + GAP_MD) - GAP_MD - STATUS_H - PAD_LG,
+  x: RAIL_W + PAD_SM,
+  y: PAD_SM,
+  w: HERO_W,
+  h: HERO_H,
 } as const;
+
+/** Group tabs strip and the horizontal channel cards below it. */
+export const TABS_H = 40; // caption line 24 + chip padding-sm ×2
+export const CARD_W = 136;
+export const CARD_H = 112; // number tile 64 + gap 8 + title 24 + padding 16
+export const CARDS_VISIBLE = 6; // 6×136 + 5×8 = 856 = HERO_W (exact fit)
 
 /**
  * Phone form factor (the polytron design width): the video is the hero
@@ -89,10 +95,17 @@ export const KEYCODE_CHANNEL_UP = 166;
 export const KEYCODE_CHANNEL_DOWN = 167;
 
 export interface FocusState {
+  /** The cursor WITHIN the current zone: a rail item, a tab chip, or a
+   *  channel card — whichever `zone` says. */
   readonly index: number;
-  /** Which zone the D-pad ring is on: the group chips or the channel
-   *  rows (TV form; the phone form taps chips directly). */
-  readonly zone: "rows" | "chips";
+  /** The channel-card cursor regardless of zone (the card window and
+   *  the hero's preview caption track it even while the ring is on the
+   *  tabs or the rail). */
+  readonly cardIndex: number;
+  /** Which zone the D-pad ring is on (TV form): the left icon rail,
+   *  the group tabs, or the horizontal channel cards. The phone form
+   *  taps chips/rows directly and keeps "cards" for keyboard parity. */
+  readonly zone: "rail" | "tabs" | "cards";
   /** TV form: fullscreen playback — the video covers the screen and
    *  the scene renders nothing; any key returns to browse. */
   readonly fullscreen: boolean;

@@ -29,17 +29,21 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 // The shared layout/input constants live in the leaf module (the graph
 // gate forbids cycles); re-exported here for the public surface.
 export {
-  BRAND_H,
-  CHIPS_H,
+  CARD_H,
+  CARD_W,
+  CARDS_VISIBLE,
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
   FULLSCREEN_RECT,
   GAP_MD,
   GAP_SM,
+  HERO_H,
+  HERO_W,
   PAD_LG,
-  SIDEBAR_W,
-  STATUS_H,
+  PAD_SM,
+  RAIL_W,
+  TABS_H,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
   KEY_DPAD_UP,
@@ -66,16 +70,16 @@ type AnyScreen = ScreenDefinition<any, any>;
  *    "media" host service bridge; browser/tests: fail-closed stub or
  *    a fake). The runtime has NO player knowledge beyond the contract.
  *
- * D-pad model (TN-196 item 3, the YouTube-TV browsing shape):
- *   UP/DOWN: opens the channel list AT the live channel when hidden
- *            (playback never interrupts), then moves the focus ring
- *   OK:      hidden — opens the list at the live channel; visible —
- *            switches to the focused channel (the live channel just
- *            closes the list) and closes it
- *   LEFT:    closes the list
- *   RIGHT:   opens Settings
- *   Settings: LEFT returns to the player; everything else belongs to
- *            the IME path
+ * D-pad model (TN-196 item 3; the IPTV reference layout):
+ *   cards:   LEFT/RIGHT step the channel cards (clamped at the ends);
+ *            UP to the tabs; OK plays the focused card FULLSCREEN
+ *   tabs:    LEFT/RIGHT cycle the group filter (never touches
+ *            playback); DOWN to the cards; UP to the rail
+ *   rail:    UP/DOWN between [Live, Settings]; OK opens; RIGHT to tabs
+ *   CH+/CH-: zap prev/next from any zone (view stays put)
+ *   fullscreen: UP/DOWN/CH zap and STAY fullscreen; any other key
+ *            returns to browse with playback continuing
+ *   phone:   UP/DOWN move the list cursor, OK plays; RIGHT → Settings
  * phase "down" acts; phase "up" never consumes (TN-194 sends both).
  *
  * Data flow is push-driven (TN-142), the polytron pattern: the runtime
@@ -105,7 +109,11 @@ export class TvplayerRuntime {
    *  array indexes are not — a group switch never interrupts playback). */
   private currentUrl: string | null = null;
   private focusIndex = 0;
-  private focusZone: "rows" | "chips" = "rows";
+  /** The channel-card cursor — tracked independently of the ring's
+   *  zone so the card window and the hero preview hold still while the
+   *  ring visits the tabs or the rail. */
+  private cardIndex = 0;
+  private focusZone: "rail" | "tabs" | "cards" = "cards";
   /** TV form: fullscreen playback (browse ↔ player, the YouTube flow). */
   private fullscreen = false;
   private status: MediaStatus = { state: "idle" };
@@ -130,10 +138,11 @@ export class TvplayerRuntime {
   }
 
   /**
-   * @param formFactor "tv" (default — 960-unit 10-foot layout, sidebar
-   *        carousel beside the video) or "phone" (390-unit layout: video
-   *        hero on top, the channel list below as tappable rows). The
-   *        video rect is static per session either way (ADR-0028).
+   * @param formFactor "tv" (default — 960-unit 10-foot layout: icon
+   *        rail, video hero, tabs + horizontal channel cards) or
+   *        "phone" (390-unit layout: video hero on top, the channel
+   *        list below as tappable rows). The video rect is static per
+   *        session either way (ADR-0028).
    */
   constructor(
     host: TvplayerHostServices & { designWidth?: number; formFactor?: FormFactor } = {}
@@ -273,18 +282,66 @@ export class TvplayerRuntime {
       return true;
     }
 
+    // Phone form: the list is vertical — UP/DOWN move the cursor
+    // (wrapping), OK plays; RIGHT opens Settings. (Phone chips are
+    // tapped directly.)
+    if (this.form === "phone") {
+      const count = this.vis.length;
+      if (keyCode === KEY_DPAD_RIGHT) {
+        this.navigate("settings");
+        return true;
+      }
+      if (keyCode === KEY_DPAD_DOWN && count > 0) {
+        this.setCardIndex((this.cardIndex + 1) % count);
+        return true;
+      }
+      if (keyCode === KEY_DPAD_UP && count > 0) {
+        this.setCardIndex((this.cardIndex - 1 + count) % count);
+        return true;
+      }
+      if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
+        if (count === 0) return false;
+        this.select(this.cardIndex);
+        return true;
+      }
+      return false;
+    }
+
     // CH+/CH- zap from the browse zones too: playback switches, the
-    // view stays put (the live-row highlight follows; focus follows it).
+    // view stays put (the live-card highlight follows; the card cursor
+    // follows it).
     if (keyCode === KEYCODE_CHANNEL_UP || keyCode === KEYCODE_CHANNEL_DOWN) {
       this.zapStep(keyCode === KEYCODE_CHANNEL_UP ? 1 : -1);
       return true;
     }
 
-    // The reference shape: the channel list is ALWAYS visible beside
-    // the video — there is no open/close model. The chips zone owns
-    // LEFT/RIGHT (group cycling); in the rows zone RIGHT opens
-    // Settings.
-    if (this.focusZone === "chips") {
+    // The icon rail: UP/DOWN between [Live, Settings]; OK opens;
+    // RIGHT returns to the tabs.
+    if (this.focusZone === "rail") {
+      if (keyCode === KEY_DPAD_UP) {
+        this.focusIndex = Math.max(0, this.focusIndex - 1);
+        this.pushFocus();
+        return true;
+      }
+      if (keyCode === KEY_DPAD_DOWN) {
+        this.focusIndex = Math.min(1, this.focusIndex + 1);
+        this.pushFocus();
+        return true;
+      }
+      if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
+        if (this.focusIndex === 1) this.navigate("settings");
+        return true; // Live is already the open route
+      }
+      if (keyCode === KEY_DPAD_RIGHT) {
+        this.toZone("tabs");
+        return true;
+      }
+      return false;
+    }
+
+    // The group tabs: LEFT/RIGHT cycle the filter (never touches
+    // playback); DOWN to the cards; UP to the rail.
+    if (this.focusZone === "tabs") {
       if (keyCode === KEY_DPAD_LEFT) {
         this.cycleGroup(-1);
         return true;
@@ -294,56 +351,69 @@ export class TvplayerRuntime {
         return true;
       }
       if (keyCode === KEY_DPAD_DOWN || keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-        this.focusZone = "rows";
-        this.focusIndex = 0;
-        this.pushFocus();
+        this.toZone("cards");
         return true;
       }
-      return false; // UP stays on the chips (nothing above)
-    }
-
-    if (keyCode === KEY_DPAD_RIGHT) {
-      this.navigate("settings");
-      return true;
-    }
-
-    // Rows zone. Browsing never touches playback: OK switches only
-    // when the focused row differs from the live channel.
-    const count = this.vis.length;
-    if (keyCode === KEY_DPAD_UP) {
-      if (this.focusIndex <= 0) {
-        // UP off the top: land on the group chips at the active group.
-        this.focusZone = "chips";
-        this.focusIndex = this.chipPosition();
-      } else {
-        this.focusIndex -= 1;
+      if (keyCode === KEY_DPAD_UP) {
+        this.toZone("rail");
+        return true;
       }
-      this.pushFocus();
+      return false;
+    }
+
+    // The channel cards: LEFT/RIGHT step (clamped — the reference's
+    // rows stop at their ends); UP to the tabs; OK watches fullscreen.
+    const count = this.vis.length;
+    if (keyCode === KEY_DPAD_LEFT && count > 0) {
+      this.setCardIndex(Math.max(0, this.cardIndex - 1));
       return true;
     }
-    if (count > 0 && keyCode === KEY_DPAD_DOWN) {
-      this.focusIndex = (this.focusIndex + 1) % count;
-      this.pushFocus();
+    if (keyCode === KEY_DPAD_RIGHT && count > 0) {
+      this.setCardIndex(Math.min(count - 1, this.cardIndex + 1));
+      return true;
+    }
+    if (keyCode === KEY_DPAD_UP) {
+      this.toZone("tabs");
       return true;
     }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
       if (count === 0) return false;
-      // OK: the YouTube flow's first half — selecting a channel plays
-      // it FULLSCREEN (edge-to-edge video, empty scene). A different
-      // channel switches playback first; the live channel enters
-      // fullscreen without a re-prepare.
-      if (this.focusIndex !== this.currentIndex) this.zapTo(this.focusIndex);
+      // OK: the reference flow — the focused card plays FULLSCREEN
+      // (edge-to-edge video). A different channel switches playback
+      // first; the live card enters fullscreen without a re-prepare.
+      if (this.cardIndex !== this.currentIndex) this.zapTo(this.cardIndex);
       this.enterFullscreen();
       return true;
     }
     return false;
   }
 
+  /** Moves the ring to a zone; each zone gets its natural cursor
+   *  (cards restore their cursor, tabs the active chip, rail Live). */
+  private toZone(zone: "rail" | "tabs" | "cards"): void {
+    if (zone === "cards") {
+      this.focusIndex = this.cardIndex;
+    } else if (zone === "tabs") {
+      this.focusIndex = this.chipPosition();
+    } else {
+      this.focusIndex = 0; // Live
+    }
+    this.focusZone = zone;
+    this.pushFocus();
+  }
+
+  /** Sets the card cursor; the ring rides along (cards zone). */
+  private setCardIndex(index: number): void {
+    this.cardIndex = index;
+    this.focusIndex = index;
+    this.pushFocus();
+  }
+
   /** Expands the video edge-to-edge; the scene renders nothing. */
   private enterFullscreen(): void {
     if (this.form !== "tv") return; // phone keeps its video-hero layout
     this.fullscreen = true;
-    this.focusZone = "rows";
+    this.focusZone = "cards";
     this.ensureVideoRect();
     this.pushFocus();
   }
@@ -352,10 +422,9 @@ export class TvplayerRuntime {
   exitFullscreen(): void {
     if (!this.fullscreen) return;
     this.fullscreen = false;
-    this.focusZone = "rows";
-    this.focusIndex = Math.max(0, this.currentIndex);
+    this.focusZone = "cards";
+    this.setCardIndex(Math.max(0, this.currentIndex));
     this.ensureVideoRect();
-    this.pushFocus();
   }
 
   /** Index of the active group in the chip row [All, …groups]. */
@@ -382,11 +451,13 @@ export class TvplayerRuntime {
     this.setGroupAt((this.chipPosition() + dir + this.groups().length + 1) % (this.groups().length + 1));
   }
 
-  /** Sets the group filter by chip index (0 = All). */
+  /** Sets the group filter by chip index (0 = All); the ring stays on
+   *  the tabs, the card cursor resets to the filtered top. */
   private setGroupAt(chip: number): void {
     this.activeGroup = chip === 0 ? null : (this.groups()[chip - 1] ?? null);
-    this.focusIndex = 0;
-    this.focusZone = "chips";
+    this.cardIndex = 0;
+    this.focusIndex = chip;
+    this.focusZone = "tabs";
     this.pushChannels();
     this.pushFocus();
   }
@@ -394,8 +465,9 @@ export class TvplayerRuntime {
   /** Group selection from the UI (phone chip taps / screen action). */
   setGroup(group: string | null): void {
     this.activeGroup = group === null || group === "" ? null : group;
+    this.cardIndex = 0;
     this.focusIndex = 0;
-    this.focusZone = "rows";
+    this.focusZone = "cards";
     this.pushChannels();
     this.pushFocus();
   }
@@ -412,6 +484,7 @@ export class TvplayerRuntime {
     const channel = this.vis[index];
     if (!channel) return;
     this.currentUrl = channel.url;
+    this.cardIndex = index;
     this.focusIndex = index;
     this.pushNowPlaying();
     this.pushFocus();
@@ -460,6 +533,7 @@ export class TvplayerRuntime {
    *  live channel is a no-op re-prepare-wise. */
   select(index: number): void {
     if (index < 0 || index >= this.vis.length) return;
+    this.cardIndex = index;
     this.focusIndex = index;
     if (index !== this.currentIndex) this.zapTo(index);
     this.pushFocus();
@@ -491,7 +565,7 @@ export class TvplayerRuntime {
     this.currentUrl = null;
     this.pushChannels();
     this.zapTo(0);
-    this.focusZone = "rows";
+    this.focusZone = "cards";
     this.pushFocus();
     this.navigate("player");
     this.app.pushTo("settings", "loadResult", {
@@ -521,6 +595,7 @@ export class TvplayerRuntime {
   private pushFocus(): void {
     const focus: FocusState = {
       index: this.focusIndex,
+      cardIndex: this.cardIndex,
       zone: this.focusZone,
       fullscreen: this.fullscreen,
     };
