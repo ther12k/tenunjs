@@ -18,4 +18,3 @@ consumers/tasks-app/vendor/*.tgz
 *.apk
 *.idsig
 *.aab
-examples/tvplayer/dist/
