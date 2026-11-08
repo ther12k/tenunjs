@@ -23,6 +23,7 @@
     "votol:preview": "bun examples/votol/dev.ts",
     "polytron:preview": "bun examples/polytron/dev.ts",
     "tvplayer:preview": "bun examples/tvplayer/dev.ts",
+    "tvplayer:web": "bun examples/tvplayer/build-web.mjs",
     "polytron:bundle": "bun embedders/android/tools/gallery-bundle/build-polytron-apk-asset.mjs",
     "showcase:desktop": "bun embedders/android/tools/gallery-bundle/desktop.ts showcase",
     "gallery:desktop": "bun embedders/android/tools/gallery-bundle/desktop.ts gallery",

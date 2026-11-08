@@ -246,7 +246,7 @@ function paint(): void {
     .map((r) => (r === runtime.route() ? `[${r}]` : r))
     .join("  ");
   statusLabel.textContent =
-    "browser preview — live streams play muted (hls.js); arrows = D-pad, Enter = OK, PgUp/PgDn = CH±";
+    "muted — press M for sound; arrows = D-pad, Enter = OK, PgUp/PgDn = CH±";
 }
 
 runtime.onStateInvalidation(() => paint());
@@ -288,6 +288,13 @@ const KEY_MAP: Record<string, number> = {
   PageDown: 167,
 };
 window.addEventListener("keydown", (event) => {
+  // "m" toggles sound — streams start muted (autoplay policy); a real
+  // keypress is the user gesture the browser wants for unmuted audio.
+  if (event.key === "m" || event.key === "M") {
+    const v = document.querySelector("video");
+    if (v) v.muted = !v.muted;
+    return;
+  }
   const keyCode = KEY_MAP[event.key];
   if (keyCode === undefined) return;
   event.preventDefault();
