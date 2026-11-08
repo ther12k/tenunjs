@@ -18,13 +18,26 @@
  * excludes vacate their own programs), and this config should stay
  * honestly strict.
  */
-import { TvplayerRuntime } from "./src/runtime";
+import { TvplayerRuntime, type FormFactor } from "./src/runtime";
 
 const canvas = document.getElementById("preview") as HTMLCanvasElement;
 const routeLabel = document.getElementById("routes")!;
 const statusLabel = document.getElementById("status")!;
 
-const runtime = new TvplayerRuntime(); // no media host: fail-closed stub
+// ?form=phone — the mobile layout (video hero + tappable channel list);
+// default is the TV layout. Same runtime, same journeys, same stub.
+const form: FormFactor = new URLSearchParams(window.location.search).get("form") === "phone"
+  ? "phone"
+  : "tv";
+if (form === "phone") {
+  canvas.width = 390;
+  canvas.height = 780;
+} else {
+  canvas.width = 960;
+  canvas.height = 540;
+}
+
+const runtime = new TvplayerRuntime({ formFactor: form }); // no media host: fail-closed stub
 
 interface SceneOp {
   op: string;
@@ -111,11 +124,17 @@ canvas.addEventListener("click", (event) => {
   const rect = canvas.getBoundingClientRect();
   const x = (event.clientX - rect.left) / scale;
   const y = (event.clientY - rect.top) / scale;
-  const taps = (scene as unknown as { taps?: { x: number; y: number; w: number; h: number; id: number }[] }).taps ?? [];
+  const taps =
+    (scene as unknown as {
+      taps?: { x: number; y: number; w: number; h: number; payload: { id: number } }[];
+    }).taps ?? [];
   for (let i = taps.length - 1; i >= 0; i--) {
     const t = taps[i]!;
     if (x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) {
-      runtime.dispatch("TAP", { id: t.id });
+      // The tap-run id rides t.payload.id (SerializedTap has no
+      // top-level id — dispatching t.id sent undefined and silently
+      // hit nothing).
+      runtime.dispatch("TAP", { id: t.payload.id });
       return;
     }
   }

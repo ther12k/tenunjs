@@ -4,6 +4,7 @@ import { unsupportedMedia, type MediaCapability, type MediaStatus } from "@tenun
 import { tvTheme } from "./theme";
 import {
   DESIGN_WIDTH,
+  DESIGN_WIDTH_PHONE,
   KEYCODE_ENTER,
   KEY_DPAD_CENTER,
   KEY_DPAD_DOWN,
@@ -11,7 +12,9 @@ import {
   KEY_DPAD_RIGHT,
   KEY_DPAD_UP,
   VIDEO_RECT,
+  VIDEO_RECT_PHONE,
   type FocusState,
+  type FormFactor,
   type LoadResult,
   type NowPlaying,
 } from "./layout";
@@ -24,7 +27,9 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 // gate forbids cycles); re-exported here for the public surface.
 export {
   DESIGN_WIDTH,
+  DESIGN_WIDTH_PHONE,
   VIDEO_RECT,
+  VIDEO_RECT_PHONE,
   KEY_DPAD_UP,
   KEY_DPAD_DOWN,
   KEY_DPAD_LEFT,
@@ -32,6 +37,7 @@ export {
   KEY_DPAD_CENTER,
   KEYCODE_ENTER,
 } from "./layout";
+export type { FormFactor } from "./layout";
 export type { FocusState, NowPlaying, LoadResult } from "./layout";
 
 type AnyScreen = ScreenDefinition<any, any>;
@@ -76,29 +82,42 @@ export interface TvplayerHostServices {
 export class TvplayerRuntime {
   private readonly app: ApplicationRuntime;
   private readonly media: MediaCapability;
+  private readonly form: FormFactor;
+  private readonly videoRect: Readonly<{ x: number; y: number; w: number; h: number }>;
   private channels: readonly PlaylistEntry[] = STARTER_PLAYLIST;
   private currentIndex = 0;
   private focusIndex = 0;
   private sidebar = true; // discoverable first boot: the grid is open
   private status: MediaStatus = { state: "idle" };
 
-  constructor(host: TvplayerHostServices & { designWidth?: number } = {}) {
-    const { media, designWidth } = host;
+  /**
+   * @param formFactor "tv" (default — 960-unit 10-foot layout, sidebar
+   *        carousel beside the video) or "phone" (390-unit layout: video
+   *        hero on top, the channel list below as tappable rows). The
+   *        video rect is static per session either way (ADR-0028).
+   */
+  constructor(
+    host: TvplayerHostServices & { designWidth?: number; formFactor?: FormFactor } = {}
+  ) {
+    const { media, designWidth, formFactor } = host;
     this.media = media ?? unsupportedMedia("tvplayer: no media host bound");
+    this.form = formFactor ?? "tv";
+    this.videoRect = this.form === "phone" ? VIDEO_RECT_PHONE : VIDEO_RECT;
 
     const services = {
       media: this.media,
       navigate: (route: string) => this.navigate(route),
       loadPlaylist: (url: string) => void this.loadPlaylist(url),
-      setVideoRect: () => void this.media.setRect(VIDEO_RECT.x, VIDEO_RECT.y, VIDEO_RECT.w, VIDEO_RECT.h),
+      select: (index: number) => this.select(index),
     };
     this.app = new ApplicationRuntime({
       screens,
       initial: "player",
       theme: tvTheme,
       services: services as unknown as Record<string, unknown>,
-      designWidth: designWidth ?? DESIGN_WIDTH,
+      designWidth: designWidth ?? (this.form === "phone" ? DESIGN_WIDTH_PHONE : DESIGN_WIDTH),
     });
+    this.app.pushState("form", this.form);
     this.pushChannels();
     this.pushFocus();
     this.pushNowPlaying();
@@ -268,7 +287,17 @@ export class TvplayerRuntime {
    *  Idempotent on the host side; re-asserted on every zap so a hot
    *  reload or viewport change can never leave the overlay stale. */
   private ensureVideoRect(): void {
-    void this.media.setRect(VIDEO_RECT.x, VIDEO_RECT.y, VIDEO_RECT.w, VIDEO_RECT.h);
+    void this.media.setRect(this.videoRect.x, this.videoRect.y, this.videoRect.w, this.videoRect.h);
+  }
+
+  /** Direct channel selection (the phone list's tap path; also what
+   *  the D-pad OK resolves to). Selecting the live channel is a no-op
+   *  re-prepare-wise. */
+  select(index: number): void {
+    if (index < 0 || index >= this.channels.length) return;
+    this.focusIndex = index;
+    if (index !== this.currentIndex) this.zapTo(index);
+    this.pushFocus();
   }
 
   /** Settings screen: fetch a playlist URL through the media seam's

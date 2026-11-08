@@ -30,6 +30,22 @@ export const VIDEO_RECT = {
   h: 384,
 } as const;
 
+/**
+ * Phone form factor (the polytron design width): the video is the hero
+ * at the top, full-bleed 16:9; the channel list follows below it. The
+ * rect stays static per session — same ADR-0028 ceiling, phone-shaped.
+ */
+export const DESIGN_WIDTH_PHONE = 390;
+
+export const VIDEO_RECT_PHONE = {
+  x: 0,
+  y: 0,
+  w: DESIGN_WIDTH_PHONE,
+  h: Math.round((DESIGN_WIDTH_PHONE * 9) / 16), // 219
+} as const;
+
+export type FormFactor = "tv" | "phone";
+
 /** android.view.KeyEvent codes the helper consumes (mirrored app-side). */
 export const KEY_DPAD_UP = 19;
 export const KEY_DPAD_DOWN = 20;

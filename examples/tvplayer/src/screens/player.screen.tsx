@@ -1,6 +1,14 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
-import { Column, Container, Expanded, Row, Scaffold, ScrollView, SizedBox, Text } from "@tenunjs/widgets";
-import { GAP_SM, SIDEBAR_W, VIDEO_RECT, type FocusState, type NowPlaying } from "../layout";
+import { Column, Container, Expanded, GestureDetector, Row, Scaffold, ScrollView, SizedBox, Text } from "@tenunjs/widgets";
+import {
+  GAP_SM,
+  SIDEBAR_W,
+  VIDEO_RECT,
+  VIDEO_RECT_PHONE,
+  type FocusState,
+  type FormFactor,
+  type NowPlaying,
+} from "../layout";
 import type { MediaStatus } from "@tenunjs/platform";
 import type { PlaylistEntry } from "../playlist";
 
@@ -24,6 +32,7 @@ import type { PlaylistEntry } from "../playlist";
  *   "media"    — MEDIA_STATE snapshot
  */
 export interface PlayerState {
+  form: FormFactor;
   channels: readonly PlaylistEntry[];
   index: number;
   now: NowPlaying | null;
@@ -134,6 +143,7 @@ function VideoPlaceholder({ media, now }: { media: MediaStatus | null; now: NowP
 export const PlayerScreen = defineScreen({
   name: "Player",
   initialState: (): PlayerState => ({
+    form: "tv",
     channels: [],
     index: 0,
     now: null,
@@ -141,6 +151,11 @@ export const PlayerScreen = defineScreen({
     media: null,
   }),
   actions: {
+    form: defineAction<PlayerState, FormFactor>({
+      run({ input, state }) {
+        state.form = input;
+      },
+    }),
     channels: defineAction<PlayerState, { channels: readonly PlaylistEntry[]; index: number }>({
       run({ input, state }) {
         state.channels = input.channels;
@@ -166,8 +181,14 @@ export const PlayerScreen = defineScreen({
         state.media = input;
       },
     }),
+    /** Phone list tap: select + play this channel. */
+    select: defineAction<PlayerState, number>({
+      run({ input, services }) {
+        (services as { select?: (index: number) => void }).select?.(input);
+      },
+    }),
   },
-  view({ state }) {
+  view({ state, actions }) {
     const live = state.media !== null && onAir(state.media) ? state.channels[state.index] : null;
     const pill = stateLabel(state.media);
     const count = state.channels.length;
@@ -175,6 +196,68 @@ export const PlayerScreen = defineScreen({
     // keep true channel numbers.
     const winStart = Math.max(0, Math.min(state.focus.index - 2, count - CHANNEL_WINDOW));
     const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
+
+    if (state.form === "phone") {
+      // Phone: video hero on top (full-bleed 16:9), chrome and the
+      // tappable channel list below. The remote is optional — rows are
+      // tapped directly; ↑/↓/OK still work when a keyboard is present.
+      return (
+        <Scaffold>
+          <Column gap="md">
+            {/* The video slot — exactly VIDEO_RECT_PHONE. On device the
+                native TextureView composites here; the placeholder
+                shows through whenever no frames render. */}
+            <SizedBox width={VIDEO_RECT_PHONE.w} height={VIDEO_RECT_PHONE.h}>
+              <VideoPlaceholder media={state.media} now={state.now} />
+            </SizedBox>
+            <Column padding="md" gap="md">
+              <Row gap="md" align="center" justify="between">
+                <Column gap="sm">
+                  <Text variant="label" color="text">
+                    TENUN TV
+                  </Text>
+                  <Container color="accent" radius={2} width={72} height={3} />
+                </Column>
+                <Column align="end" gap="sm">
+                  <Text variant="caption" color={pill.color}>
+                    {pill.text}
+                  </Text>
+                  {state.now && (
+                    <Text variant="caption" color="textDim" maxLines={1} ellipsis>
+                      {`${channelNo(state.now.index)} · ${state.now.title}`}
+                    </Text>
+                  )}
+                </Column>
+              </Row>
+              <Text variant="caption" color="textDim">
+                CHANNELS
+              </Text>
+              {count === 0 && (
+                <Text variant="body" color="textDim">
+                  Playlist empty — open Settings to load one
+                </Text>
+              )}
+              <Column gap="sm">
+                {window_.map((channel, k) => {
+                  const i = winStart + k;
+                  return (
+                    <GestureDetector key={channel.url} onTap={() => actions.select(i)}>
+                      <ChannelRow
+                        channel={channel}
+                        index={i}
+                        focused={i === state.focus.index}
+                        live={live !== null && live !== undefined && i === state.index}
+                      />
+                    </GestureDetector>
+                  );
+                })}
+              </Column>
+            </Column>
+          </Column>
+        </Scaffold>
+      );
+    }
+
     return (
       <Scaffold>
         <Column padding="lg" gap="md">
@@ -208,9 +291,9 @@ export const PlayerScreen = defineScreen({
                     CHANNELS
                   </Text>
                   {count === 0 && (
-                        <Text variant="body" color="textDim">
-                          Playlist empty — press → for Settings
-                        </Text>
+                    <Text variant="body" color="textDim">
+                      Playlist empty — press → for Settings
+                    </Text>
                   )}
                   {count > 0 && (
                     <Column gap="sm">

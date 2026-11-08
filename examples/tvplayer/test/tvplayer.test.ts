@@ -274,6 +274,52 @@ describe("TN-196 media orchestration", () => {
   });
 });
 
+describe("TN-196 phone form factor", () => {
+  test("phone: 390-unit layout, full-bleed 16:9 video rect asserted via setRect", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media, formFactor: "phone" });
+    await settle();
+    expect(calls).toContain("rect:0,0,390,219");
+    const texts = sceneTexts(runtime);
+    expect(textsInclude(texts, "TENUN TV")).toBe(true);
+    expect(textsInclude(texts, "TVRI DKI")).toBe(true); // channel rows render below the video
+  });
+
+  test("phone: tapping a channel row plays it through the real TAP dispatch", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media, formFactor: "phone" });
+    await settle();
+    calls.length = 0;
+
+    // The committed scene's tap regions, in row order; the phone layout
+    // registers exactly one tap per visible channel row.
+    const scene = (runtime.render() as unknown as {
+      scene: { taps?: { payload?: { id?: unknown } }[] };
+    }).scene;
+    const taps = scene.taps ?? [];
+    expect(taps.length).toBeGreaterThan(1);
+    const thirdTapId = taps[2]!.payload!.id;
+    runtime.dispatch("TAP", { id: thirdTapId });
+    await settle();
+
+    expect(calls).toContain(`prepare:${THIRD.url}`);
+    expect(calls).toContain("play");
+    expect(textsInclude(sceneTexts(runtime), "TVRI Jawa Barat")).toBe(true); // now playing
+  });
+
+  test("phone: the D-pad still works — DOWN moves focus, OK plays", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media, formFactor: "phone" });
+    await settle();
+    calls.length = 0;
+
+    runtime.keyPress(20, "down"); // focus -> 02
+    runtime.keyPress(23, "down"); // OK plays 02
+    await settle();
+    expect(calls).toContain(`prepare:${SECOND.url}`);
+  });
+});
+
 describe("TN-196 state export", () => {
   test("stateSchema and exportState expose the screen sessions", () => {
     const { media } = fakeMedia();
