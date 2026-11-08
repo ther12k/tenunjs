@@ -27,7 +27,7 @@ export const VIDEO_RECT = {
   x: PAD_LG + SIDEBAR_W + GAP_SM,
   y: 96,
   w: DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG,
-  h: 360,
+  h: 384,
 } as const;
 
 /** android.view.KeyEvent codes the helper consumes (mirrored app-side). */

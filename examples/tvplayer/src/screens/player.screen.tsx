@@ -1,5 +1,5 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
-import { Column, Container, Row, Scaffold, ScrollView, SizedBox, Text, Expanded } from "@tenunjs/widgets";
+import { Column, Container, Expanded, Row, Scaffold, ScrollView, SizedBox, Text } from "@tenunjs/widgets";
 import { GAP_SM, SIDEBAR_W, VIDEO_RECT, type FocusState, type NowPlaying } from "../layout";
 import type { MediaStatus } from "@tenunjs/platform";
 import type { PlaylistEntry } from "../playlist";
@@ -51,6 +51,44 @@ function stateLabel(media: MediaStatus | null): { text: string; color: string } 
   }
 }
 
+/** TV-style two-digit channel number: 1 → "01". */
+function channelNo(index: number): string {
+  return String(index + 1).padStart(2, "0");
+}
+
+/** One channel row: number + title, focus/live states styled apart. */
+function ChannelRow(props: {
+  channel: PlaylistEntry;
+  index: number;
+  focused: boolean;
+  live: boolean;
+}) {
+  const { channel, index, focused, live } = props;
+  return (
+    <Container
+      color={focused ? "accent" : "surface"}
+      radius={12}
+      padding="md"
+      borderColor={live && !focused ? "accent" : undefined}
+      borderWidth={live && !focused ? 2 : 0}
+    >
+      <Row gap="md" align="center">
+        <Text variant="label" color={focused ? "onPrimaryContainer" : "accent"}>
+          {channelNo(index)}
+        </Text>
+        <Text
+          variant={focused ? "label" : "body"}
+          color={focused ? "onPrimaryContainer" : live ? "accent" : "text"}
+          maxLines={1}
+          ellipsis
+        >
+          {channel.title}
+        </Text>
+      </Row>
+    </Container>
+  );
+}
+
 /** The idle/error placeholder painted inside the video slot. */
 function VideoPlaceholder({ media, now }: { media: MediaStatus | null; now: NowPlaying | null }) {
   if (media?.state === "playing" || media?.state === "paused") {
@@ -59,24 +97,21 @@ function VideoPlaceholder({ media, now }: { media: MediaStatus | null; now: NowP
     // is the fail-closed stub.)
     return <SizedBox height={VIDEO_RECT.h} />;
   }
-  const title =
-    media?.state === "error"
-      ? "No signal"
-      : media?.state === "buffering"
-        ? "Buffering…"
-        : now
-          ? now.title
-          : "No channel";
-  const caption =
-    media?.state === "error"
-      ? (media.message ?? "playback failed")
-      : media?.state === "buffering"
-        ? now?.title ?? ""
-        : "OK opens the channel list";
+  const isErr = media?.state === "error";
+  const glyph = isErr ? "✕" : media?.state === "buffering" ? "…" : "▶";
+  const title = isErr ? "No signal" : now ? `${channelNo(now.index)} · ${now.title}` : "No channel";
+  const caption = isErr
+    ? (media.message ?? "playback failed")
+    : media?.state === "buffering"
+      ? now?.title ?? ""
+      : "OK opens the channel list";
   return (
-    <Container color="surfaceRaised" radius={12} height={VIDEO_RECT.h}>
-      <Column align="center" justify="center" gap="sm">
-        <Text variant="headline" color={media?.state === "error" ? "danger" : "textDim"}>
+    <Container color="surfaceRaised" radius={16} height={VIDEO_RECT.h}>
+      <Column align="center" justify="center" gap="md">
+        <Text variant="display" color={isErr ? "danger" : "outline"}>
+          {glyph}
+        </Text>
+        <Text variant="title" color={isErr ? "danger" : "text"}>
           {title}
         </Text>
         <Text variant="caption" color="textDim">
@@ -129,11 +164,14 @@ export const PlayerScreen = defineScreen({
     return (
       <Scaffold>
         <Column padding="lg" gap="md">
-          {/* Top bar — above VIDEO_RECT.y. */}
+          {/* Top bar — brand + accent underline left, state pill right. */}
           <Row gap="lg" align="center" justify="between">
-            <Text variant="title" color="accent">
-              Tenun TV
-            </Text>
+            <Column gap="sm">
+              <Text variant="title" color="text">
+                TENUN TV
+              </Text>
+              <Container color="accent" radius={2} width={128} height={4} />
+            </Column>
             <Text variant="label" color={pill.color}>
               {pill.text}
             </Text>
@@ -143,36 +181,28 @@ export const PlayerScreen = defineScreen({
                 never moves (layout.ts derives VIDEO_RECT from it). */}
             <SizedBox width={SIDEBAR_W} height={VIDEO_RECT.h}>
               {state.focus.sidebar && (
-                <ScrollView id="channel-list" gap="sm">
-                  {state.channels.length === 0 && (
-                    <Text variant="body" color="textDim">
-                      Playlist empty — press → for Settings
-                    </Text>
-                  )}
-                  {state.channels.map((channel, i) => {
-                    const focused = i === state.focus.index;
-                    const isLive = live !== undefined && live !== null && i === state.index;
-                    const prefix = focused ? "› " : isLive ? "• " : "";
-                    return (
-                      <Container
-                        color={focused ? "accent" : "surface"}
-                        radius={8}
-                        padding="sm"
-                        borderColor={isLive && !focused ? "accent" : undefined}
-                        borderWidth={isLive && !focused ? 2 : 0}
-                      >
-                        <Text
-                          variant={focused ? "label" : "body"}
-                          color={focused ? "onPrimaryContainer" : isLive ? "accent" : "textDim"}
-                          maxLines={1}
-                          ellipsis
-                        >
-                          {`${prefix}${channel.title}`}
+                <Column gap="sm">
+                  <Text variant="caption" color="textDim">
+                    CHANNELS
+                  </Text>
+                  <Expanded>
+                    <ScrollView id="channel-list" gap="sm">
+                      {state.channels.length === 0 && (
+                        <Text variant="body" color="textDim">
+                          Playlist empty — press → for Settings
                         </Text>
-                      </Container>
-                    );
-                  })}
-                </ScrollView>
+                      )}
+                      {state.channels.map((channel, i) => (
+                        <ChannelRow
+                          channel={channel}
+                          index={i}
+                          focused={i === state.focus.index}
+                          live={live !== null && live !== undefined && i === state.index}
+                        />
+                      ))}
+                    </ScrollView>
+                  </Expanded>
+                </Column>
               )}
             </SizedBox>
             {/* The video slot — exactly VIDEO_RECT. On device the native

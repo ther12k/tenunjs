@@ -22,7 +22,7 @@ const HTML = `<!doctype html>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="preview" width="960" height="600"></canvas>
+  <canvas id="preview" width="960" height="540"></canvas>
   <div id="routes"></div>
   <div id="status"></div>
 </div>

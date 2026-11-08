@@ -73,7 +73,7 @@ describe("TN-196 tvplayer boot", () => {
   test("boots fail-closed with the starter playlist visible and media idle", () => {
     const runtime = new TvplayerRuntime(); // no media host: unsupported stub
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "Tenun TV")).toBe(true);
+    expect(textsInclude(texts, "TENUN TV")).toBe(true);
     expect(textsInclude(texts, "TVRI Nasional")).toBe(true);
     expect(textsInclude(texts, "Mux Test")).toBe(true);
     expect(textsInclude(texts, "IDLE")).toBe(true); // the top-bar state pill
@@ -190,7 +190,7 @@ describe("TN-196 media orchestration", () => {
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "Tenun TV")).toBe(true);
+    expect(textsInclude(texts, "TENUN TV")).toBe(true);
     expect(textsInclude(texts, "No signal")).toBe(true);
     expect(textsInclude(texts, "media")).toBe(true); // the stub's message names the seam
   });
