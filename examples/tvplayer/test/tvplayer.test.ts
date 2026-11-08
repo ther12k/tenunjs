@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { TvplayerRuntime, VIDEO_RECT, type LoadResult } from "../src/runtime";
+import { STARTER_PLAYLIST } from "../src/starter-playlist";
 import type { MediaCapability } from "@tenunjs/platform";
 
 /**
@@ -10,8 +11,12 @@ import type { MediaCapability } from "@tenunjs/platform";
  * polytron test pattern.
  */
 
-const TVRI = "https://ott-balancer.tvri.go.id/live/eds/Nasional/hls/Nasional.m3u8";
-const MUX = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+// Derived from the starter playlist so the journeys stay honest as the
+// official channel list grows (24 channels: TVRI Nasional is 01, the
+// mux test stream is last).
+const FIRST = STARTER_PLAYLIST[0]!;
+const SECOND = STARTER_PLAYLIST[1]!;
+const THIRD = STARTER_PLAYLIST[2]!;
 
 /** Lets zapTo's prepare→play promise chain settle. */
 const settle = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -75,7 +80,7 @@ describe("TN-196 tvplayer boot", () => {
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "TENUN TV")).toBe(true);
     expect(textsInclude(texts, "TVRI Nasional")).toBe(true);
-    expect(textsInclude(texts, "Mux Test")).toBe(true);
+    expect(textsInclude(texts, "TVRI DKI")).toBe(true);
     expect(textsInclude(texts, "IDLE")).toBe(true); // the top-bar state pill
     expect(runtime.route()).toBe("player");
   });
@@ -100,7 +105,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     expect(runtime.keyPress(23, "down")).toBe(true); // OK: play Mux, close sidebar
     await settle();
 
-    expect(calls).toContain(`prepare:${MUX}`);
+    expect(calls).toContain(`prepare:${SECOND.url}`);
     expect(calls).toContain("play");
     expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true); // hidden-list hint
   });
@@ -128,7 +133,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     // OK switches to the focused channel and closes the list.
     expect(runtime.keyPress(23, "down")).toBe(true);
     await settle();
-    expect(calls).toContain(`prepare:${TVRI}`);
+    expect(calls).toContain(`prepare:${THIRD.url}`);
     expect(calls).toContain("play");
     expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true);
   });
@@ -162,7 +167,7 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
 
     // Regression (device finding 2026-11-07): the label bound to the
     // screen's stale index — the TV showed "TVRI" while Mux played.
-    expect(textsInclude(sceneTexts(runtime), "Mux Test")).toBe(true);
+    expect(textsInclude(sceneTexts(runtime), "TVRI DKI")).toBe(true);
     expect(textsInclude(sceneTexts(runtime), "TVRI Nasional")).toBe(false); // the old label must be gone
   });
 
@@ -197,7 +202,7 @@ describe("TN-196 media orchestration", () => {
   test("MEDIA_STATE events repaint the state pill and the placeholder", () => {
     const { media } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
-    runtime.dispatch("MEDIA_STATE", { type: "MEDIA_STATE", state: "playing", url: TVRI });
+    runtime.dispatch("MEDIA_STATE", { type: "MEDIA_STATE", state: "playing", url: FIRST.url });
     expect(textsInclude(sceneTexts(runtime), "● LIVE")).toBe(true);
 
     runtime.dispatch("MEDIA_STATE", {

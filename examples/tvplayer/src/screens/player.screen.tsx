@@ -56,6 +56,15 @@ function channelNo(index: number): string {
   return String(index + 1).padStart(2, "0");
 }
 
+/**
+ * How many channel rows fit the sidebar column without host scrolling:
+ * D-pad focus cannot scroll a host-owned scroll region (no
+ * ensure-visible API in v1), so long lists render as a WINDOWED
+ * CAROUSEL — the classic TV pattern. The window slides with focus and
+ * keeps each row's TRUE channel number.
+ */
+const CHANNEL_WINDOW = 6;
+
 /** One channel row: number + title, focus/live states styled apart. */
 function ChannelRow(props: {
   channel: PlaylistEntry;
@@ -68,7 +77,7 @@ function ChannelRow(props: {
     <Container
       color={focused ? "accent" : "surface"}
       radius={12}
-      padding="md"
+      padding="sm"
       borderColor={live && !focused ? "accent" : undefined}
       borderWidth={live && !focused ? 2 : 0}
     >
@@ -161,10 +170,16 @@ export const PlayerScreen = defineScreen({
   view({ state }) {
     const live = state.media !== null && onAir(state.media) ? state.channels[state.index] : null;
     const pill = stateLabel(state.media);
+    const count = state.channels.length;
+    // The carousel window: slide with focus, clamp at the list's ends,
+    // keep true channel numbers.
+    const winStart = Math.max(0, Math.min(state.focus.index - 2, count - CHANNEL_WINDOW));
+    const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
     return (
       <Scaffold>
         <Column padding="lg" gap="md">
-          {/* Top bar — brand + accent underline left, state pill right. */}
+          {/* Top bar — brand + accent underline left, state + now
+              playing right. */}
           <Row gap="lg" align="center" justify="between">
             <Column gap="sm">
               <Text variant="title" color="text">
@@ -172,9 +187,16 @@ export const PlayerScreen = defineScreen({
               </Text>
               <Container color="accent" radius={2} width={128} height={4} />
             </Column>
-            <Text variant="label" color={pill.color}>
-              {pill.text}
-            </Text>
+            <Column align="end" gap="sm">
+              <Text variant="label" color={pill.color}>
+                {pill.text}
+              </Text>
+              {state.now && (
+                <Text variant="caption" color="textDim" maxLines={1} ellipsis>
+                  {`${channelNo(state.now.index)} · ${state.now.title}`}
+                </Text>
+              )}
+            </Column>
           </Row>
           <Row gap={GAP_SM}>
             {/* The sidebar column is ALWAYS reserved so the video slot
@@ -185,23 +207,23 @@ export const PlayerScreen = defineScreen({
                   <Text variant="caption" color="textDim">
                     CHANNELS
                   </Text>
-                  <Expanded>
-                    <ScrollView id="channel-list" gap="sm">
-                      {state.channels.length === 0 && (
+                  {count === 0 && (
                         <Text variant="body" color="textDim">
                           Playlist empty — press → for Settings
                         </Text>
-                      )}
-                      {state.channels.map((channel, i) => (
+                  )}
+                  {count > 0 && (
+                    <Column gap="sm">
+                      {window_.map((channel, k) => (
                         <ChannelRow
                           channel={channel}
-                          index={i}
-                          focused={i === state.focus.index}
-                          live={live !== null && live !== undefined && i === state.index}
+                          index={winStart + k}
+                          focused={winStart + k === state.focus.index}
+                          live={live !== null && live !== undefined && winStart + k === state.index}
                         />
                       ))}
-                    </ScrollView>
-                  </Expanded>
+                    </Column>
+                  )}
                 </Column>
               )}
             </SizedBox>
