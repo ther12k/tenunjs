@@ -193,14 +193,26 @@ class NetServiceFormatTest {
 
     @Test
     fun aRefusedConnectIsALinkLostConnectEventNeverASilentSuccess() {
-        val temporary = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
-        val port = temporary.localPort
-        temporary.close() // nothing listens now
         val sink = Sink()
         val service = NetService(sink.onEvent, { null })
-        val sessionId = connect(service, sink, port)
-        val refused = sink.await { it.optString("type") == "connect" && it.getString("sessionId") == sessionId }
-        assertNotNull("refusal event", refused)
+        // A freshly closed port refuses — but a busy CI host may rebind the
+        // ephemeral port between close() and connect(); retry until the
+        // connect event comes back NOT ok (bounded rounds, no hang).
+        var refused: JSONObject? = null
+        for (round in 1..5) {
+            val temporary = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+            val port = temporary.localPort
+            temporary.close() // nothing listens now
+            val sessionId = connect(service, sink, port)
+            val event = sink.await { it.optString("type") == "connect" && it.getString("sessionId") == sessionId }
+            assertNotNull("connect event for round $round", event)
+            if (!event!!.getBoolean("ok")) {
+                refused = event
+                break
+            }
+            call(service, "close", """{"sessionId":"$sessionId"}""")
+        }
+        assertNotNull("no refusal observed in 5 rounds (a neighbor kept rebinding the port)", refused)
         assertFalse(refused!!.getBoolean("ok"))
         assertEquals("link-lost", refused.getJSONObject("failure").getString("kind"))
     }

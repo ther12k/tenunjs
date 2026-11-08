@@ -219,12 +219,13 @@ class NetService(
             emit(JSONObject().put("type", "connect").put("sessionId", live.id).put("ok", true))
             startPumps(live)
         } catch (t: Throwable) {
-            // Transport failures are diagnosable, never silent: the same
-            // event reaches JS as a structured connect failure.
-            android.util.Log.w(TAG, "connect failed (${pending.host}:${pending.port})", t)
             closeQuietly(socket)
             sessions.remove(pending.id)
             pending.abandon()
+            // The CONTRACT surface first: the connect failure MUST reach JS
+            // even if the logger is absent (JVM unit tests run against
+            // android.jar stubs, where Log.w throws). Transport failures are
+            // diagnosable, never silent, but logging is best effort.
             emit(
                 JSONObject()
                     .put("type", "connect")
@@ -232,6 +233,10 @@ class NetService(
                     .put("ok", false)
                     .put("failure", failureJsonFor(t, pending.timeoutMs))
             )
+            try {
+                android.util.Log.w(TAG, "connect failed (${pending.host}:${pending.port})", t)
+            } catch (ignored: Throwable) {
+            }
         }
     }
 
