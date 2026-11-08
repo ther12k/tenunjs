@@ -72,6 +72,18 @@ class KeysService : NativeService {
     private fun keyStore(): KeyStore =
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+    /**
+     * TN-188: resolves a caller handle to its Keystore entry FOR THE NET
+     * SERVICE's TLS client certificate — the private key is used in place
+     * (an X509KeyManager hands JSContext the entry; nothing is marshalled)
+     * and ONLY this service's `tenun.keys.v1.` namespace is read, so the
+     * ownership boundary of review 2026-11-08 holds across capabilities.
+     * Returns null for a not-found handle (the caller maps that to
+     * invalid-argument); backend failures propagate as exceptions.
+     */
+    fun identityEntry(handle: String): KeyStore.PrivateKeyEntry? =
+        keyStore().getEntry(backingAlias(handle), null) as? KeyStore.PrivateKeyEntry
+
     private fun availability(): String {
         return try {
             keyStore()

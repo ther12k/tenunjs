@@ -320,7 +320,28 @@ class MainActivity : Activity() {
             // No context: AndroidKeyStore is process-global, and its entries
             // outlive engine swaps and app processes (the keystore daemon owns
             // them) — the persistence semantics the device gate asserts.
-            hostRegistry.register("keys", KeysService())
+            // The SAME instance backs TN-188's net TLS client certificates:
+            // NetService resolves identities through its namespace only.
+            val keys = KeysService()
+            hostRegistry.register("keys", keys)
+            // TN-188: TCP/TLS sessions. NET_EVENT pushes ride the same
+            // host→JS channel as BLE_LINK: dispatched into the CURRENT
+            // engine, so a swapped engine never receives stale events.
+            hostRegistry.register(
+                "net",
+                NetService(
+                    onEvent = { action, payloadJson ->
+                        mainHandler.post {
+                            this.engine?.let { eng ->
+                                eng.dispatchAction(action, payloadJson)
+                                surfaceView?.syncFromScene(eng.getLatestScene())
+                                surfaceView?.redraw()
+                            }
+                        }
+                    },
+                    keyResolver = keys::identityEntry,
+                ),
+            )
         }
     }
 

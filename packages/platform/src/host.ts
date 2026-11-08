@@ -21,6 +21,8 @@ import type { LauncherCapability } from "./launcher";
 import { LAUNCHER_PERMISSIONS } from "./launcher";
 import type { KeysCapability } from "./keys";
 import { KEYS_PERMISSIONS } from "./keys";
+import type { NetCapability } from "./net";
+import { NET_PERMISSIONS } from "./net";
 
 export interface HostCapabilities {
   readonly ble: BleCapability;
@@ -28,6 +30,7 @@ export interface HostCapabilities {
   readonly camera: CameraCapability;
   readonly launcher: LauncherCapability;
   readonly keys: KeysCapability;
+  readonly net: NetCapability;
 }
 
 /** What a host actually implements; gaps become unsupported stubs. */
@@ -88,6 +91,15 @@ export function unsupportedKeys(reason?: string): KeysCapability {
   };
 }
 
+export function unsupportedNet(reason?: string): NetCapability {
+  return {
+    contractVersion: 1,
+    availability: () => ({ status: "unsupported", reason }),
+    permissionPrerequisites: () => NET_PERMISSIONS,
+    connect: () => fail(unsupportedFailure("net", reason)),
+  };
+}
+
 /**
  * Composes a host's implemented capabilities with unsupported stubs for
  * the rest. Hosts build this once at boot and hand it to the
@@ -103,5 +115,6 @@ export function defineHostCapabilities(
     camera: implemented.camera ?? unsupportedCamera(unsupportedReason),
     launcher: implemented.launcher ?? unsupportedLauncher(unsupportedReason),
     keys: implemented.keys ?? unsupportedKeys(unsupportedReason),
+    net: implemented.net ?? unsupportedNet(unsupportedReason),
   };
 }
