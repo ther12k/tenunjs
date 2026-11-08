@@ -9,7 +9,8 @@
     "@tenunjs/core": "workspace:*",
     "@tenunjs/jsx-runtime": "workspace:*",
     "@tenunjs/platform": "workspace:*",
-    "@tenunjs/widgets": "workspace:*"
+    "@tenunjs/widgets": "workspace:*",
+    "hls.js": "^1.7.4"
   },
   "devDependencies": {
     "@tenunjs/cli": "workspace:*"
