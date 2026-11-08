@@ -11,24 +11,25 @@
  * WebCrypto cannot mint certificates, so this file carries the smallest
  * honest X.509 v3 self-signed encoder (no extensions, CN=<alias>,
  * ecdsa-with-SHA256, fixed 2026–2049 validity — UTCTime's range) plus the
- * DER↔raw ECDSA converters both tiers share. WebCrypto variants DISAGREE
- * about ECDSA signature bytes: Bun returns the raw r||s, browsers and
- * Node return DER SEQUENCE(r,s) — and the contract pins exactly one
- * format (raw r||s, 64 bytes for P-256), so the shim normalizes whatever
- * the host crypto produced. The Android host (Java `Signature`, always
- * DER) converts with the same algorithm (KeysService); the pinned format
- * is what makes the tiers interchangeable.
+ * DER↔raw ECDSA converters shared with the Android tier. Signature byte
+ * formats: compliant WebCrypto (browsers, Node, Bun) returns the fixed-width
+ * raw IEEE P1363 r||s — exactly the pinned contract format, used verbatim —
+ * while the X.509 signature field must be DER, so the encoder converts with
+ * `ecdsaRawToDer`. Java's `Signature.sign()` is the DER producer; it lives
+ * on the Android host (KeysService) and converts DER→raw for the seam.
  *
  * No top-level WebCrypto access and no imports beyond the contract: the
- * platform package stays dependency-free and QuickJS-loadable; `crypto`
- * is touched only inside methods, and only on preview/test hosts that
- * have it.
+ * platform package stays dependency-free and QuickJS-loadable; `crypto` is
+ * touched only inside methods, and `availability()` reports `unavailable`
+ * when the host has no WebCrypto rather than advertising support it cannot
+ * deliver.
  */
 import type { CapabilityResult } from "./capability";
 import type { KeyHandle, KeyIdentity, KeysCapability } from "./keys";
+import { validKeyAlias, validKeyData } from "./keys-validation";
 
 // ---------------------------------------------------------------------------
-// DER primitives (encode-side only; decode is the two converters below)
+// DER primitives (encode-side only; decode is the converter below)
 // ---------------------------------------------------------------------------
 
 const u8 = (...bytes: number[]): Uint8Array => new Uint8Array(bytes);
@@ -83,7 +84,8 @@ const positiveInteger = (bytes: Uint8Array): Uint8Array => {
   return tlv(0x02, trimmed[0]! >= 0x80 ? concat(u8(0x00), trimmed) : trimmed);
 };
 
-const ecdsaWithSha256 = tlv(0x06, oid([1, 2, 840, 10045, 4, 3, 2]));
+/** AlgorithmIdentifier = SEQUENCE { OID } — RFC 5280 §4.1.1.2 shape. */
+const ecdsaWithSha256 = tlv(0x30, tlv(0x06, oid([1, 2, 840, 10045, 4, 3, 2])));
 const commonName = tlv(0x06, oid([2, 5, 4, 3]));
 
 /** RDNSequence: one UTF8String CN — `UTF8String(0x0C)` accepts any alias. */
@@ -128,18 +130,22 @@ async function selfSignedCertificate(
     spki // SubjectPublicKeyInfo is already DER from exportKey("spki")
   );
   const tbsDer = tlv(0x30, tbs);
-  const signature = new Uint8Array(
+  // WebCrypto returns the raw IEEE P1363 r||s; the X.509 signature field
+  // must be DER, so convert explicitly — no format guessing anywhere.
+  const rawSignature = new Uint8Array(
     await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, new Uint8Array(tbsDer))
   );
-  // X.509 signature fields are DER; Bun hands us raw r||s, so normalize.
-  const derSignature = ecdsaSignatureToDer(signature);
-  if (!derSignature) throw new Error("host crypto produced an unconvertible ECDSA signature");
+  if (rawSignature.length !== 64) {
+    throw new Error(`host crypto returned a ${rawSignature.length}-byte ECDSA signature, expected 64`);
+  }
+  const derSignature = ecdsaRawToDer(rawSignature);
+  if (!derSignature) throw new Error("failed to DER-encode the certificate signature");
   const bitString = concat(u8(0x00), derSignature); // zero unused bits
   return tlv(0x30, concat(tbsDer, ecdsaWithSha256, tlv(0x03, bitString)));
 }
 
 // ---------------------------------------------------------------------------
-// PEM + DER(ECDSA SEQUENCE(r,s)) ↔ fixed-width raw r||s
+// PEM + canonical DER(ECDSA SEQUENCE(r,s)) ↔ fixed-width raw r||s
 // ---------------------------------------------------------------------------
 
 const toBase64 = (bytes: Uint8Array): string => {
@@ -156,26 +162,46 @@ const pemWrap = (label: string, der: Uint8Array): string => {
   return `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----\n`;
 };
 
-const intContent = (der: Uint8Array, at: number): { bytes: Uint8Array; next: number } | null => {
+/**
+ * Reads one CANONICAL DER INTEGER at `at`: length 1..(half+1); zero is the
+ * single byte 0x00; the sign byte 0x00 is present (for nonzero values)
+ * iff the magnitude's MSB is set; redundant padding and negative values
+ * (high bit with no sign byte) are refused. Returns the unsigned
+ * magnitude — a lone 0x00 stays a one-byte zero magnitude.
+ */
+const canonicalInteger = (
+  der: Uint8Array,
+  at: number,
+  half: number
+): { bytes: Uint8Array; next: number } | null => {
   if (at + 2 > der.length || der[at] !== 0x02) return null;
   const len = der[at + 1]!;
-  if (len === 0 || at + 2 + len > der.length) return null;
-  let bytes = der.slice(at + 2, at + 2 + len);
-  if (bytes[0] === 0x00 && bytes.length > 1) bytes = bytes.slice(1); // sign byte
-  return { bytes, next: at + 2 + len };
+  if (len === 0 || len > half + 1 || at + 2 + len > der.length) return null;
+  let content = der.slice(at + 2, at + 2 + len);
+  if (content[0] === 0x00 && content.length > 1) {
+    if (content[1]! < 0x80) return null; // redundant sign byte
+    content = content.slice(1);
+  } else if (content[0]! >= 0x80) {
+    return null; // negative integer
+  }
+  return { bytes: content, next: at + 2 + len };
 };
 
 /**
- * DER SEQUENCE(INTEGER r, INTEGER s) → fixed-width r||s (half+half bytes).
- * Returns null for anything that is not that shape — callers turn null
+ * Canonical DER SEQUENCE(INTEGER r, INTEGER s) → fixed-width r||s
+ * (half+half bytes). The SEQUENCE length must match the buffer exactly —
+ * no trailing bytes — and both INTEGERs must be canonical per
+ * [canonicalInteger]. Returns null for anything else; callers turn null
  * into a structured failure, never a guess.
  */
 export function ecdsaDerToRaw(der: Uint8Array, half = 32): Uint8Array | null {
   if (der.length < 8 || der[0] !== 0x30 || der[1]! >= 0x80) return null;
-  const r = intContent(der, 2);
+  if (2 + der[1]! !== der.length) return null; // trailing or short buffer
+  const r = canonicalInteger(der, 2, half);
   if (!r) return null;
-  const s = intContent(der, r.next);
-  if (!s || r.bytes.length > half || s.bytes.length > half) return null;
+  const s = canonicalInteger(der, r.next, half);
+  if (!s || s.next !== der.length) return null; // s must end the SEQUENCE exactly
+  if (r.bytes.length > half || s.bytes.length > half) return null;
   const out = new Uint8Array(half * 2);
   out.set(r.bytes, half - r.bytes.length);
   out.set(s.bytes, half * 2 - s.bytes.length);
@@ -192,24 +218,6 @@ export function ecdsaRawToDer(raw: Uint8Array, half = 32): Uint8Array | null {
     return trimmed[0]! >= 0x80 ? tlv(0x02, concat(u8(0x00), trimmed)) : tlv(0x02, trimmed);
   };
   return tlv(0x30, concat(asInteger(0), asInteger(half)));
-}
-
-/**
- * Whatever the host crypto returned for an ECDSA P-256 signature, yield
- * the pinned raw r||s. A leading 0x30 that parses as SEQUENCE(r,s) is
- * DER (browsers, Node); anything of exactly 64 bytes is already raw
- * (Bun). Both shapes convert; anything else is null — never a guess.
- */
-export function ecdsaSignatureToRaw(signature: Uint8Array): Uint8Array | null {
-  if (signature.length === 64 && signature[0] !== 0x30) return signature;
-  return ecdsaDerToRaw(signature);
-}
-
-/** Inverse of [ecdsaSignatureToRaw]: normalize host output to DER (X.509). */
-export function ecdsaSignatureToDer(signature: Uint8Array): Uint8Array | null {
-  if (signature.length === 64 && signature[0] !== 0x30) return ecdsaRawToDer(signature);
-  if (signature[0] === 0x30) return signature;
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,60 +256,92 @@ async function guard<T>(work: () => Promise<CapabilityResult<T>>): Promise<Capab
   }
 }
 
+const subtle = (): SubtleCrypto | null => {
+  const c = (globalThis as { crypto?: { subtle?: SubtleCrypto } }).crypto;
+  return c?.subtle ?? null;
+};
+
 /**
  * Builds the in-memory preview keyring. Identities are keyed by the
  * caller's alias (which IS the opaque handle here — opaque means apps
  * never parse it, and nothing in this tier gives them a reason to).
  * `removeIdentity` is idempotent; every other missing handle is
  * invalid-argument, exactly like the Android host.
+ *
+ * Alias uniqueness is enforced with a SYNCHRONOUS reservation taken before
+ * the first `await`, so two concurrent generateIdentity calls for one
+ * alias can never both succeed — the loser gets invalid-argument, and no
+ * generation result can resurrect an alias removed while it was in flight.
  */
 export function previewKeyring(): PreviewKeysCapability {
   const identities = new Map<string, KeyringEntry>();
+  const generating = new Set<string>();
   const lookup = (handle: KeyHandle): KeyringEntry | null =>
     identities.get(handle) ?? null;
 
   return {
     notASecureStore: true,
     contractVersion: 1,
-    availability: () => ({ status: "supported" }),
+    availability: () =>
+      subtle()
+        ? { status: "supported" }
+        : { status: "unavailable", reason: "preview host has no WebCrypto (crypto.subtle)" },
     permissionPrerequisites: () => [],
     generateIdentity(alias) {
       return guard(async () => {
-        if (typeof alias !== "string" || alias.length === 0) {
-          return invalid("alias must be a non-empty string");
+        if (!validKeyAlias(alias)) {
+          return invalid("alias must be a string of 1..128 Unicode code points without control characters or lone surrogates");
         }
-        if (identities.has(alias)) {
+        // Synchronous reservation: any concurrent duplicate fails here,
+        // before any await can interleave.
+        if (identities.has(alias) || generating.has(alias)) {
           return invalid(`alias already exists: ${alias}`);
         }
-        const pair = await crypto.subtle.generateKey(
-          { name: "ECDSA", namedCurve: "P-256" },
-          false, // private key stays non-extractable even here
-          ["sign"]
-        );
-        const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
-        const certificateDer = await selfSignedCertificate(alias, spki, pair.privateKey);
-        const entry: KeyringEntry = {
-          certificateDer,
-          certificatePem: pemWrap("CERTIFICATE", certificateDer),
-          privateKey: pair.privateKey,
-        };
-        identities.set(alias, entry);
-        return ok({ handle: alias, certificatePem: entry.certificatePem });
+        generating.add(alias);
+        try {
+          const pair = await subtle()!.generateKey(
+            { name: "ECDSA", namedCurve: "P-256" },
+            false, // private key stays non-extractable even here
+            ["sign"]
+          );
+          const spki = new Uint8Array(await subtle()!.exportKey("spki", pair.publicKey));
+          const certificateDer = await selfSignedCertificate(alias, spki, pair.privateKey);
+          const entry: KeyringEntry = {
+            certificateDer,
+            certificatePem: pemWrap("CERTIFICATE", certificateDer),
+            privateKey: pair.privateKey,
+          };
+          if (!generating.has(alias)) {
+            // removeIdentity won the race: commit nothing and report the
+            // interleaving instead of silently resurrecting the alias.
+            return platformError(`alias removed during generation: ${alias}`);
+          }
+          identities.set(alias, entry);
+          return ok({ handle: alias, certificatePem: entry.certificatePem });
+        } finally {
+          generating.delete(alias);
+        }
       });
     },
     async sign(handle, data) {
       return guard(async () => {
         const entry = lookup(handle);
         if (!entry) return invalid(`identity not found: ${handle}`);
-        if (!(data instanceof Uint8Array)) return invalid("data must be a Uint8Array");
-        // Normalize to an ArrayBuffer-backed copy for hosts whose WebCrypto
-        // typings/impls require BufferSource (also freezes the input bytes).
+        if (!validKeyData(data)) {
+          return invalid("data must be a Uint8Array of at most 65536 bytes (empty is valid)");
+        }
+        // Copy to an ArrayBuffer-backed buffer for hosts whose WebCrypto
+        // typings require BufferSource (also freezes the input bytes).
         const bytes = new Uint8Array(data);
-        const der = new Uint8Array(
-          await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, entry.privateKey, bytes)
+        const raw = new Uint8Array(
+          await subtle()!.sign({ name: "ECDSA", hash: "SHA-256" }, entry.privateKey, bytes)
         );
-        const raw = ecdsaSignatureToRaw(der);
-        return raw ? ok(raw) : platformError("host produced an unconvertible ECDSA signature");
+        // Compliant WebCrypto returns the pinned raw IEEE P1363 r||s
+        // directly; anything else is a host defect we surface, never fix up.
+        if (raw.length !== 64) {
+          return platformError(`host crypto returned a ${raw.length}-byte ECDSA signature, expected 64`);
+        }
+        return ok(raw);
       });
     },
     async exportCertificatePem(handle) {
@@ -313,6 +353,7 @@ export function previewKeyring(): PreviewKeysCapability {
     async removeIdentity(handle) {
       return guard(async () => {
         identities.delete(handle);
+        generating.delete(handle); // cancels an in-flight generation of the same alias
         return ok(undefined);
       });
     },

@@ -51,9 +51,33 @@ class KeysServiceFormatTest {
         assertNull(
             DerSignature.derToRawP256(byteArrayOf(0x30, 0x81.toByte(), 8, 0, 0, 0, 0, 0, 0, 0))
         )
-        // integer wider than the 32-byte field
+        // wrong outer length
         assertNull(
-            DerSignature.derToRawP256(byteArrayOf(0x30, 0x24, 0x02, 0x21) + ByteArray(33) { 1 })
+            DerSignature.derToRawP256(byteArrayOf(0x30, 0x00, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02))
+        )
+        // trailing byte after a complete SEQUENCE
+        assertNull(
+            DerSignature.derToRawP256(byteArrayOf(0x30, 6, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02, 0x00))
+        )
+        // negative INTEGER (0x80+ magnitude with no sign byte)
+        assertNull(
+            DerSignature.derToRawP256(byteArrayOf(0x30, 6, 0x02, 0x01, 0x80.toByte(), 0x02, 0x01, 0x02))
+        )
+        // redundant sign byte on a positive value
+        assertNull(
+            DerSignature.derToRawP256(byteArrayOf(0x30, 7, 0x02, 2, 0x00, 0x01, 0x02, 0x01, 0x02))
+        )
+        // a third element after the two INTEGERs
+        assertNull(
+            DerSignature.derToRawP256(
+                byteArrayOf(0x30, 9, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02, 0x02, 0x01, 0x03)
+            )
+        )
+        // integer wider than the 32-byte field (complete vector)
+        assertNull(
+            DerSignature.derToRawP256(
+                byteArrayOf(0x30, 0x26, 0x02, 0x21) + ByteArray(33) { 1 } + byteArrayOf(0x02, 0x01, 0x02)
+            )
         )
         // wrong raw length
         assertNull(DerSignature.rawToDerP256(ByteArray(63)))

@@ -59,6 +59,9 @@ export { KEYS_PERMISSIONS } from "./keys";
 export type { KeyHandle, KeyIdentity, KeysCapability } from "./keys";
 export { previewKeyring } from "./keys-preview";
 export type { PreviewKeysCapability } from "./keys-preview";
+export { createHostKeysCapability } from "./keys-native";
+export type { KeysHostCall } from "./keys-native";
+export { validKeyAlias, validKeyData } from "./keys-validation";
 export {
   defineHostCapabilities,
   unsupportedBle,

@@ -9,6 +9,22 @@ plugins {
 // builds never define it.
 val tenunTestInjection = providers.gradleProperty("tenun.testInjection").map { it == "true" }.getOrElse(false)
 
+// TN-189: instrument the compiled public TypeScript adapter, not a handwritten
+// JS copy or a stale checked-in bundle. This asset belongs only to the test APK.
+val keysFixtureAssets = layout.buildDirectory.dir("generated/androidTest/keys-fixture")
+val buildKeysFixture by tasks.registering(Exec::class) {
+    val repoRoot = rootProject.projectDir.resolve("../..")
+    val tools = rootProject.projectDir.resolve("tools/gallery-bundle")
+    workingDir(repoRoot)
+    commandLine("bun", tools.resolve("build-keys-fixture.ts"), keysFixtureAssets.get().file("keys_fixture.js").asFile)
+    inputs.files(tools.resolve("build-keys-fixture.ts"), tools.resolve("keys-fixture-entry.ts"), tools.resolve("tsconfig.json"))
+    inputs.dir(repoRoot.resolve("packages/platform/src"))
+    outputs.dir(keysFixtureAssets)
+}
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("AndroidTestAssets")) dependsOn(buildKeysFixture)
+}
+
 android {
     namespace = "id.my.tenun.embedder"
     compileSdk = 36
@@ -52,6 +68,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir(keysFixtureAssets)
 }
 
 dependencies {

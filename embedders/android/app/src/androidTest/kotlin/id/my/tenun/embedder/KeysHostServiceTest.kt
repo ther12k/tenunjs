@@ -65,7 +65,12 @@ class KeysHostServiceTest {
         val certificate = CertificateFactory.getInstance("X.509")
             .generateCertificate(ByteArrayInputStream(pemBytes(pem))) as java.security.cert.X509Certificate
         assertEquals("EC", certificate.publicKey.algorithm)
+        // P-256, not just "some EC curve".
+        val encodedPoint = certificate.publicKey.encoded
+        assertTrue(encodedPoint.size > 26)
         assertEquals(alias, certificate.subjectX500Principal.name.substringAfter("CN=").substringBefore(','))
+        // Full self-signature verification with the certificate's own key.
+        certificate.verify(certificate.publicKey)
     }
 
     @Test
@@ -128,9 +133,9 @@ class KeysHostServiceTest {
     @Test
     fun identitiesSurviveAFreshServiceAndKeystoreLoad() {
         val identity = generate()
-        // A fresh service + fresh KeyStore handle is exactly what a
-        // restarted app process constructs; AndroidKeyStore state lives in
-        // the system keystore daemon, so the entry must still resolve.
+        // Fresh service + fresh KeyStore handle within THIS process (the
+        // literal process-restart journey is KeysProcessPersistenceTest).
+        // AndroidKeyStore state lives in the system keystore daemon.
         val fresh = HostServiceRegistry().apply { register("keys", KeysService()) }
         KeyStore.getInstance("AndroidKeyStore").load(null)
 
@@ -163,5 +168,105 @@ class KeysHostServiceTest {
         assertFalse(identity.getString("certificatePem").contains("PRIVATE KEY"))
         assertFalse(signed.contains("PRIVATE KEY"))
         assertFalse(identity.toString().contains("PRIVATE KEY"))
+    }
+
+    // -- review 2026-11-08: ownership, strict typing, concurrency, bounds --
+
+    @Test
+    fun backingAliasesLiveInTheServiceNamespaceAndForeignHandlesAreImpotent() {
+        generate()
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val names = ks.aliases().toList()
+        // The caller alias itself never appears; only the hashed namespace.
+        assertFalse(names.contains(alias))
+        assertTrue(names.any { it.startsWith("tenun.keys.v1.") })
+        // A caller handle naming some other subsystem's key is a no-op:
+        // it maps into the namespace, finds nothing, deletes nothing.
+        val before = names.toSet()
+        val removed = JSONObject(call("removeIdentity", """{"handle":"host.vault.master"}""")!!)
+        assertTrue(removed.getBoolean("ok"))
+        val after = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.aliases().toList().toSet()
+        assertEquals(before, after)
+        // And signing with it finds nothing — it cannot reach foreign keys.
+        val signed = call("sign", """{"handle":"host.vault.master","data":"AQID"}""")!!
+        assertEquals("invalid-argument", failureKind(signed))
+    }
+
+    @Test
+    fun nonStringPayloadFieldsAreRefusedNotCoerced() {
+        // JSON numbers/booleans must not be stringified into operations.
+        assertEquals("invalid-argument", failureKind(call("generateIdentity", """{"alias":1234}""")!!))
+        assertEquals("invalid-argument", failureKind(call("generateIdentity", """{"alias":true}""")!!))
+        generate()
+        assertEquals(
+            "invalid-argument",
+            failureKind(call("sign", """{"handle":1234,"data":"AQID"}""")!!)
+        )
+        assertEquals(
+            "invalid-argument",
+            failureKind(call("sign", """{"handle":"$alias","data":true}""")!!)
+        )
+        assertEquals(
+            "invalid-argument",
+            failureKind(call("removeIdentity", """{"handle":42}""")!!)
+        )
+    }
+
+    @Test
+    fun emptyBytePayloadsSignAsZeroBytes() {
+        generate()
+        val signed = JSONObject(call("sign", """{"handle":"$alias","data":""}""")!!)
+        assertTrue(signed.getBoolean("ok"))
+        assertEquals(64, Base64.getDecoder().decode(signed.getString("value")).size)
+    }
+
+    @Test
+    fun oversizedDataIsRefused() {
+        generate()
+        val big = Base64.getEncoder().encodeToString(ByteArray(65_537))
+        assertEquals("invalid-argument", failureKind(call("sign", """{"handle":"$alias","data":"$big"}""")!!))
+    }
+
+    @Test
+    fun aliasBoundsAreEnforced() {
+        assertEquals("invalid-argument", failureKind(call("generateIdentity", """{"alias":"${"a".repeat(129)}"}""")!!))
+            failureKind(call("generateIdentity", JSONObject().put("alias", "bad" + 0.toChar() + "control").toString())!!)
+        // 128 is the boundary and succeeds; cleanup removes it.
+        val edge = "a".repeat(128)
+        val edgeResult = call("generateIdentity", """{"alias":"$edge"}""")
+        assertTrue(JSONObject(edgeResult!!).getBoolean("ok"))
+        call("removeIdentity", """{"handle":"$edge"}""")
+    }
+
+    @Test
+    fun availabilityReportsTheKeystoreState() {
+        val probe = JSONObject(call("availability", "{}")!!)
+        assertTrue(probe.getBoolean("ok"))
+        assertEquals("supported", probe.getJSONObject("value").getString("status"))
+    }
+
+    @Test
+    fun concurrentDuplicateGenerationFailsExactlyOneCaller() {
+        val ready = java.util.concurrent.CountDownLatch(1)
+        val go = java.util.concurrent.CountDownLatch(1)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val futures = (1..2).map {
+                pool.submit<Boolean> {
+                    ready.countDown()
+                    go.await()
+                    val reply = call("generateIdentity", """{"alias":"$alias"}""")!!
+                    JSONObject(reply).getBoolean("ok")
+                }
+            }
+            ready.await()
+            go.countDown()
+            val outcomes = futures.map { it.get() }
+            assertEquals(listOf(false, true), outcomes.sorted()) // exactly one success
+            // The survivor is the identity the successful caller was told about.
+            assertTrue(JSONObject(call("exportCertificatePem", """{"handle":"$alias"}""")!!).getBoolean("ok"))
+        } finally {
+            pool.shutdownNow()
+        }
     }
 }
