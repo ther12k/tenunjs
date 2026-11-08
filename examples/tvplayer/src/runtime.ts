@@ -28,6 +28,9 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 export {
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
+  GAP_SM,
+  PAD_LG,
+  SIDEBAR_W,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
   KEY_DPAD_UP,
@@ -85,10 +88,34 @@ export class TvplayerRuntime {
   private readonly form: FormFactor;
   private readonly videoRect: Readonly<{ x: number; y: number; w: number; h: number }>;
   private channels: readonly PlaylistEntry[] = STARTER_PLAYLIST;
-  private currentIndex = 0;
+  /** Active group filter; null = All (the parser's group-title). */
+  private activeGroup: string | null = null;
+  /** Playback identity (urls are stable across filter changes; filtered
+   *  array indexes are not — a group switch never interrupts playback). */
+  private currentUrl: string | null = null;
   private focusIndex = 0;
+  private focusZone: "rows" | "chips" = "rows";
   private sidebar = true; // discoverable first boot: the grid is open
   private status: MediaStatus = { state: "idle" };
+
+  /** The channel list under the active group filter. */
+  private get vis(): readonly PlaylistEntry[] {
+    return this.activeGroup === null
+      ? this.channels
+      : this.channels.filter((c) => c.group === this.activeGroup);
+  }
+
+  /** Distinct groups in playlist order (the chips: All + these). */
+  private groups(): string[] {
+    return [...new Set(this.channels.map((c) => c.group).filter((g) => g !== ""))];
+  }
+
+  /** The playing channel's position in the VISIBLE list; -1 when the
+   *  active filter hides it (playback continues regardless). */
+  private get currentIndex(): number {
+    if (this.currentUrl === null) return -1;
+    return this.vis.findIndex((c) => c.url === this.currentUrl);
+  }
 
   /**
    * @param formFactor "tv" (default — 960-unit 10-foot layout, sidebar
@@ -109,6 +136,7 @@ export class TvplayerRuntime {
       navigate: (route: string) => this.navigate(route),
       loadPlaylist: (url: string) => void this.loadPlaylist(url),
       select: (index: number) => this.select(index),
+      setGroup: (group: string | null) => this.setGroup(group),
     };
     this.app = new ApplicationRuntime({
       screens,
@@ -211,33 +239,73 @@ export class TvplayerRuntime {
   }
 
   private playerKey(keyCode: number): boolean {
-    const count = this.channels.length;
-    if (keyCode === KEY_DPAD_RIGHT) {
+    // The chips zone owns LEFT/RIGHT (group cycling); everywhere else
+    // RIGHT opens Settings (rows zone: LEFT closes the list).
+    if (this.sidebar && this.focusZone === "chips") {
+      if (keyCode === KEY_DPAD_LEFT) {
+        this.cycleGroup(-1);
+        return true;
+      }
+      if (keyCode === KEY_DPAD_RIGHT) {
+        this.cycleGroup(1);
+        return true;
+      }
+    } else if (keyCode === KEY_DPAD_RIGHT) {
       this.navigate("settings");
       return true;
     }
-    if (count === 0) return false;
-    const step = keyCode === KEY_DPAD_UP ? -1 : keyCode === KEY_DPAD_DOWN ? 1 : 0;
-    if (step !== 0) {
-      if (!this.sidebar) {
-        // YouTube-style: the pad OPENS the list at the live channel —
-        // browsing happens over uninterrupted playback, never a blind
-        // zap. The first press only opens; further presses move.
+
+    if (!this.sidebar) {
+      // YouTube-style: the pad OPENS the list at the live channel —
+      // browsing happens over uninterrupted playback, never a blind
+      // zap. The first press only opens; further presses move.
+      if (keyCode === KEY_DPAD_UP || keyCode === KEY_DPAD_DOWN) {
         this.sidebar = true;
-        this.focusIndex = this.currentIndex;
+        this.focusZone = "rows";
+        this.focusIndex = Math.max(0, this.currentIndex);
+        this.pushFocus();
+        return true;
+      }
+      if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
+        this.sidebar = true;
+        this.focusZone = "rows";
+        this.focusIndex = Math.max(0, this.currentIndex);
+        this.pushFocus();
+        return true;
+      }
+      return false;
+    }
+
+    if (this.focusZone === "chips") {
+      if (keyCode === KEY_DPAD_DOWN || keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
+        this.focusZone = "rows";
+        this.focusIndex = 0;
+        this.pushFocus();
+        return true;
+      }
+      return false; // UP stays on the chips (nothing above)
+    }
+
+    // Rows zone.
+    const count = this.vis.length;
+    if (keyCode === KEY_DPAD_UP) {
+      if (this.focusIndex <= 0) {
+        // UP off the top: land on the group chips at the active group.
+        this.focusZone = "chips";
+        this.focusIndex = this.chipPosition();
       } else {
-        this.focusIndex = (this.focusIndex + step + count) % count;
+        this.focusIndex -= 1;
       }
       this.pushFocus();
       return true;
     }
+    if (count > 0 && keyCode === KEY_DPAD_DOWN) {
+      this.focusIndex = (this.focusIndex + 1) % count;
+      this.pushFocus();
+      return true;
+    }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-      if (!this.sidebar) {
-        this.sidebar = true;
-        this.focusIndex = this.currentIndex;
-        this.pushFocus();
-        return true;
-      }
+      if (count === 0) return false;
       // OK on the live channel just closes the list; a different
       // channel switches playback (the old stream runs until the new
       // prepare lands — one player per host).
@@ -247,12 +315,39 @@ export class TvplayerRuntime {
       return true;
     }
     if (keyCode === KEY_DPAD_LEFT) {
-      if (!this.sidebar) return false;
       this.sidebar = false;
       this.pushFocus();
       return true;
     }
     return false;
+  }
+
+  /** Index of the active group in the chip row [All, …groups]. */
+  private chipPosition(): number {
+    return this.activeGroup === null ? 0 : 1 + this.groups().indexOf(this.activeGroup);
+  }
+
+  /** Cycles the group filter; NEVER touches playback. */
+  private cycleGroup(dir: number): void {
+    this.setGroupAt((this.chipPosition() + dir + this.groups().length + 1) % (this.groups().length + 1));
+  }
+
+  /** Sets the group filter by chip index (0 = All). */
+  private setGroupAt(chip: number): void {
+    this.activeGroup = chip === 0 ? null : (this.groups()[chip - 1] ?? null);
+    this.focusIndex = 0;
+    this.focusZone = "chips";
+    this.pushChannels();
+    this.pushFocus();
+  }
+
+  /** Group selection from the UI (phone chip taps / screen action). */
+  setGroup(group: string | null): void {
+    this.activeGroup = group === null || group === "" ? null : group;
+    this.focusIndex = 0;
+    this.focusZone = "rows";
+    this.pushChannels();
+    this.pushFocus();
   }
 
   // ------------------------------------------------------------------
@@ -264,9 +359,9 @@ export class TvplayerRuntime {
    *  surfaces as a pushed error state (the browser preview's stub answers
    *  unsupported, and the scene must say so — never a silent idle). */
   zapTo(index: number): void {
-    const channel = this.channels[index];
+    const channel = this.vis[index];
     if (!channel) return;
-    this.currentIndex = index;
+    this.currentUrl = channel.url;
     this.focusIndex = index;
     this.pushNowPlaying();
     this.pushFocus();
@@ -291,10 +386,10 @@ export class TvplayerRuntime {
   }
 
   /** Direct channel selection (the phone list's tap path; also what
-   *  the D-pad OK resolves to). Selecting the live channel is a no-op
-   *  re-prepare-wise. */
+   *  the D-pad OK resolves to). Indexes the VISIBLE list; selecting the
+   *  live channel is a no-op re-prepare-wise. */
   select(index: number): void {
-    if (index < 0 || index >= this.channels.length) return;
+    if (index < 0 || index >= this.vis.length) return;
     this.focusIndex = index;
     if (index !== this.currentIndex) this.zapTo(index);
     this.pushFocus();
@@ -322,9 +417,12 @@ export class TvplayerRuntime {
       return;
     }
     this.channels = entries;
+    this.activeGroup = null;
+    this.currentUrl = null;
     this.pushChannels();
     this.zapTo(0);
     this.sidebar = true;
+    this.focusZone = "rows";
     this.pushFocus();
     this.navigate("player");
     this.app.pushTo("settings", "loadResult", {
@@ -344,18 +442,30 @@ export class TvplayerRuntime {
   // ------------------------------------------------------------------
 
   private pushChannels(): void {
-    this.app.pushState("channels", { channels: this.channels, index: this.currentIndex });
+    this.app.pushState("channels", {
+      channels: this.vis,
+      groups: this.groups(),
+      activeGroup: this.activeGroup,
+    });
   }
 
   private pushFocus(): void {
-    const focus: FocusState = { sidebar: this.sidebar, index: this.focusIndex };
+    const focus: FocusState = {
+      sidebar: this.sidebar,
+      index: this.focusIndex,
+      zone: this.focusZone,
+    };
     this.app.pushState("focus", focus);
   }
 
   private pushNowPlaying(): void {
-    const channel = this.channels[this.currentIndex];
+    const channel = this.channels.find((c) => c.url === this.currentUrl);
     if (!channel) return;
-    const now: NowPlaying = { index: this.currentIndex, title: channel.title, url: channel.url };
+    const now: NowPlaying = {
+      index: Math.max(0, this.currentIndex),
+      title: channel.title,
+      url: channel.url,
+    };
     this.app.pushState("channel", now);
   }
 

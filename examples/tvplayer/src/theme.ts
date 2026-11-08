@@ -33,3 +33,19 @@ export const tvTheme = defineTheme({
     caption: { size: 18, lineHeight: 24, weight: 400 },
   },
 });
+
+/**
+ * Group identity colors — the number-tile accent per channel group
+ * (the scene contract has no image op in v1, so logos become colored
+ * tiles; the group's hue is the identity).
+ */
+export const GROUP_COLORS: Readonly<Record<string, string>> = {
+  TVRI: "#00ADB5",
+  Test: "#CCA700",
+};
+
+const GROUP_FALLBACK = "#4E5A6C";
+
+export function groupColor(group: string): string {
+  return GROUP_COLORS[group] ?? GROUP_FALLBACK;
+}

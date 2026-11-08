@@ -15,7 +15,9 @@ export const DESIGN_WIDTH = 960;
  * asserts via media.setRect and the TextureView occupies on device.
  */
 export const PAD_LG = 24;
-export const SIDEBAR_W = 240;
+/** Wide enough for tile + full titles (the reference UI's proportions:
+ *  the list takes a third, the video the rest). */
+export const SIDEBAR_W = 320;
 export const GAP_SM = 8;
 
 /** The video region in design units. ADR-0028 documented ceiling: ONE
@@ -57,6 +59,9 @@ export const KEYCODE_ENTER = 66;
 export interface FocusState {
   readonly sidebar: boolean;
   readonly index: number;
+  /** Which sidebar zone the D-pad ring is on: the group chips or the
+   *  channel rows (TV form; the phone form taps chips directly). */
+  readonly zone: "rows" | "chips";
 }
 
 export interface NowPlaying {

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { TvplayerRuntime, VIDEO_RECT, type LoadResult } from "../src/runtime";
+import {
+  TvplayerRuntime,
+  VIDEO_RECT,
+  GAP_SM,
+  PAD_LG,
+  SIDEBAR_W,
+  DESIGN_WIDTH,
+  type LoadResult,
+} from "../src/runtime";
 import { STARTER_PLAYLIST } from "../src/starter-playlist";
 import type { MediaCapability } from "@tenunjs/platform";
 
@@ -89,9 +97,9 @@ describe("TN-196 tvplayer boot", () => {
     // The slot the scene reserves (padding-lg | sidebar | gap-sm) and the
     // rect the runtime asserts via setRect are the SAME derivation —
     // the 2026-11-07 hand-written rect overlapped the sidebar by 16px.
-    expect(VIDEO_RECT.x).toBe(24 + 240 + 8);
-    expect(VIDEO_RECT.w).toBe(960 - (24 + 240 + 8) - 24);
-    expect(VIDEO_RECT.x + VIDEO_RECT.w).toBe(960 - 24);
+    expect(VIDEO_RECT.x).toBe(PAD_LG + SIDEBAR_W + GAP_SM);
+    expect(VIDEO_RECT.w).toBe(DESIGN_WIDTH - (PAD_LG + SIDEBAR_W + GAP_SM) - PAD_LG);
+    expect(VIDEO_RECT.x + VIDEO_RECT.w).toBe(DESIGN_WIDTH - PAD_LG);
   });
 });
 
@@ -298,8 +306,11 @@ describe("TN-196 phone form factor", () => {
     }).scene;
     const taps = scene.taps ?? [];
     expect(taps.length).toBeGreaterThan(1);
-    const thirdTapId = taps[2]!.payload!.id;
-    runtime.dispatch("TAP", { id: thirdTapId });
+    // Phone taps: the group chips come first (All + one per group),
+    // then the visible channel rows.
+    const chips = 1 + 2; // Semua, TVRI, Test
+    const thirdRowTapId = taps[chips + 2]!.payload!.id;
+    runtime.dispatch("TAP", { id: thirdRowTapId });
     await settle();
 
     expect(calls).toContain(`prepare:${THIRD.url}`);
@@ -317,6 +328,52 @@ describe("TN-196 phone form factor", () => {
     runtime.keyPress(23, "down"); // OK plays 02
     await settle();
     expect(calls).toContain(`prepare:${SECOND.url}`);
+  });
+});
+
+describe("TN-196 channel groups (the reference UI's chips)", () => {
+  test("chips filter the list; switching groups NEVER interrupts playback", async () => {
+    const { media, calls } = fakeMedia();
+    const runtime = new TvplayerRuntime({ media });
+    await settle();
+    expect(textsInclude(sceneTexts(runtime), "Semua")).toBe(true); // chips render
+
+    // Play channel 02 (DKI).
+    runtime.keyPress(20, "down");
+    runtime.keyPress(23, "down");
+    await settle();
+    calls.length = 0;
+
+    // UP reopens the list at the live row, further UPs reach row 0 and
+    // then the chips; RIGHT there cycles groups (RIGHT in the rows
+    // zone is Settings, so the chips must be reached first).
+    expect(runtime.keyPress(19, "down")).toBe(true); // open at DKI (row 02)
+    expect(runtime.keyPress(19, "down")).toBe(true); // row 02 → 01
+    expect(runtime.keyPress(19, "down")).toBe(true); // row 01 → chips
+    expect(runtime.keyPress(22, "down")).toBe(true); // All → TVRI
+    await settle();
+    expect(calls).toHaveLength(0); // group switch must not touch the player
+    runtime.keyPress(22, "down"); // TVRI → Test
+    await settle();
+    expect(calls).toHaveLength(0);
+
+    // Test group: only the mux stream; play it.
+    expect(runtime.keyPress(20, "down")).toBe(true); // chips → rows
+    runtime.keyPress(20, "down"); // rows[0] focus (1 visible row, wrap)
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK plays Mux
+    await settle();
+    expect(calls).toContain(`prepare:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`);
+
+    // Now-playing survives a filter that hides it: cycle back to All.
+    runtime.keyPress(19, "down"); // reopen the list at the live row (Mux, row 0)
+    runtime.keyPress(19, "down"); // rows[0] → chips (at Test's position)
+    runtime.keyPress(21, "down"); // Test → TVRI
+    runtime.keyPress(21, "down"); // TVRI → All
+    await settle();
+    expect(textsInclude(sceneTexts(runtime), "24 CHANNELS · Semua")).toBe(true);
+    calls.length = 0;
+    expect(runtime.keyPress(20, "down")).toBe(true); // into rows — still no player calls
+    expect(calls).toHaveLength(0);
   });
 });
 
