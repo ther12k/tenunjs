@@ -1,5 +1,5 @@
 /**
- * Tenun TV browser preview (TN-196 item 5): a minimal canvas host so
+ * NusaTV browser preview (TN-196 item 5): a minimal canvas host so
  * the app can be developed and demoed without the TV. The media seam
  * is the FAIL-CLOSED unsupportedMedia() stub — the preview never plays
  * video; it proves the scene, the KEY focus journeys, and the

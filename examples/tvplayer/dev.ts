@@ -1,5 +1,5 @@
 /**
- * Tenun TV preview dev server (TN-196): serves the browser preview at
+ * NusaTV preview dev server (TN-196): serves the browser preview at
  * http://localhost:8185/. Minimal on purpose — no hot reload, no APK
  * asset channel (the tv flavor's bundle comes from
  * build-tvplayer-apk-asset.mjs); rebuild + refresh to see changes.
@@ -10,7 +10,7 @@ const HTML = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Tenun TV — preview</title>
+<title>NusaTV — preview</title>
 <style>
   body { margin: 0; background: #101014; color: #8E8E99;
          font: 14px/1.4 system-ui, sans-serif; }
@@ -52,4 +52,4 @@ Bun.serve({
     return new Response(HTML, { headers: { "content-type": "text/html" } });
   },
 });
-console.log(`Tenun TV preview: http://localhost:${PORT}/`);
+console.log(`NusaTV preview: http://localhost:${PORT}/`);

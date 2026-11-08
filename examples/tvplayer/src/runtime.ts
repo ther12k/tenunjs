@@ -61,7 +61,7 @@ export type { FocusState, NowPlaying, LoadResult } from "./layout";
 type AnyScreen = ScreenDefinition<any, any>;
 
 /**
- * Tenun TV runtime (TN-196): screen composition + the media seam the
+ * NusaTV runtime (TN-196): screen composition + the media seam the
  * host injects, plus the APP-LEVEL focus helper over KEY actions
  * (deliberately in-app, not framework — ADR-0028; TN-194 dispatches
  * the keys, this class decides what they mean).
@@ -172,6 +172,30 @@ export class TvplayerRuntime {
     this.pushNowPlaying();
     this.pushMedia();
     this.ensureVideoRect();
+    this.startClock();
+  }
+
+  /**
+   * The wall clock (the reference UI's top-right time): pushed as
+   * "HH.MM" now and on every minute boundary. The re-arm is a plain
+   * setTimeout — the bundle entry's timer shim on device (the host's
+   * system.scheduleTimer drains it), a real timer in browsers/tests.
+   */
+  private startClock(): void {
+    const push = () => {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      this.app.pushState("clock", `${hh}.${mm}`);
+    };
+    push();
+    const rearm = () => {
+      setTimeout(() => {
+        push();
+        rearm();
+      }, 60_000 - (Date.now() % 60_000) + 50);
+    };
+    rearm();
   }
 
   // ------------------------------------------------------------------

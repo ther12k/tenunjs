@@ -1,7 +1,7 @@
 ---
 okf_version: 0.2
 title: "TN-195: TV embedder flavor — leanback packaging and armeabi-v7a"
-summary: "Add a `tv` product flavor to the Android embedder: applicationId id.my.tenun.tvplayer, label Tenun TV, armeabi-v7a added to abiFilters (target TV hardware), and a flavor manifest overlay with LEANBACK_LAUNCHER, leanback uses-feature, and a banner drawable. The touch flavor stays untouched."
+summary: "Add a `tv` product flavor to the Android embedder: applicationId id.my.tenun.tvplayer, label NusaTV (working name "Tenun TV"), armeabi-v7a added to abiFilters (target TV hardware), and a flavor manifest overlay with LEANBACK_LAUNCHER, leanback uses-feature, and a banner drawable. The touch flavor stays untouched."
 type: issue
 status: in-progress
 issue_id: "TN-195"
@@ -24,7 +24,7 @@ initiative's device gate.
 
 1. `productFlavors { tv { ... } }` in the embedder's
    `app/build.gradle.kts`: `applicationId id.my.tenun.tvplayer`,
-   label "Tenun TV", `abiFilters += "armeabi-v7a"` (QuickJS/CMake
+   label "NusaTV", `abiFilters += "armeabi-v7a"` (QuickJS/CMake
    build needs no change); the default touch flavor is bit-identical
    in behavior to today's build.
 2. Flavor manifest overlay (`src/tv/AndroidManifest.xml`): a

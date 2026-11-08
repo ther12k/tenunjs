@@ -1,5 +1,5 @@
 /**
- * TN-196 native host entry for Tenun TV: packages TvplayerRuntime for
+ * TN-196 native host entry for NusaTV: packages TvplayerRuntime for
  * native Android execution in QuickJS (tv flavor) with the JNI Host
  * Service Bridge for the "media" host service (TN-193) and the KEY
  * action path (TN-194) — the polytron-entry pattern.

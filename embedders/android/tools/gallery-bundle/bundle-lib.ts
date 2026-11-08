@@ -238,7 +238,7 @@ export async function buildPolytronBundle(): Promise<BundleArtifact> {
 }
 
 /**
- * Builds the TN-196 Tenun TV bundle: the TvplayerRuntime composition
+ * Builds the TN-196 NusaTV bundle: the TvplayerRuntime composition
  * (screens + media host-service bridge + KEY focus path) through the
  * public host-handoff contract, as the tv flavor's bundled APK asset.
  */
@@ -257,7 +257,7 @@ export async function buildTvplayerBundle(): Promise<BundleArtifact> {
   if (/^\s*(import|export)\s/m.test(code)) {
     code = `(function(){\n${code}\n})();`;
   }
-  smokeRun(code, "tvplayer_app.js", ['TENUN TV', 'TVRI Nasional']);
+  smokeRun(code, "tvplayer_app.js", ['NusaTV', 'TVRI Nasional']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),

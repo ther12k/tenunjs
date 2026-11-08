@@ -75,7 +75,7 @@ status: accepted
 | 03-decisions/adr-0025-scene-semantics-wire-v1.md | 7b16a0cda20347a39bef78dc41327426d34a73b1de664248a6b55d7e53ab81a4 |
 | 03-decisions/adr-0026-staged-skia-adoption.md | f9da28ccac0a4a97f0a9f3ca2a18d107387c06a34090811d342e73c9e5f1b446 |
 | 03-decisions/adr-0027-companion-connectivity-capabilities.md | ec5e35766d31467a00266df27ff2821b507e290f5e10e1def3271fab846a29f9 |
-| 03-decisions/adr-0028-media-and-tv-capabilities.md | a41616c58783d7dd97774141d218f27b4059073fb07df42002b82ed55e6bf01e |
+| 03-decisions/adr-0028-media-and-tv-capabilities.md | bfcf4f7d100e3b8ca4adcd66928895aea2387a4c8dc0509d90223be1820a3fa8 |
 | 03-decisions/index.md | 19f7487677571dbf75bdfb28dfe37ec7614f7a317e96388afe7d65fbed90392f |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
@@ -306,7 +306,7 @@ status: accepted
 | 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |
 | 06-issues/tn-193-media-host-service-media3-and-textureview-compositing.md | cd1c74ed9eda70c1f478e49be424c135f482a305198f4156405b94c0d7ef3661 |
 | 06-issues/tn-194-generic-key-action-dispatch-from-android-host.md | ac7ddfefd8d66c0cefd6511da5c2dc15b389a59ccc4293c8db3d4746e01c701b |
-| 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | e7dc04cce90cf07e870c5f1e37c751caf2a39bf52ceabb7d78a402e86985da4b |
+| 06-issues/tn-195-tv-embedder-flavor-leanback-and-armeabi-v7a.md | a83f87f19332b60b9348023719c5d8b7b008aa88084d59f92d22e4dc1c2137c5 |
 | 06-issues/tn-196-tenun-tv-example-app-and-device-bringup.md | 3c96a38f11cdfaf55b2b80072562861a1370d97bd8a0ec53396ebff9de576879 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |

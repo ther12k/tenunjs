@@ -1,5 +1,5 @@
 /**
- * Shared layout + input constants for the Tenun TV app (TN-196). A leaf
+ * Shared layout + input constants for the NusaTV app (TN-196). A leaf
  * module: the runtime and the screens both import it, so it must import
  * nothing (the application module graph gate forbids cycles).
  */

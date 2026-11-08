@@ -45,6 +45,9 @@ export interface PlayerState {
   now: NowPlaying | null;
   focus: FocusState;
   media: MediaStatus | null;
+  /** Local wall clock "HH.MM" (the reference's top-right time; pushed
+   *  by the runtime's minute-aligned tick). */
+  clock: string;
 }
 
 /** Media states in which the current channel is genuinely on air. */
@@ -97,12 +100,12 @@ function Rail(props: { focusedItem: number | null }) {
         <Container color="accent" radius={10} width={44} height={44}>
           <Column align="center" justify="center">
             <Text variant="label" color="onPrimaryContainer">
-              TV
+              NT
             </Text>
           </Column>
         </Container>
         <Text variant="caption" color="textDim">
-          TENUN
+          NUSA TV
         </Text>
         {items.map((item, i) => {
           const focused = props.focusedItem === i;
@@ -257,7 +260,7 @@ function ChannelCard(props: {
         <Column padding="sm">
           <Text
             variant="caption"
-            color={focused ? "onPrimaryContainer" : "text"}
+            color={focused ? "onPrimaryContainer" : live ? "accent" : "text"}
             maxLines={1}
             ellipsis
           >
@@ -270,19 +273,21 @@ function ChannelCard(props: {
 }
 
 /**
- * The idle/error placeholder painted inside the video slot. Idle, it
- * previews the CARD cursor ("NN · title") so the slot reads as the
- * about-to-play channel, not a dead box; `preview` is that caption
- * (null on an empty list). Height is a prop — the same placeholder
- * paints the hero, the phone slot, and the fullscreen rect.
+ * The idle/error placeholder painted inside the video slot — the
+ * reference's "now watching" block: the channel's GROUP-COLORED number
+ * tile (the card tile, enlarged) beside its title and state caption.
+ * Idle, it previews the CARD cursor so the slot reads as the
+ * about-to-play channel, not a dead box. Height is a prop — the same
+ * placeholder paints the hero, the phone slot, and the fullscreen rect.
  */
 function VideoPlaceholder(props: {
   media: MediaStatus | null;
   now: NowPlaying | null;
   h: number;
-  preview?: string | null;
+  channel?: PlaylistEntry | null;
+  no?: string | null;
 }) {
-  const { media, now, h, preview } = props;
+  const { media, now, h, channel, no } = props;
   if (media?.state === "playing" || media?.state === "paused") {
     // On device the overlay covers the slot with real frames; nothing
     // to draw. (The preview cannot reach these states — its media seam
@@ -290,27 +295,37 @@ function VideoPlaceholder(props: {
     return <SizedBox height={h} />;
   }
   const isErr = media?.state === "error";
-  const glyph = isErr ? "✕" : media?.state === "buffering" ? "…" : "▶";
-  const title = isErr ? "No signal" : (preview ?? "No channel");
+  const buffering = media?.state === "buffering";
+  const tileColor = isErr ? "danger" : channel ? groupColor(channel.group) : "outline";
+  const tileText = isErr ? "✕" : buffering ? "…" : (no ?? "–");
+  const title = isErr ? "No signal" : channel ? channel.title : (now?.title ?? "No channel");
   const caption = isErr
     ? (media.message ?? "playback failed")
-    : media?.state === "buffering"
-      ? (preview ?? now?.title ?? "")
-      : preview
+    : buffering
+      ? "Buffering…"
+      : channel
         ? "OK to watch"
         : "OK opens the channel list";
   return (
     <Container color="surfaceRaised" radius={16} height={h}>
       <Column align="center" justify="center" gap="md">
-        <Text variant="display" color={isErr ? "danger" : "outline"}>
-          {glyph}
-        </Text>
-        <Text variant="title" color={isErr ? "danger" : "text"} maxLines={1} ellipsis>
-          {title}
-        </Text>
-        <Text variant="caption" color="textDim">
-          {caption}
-        </Text>
+        <Row gap="md" align="center">
+          <Container color={tileColor} radius={16} width={72} height={72}>
+            <Column align="center" justify="center">
+              <Text variant="title" color="#FFFFFF">
+                {tileText}
+              </Text>
+            </Column>
+          </Container>
+          <Column gap="sm" align="start">
+            <Text variant={isErr ? "title" : "headline"} color={isErr ? "danger" : "text"} maxLines={1} ellipsis>
+              {title}
+            </Text>
+            <Text variant="caption" color="textDim" maxLines={1} ellipsis>
+              {caption}
+            </Text>
+          </Column>
+        </Row>
       </Column>
     </Container>
   );
@@ -327,6 +342,7 @@ export const PlayerScreen = defineScreen({
     now: null,
     focus: { index: 0, cardIndex: 0, zone: "cards", fullscreen: false },
     media: null,
+    clock: "",
   }),
   actions: {
     form: defineAction<PlayerState, FormFactor>({
@@ -363,6 +379,12 @@ export const PlayerScreen = defineScreen({
         state.media = input;
       },
     }),
+    /** The minute-aligned wall clock push (the runtime's tick). */
+    clock: defineAction<PlayerState, string>({
+      run({ input, state }) {
+        state.clock = input;
+      },
+    }),
     /** Phone list tap: select + play this channel. */
     select: defineAction<PlayerState, number>({
       run({ input, services }) {
@@ -391,12 +413,9 @@ export const PlayerScreen = defineScreen({
     const cardWindow = state.channels.slice(tvWinStart, tvWinStart + CARDS_VISIBLE);
     const phoneWinStart = Math.max(0, Math.min(cardIdx - 2, count - PHONE_ROWS));
     const phoneWindow = state.channels.slice(phoneWinStart, phoneWinStart + PHONE_ROWS);
-    // The focused card's caption — the idle video slot previews it, so
-    // the placeholder reads as the about-to-play channel.
+    // The focused card — the idle video slot previews it (tile + title),
+    // so the placeholder reads as the about-to-play channel.
     const focusedChannel = count > 0 ? state.channels[cardIdx] : undefined;
-    const previewTitle = focusedChannel
-      ? `${channelNo(cardIdx)} · ${focusedChannel.title}`
-      : null;
     const hints: Record<typeof zone, string> = {
       rail: "↑↓ rail · OK open · → tabs",
       tabs: "←→ group · ↓ cards · ↑ rail",
@@ -419,7 +438,8 @@ export const PlayerScreen = defineScreen({
               media={state.media}
               now={state.now}
               h={FULLSCREEN_RECT.h}
-              preview={previewTitle}
+              channel={focusedChannel ?? null}
+              no={count > 0 ? channelNo(cardIdx) : null}
             />
           </SizedBox>
         </Scaffold>
@@ -441,14 +461,15 @@ export const PlayerScreen = defineScreen({
                 media={state.media}
                 now={state.now}
                 h={VIDEO_RECT_PHONE.h}
-                preview={previewTitle}
+                channel={focusedChannel ?? null}
+                no={count > 0 ? channelNo(cardIdx) : null}
               />
             </SizedBox>
             <Column padding="md" gap="md">
               <Row gap="md" align="center" justify="between">
                 <Column gap="sm">
                   <Text variant="label" color="text">
-                    TENUN TV
+                    NusaTV
                   </Text>
                   <Container color="accent" radius={2} width={72} height={3} />
                 </Column>
@@ -515,25 +536,25 @@ export const PlayerScreen = defineScreen({
                 media={state.media}
                 now={state.now}
                 h={VIDEO_RECT.h}
-                preview={previewTitle}
+                channel={focusedChannel ?? null}
+                no={count > 0 ? channelNo(cardIdx) : null}
               />
             </SizedBox>
-            {/* The group tabs — count on the right (the active group
-                is already the highlighted chip); switching groups NEVER
-                interrupts playback. */}
+            {/* The group tabs — the wall clock on the right (the
+                reference's top-right time; the active group is already
+                the highlighted chip); switching groups NEVER interrupts
+                playback. */}
             <Row justify="between" align="center">
               <GroupChips
                 groups={state.groups}
                 activeGroup={state.activeGroup}
                 focusedChip={zone === "tabs" ? state.focus.index : null}
               />
-              {/* Bounded box: the row would otherwise squeeze the
-                  caption to a word-wrapped sliver. */}
-              <SizedBox width={150}>
-                <Text variant="caption" color="textDim" maxLines={1} ellipsis>
-                  {`${count} CHANNEL${count === 1 ? "" : "S"}`}
+              {state.clock !== "" && (
+                <Text variant="label" color="text">
+                  {state.clock}
                 </Text>
-              </SizedBox>
+              )}
             </Row>
             {/* The horizontal channel cards — ALWAYS visible under the
                 hero; the window slides with the card cursor. */}
@@ -562,15 +583,15 @@ export const PlayerScreen = defineScreen({
               </Row>
             )}
             {/* Status line — state + now playing left (the full width
-                keeps long titles readable), key hints right. */}
+                keeps long titles readable), count + key hints right. */}
             <Row justify="between">
               <Text variant="caption" color={pill.color} maxLines={1} ellipsis>
                 {state.now
                   ? `${pill.text} · ${channelNo(state.now.index)} · ${state.now.title}`
-                  : `TENUN TV · ${pill.text}`}
+                  : `NusaTV · ${pill.text}`}
               </Text>
-              <Text variant="caption" color="textDim">
-                {hints[zone]}
+              <Text variant="caption" color="textDim" maxLines={1} ellipsis>
+                {`${count} CHANNEL${count === 1 ? "" : "S"} · ${hints[zone]}`}
               </Text>
             </Row>
           </Column>

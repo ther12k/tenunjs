@@ -61,7 +61,7 @@ Four sub-decisions, each the smallest step that ships the app:
    focus model is explicitly future work — the example app implements
    its own list/grid focus helper over `KEY` actions.
 4. **A `tv` product flavor (TN-195).** `applicationId id.my.tenun.tvplayer`,
-   label "Tenun TV", `abiFilters += armeabi-v7a` (no QuickJS/CMake
+   label "NusaTV", `abiFilters += armeabi-v7a` (no QuickJS/CMake
    change needed), and a flavor manifest overlay adding
    `LEANBACK_LAUNCHER`, `uses-feature android.software.leanback`, and a
    banner drawable. The touch flavor is untouched.

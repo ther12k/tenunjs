@@ -1,7 +1,7 @@
 import { defineTheme } from "@tenunjs/widgets";
 
 /**
- * Tenun TV theme — a 10-foot dark palette (TN-196). Design width 960:
+ * NusaTV theme — a 10-foot dark palette (TN-196). Design width 960:
  * at 1920x1080 the host scales 2x, so typography runs large by phone
  * standards; readable across a room is the whole point of a TV.
  */

@@ -6,5 +6,5 @@ import { defineConfig } from "@tenunjs/cli";
 // and headless tests run against a fake MediaCapability.
 export default defineConfig({
   projectName: "tvplayer",
-  displayName: "Tenun TV",
+  displayName: "NusaTV",
 });

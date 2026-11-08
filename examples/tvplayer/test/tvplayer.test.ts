@@ -93,11 +93,12 @@ describe("TN-196 tvplayer boot", () => {
   test("boots fail-closed with the reference layout visible and media idle", () => {
     const runtime = new TvplayerRuntime(); // no media host: unsupported stub
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "TENUN TV")).toBe(true); // status line
+    expect(textsInclude(texts, "NusaTV")).toBe(true); // status line
     expect(textsInclude(texts, "TVRI Nasional")).toBe(true); // first card
     expect(textsInclude(texts, "IDLE")).toBe(true); // the state pill
     expect(textsInclude(texts, "Live")).toBe(true); // rail items
     expect(textsInclude(texts, "Set")).toBe(true);
+    expect(texts.some((t) => /^\d{2}\.\d{2}$/.test(t))).toBe(true); // the wall clock
     expect(runtime.route()).toBe("player");
   });
 
@@ -187,7 +188,7 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
 
     // Browse chrome intact throughout — no fullscreen, live caption moved.
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "TENUN")).toBe(true); // the rail's brand
+    expect(textsInclude(texts, "NUSA")).toBe(true); // the rail's brand
     expect(textsInclude(texts, "01 · TVRI Nasional")).toBe(true); // status caption
   });
 
@@ -354,7 +355,7 @@ describe("TN-196 media orchestration", () => {
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "TENUN")).toBe(true); // the rail's brand
+    expect(textsInclude(texts, "NUSA")).toBe(true); // the rail's brand
     expect(textsInclude(texts, "No signal")).toBe(true);
     expect(textsInclude(texts, "media")).toBe(true); // the stub's message names the seam
   });
@@ -412,7 +413,7 @@ describe("TN-196 phone form factor", () => {
     await settle();
     expect(calls).toContain("rect:0,0,390,219");
     const texts = sceneTexts(runtime);
-    expect(textsInclude(texts, "TENUN TV")).toBe(true);
+    expect(textsInclude(texts, "NusaTV")).toBe(true); // the phone header brand
     expect(textsInclude(texts, "TVRI DKI")).toBe(true); // channel rows render below the video
   });
 

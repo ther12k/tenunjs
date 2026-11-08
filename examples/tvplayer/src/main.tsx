@@ -1,5 +1,5 @@
 /**
- * Tenun TV composition entry (the votol/polytron pattern): the runtime
+ * NusaTV composition entry (the votol/polytron pattern): the runtime
  * IS the app; hosts (native tv flavor, browser preview, tests) bind
  * the media seam and drive dispatch.
  */

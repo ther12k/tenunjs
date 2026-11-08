@@ -5,7 +5,7 @@
      stays intact); leanback becomes required and touchscreen optional, so
      the APK installs as an Android TV app and still installs on touch-only
      hardware; the application label and the 320x180 banner (x1dp,
-     drawable-xhdpi) carry the Tenun TV identity in the TV launcher. -->
+     drawable-xhdpi) carry the NusaTV identity in the TV launcher. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -17,7 +17,7 @@
         android:required="false" />
 
     <application
-        android:label="Tenun TV"
+        android:label="NusaTV"
         android:banner="@drawable/banner"
         tools:replace="android:label">
 
