@@ -48,6 +48,14 @@ export const VIDEO_RECT_PHONE = {
 
 export type FormFactor = "tv" | "phone";
 
+/**
+ * Fullscreen playback rect (TV form, the YouTube flow's second half):
+ * selecting a channel expands the video edge-to-edge — the scene
+ * renders nothing (the overlay covers everything) and any key returns
+ * to the browse layout. Exact for 16:9 hosts (1920×1080 → 960×540).
+ */
+export const FULLSCREEN_RECT = { x: 0, y: 0, w: DESIGN_WIDTH, h: 540 } as const;
+
 /** android.view.KeyEvent codes the helper consumes (mirrored app-side). */
 export const KEY_DPAD_UP = 19;
 export const KEY_DPAD_DOWN = 20;
@@ -61,6 +69,9 @@ export interface FocusState {
   /** Which zone the D-pad ring is on: the group chips or the channel
    *  rows (TV form; the phone form taps chips directly). */
   readonly zone: "rows" | "chips";
+  /** TV form: fullscreen playback — the video covers the screen and
+   *  the scene renders nothing; any key returns to browse. */
+  readonly fullscreen: boolean;
 }
 
 export interface NowPlaying {

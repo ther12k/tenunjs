@@ -5,6 +5,7 @@ import { tvTheme } from "./theme";
 import {
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
+  FULLSCREEN_RECT,
   KEYCODE_ENTER,
   KEY_DPAD_CENTER,
   KEY_DPAD_DOWN,
@@ -28,6 +29,7 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 export {
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
+  FULLSCREEN_RECT,
   GAP_SM,
   PAD_LG,
   SIDEBAR_W,
@@ -95,6 +97,8 @@ export class TvplayerRuntime {
   private currentUrl: string | null = null;
   private focusIndex = 0;
   private focusZone: "rows" | "chips" = "rows";
+  /** TV form: fullscreen playback (browse ↔ player, the YouTube flow). */
+  private fullscreen = false;
   private status: MediaStatus = { state: "idle" };
 
   /** The channel list under the active group filter. */
@@ -184,9 +188,14 @@ export class TvplayerRuntime {
     this.app.navigate(route);
   }
 
-  /** Plan B2 back ownership: Settings returns to the player; the
-   *  player is the root, so BACK there stays the host's decision. */
+  /** Plan B2 back ownership: fullscreen exits to browse first, then
+   *  Settings returns to the player; the browse player is the root, so
+   *  BACK there stays the host's decision. */
   goBack(): boolean {
+    if (this.fullscreen) {
+      this.exitFullscreen();
+      return true;
+    }
     if (this.app.route() === "settings") {
       this.navigate("player");
       return true;
@@ -238,6 +247,14 @@ export class TvplayerRuntime {
   }
 
   private playerKey(keyCode: number): boolean {
+    // Fullscreen playback (TV): the video covers the screen and the
+    // scene renders nothing — ANY key returns to the browse layout
+    // with playback continuing (BACK arrives through goBack()).
+    if (this.fullscreen) {
+      this.exitFullscreen();
+      return true;
+    }
+
     // The reference shape: the channel list is ALWAYS visible beside
     // the video — there is no open/close model. The chips zone owns
     // LEFT/RIGHT (group cycling); in the rows zone RIGHT opens
@@ -286,14 +303,34 @@ export class TvplayerRuntime {
     }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
       if (count === 0) return false;
-      // OK on the live channel is a no-op re-prepare-wise; a different
-      // channel switches playback (the old stream runs until the new
-      // prepare lands — one player per host). The list stays visible.
+      // OK: the YouTube flow's first half — selecting a channel plays
+      // it FULLSCREEN (edge-to-edge video, empty scene). A different
+      // channel switches playback first; the live channel enters
+      // fullscreen without a re-prepare.
       if (this.focusIndex !== this.currentIndex) this.zapTo(this.focusIndex);
-      this.pushFocus();
+      this.enterFullscreen();
       return true;
     }
     return false;
+  }
+
+  /** Expands the video edge-to-edge; the scene renders nothing. */
+  private enterFullscreen(): void {
+    if (this.form !== "tv") return; // phone keeps its video-hero layout
+    this.fullscreen = true;
+    this.focusZone = "rows";
+    this.ensureVideoRect();
+    this.pushFocus();
+  }
+
+  /** Returns to the browse layout with playback continuing. */
+  exitFullscreen(): void {
+    if (!this.fullscreen) return;
+    this.fullscreen = false;
+    this.focusZone = "rows";
+    this.focusIndex = Math.max(0, this.currentIndex);
+    this.ensureVideoRect();
+    this.pushFocus();
   }
 
   /** Index of the active group in the chip row [All, …groups]. */
@@ -356,7 +393,14 @@ export class TvplayerRuntime {
    *  Idempotent on the host side; re-asserted on every zap so a hot
    *  reload or viewport change can never leave the overlay stale. */
   private ensureVideoRect(): void {
-    void this.media.setRect(this.videoRect.x, this.videoRect.y, this.videoRect.w, this.videoRect.h);
+    // Fullscreen swaps the rect edge-to-edge (TV form); browse uses the
+    // layout-derived slot. Still no scene-graph overlap — the scene
+    // renders nothing while fullscreen.
+    const r =
+      this.fullscreen && this.form === "tv"
+        ? FULLSCREEN_RECT
+        : this.videoRect;
+    void this.media.setRect(r.x, r.y, r.w, r.h);
   }
 
   /** Direct channel selection (the phone list's tap path; also what
@@ -423,7 +467,11 @@ export class TvplayerRuntime {
   }
 
   private pushFocus(): void {
-    const focus: FocusState = { index: this.focusIndex, zone: this.focusZone };
+    const focus: FocusState = {
+      index: this.focusIndex,
+      zone: this.focusZone,
+      fullscreen: this.fullscreen,
+    };
     this.app.pushState("focus", focus);
   }
 

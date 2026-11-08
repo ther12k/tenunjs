@@ -104,20 +104,29 @@ describe("TN-196 tvplayer boot", () => {
 });
 
 describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
-  test("DOWN moves focus, OK plays the focused channel — the list STAYS visible", async () => {
+  test("OK plays the channel FULLSCREEN; any key returns to browse (the YouTube flow)", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle(); // boot-time rect assertion
 
     expect(runtime.keyPress(20, "down")).toBe(true); // focus → 02
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02, fullscreen
     await settle();
 
     expect(calls).toContain(`prepare:${SECOND.url}`);
     expect(calls).toContain("play");
-    // The reference shape: no open/close — the list renders beside the
-    // playing video (browse hints visible, no empty reserved column).
+    // Fullscreen: the video rect goes edge-to-edge and the scene
+    // renders nothing (the overlay covers everything).
+    expect(calls).toContain("rect:0,0,960,540");
+    expect(sceneTexts(runtime)).toHaveLength(0);
+
+    // Any key returns to the browse layout; playback continues.
+    calls.length = 0;
+    expect(runtime.keyPress(20, "down")).toBe(true);
+    await settle();
+    expect(calls).toContain("rect:352,96,584,384");
     expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
+    expect(calls).not.toContain("play"); // no restart on exit
   });
 
   test("browsing the visible list while playing never touches the player", async () => {
@@ -125,25 +134,26 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    // Play 02; the list stays beside the video.
+    // Play 02 (fullscreen), then return to browse.
     runtime.keyPress(20, "down");
     runtime.keyPress(23, "down");
+    runtime.keyPress(20, "down"); // exit fullscreen → browse at live row
     await settle();
     calls.length = 0;
 
     // Moving the focus ring over the playing video: no player calls.
     expect(runtime.keyPress(20, "down")).toBe(true);
     runtime.keyPress(19, "down");
-    runtime.keyPress(19, "down"); // wrap? no — 1 → 0
+    runtime.keyPress(19, "down"); // 2 → 1 → 0? (from live 1: 2, then 1, 0)
     await settle();
     expect(calls).toHaveLength(0);
 
-    // OK on a DIFFERENT channel switches playback; the list stays up.
+    // OK on a DIFFERENT channel switches playback and goes fullscreen.
     expect(runtime.keyPress(23, "down")).toBe(true); // focused row 0 (live is 1)
     await settle();
     expect(calls).toContain(`prepare:${FIRST.url}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "↑↓ browse")).toBe(true);
+    expect(calls).toContain("rect:0,0,960,540");
   });
 
   test("OK on the LIVE channel is a no-op re-prepare; phase up never consumes", async () => {
@@ -151,14 +161,16 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    expect(runtime.keyPress(23, "down")).toBe(true); // boot focus 0: play TVRI
+    expect(runtime.keyPress(23, "down")).toBe(true); // boot focus 0: play TVRI + fullscreen
     await settle();
-    calls.length = 0;
+    const prepares = calls.filter((c) => c.startsWith("prepare:")).length;
+    expect(prepares).toBe(1);
 
+    runtime.keyPress(20, "down"); // exit fullscreen
     expect(runtime.keyPress(20, "up")).toBe(false); // phase "up": never acts
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live again
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live → fullscreen, no re-prepare
     await settle();
-    expect(calls).toHaveLength(0); // no re-prepare of the live channel
+    expect(calls.filter((c) => c.startsWith("prepare:")).length).toBe(1);
   });
 
   test("zapping moves the visible now-playing line and the live-row highlight", async () => {
@@ -166,8 +178,9 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> Mux
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play Mux, close sidebar
+    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> 02
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02, fullscreen
+    runtime.keyPress(20, "down"); // back to browse
     await settle();
 
     // Regression (device finding 2026-11-07): the label bound to the
@@ -197,10 +210,10 @@ describe("TN-196 KEY focus journeys (the app-level focus helper)", () => {
   test("empty playlist consumes nothing but RIGHT", () => {
     const { media } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
-    runtime.keyPress(23, "down"); // close sidebar
-    // (playlist is the starter here — the zero-channel path is covered
-    // through loadPlaylist's failure result below; this test pins the
-    // guard shape: no channels means no zap, no throw.)
+    runtime.keyPress(23, "down"); // OK: play + fullscreen
+    runtime.keyPress(19, "down"); // UP exits fullscreen → browse at live row
+    // (no channels means no zap, no throw — the zero-channel path is
+    // covered through loadPlaylist's failure result below)
     expect(runtime.keyPress(19, "down")).toBe(true);
   });
 });
@@ -225,8 +238,9 @@ describe("TN-196 media orchestration", () => {
 
   test("zap against the unsupported stub fails VISIBLE — the placeholder carries the reason", async () => {
     const runtime = new TvplayerRuntime(); // unsupportedMedia
-    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> Mux
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: switch attempt
+    expect(runtime.keyPress(20, "down")).toBe(true); // focus -> 02
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: switch attempt + fullscreen
+    runtime.keyPress(20, "down"); // exit fullscreen to see the placeholder
     await settle();
     expect(runtime.route()).toBe("player"); // still alive, still rendering
     const texts = sceneTexts(runtime);
@@ -337,9 +351,10 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     await settle();
     expect(textsInclude(sceneTexts(runtime), "Semua")).toBe(true); // chips render
 
-    // Play channel 02 (DKI).
+    // Play channel 02 (DKI), then back to browse.
     runtime.keyPress(20, "down");
     runtime.keyPress(23, "down");
+    runtime.keyPress(20, "down"); // exit fullscreen
     await settle();
     calls.length = 0;
 
@@ -356,9 +371,12 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
 
     // Test group: only the mux stream; play it.
     expect(runtime.keyPress(20, "down")).toBe(true); // chips → rows (0)
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK plays Mux
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK plays Mux + fullscreen
     await settle();
     expect(calls).toContain(`prepare:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`);
+    runtime.keyPress(19, "down"); // exit fullscreen → browse at live row
+    await settle();
+    calls.length = 0;
 
     // Now-playing survives a filter that hides it: cycle back to All.
     runtime.keyPress(19, "down"); // rows[0] → chips (at Test's position)
@@ -366,7 +384,6 @@ describe("TN-196 channel groups (the reference UI's chips)", () => {
     runtime.keyPress(21, "down"); // TVRI → All
     await settle();
     expect(textsInclude(sceneTexts(runtime), "24 CHANNELS · Semua")).toBe(true);
-    calls.length = 0;
     expect(runtime.keyPress(20, "down")).toBe(true); // into rows — still no player calls
     expect(calls).toHaveLength(0);
   });

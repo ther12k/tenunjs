@@ -197,7 +197,7 @@ export const PlayerScreen = defineScreen({
     activeGroup: null,
     index: 0,
     now: null,
-    focus: { index: 0, zone: "rows" },
+    focus: { index: 0, zone: "rows", fullscreen: false },
     media: null,
   }),
   actions: {
@@ -261,6 +261,13 @@ export const PlayerScreen = defineScreen({
     const window_ = state.channels.slice(winStart, winStart + CHANNEL_WINDOW);
     const onChips = state.focus.zone === "chips";
     const focusedChip = onChips ? state.focus.index : null;
+
+    // Fullscreen playback: the video overlay covers the screen — the
+    // scene renders nothing (any scene op would sit off-screen beside
+    // the full-bleed rect). Any key returns to browse (runtime).
+    if (state.form === "tv" && state.focus.fullscreen) {
+      return <Scaffold />;
+    }
 
     if (state.form === "phone") {
       // Phone: video hero on top (full-bleed 16:9), chrome and the

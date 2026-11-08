@@ -68,6 +68,9 @@ service's native→JS event pattern):
 - **The video rect is opaque.** The Tenun scene composes around it; v1
   has no scene-graph ordering or clipping across video (ADR-0028).
 - **`setRect` uses design units** and takes effect on the next frame.
+  Hosts may re-assert it (e.g. a browse slot ↔ fullscreen pair on
+  player navigation) — there is still never any scene-graph ordering
+  or clipping across the video.
 - **`fetchText` is not a general fetch**: GET, text responses, bounded
   size, no headers/auth/streams. The net capability supersedes it.
 
