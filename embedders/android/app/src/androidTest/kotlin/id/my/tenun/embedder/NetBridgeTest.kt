@@ -67,30 +67,51 @@ class NetBridgeTest {
 
     @Test
     fun plainTcpRoundTripLinkStatesAndIdempotentCloseOverTheRealBridge() {
-        ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { server ->
-            val echoThread = Thread {
-                server.accept().use { client ->
-                    val buffer = ByteArray(4096)
-                    while (true) {
-                        val read = client.getInputStream().read(buffer)
-                        if (read < 0) break
-                        client.getOutputStream().write(buffer, 0, read)
-                        client.getOutputStream().flush()
+        // Accept LOOP (the TLS server's proven pattern), and every
+        // test-spawned thread catches Throwable: an uncaught exception in a
+        // non-instrumentation thread CRASHES the whole process on Android.
+        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val echoStarted = CountDownLatch(1)
+        val echoThread = Thread {
+            try {
+                while (true) {
+                    val client = server.accept()
+                    echoStarted.countDown()
+                    try {
+                        client.use { socket ->
+                            val buffer = ByteArray(4096)
+                            while (true) {
+                                val read = socket.getInputStream().read(buffer)
+                                if (read < 0) break
+                                socket.getOutputStream().write(buffer, 0, read)
+                                socket.getOutputStream().flush()
+                            }
+                        }
+                    } catch (ignored: Exception) {
+                        // a dying echo connection is not a test failure
                     }
                 }
+            } catch (ignored: Throwable) {
+                // the server socket was closed by the test — the loop dies with it
             }
-            echoThread.start()
-
+        }
+        echoThread.start()
+        try {
             val connected = fixture.callAsync(
                 "connect",
                 JSONObject().put("host", "127.0.0.1").put("port", server.localPort).put("timeoutMs", 8000),
             )
-            assertTrue(connected.toString(), connected.getBoolean("ok"))
+            assertTrue("$connected; events=${fixture.events()}", connected.getBoolean("ok"))
+
+            assertTrue(
+                "echo server never accepted the connection; events=${fixture.events()}",
+                echoStarted.await(5, TimeUnit.SECONDS),
+            )
 
             val written = fixture.callAsync("write", JSONObject().put("data", JSONArray(listOf(1, 2, 3, 254, 255))))
-            assertTrue(written.toString(), written.getBoolean("ok"))
+            assertTrue("$written; events=${fixture.events()}", written.getBoolean("ok"))
             val echoed = fixture.awaitEvent(8_000) { it.optString("k") == "data" }
-            assertNotNull("echo data event", echoed)
+            assertNotNull("echo data event; events=${fixture.events()}", echoed)
             assertEquals(
                 listOf(1, 2, 3, 254, 255),
                 echoed!!.getJSONArray("b").let { array -> (0 until array.length()).map { array.getInt(it) } },
@@ -98,36 +119,55 @@ class NetBridgeTest {
 
             // The session replays linked on register — one linked event, no noise.
             val linked = fixture.awaitEvent(2_000) { it.optString("k") == "link" && it.optString("s") == "linked" }
-            assertNotNull(linked)
+            assertNotNull("linked replay; events=${fixture.events()}", linked)
 
             assertTrue(fixture.callAsync("close", JSONObject()).getBoolean("ok"))
             assertTrue(fixture.callAsync("close", JSONObject()).getBoolean("ok")) // idempotent
             val offline = fixture.awaitEvent(8_000) { it.optString("k") == "link" && it.optString("s") == "offline" }
-            assertNotNull("offline after close", offline)
-            assertEquals("link-lost", fixture.callAsync("write", JSONObject().put("data", JSONArray())).getJSONObject("failure").getString("kind"))
+            assertNotNull("offline after close; events=${fixture.events()}", offline)
+            assertEquals(
+                "link-lost",
+                fixture.callAsync("write", JSONObject().put("data", JSONArray())).getJSONObject("failure").getString("kind"),
+            )
+        } finally {
+            server.close()
             echoThread.join(3_000)
         }
     }
 
     @Test
     fun remoteCloseDeliversOfflineThroughTheBridge() {
-        ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { server ->
-            val accepted = CountDownLatch(1)
-            Thread {
-                server.accept().use { client ->
-                    accepted.countDown()
-                    client.close() // the companion device powers off
-                }
-            }.start()
+        val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
+        val accepted = CountDownLatch(1)
+        val serverThread = Thread {
+            try {
+                val client = server.accept()
+                accepted.countDown()
+                client.close() // the companion device powers off
+            } catch (ignored: Throwable) {
+                // the server socket was closed by the test
+            }
+        }
+        serverThread.start()
+        try {
             val connected = fixture.callAsync(
                 "connect",
                 JSONObject().put("host", "127.0.0.1").put("port", server.localPort).put("timeoutMs", 8000),
             )
-            assertTrue(connected.toString(), connected.getBoolean("ok"))
-            assertTrue(accepted.await(3, TimeUnit.SECONDS))
+            assertTrue("$connected; events=${fixture.events()}", connected.getBoolean("ok"))
+            assertTrue(
+                "server never accepted the connection; events=${fixture.events()}",
+                accepted.await(5, TimeUnit.SECONDS),
+            )
             val offline = fixture.awaitEvent(8_000) { it.optString("k") == "link" && it.optString("s") == "offline" }
-            assertNotNull("offline after peer close", offline)
-            assertEquals("link-lost", fixture.callAsync("write", JSONObject().put("data", JSONArray())).getJSONObject("failure").getString("kind"))
+            assertNotNull("offline after peer close; events=${fixture.events()}", offline)
+            assertEquals(
+                "link-lost",
+                fixture.callAsync("write", JSONObject().put("data", JSONArray())).getJSONObject("failure").getString("kind"),
+            )
+        } finally {
+            server.close()
+            serverThread.join(3_000)
         }
     }
 
@@ -351,6 +391,7 @@ internal object NetBridgeEvidence {
 
         fun start() {
             Thread {
+                try {
                 while (running) {
                     val accepted = try {
                         serverSocket.accept() as SSLSocket
@@ -379,6 +420,9 @@ internal object NetBridgeEvidence {
                     }
                     workers.add(worker)
                     worker.start()
+                }
+                } catch (ignored: Throwable) {
+                    // stopped
                 }
             }.also { workers.add(it) }.start()
         }
