@@ -241,6 +241,14 @@ echo "framework_restart_fatal_exceptions: ${RESTART_CRASHES:-0} (restart-window 
 
 echo "== 5. Build the APK and the instrumented test APK from the reviewed revision =="
 cd "$SCRIPT_DIR"
+# TN-189: the test APK compiles its public-adapter TS fixture during assemble,
+# so provision Bun here rather than waiting for the gallery stage.
+if ! command -v bun >/dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash >"$OUT_DIR/bun_install.txt" 2>&1 \
+    || accept_fail "bun installation failed (needed to build the keys fixture and gallery bundle)"
+  export PATH="$HOME/.bun/bin:$PATH"
+fi
+command -v bun >/dev/null 2>&1 || accept_fail "bun unavailable: cannot build the keys fixture"
 # TN-185: the skia-host parity cdylib rides in jniLibs so the device gate
 # dual-renders committed scenes through both painters. Built for the
 # emulator's ABI (x86_64; rust-skia ships prebuilt android bindings, so
@@ -293,9 +301,10 @@ echo "== 6. Standard suite: :app:connectedDebugAndroidTest on the booted emulato
 # JS-only variant APK in stage 9 (am instrument), never against the standard
 # build — a failure there would be by construction, not by defect.
 # OverlayInteractionTest likewise needs the gallery-bundle APK from stage 10;
-# FailVisibleTest needs the injection build from stage 11.
+# FailVisibleTest needs the injection build from stage 11. The two
+# KeysProcessPersistenceTest methods require separate processes in stage 7b.
 if ! ./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest,$APP_ID.FailVisibleTest" \
+  -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest,$APP_ID.FailVisibleTest,$APP_ID.KeysProcessPersistenceTest" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   # Preserve the decisive app-side evidence BEFORE failing the run. The
@@ -364,6 +373,42 @@ STD_DEVICE_APK="$("$ADB" shell pm path "$APP_ID" | head -1 | sed 's/^package://'
 STD_SHA_PULLED="$(sha256sum "$OUT_DIR/installed_standard.apk" | awk '{print $1}')"
 echo "standard APK (pulled from device) sha256: $STD_SHA_PULLED"
 [ "$STD_SHA_PUSH" = "$STD_SHA_PULLED" ] || accept_fail "installed standard artifact identity mismatch: pushed=$STD_SHA_PUSH pulled=$STD_SHA_PULLED"
+
+echo "== 7b. Keys identity survives literal target-process death (two am instrument invocations) =="
+if ! "$ADB" install -r "$TEST_APK" >"$OUT_DIR/adb_install_keys_test.txt" 2>&1; then
+  tail -10 "$OUT_DIR/adb_install_keys_test.txt"
+  accept_fail "instrumented-test APK install failed for the keys process phase"
+fi
+# No uninstall, pm clear, or APK replacement between seed and verification.
+# Instrumentation runs in the target process; the test ALSO requires distinct
+# PIDs and signs a fresh challenge with the saved handle, without regenerating.
+for K_PHASE in seed verifyAfterRestart; do
+  "$ADB" shell am force-stop "$APP_ID" >>"$OUT_DIR/keys_process_force_stop.txt" 2>&1 \
+    || accept_fail "keys $K_PHASE target force-stop failed"
+  K_PIDS="$("$ADB" shell "pidof $APP_ID || true" 2>>"$OUT_DIR/keys_process_force_stop.txt" | tr -d '\r')" \
+    || accept_fail "keys $K_PHASE target PID probe failed"
+  printf 'before %s: target pidof=%s (must be empty)\n' "$K_PHASE" "$K_PIDS" \
+    | tee -a "$OUT_DIR/keys_process_force_stop.txt"
+  [ -z "$K_PIDS" ] || accept_fail "target PID still present after keys force-stop: $K_PIDS"
+  K_LOG="$OUT_DIR/am_instrument_keys_$K_PHASE.txt"
+  set +e
+  "$ADB" shell am instrument -w -r -e class "$APP_ID.KeysProcessPersistenceTest#$K_PHASE" \
+    "$TEST_APP_ID/androidx.test.runner.AndroidJUnitRunner" >"$K_LOG" 2>&1
+  K_RC=$?
+  set -e
+  tail -20 "$K_LOG"
+  [ "$K_RC" -eq 0 ] || accept_fail "keys $K_PHASE instrumentation returned rc=$K_RC"
+  if grep -qE 'FAILURES|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|INSTRUMENTATION_STATUS_CODE: -|shortMsg=|Process crashed' "$K_LOG"; then
+    accept_fail "keys $K_PHASE instrumentation reported a failure, crash, or skipped test"
+  fi
+  grep -qE '^OK \(1 test\)[[:space:]]*$' "$K_LOG" \
+    || accept_fail "keys $K_PHASE must execute exactly one passing test"
+  grep -qE '^INSTRUMENTATION_CODE: -1[[:space:]]*$' "$K_LOG" \
+    || accept_fail "keys $K_PHASE instrumentation did not finish successfully"
+  grep -q "TN189_KEYS_PROCESS phase=$K_PHASE " "$K_LOG" \
+    || accept_fail "keys $K_PHASE public process witness is missing"
+done
+"$ADB" logcat -d -s TenunKeysPersistence:V >"$OUT_DIR/keys_process_logcat.txt" 2>&1 || true
 
 "$ADB" shell am start -n "$APP_ID/.MainActivity" >>"$OUT_DIR/am_start.txt" 2>&1
 LAUNCH_DEADLINE=$((SECONDS + 30))
@@ -461,12 +506,6 @@ echo "== 10. Overlay scenario APK: gallery bundle injected from the reviewed rev
 # bundle (anchored overlay families) is BUILT FROM THIS CHECKOUT so the
 # overlay scenario runs JavaScript from the reviewed revision — no network
 # bundle source at any point.
-if ! command -v bun >/dev/null 2>&1; then
-  curl -fsSL https://bun.sh/install | bash >"$OUT_DIR/bun_install.txt" 2>&1 \
-    || accept_fail "bun installation failed (needed to build the gallery bundle)"
-  export PATH="$HOME/.bun/bin:$PATH"
-fi
-command -v bun >/dev/null 2>&1 || accept_fail "bun unavailable: cannot build the gallery bundle"
 REPO_ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if ! (cd "$REPO_ROOT_DIR" && bun install --frozen-lockfile \
       && bun embedders/android/tools/gallery-bundle/rebuild.ts) >"$OUT_DIR/overlay_rebuild.txt" 2>&1; then
@@ -650,6 +689,7 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "standard_apk_sha256_pushed": "$STD_SHA_PUSH",
   "standard_apk_sha256_pulled_from_device": "$STD_SHA_PULLED",
   "standard_suite": {"executed": $SUM_TESTS, "failures": $SUM_FAILURES, "errors": $SUM_ERRORS, "skipped": $SUM_SKIPPED, "runner": "gradlew :app:connectedDebugAndroidTest"},
+  "keys_process_suite": {"executed": 2, "failures": 0, "runner": "two separate am instrument method invocations; target force-stopped and pidof asserted empty between phases; distinct PIDs asserted in test", "scope": "emulator AndroidKeyStore persistence, not physical-device or hardware-attestation acceptance"},
   "variant_apk_sha256_pushed": "$VAR_SHA_PUSH",
   "variant_apk_sha256_pulled_from_device": "$VAR_SHA_PULLED",
   "variant_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class VariantCustomizationTest"},
@@ -675,5 +715,5 @@ echo "  variant APK:  $VAR_SHA_PULLED"
 echo "  overlay APK:  $OVL_SHA_PULLED (gallery bundle $GALLERY_SHA, built from the reviewed revision)"
 echo "  injection APK: $INJ_SHA_PULLED (test-only init-failure injection build)"
 echo "  reload mode:  packaged-only (dev_server.txt and update_channel.json asserted absent)"
-echo "  executed tests: standard=6 (0 failures/0 errors/0 skipped), variant=1 (OK), overlay=1 (OK), fail-visible=4 (OK)"
+echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), keys-process=2 (OK), variant=1 (OK), overlay=1 (OK), fail-visible=4 (OK)"
 echo "  evidence: $OUT_DIR"

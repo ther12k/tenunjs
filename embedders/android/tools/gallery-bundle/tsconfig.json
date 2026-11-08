@@ -16,7 +16,8 @@
       "@tenunjs/protocol": ["../../../../packages/protocol/src/index.ts"],
       "@tenunjs/widgets": ["../../../../packages/widgets/src/index.ts"],
       "@tenunjs/core": ["../../../../packages/core/src/index.ts"],
-      "@tenunjs/navigation": ["../../../../packages/navigation/src/index.ts"]
+      "@tenunjs/navigation": ["../../../../packages/navigation/src/index.ts"],
+      "@tenunjs/platform": ["../../../../packages/platform/src/index.ts"]
     }
   },
   "include": ["./**/*.ts", "./**/*.tsx"]

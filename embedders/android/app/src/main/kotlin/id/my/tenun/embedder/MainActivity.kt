@@ -316,6 +316,11 @@ class MainActivity : Activity() {
                     }
                 }
             })
+            // TN-189: Keystore-held identities for companion pairing (ADR-0027).
+            // No context: AndroidKeyStore is process-global, and its entries
+            // outlive engine swaps and app processes (the keystore daemon owns
+            // them) — the persistence semantics the device gate asserts.
+            hostRegistry.register("keys", KeysService())
         }
     }
 
