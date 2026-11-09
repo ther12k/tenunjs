@@ -439,7 +439,7 @@ describe("TN-196 phone form factor", () => {
 
     expect(calls).toContain(`prepare:${THIRD.url}`);
     expect(calls).toContain("play");
-    expect(textsInclude(sceneTexts(runtime), "NASA TV Public")).toBe(true); // now playing
+    expect(textsInclude(sceneTexts(runtime), "CGTN English")).toBe(true); // now playing
   });
 
   test("phone: the D-pad still works — DOWN moves focus, OK plays, RIGHT opens Settings", async () => {

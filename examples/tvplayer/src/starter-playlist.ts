@@ -41,6 +41,8 @@ export const STARTER_PLAYLIST: readonly PlaylistEntry[] = [
   //
   // International news — the broadcasters' own publicly published
   // free streams (their live web players use these same CDN configs).
+  // Verified 200 + #EXTM3U + CORS on 2026-11-09 (the web build plays
+  // client-side, so CORS matters here too).
   chan(
     "DW English",
     "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8",
@@ -49,6 +51,26 @@ export const STARTER_PLAYLIST: readonly PlaylistEntry[] = [
   chan(
     "France 24 English",
     "https://static.france24.com/live/F24_EN_LO_HLS/live_web.m3u8",
+    "Internasional"
+  ),
+  chan(
+    "CGTN English",
+    "https://news.cgtn.com/resource/live/english/cgtn-news.m3u8",
+    "Internasional"
+  ),
+  chan(
+    "DW Deutsch",
+    "https://dwamdstream101.akamaized.net/hls/live/2015524/dwstream101/index.m3u8",
+    "Internasional"
+  ),
+  chan(
+    "France 24 Français",
+    "https://static.france24.com/live/F24_FR_LO_HLS/live_web.m3u8",
+    "Internasional"
+  ),
+  chan(
+    "France 24 Español",
+    "https://static.france24.com/live/F24_ES_LO_HLS/live_web.m3u8",
     "Internasional"
   ),
   // NASA TV Public — NASA's own NTV1 Akamai config (the feed behind
