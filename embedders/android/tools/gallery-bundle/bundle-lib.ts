@@ -257,7 +257,7 @@ export async function buildTvplayerBundle(): Promise<BundleArtifact> {
   if (/^\s*(import|export)\s/m.test(code)) {
     code = `(function(){\n${code}\n})();`;
   }
-  smokeRun(code, "tvplayer_app.js", ['NusaTV', 'TVRI Nasional']);
+  smokeRun(code, "tvplayer_app.js", ['NusaTV', 'DW English']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),
