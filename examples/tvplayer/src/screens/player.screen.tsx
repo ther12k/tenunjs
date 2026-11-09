@@ -1,14 +1,16 @@
 import { defineAction, defineScreen } from "@tenunjs/core";
 import { Column, Container, GestureDetector, Row, Scaffold, SizedBox, Text } from "@tenunjs/widgets";
 import {
-  CARD_H,
-  CARD_W,
-  CARDS_VISIBLE,
   DESIGN_HEIGHT,
   FULLSCREEN_RECT,
+  HEADER_H,
   RAIL_W,
+  ROW_H,
+  SIDEBAR_VISIBLE,
+  SIDEBAR_W,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
+  buildSidebarRows,
   type FocusState,
   type FormFactor,
   type NowPlaying,
@@ -18,29 +20,27 @@ import type { MediaStatus } from "@tenunjs/platform";
 import type { PlaylistEntry } from "../playlist";
 
 /**
- * TN-196 player screen — the IPTV reference shape: a narrow icon RAIL
- * on the left, the VIDEO as a huge hero right of it, the group TABS
- * and a horizontal row of channel CARDS below (the list stays visible;
- * only its arrangement changed from the BitTV-style sidebar).
+ * TN-196 player screen — the NusaTV web Studio shape, remote-first: a
+ * narrow icon RAIL on the left, the category-accordion SIDEBAR (the
+ * web's collapsible groups walked with ↑↓, OK toggles/plays), and the
+ * VIDEO hero filling the remaining width.
  *
  * Geometry is DERIVED (layout.ts): VIDEO_RECT — what the runtime
  * asserts via media.setRect and the native TextureView occupies — is
  * exactly the hero slot the scene draws around. ADR-0028 ceiling: one
  * static rect (browse hero ↔ fullscreen pair on navigation).
  *
- * Grouping: tabs [All + groups] filter the cards; switching groups
- * NEVER interrupts playback (the runtime tracks the playing channel by
- * url, not by filtered index). The scene has no image op in v1, so
- * channel logos become GROUP-COLORED number tiles.
- *
  * All state arrives via push channels (the runtime owns reality):
- *   "form"/"channels" (visible list + groups + active)/"channel"/"focus"/"media"
+ *   "form"/"channels" (visible list + groups + expanded)/"channel"/
+ *   "focus"/"media"
  */
 export interface PlayerState {
   form: FormFactor;
   channels: readonly PlaylistEntry[];
   groups: readonly string[];
   activeGroup: string | null;
+  /** TV accordion: which groups are expanded (all by default). */
+  expanded: readonly string[];
   index: number;
   now: NowPlaying | null;
   focus: FocusState;
@@ -77,10 +77,9 @@ function channelNo(index: number): string {
 
 /**
  * D-pad focus cannot scroll a host-owned scroll region (no
- * ensure-visible API in v1), so long lists render as WINDOWED CAROUSELS
- * — the classic TV pattern; the window slides with the cursor and keeps
- * TRUE channel numbers. The TV cards run horizontally (6 visible), the
- * phone list keeps its vertical 5-row window.
+ * ensure-visible API in v1), so the sidebar renders as a WINDOWED list
+ * — the window slides with the cursor and keeps TRUE channel numbers.
+ * The phone form keeps its vertical 5-row window below the video.
  */
 const PHONE_ROWS = 5;
 
@@ -135,57 +134,44 @@ function Rail(props: { focusedItem: number | null }) {
 }
 
 /**
- * The group tabs: [All, …groups]; focus/active styling per chip.
+ * The phone group chips: [All, …groups]; focus/active styling per chip.
  * `perRow` wraps long chip sets (the scene has no flex-wrap in v1, so
- * the chunks are explicit) — the TV form spans one full-width row under
- * the hero; the phone form wraps at two per row.
+ * the chunks are explicit). TV has no chips — the sidebar accordion IS
+ * the group navigation there.
  */
 function GroupChips(props: {
   groups: readonly string[];
   activeGroup: string | null;
-  focusedChip: number | null;
-  perRow?: number;
-  onPick?: (group: string | null) => void;
+  perRow: number;
+  onPick: (group: string | null) => void;
 }) {
-  const { groups, activeGroup, focusedChip, perRow, onPick } = props;
+  const { groups, activeGroup, perRow, onPick } = props;
   const chips: Array<string | null> = [null, ...groups]; // null = All
   const rows: Array<Array<string | null>> = [];
-  if (perRow === undefined) {
-    rows.push(chips);
-  } else {
-    for (let i = 0; i < chips.length; i += perRow) rows.push(chips.slice(i, i + perRow));
-  }
-  let i = 0; // chip index across the wrapped rows
+  for (let i = 0; i < chips.length; i += perRow) rows.push(chips.slice(i, i + perRow));
   return (
     <Column gap="sm">
       {rows.map((row, r) => (
         <Row key={r} gap="sm">
           {row.map((group) => {
-            const chipIndex = i++;
             const active = (group ?? null) === activeGroup;
-            const focused = focusedChip === chipIndex;
             const chip = (
               <Container
-                color={focused ? "accent" : active ? "secondaryContainer" : "surface"}
+                color={active ? "secondaryContainer" : "surface"}
                 radius={14}
                 padding="sm"
-                borderColor={active && !focused ? "accent" : undefined}
-                borderWidth={active && !focused ? 2 : 0}
+                borderColor={active ? "accent" : undefined}
+                borderWidth={active ? 2 : 0}
               >
-                <Text
-                  variant="caption"
-                  color={focused ? "onPrimaryContainer" : active ? "onSecondaryContainer" : "textDim"}
-                >
+                <Text variant="caption" color={active ? "onSecondaryContainer" : "textDim"}>
                   {group ?? "Semua"}
                 </Text>
               </Container>
             );
-            return onPick ? (
+            return (
               <GestureDetector key={group ?? "__all__"} onTap={() => onPick(group ?? null)}>
                 {chip}
               </GestureDetector>
-            ) : (
-              chip
             );
           })}
         </Row>
@@ -231,42 +217,99 @@ function ChannelRow(props: {
   );
 }
 
-/** One TV card (the reference's poster-card shape): a group-colored
- *  number tile on top, the title below — CARD_W×CARD_H. */
-function ChannelCard(props: {
-  channel: PlaylistEntry;
-  index: number;
+/**
+ * The TV category-accordion sidebar — the web ChannelList's D-pad
+ * translation. One flat column of windowed rows: group HEADERS
+ * (chevron + title + count, ● when the live channel plays inside) and
+ * the expanded groups' CHANNEL rows (number tile + title). Focus is
+ * the runtime's list cursor; OK on a header collapses/expands, OK on a
+ * channel watches it fullscreen (the runtime decides — the screen only
+ * paints).
+ */
+function Sidebar(props: {
+  channels: readonly PlaylistEntry[];
+  expanded: readonly string[];
+  listIndex: number;
   focused: boolean;
-  live: boolean;
+  liveUrl: string | null;
+  liveGroup: string | null;
 }) {
-  const { channel, index, focused, live } = props;
+  const { channels, expanded, listIndex, focused, liveUrl, liveGroup } = props;
+  const rows = buildSidebarRows(channels, new Set(expanded));
+  const winStart = Math.max(0, Math.min(listIndex - 2, rows.length - SIDEBAR_VISIBLE));
+  const window = rows.slice(winStart, winStart + SIDEBAR_VISIBLE);
   return (
-    <Container
-      color={focused ? "accent" : "surface"}
-      radius={12}
-      width={CARD_W}
-      height={CARD_H}
-      borderColor={live && !focused ? "accent" : undefined}
-      borderWidth={live && !focused ? 2 : 0}
-    >
-      <Column>
-        <Container color={groupColor(channel.group)} radius={12} width={CARD_W} height={64}>
-          <Column align="center" justify="center">
-            <Text variant="title" color="#FFFFFF">
-              {channelNo(index)}
-            </Text>
-          </Column>
-        </Container>
-        <Column padding="sm">
-          <Text
-            variant="caption"
-            color={focused ? "onPrimaryContainer" : live ? "accent" : "text"}
-            maxLines={1}
-            ellipsis
-          >
-            {channel.title}
-          </Text>
-        </Column>
+    <Container width={SIDEBAR_W} height={DESIGN_HEIGHT} color="surface">
+      <Column padding="sm" gap="sm">
+        {window.map((row, k) => {
+          const i = winStart + k;
+          const isFocused = focused && i === listIndex;
+          if (row.type === "header") {
+            const isOpen = expanded.includes(row.group);
+            const count = channels.filter((c) => (c.group || "") === row.group).length;
+            return (
+              <Container
+                key={`h:${row.group}`}
+                color={isFocused ? "accent" : "surfaceRaised"}
+                radius={10}
+                width={SIDEBAR_W - 16}
+                height={HEADER_H}
+              >
+                <Row gap="sm" align="center" padding="sm">
+                  <Text variant="caption" color={isFocused ? "onPrimaryContainer" : "textDim"}>
+                    {isOpen ? "▾" : "▸"}
+                  </Text>
+                  <Text
+                    variant="caption"
+                    color={isFocused ? "onPrimaryContainer" : "text"}
+                    maxLines={1}
+                    ellipsis
+                  >
+                    {row.group === "" ? "Lainnya" : row.group}
+                  </Text>
+                  <Text variant="caption" color={isFocused ? "onPrimaryContainer" : "textDim"}>
+                    {`${count}`}
+                  </Text>
+                  {liveGroup === row.group && (
+                    <Text variant="caption" color={isFocused ? "onPrimaryContainer" : "accent"}>
+                      ●
+                    </Text>
+                  )}
+                </Row>
+              </Container>
+            );
+          }
+          const live = liveUrl !== null && row.channel.url === liveUrl;
+          return (
+            <Container
+              key={row.channel.url}
+              color={isFocused ? "accent" : "background"}
+              radius={10}
+              width={SIDEBAR_W - 16}
+              height={ROW_H}
+              borderColor={live && !isFocused ? "accent" : undefined}
+              borderWidth={live && !isFocused ? 2 : 0}
+            >
+              <Row gap="sm" align="center" padding="sm">
+                <Container color={groupColor(row.group)} radius={8} width={28} height={28}>
+                  <Column align="center" justify="center">
+                    <Text variant="caption" color="#FFFFFF">
+                      {channelNo(row.index)}
+                    </Text>
+                  </Column>
+                </Container>
+                <Text
+                  variant="caption"
+                  color={isFocused ? "onPrimaryContainer" : live ? "accent" : "text"}
+                  maxLines={1}
+                  ellipsis
+                >
+                  {row.channel.title}
+                </Text>
+              </Row>
+            </Container>
+          );
+        })}
       </Column>
     </Container>
   );
@@ -275,10 +318,10 @@ function ChannelCard(props: {
 /**
  * The idle/error placeholder painted inside the video slot — the
  * reference's "now watching" block: the channel's GROUP-COLORED number
- * tile (the card tile, enlarged) beside its title and state caption.
- * Idle, it previews the CARD cursor so the slot reads as the
- * about-to-play channel, not a dead box. Height is a prop — the same
- * placeholder paints the hero, the phone slot, and the fullscreen rect.
+ * tile beside its title and state caption. Idle, it previews the
+ * FOCUSED row's channel so the slot reads as the about-to-play
+ * channel, not a dead box. Height is a prop — the same placeholder
+ * paints the hero, the phone slot, and the fullscreen rect.
  */
 function VideoPlaceholder(props: {
   media: MediaStatus | null;
@@ -338,9 +381,10 @@ export const PlayerScreen = defineScreen({
     channels: [],
     groups: [],
     activeGroup: null,
+    expanded: [],
     index: 0,
     now: null,
-    focus: { index: 0, cardIndex: 0, zone: "cards", fullscreen: false },
+    focus: { index: 0, listIndex: 0, zone: "list", fullscreen: false },
     media: null,
     clock: "",
   }),
@@ -352,18 +396,24 @@ export const PlayerScreen = defineScreen({
     }),
     channels: defineAction<
       PlayerState,
-      { channels: readonly PlaylistEntry[]; groups: readonly string[]; activeGroup: string | null }
+      {
+        channels: readonly PlaylistEntry[];
+        groups: readonly string[];
+        activeGroup: string | null;
+        expanded: readonly string[];
+      }
     >({
       run({ input, state }) {
         state.channels = input.channels;
         state.groups = input.groups;
         state.activeGroup = input.activeGroup;
+        state.expanded = input.expanded;
       },
     }),
     channel: defineAction<PlayerState, NowPlaying>({
       run({ input, state }) {
         state.now = input;
-        // The now-playing caption and the live-card highlight read
+        // The now-playing caption and the live-row highlight read
         // state.index; the "channel" push is what moves it on a zap
         // (the "channels" push only flows on boot / playlist load).
         state.index = input.index;
@@ -406,21 +456,33 @@ export const PlayerScreen = defineScreen({
     const pill = stateLabel(state.media);
     const count = state.channels.length;
     const zone = state.focus.zone;
-    // The CARD cursor (kept by the runtime even while the ring is on
-    // the tabs or the rail) drives the windows and the hero preview.
-    const cardIdx = state.focus.cardIndex;
-    const tvWinStart = Math.max(0, Math.min(cardIdx - 2, count - CARDS_VISIBLE));
-    const cardWindow = state.channels.slice(tvWinStart, tvWinStart + CARDS_VISIBLE);
-    const phoneWinStart = Math.max(0, Math.min(cardIdx - 2, count - PHONE_ROWS));
+    // The list cursor (kept by the runtime even while the ring is on
+    // the rail) drives the sidebar/phone windows and the hero preview.
+    const listIdx = state.focus.listIndex;
+    const phoneWinStart = Math.max(0, Math.min(listIdx - 2, count - PHONE_ROWS));
     const phoneWindow = state.channels.slice(phoneWinStart, phoneWinStart + PHONE_ROWS);
-    // The focused card — the idle video slot previews it (tile + title),
-    // so the placeholder reads as the about-to-play channel.
-    const focusedChannel = count > 0 ? state.channels[cardIdx] : undefined;
     const hints: Record<typeof zone, string> = {
-      rail: "↑↓ rail · OK open · → tabs",
-      tabs: "←→ group · ↓ cards · ↑ rail",
-      cards: "←→ channels · OK watch · ↑ tabs",
+      rail: "↑↓ rail · OK open · → list",
+      list: "↑↓ channels · OK watch/collapse · ← rail",
     };
+
+    // The focused sidebar row's channel — the idle video slot previews
+    // it (tile + title), so the placeholder reads as the about-to-play
+    // channel. A focused HEADER previews its group's first channel.
+    const tvRows = buildSidebarRows(state.channels, new Set(state.expanded));
+    const focusedRow = tvRows[listIdx];
+    const previewChannel =
+      focusedRow === undefined
+        ? null
+        : focusedRow.type === "channel"
+          ? focusedRow.channel
+          : (state.channels.find((c) => (c.group || "") === focusedRow.group) ?? null);
+    const previewNo =
+      focusedRow !== undefined && focusedRow.type === "channel"
+        ? channelNo(focusedRow.index)
+        : previewChannel
+          ? channelNo(state.channels.indexOf(previewChannel))
+          : null;
 
     // Fullscreen playback: the video overlay covers the screen — the
     // scene renders nothing while frames are on air (any scene op
@@ -438,8 +500,8 @@ export const PlayerScreen = defineScreen({
               media={state.media}
               now={state.now}
               h={FULLSCREEN_RECT.h}
-              channel={focusedChannel ?? null}
-              no={count > 0 ? channelNo(cardIdx) : null}
+              channel={previewChannel ?? null}
+              no={previewNo}
             />
           </SizedBox>
         </Scaffold>
@@ -447,6 +509,7 @@ export const PlayerScreen = defineScreen({
     }
 
     if (state.form === "phone") {
+      const focusedPhone = count > 0 ? state.channels[listIdx] : undefined;
       // Phone: video hero on top (full-bleed 16:9), chrome and the
       // tappable channel list below. The remote is optional — rows and
       // chips are tapped directly; ↑/↓/OK still work with a keyboard.
@@ -461,8 +524,8 @@ export const PlayerScreen = defineScreen({
                 media={state.media}
                 now={state.now}
                 h={VIDEO_RECT_PHONE.h}
-                channel={focusedChannel ?? null}
-                no={count > 0 ? channelNo(cardIdx) : null}
+                channel={focusedPhone ?? null}
+                no={count > 0 ? channelNo(listIdx) : null}
               />
             </SizedBox>
             <Column padding="md" gap="md">
@@ -487,7 +550,6 @@ export const PlayerScreen = defineScreen({
               <GroupChips
                 groups={state.groups}
                 activeGroup={state.activeGroup}
-                focusedChip={zone === "tabs" ? state.focus.index : null}
                 perRow={2}
                 onPick={(g) => actions.setGroup(g)}
               />
@@ -507,7 +569,7 @@ export const PlayerScreen = defineScreen({
                       <ChannelRow
                         channel={channel}
                         index={i}
-                        focused={i === cardIdx}
+                        focused={i === listIdx}
                         live={liveVisible !== null && liveVisible !== undefined && channel.url === liveVisible.url}
                       />
                     </GestureDetector>
@@ -520,14 +582,33 @@ export const PlayerScreen = defineScreen({
       );
     }
 
+    // TV browse: rail | accordion sidebar | video hero + status.
     return (
       <Scaffold>
         <Row>
           {/* The icon rail — brand tile + Live/Set (the reference's
               left edge); focusable via the runtime's rail zone. */}
           <Rail focusedItem={zone === "rail" ? state.focus.index : null} />
-          {/* The content column: hero → tabs → cards → status. */}
+          {/* The category accordion — the web ChannelList's D-pad
+              translation (headers toggle with OK; rows watch). */}
+          <Sidebar
+            channels={state.channels}
+            expanded={state.expanded}
+            listIndex={listIdx}
+            focused={zone === "list"}
+            liveUrl={liveVisible?.url ?? null}
+            liveGroup={liveVisible ? (liveVisible.group || "") : null}
+          />
+          {/* The content column: hero → status. */}
           <Column padding="md" gap="sm">
+            {/* The wall clock (the reference's top-right time). */}
+            {state.clock !== "" && (
+              <Row justify="end">
+                <Text variant="label" color="text">
+                  {state.clock}
+                </Text>
+              </Row>
+            )}
             {/* The video hero — exactly VIDEO_RECT. On device the
                 native TextureView composites here; the placeholder
                 shows through whenever no frames render. */}
@@ -536,64 +617,32 @@ export const PlayerScreen = defineScreen({
                 media={state.media}
                 now={state.now}
                 h={VIDEO_RECT.h}
-                channel={focusedChannel ?? null}
-                no={count > 0 ? channelNo(cardIdx) : null}
+                channel={previewChannel ?? null}
+                no={previewNo}
               />
             </SizedBox>
-            {/* The group tabs — the wall clock on the right (the
-                reference's top-right time; the active group is already
-                the highlighted chip); switching groups NEVER interrupts
-                playback. */}
-            <Row justify="between" align="center">
-              <GroupChips
-                groups={state.groups}
-                activeGroup={state.activeGroup}
-                focusedChip={zone === "tabs" ? state.focus.index : null}
-              />
-              {state.clock !== "" && (
-                <Text variant="label" color="text">
-                  {state.clock}
+            {/* Status block — the pill + now-playing caption gets the
+                full row (the narrower hero elided the old single-line
+                pair into "NusaTV ·…"), count + key hints below. */}
+            <Column gap="sm">
+              <Row justify="between">
+                <Text variant="caption" color={pill.color} maxLines={1} ellipsis>
+                  {state.now
+                    ? `${pill.text} · ${channelNo(state.now.index)} · ${state.now.title}`
+                    : `NusaTV · ${pill.text}`}
                 </Text>
-              )}
-            </Row>
-            {/* The horizontal channel cards — ALWAYS visible under the
-                hero; the window slides with the card cursor. */}
-            {count === 0 ? (
-              <Text variant="body" color="textDim">
-                Playlist empty — rail → Set to load one
-              </Text>
-            ) : (
-              <Row gap="sm">
-                {cardWindow.map((channel, k) => {
-                  const i = tvWinStart + k;
-                  return (
-                    <ChannelCard
-                      key={channel.url}
-                      channel={channel}
-                      index={i}
-                      focused={zone === "cards" && i === state.focus.index}
-                      live={
-                        liveVisible !== null &&
-                        liveVisible !== undefined &&
-                        channel.url === liveVisible.url
-                      }
-                    />
-                  );
-                })}
+                {count > 0 && (
+                  <Text variant="caption" color="textDim">
+                    {`${count} CH`}
+                  </Text>
+                )}
               </Row>
-            )}
-            {/* Status line — state + now playing left (the full width
-                keeps long titles readable), count + key hints right. */}
-            <Row justify="between">
-              <Text variant="caption" color={pill.color} maxLines={1} ellipsis>
-                {state.now
-                  ? `${pill.text} · ${channelNo(state.now.index)} · ${state.now.title}`
-                  : `NusaTV · ${pill.text}`}
-              </Text>
               <Text variant="caption" color="textDim" maxLines={1} ellipsis>
-                {`${count} CHANNEL${count === 1 ? "" : "S"} · ${hints[zone]}`}
+                {count === 0
+                  ? "Playlist empty — rail → Set to load one"
+                  : hints[zone]}
               </Text>
-            </Row>
+            </Column>
           </Column>
         </Row>
       </Scaffold>

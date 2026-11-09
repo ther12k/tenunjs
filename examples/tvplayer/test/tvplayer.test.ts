@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   TvplayerRuntime,
   VIDEO_RECT,
-  CARD_W,
-  CARDS_VISIBLE,
+  GAP_SM,
   HERO_W,
   PAD_SM,
   RAIL_W,
+  SIDEBAR_W,
   DESIGN_WIDTH,
   DESIGN_HEIGHT,
   FULLSCREEN_RECT,
@@ -17,18 +17,19 @@ import type { MediaCapability } from "@tenunjs/platform";
 
 /**
  * TN-196: the TvplayerRuntime headlessly — the KEY zone journeys over
- * the IPTV reference layout (rail / tabs / cards, the fullscreen zap
- * flow), the media orchestration through a fake MediaCapability, the
- * fail-closed boot, and the playlist-load path. Scenes are asserted as
- * text, the polytron test pattern.
+ * the NusaTV web-parity layout (rail / accordion sidebar, the fullscreen
+ * zap flow), the media orchestration through a fake MediaCapability,
+ * the fail-closed boot, and the playlist-load path. Scenes are asserted
+ * as text, the polytron test pattern.
  */
 
 // Derived from the starter playlist so the journeys stay honest as the
-// official channel list grows (TVRI Nasional is 01, the mux test stream
-// is last; the groups cycle in playlist order).
+// official channel list grows. The flat sidebar rows begin with the
+// FIRST GROUP's header; the channels below it follow in playlist order.
 const FIRST = STARTER_PLAYLIST[0]!;
 const SECOND = STARTER_PLAYLIST[1]!;
 const THIRD = STARTER_PLAYLIST[2]!;
+const FIRST_GROUP = FIRST.group;
 const GROUPS = [...new Set(STARTER_PLAYLIST.map((c) => c.group))];
 
 /** Lets zapTo's prepare→play promise chain settle. */
@@ -90,11 +91,12 @@ function textsInclude(texts: string[], needle: boolean | string): boolean {
 }
 
 describe("TN-196 tvplayer boot", () => {
-  test("boots fail-closed with the reference layout visible and media idle", () => {
+  test("boots fail-closed with the accordion sidebar visible and media idle", () => {
     const runtime = new TvplayerRuntime(); // no media host: unsupported stub
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "NusaTV")).toBe(true); // status line
-    expect(textsInclude(texts, FIRST.title)).toBe(true); // first card → hero preview
+    expect(textsInclude(texts, FIRST_GROUP)).toBe(true); // first accordion header
+    expect(textsInclude(texts, FIRST.title)).toBe(true); // its first channel row
     expect(textsInclude(texts, "IDLE")).toBe(true); // the state pill
     expect(textsInclude(texts, "Live")).toBe(true); // rail items
     expect(textsInclude(texts, "Set")).toBe(true);
@@ -102,44 +104,43 @@ describe("TN-196 tvplayer boot", () => {
     expect(runtime.route()).toBe("player");
   });
 
-  test("the video hero is derived from the rail geometry it sits beside", () => {
-    // The slot the scene reserves (rail | padding) and the rect the
-    // runtime asserts via setRect are the SAME derivation — the
-    // 2026-11-07 hand-written rect overlapped its neighbor by 16px.
-    expect(VIDEO_RECT.x).toBe(RAIL_W + PAD_SM);
+  test("the video hero is derived from the rail + sidebar geometry it sits beside", () => {
+    // The slot the scene reserves (rail | padding | sidebar | gap) and
+    // the rect the runtime asserts via setRect are the SAME derivation
+    // — the 2026-11-07 hand-written rect overlapped by 16px.
+    expect(VIDEO_RECT.x).toBe(RAIL_W + PAD_SM + SIDEBAR_W + GAP_SM);
     expect(VIDEO_RECT.w).toBe(HERO_W);
     expect(VIDEO_RECT.x + VIDEO_RECT.w).toBe(DESIGN_WIDTH - PAD_SM);
     expect(VIDEO_RECT.y).toBe(PAD_SM);
-    // The card row exactly fills the hero's width: 6 cards + 5 gaps.
-    expect(CARDS_VISIBLE * CARD_W + (CARDS_VISIBLE - 1) * 8).toBe(HERO_W);
     // Fullscreen stays edge-to-edge at the design canvas.
     expect(FULLSCREEN_RECT).toEqual({ x: 0, y: 0, w: DESIGN_WIDTH, h: DESIGN_HEIGHT });
   });
 });
 
-describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
-  test("RIGHT steps the cards; OK plays the focused card FULLSCREEN", async () => {
+describe("TN-196 KEY zone journeys (the web-parity accordion layout)", () => {
+  test("DOWN walks into the channels; OK plays the focused row FULLSCREEN", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle(); // boot-time rect assertion
 
-    expect(runtime.keyPress(22, "down")).toBe(true); // RIGHT: card 01 → 02
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02, fullscreen
+    // Row 0 is the first group's HEADER; DOWN reaches its first channel.
+    expect(runtime.keyPress(20, "down")).toBe(true); // row 1 = channel 01
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 01, fullscreen
     await settle();
 
-    expect(calls).toContain(`prepare:${SECOND.url}`);
+    expect(calls).toContain(`prepare:${FIRST.url}`);
     expect(calls).toContain("play");
     // Fullscreen: the video rect goes edge-to-edge and the scene
     // renders nothing (the overlay covers everything).
     expect(calls).toContain(`rect:0,0,${DESIGN_WIDTH},${DESIGN_HEIGHT}`);
     expect(sceneTexts(runtime)).toHaveLength(0);
 
-    // LEFT returns to the browse layout; playback continues.
+    // LEFT returns to the browse layout; playback continues at the row.
     calls.length = 0;
     expect(runtime.keyPress(21, "down")).toBe(true);
     await settle();
-    expect(calls).toContain(`rect:${RAIL_W + PAD_SM},${PAD_SM},${HERO_W},300`);
-    expect(textsInclude(sceneTexts(runtime), "←→ channels")).toBe(true);
+    expect(calls).toContain(`rect:${VIDEO_RECT.x},${VIDEO_RECT.y},${VIDEO_RECT.w},${VIDEO_RECT.h}`);
+    expect(textsInclude(sceneTexts(runtime), "↑↓ channels")).toBe(true);
     expect(calls).not.toContain("play"); // no restart on exit
   });
 
@@ -148,7 +149,8 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    runtime.keyPress(23, "down"); // OK on boot card 01: play fullscreen
+    runtime.keyPress(20, "down"); // row 1 = channel 01
+    runtime.keyPress(23, "down"); // OK: play fullscreen
     await settle();
     calls.length = 0;
 
@@ -158,7 +160,7 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
     await settle();
     expect(calls).toContain(`prepare:${SECOND.url}`);
     expect(calls).toContain("play");
-    expect(calls).not.toContain(`rect:${RAIL_W + PAD_SM},${PAD_SM},${HERO_W},300`);
+    expect(calls).not.toContain(`rect:${VIDEO_RECT.x},${VIDEO_RECT.y},${VIDEO_RECT.w},${VIDEO_RECT.h}`);
     expect(sceneTexts(runtime)).toHaveLength(0);
 
     expect(runtime.keyPress(19, "down")).toBe(true); // UP: back to 01
@@ -168,15 +170,16 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
 
     runtime.keyPress(21, "down"); // LEFT: back to the browse layout
     await settle();
-    expect(calls).toContain(`rect:${RAIL_W + PAD_SM},${PAD_SM},${HERO_W},300`);
+    expect(calls).toContain(`rect:${VIDEO_RECT.x},${VIDEO_RECT.y},${VIDEO_RECT.w},${VIDEO_RECT.h}`);
   });
 
-  test("CH+/CH- zap the live channel from the cards without moving the view", async () => {
+  test("CH+/CH- zap the live channel; the sidebar cursor follows", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
+    expect(textsInclude(sceneTexts(runtime), "Semua")).toBe(false); // no tab chips on TV
 
-    expect(runtime.keyPress(166, "down")).toBe(true); // CH+ tunes 01 (fresh boot)
+    expect(runtime.keyPress(166, "down")).toBe(true); // CH+ → fresh boot tunes 01
     await settle();
     expect(calls).toContain(`prepare:${FIRST.url}`);
     expect(runtime.keyPress(166, "down")).toBe(true); // CH+ → 02
@@ -186,123 +189,97 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
     await settle();
     expect(calls).toContain(`prepare:${FIRST.url}`);
 
-    // Browse chrome intact throughout — no fullscreen, live caption moved.
+    // Browse chrome intact throughout; the caption follows the zap and
+    // the sidebar cursor sits on the live channel's row (auto-scrolled,
+    // web parity).
     const texts = sceneTexts(runtime);
     expect(textsInclude(texts, "NUSA")).toBe(true); // the rail's brand
     expect(textsInclude(texts, `01 · ${FIRST.title}`)).toBe(true); // status caption
   });
 
-  test("browsing the cards while playing never touches the player", async () => {
+  test("OK on a header collapses its group; the cursor holds", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
-    await settle();
-
-    // Play 02 (fullscreen), then return to browse.
-    runtime.keyPress(22, "down");
-    runtime.keyPress(23, "down");
-    runtime.keyPress(21, "down"); // LEFT exits fullscreen → browse at live card
     await settle();
     calls.length = 0;
 
-    // Stepping the cards over the playing video: no player calls; the
-    // edges clamp (LEFT at card 0 stays).
-    expect(runtime.keyPress(20, "down")).toBe(false); // DOWN unused on cards
-    expect(runtime.keyPress(21, "down")).toBe(true); // 1 → 0
-    expect(runtime.keyPress(21, "down")).toBe(true); // clamp at 0
-    await settle();
+    // Boot focus is row 0 = the first group's header. Collapsing hides
+    // the group's channel rows everywhere (the window refills with the
+    // next headers); the cursor stays ON the header. The placeholder
+    // still previews the group's FIRST channel (by design), so only the
+    // deeper rows must vanish.
+    expect(sceneTexts(runtime).some((t) => t === SECOND.title)).toBe(true);
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: collapse
+    const collapsed = sceneTexts(runtime);
+    expect(collapsed.some((t) => t === SECOND.title)).toBe(false);
+    expect(textsInclude(collapsed, FIRST_GROUP)).toBe(true); // header still there
+    expect(collapsed).toContain("▸"); // Indonesia's chevron flipped to collapsed
+    expect(calls).toHaveLength(0); // collapsing never touches the player
+
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: expand again
+    expect(sceneTexts(runtime).some((t) => t === SECOND.title)).toBe(true);
     expect(calls).toHaveLength(0);
-
-    // OK on a DIFFERENT card switches playback and goes fullscreen.
-    expect(runtime.keyPress(23, "down")).toBe(true); // focused 0 (live is 1)
-    await settle();
-    expect(calls).toContain(`prepare:${FIRST.url}`);
-    expect(calls).toContain("play");
-    expect(calls).toContain(`rect:0,0,${DESIGN_WIDTH},${DESIGN_HEIGHT}`);
   });
 
-  test("rail: cards → UP tabs → UP rail; DOWN to Set; OK opens Settings", () => {
-    const { media } = fakeMedia();
-    const runtime = new TvplayerRuntime({ media });
-
-    expect(runtime.keyPress(19, "down")).toBe(true); // cards → tabs
-    expect(runtime.keyPress(19, "down")).toBe(true); // tabs → rail (Live)
-    expect(runtime.keyPress(20, "down")).toBe(true); // Live → Set
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK opens Settings
-    expect(runtime.route()).toBe("settings");
-    expect(runtime.keyPress(20, "down")).toBe(false); // typing keys not consumed there
-    expect(runtime.keyPress(21, "down")).toBe(true); // LEFT returns
-    expect(runtime.route()).toBe("player");
-    expect(runtime.goBack()).toBe(false); // player is root: host decides
-  });
-
-  test("tabs cycle groups with zero player calls; the cursor resets per filter", async () => {
+  test("browsing the sidebar while playing never touches the player", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
-    expect(textsInclude(sceneTexts(runtime), "Semua")).toBe(true); // tabs render
 
-    // Play channel 02, then back to browse; visit the tabs.
-    runtime.keyPress(22, "down"); // card 02
-    runtime.keyPress(23, "down"); // play 02 fullscreen
-    runtime.keyPress(21, "down"); // exit
-    await settle();
-    runtime.keyPress(19, "down"); // → tabs
+    // Play 01 (fullscreen), then return to browse.
+    runtime.keyPress(20, "down"); // row 1 = channel 01
+    runtime.keyPress(23, "down"); // play fullscreen
+    runtime.keyPress(21, "down"); // LEFT exits fullscreen → browse at the live row
     await settle();
     calls.length = 0;
 
-    // RIGHT cycles the groups (All → TVRI → … → Test); playback and
-    // its calls are untouched.
-    expect(runtime.keyPress(22, "down")).toBe(true); // All → first group
-    await settle();
-    expect(calls).toHaveLength(0);
-    for (let i = 1; i < GROUPS.length; i++) runtime.keyPress(22, "down");
+    // Walking the rows over the playing video: no player calls; UP at
+    // row 0 reaches the rail; RIGHT returns to the list.
+    expect(runtime.keyPress(19, "down")).toBe(true); // row 1 → header row 0
+    expect(runtime.keyPress(19, "down")).toBe(true); // row 0 → rail (Live)
+    expect(runtime.keyPress(22, "down")).toBe(true); // RIGHT → back to the list
     await settle();
     expect(calls).toHaveLength(0);
 
-    // DOWN into the filtered cards: the cursor reset to the filtered
-    // top (Mux is the only Test channel); OK plays it fullscreen.
-    expect(runtime.keyPress(20, "down")).toBe(true);
-    expect(runtime.keyPress(23, "down")).toBe(true);
+    // OK on a DIFFERENT row switches playback and goes fullscreen.
+    runtime.keyPress(20, "down"); // header row 0 → channel 01 again
+    expect(runtime.keyPress(23, "down")).toBe(true); // live row: fullscreen
     await settle();
-    expect(calls).toContain("prepare:https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8");
-    runtime.keyPress(21, "down"); // exit fullscreen
-    await settle();
-
-    // Back to All via the tabs; the cursor reset to the list top again.
-    runtime.keyPress(19, "down"); // → tabs (at Test's position)
-    for (let i = 0; i < GROUPS.length; i++) runtime.keyPress(21, "down"); // → All
-    await settle();
-    expect(textsInclude(sceneTexts(runtime), `${STARTER_PLAYLIST.length} CHANNELS`)).toBe(true);
-    runtime.keyPress(20, "down"); // → cards at the reset cursor (01)
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK plays it
-    await settle();
-    expect(calls).toContain(`prepare:${FIRST.url}`); // cursor 01 = filtered top
+    expect(calls).not.toContain(`prepare:${FIRST.url}`); // no re-prepare of the live url
   });
 
-  test("OK on the LIVE card is a no-op re-prepare; phase up never consumes", async () => {
+  test("OK on the LIVE row is a no-op re-prepare; phase up never consumes", async () => {
     const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    expect(runtime.keyPress(23, "down")).toBe(true); // boot card 01: play + fullscreen
+    runtime.keyPress(20, "down"); // row 1 = channel 01
+    expect(runtime.keyPress(23, "down")).toBe(true); // boot row: play + fullscreen
     await settle();
     const prepares = calls.filter((c) => c.startsWith("prepare:")).length;
     expect(prepares).toBe(1);
 
-    runtime.keyPress(21, "down"); // LEFT exits fullscreen
-    expect(runtime.keyPress(23, "up")).toBe(false); // phase "up": never acts
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live → fullscreen, no re-prepare
+    expect(runtime.keyPress(23, "up")).toBe(false); // phase up never consumes
+    runtime.keyPress(21, "down"); // LEFT back to browse
     await settle();
-    expect(calls.filter((c) => c.startsWith("prepare:")).length).toBe(1);
+    calls.length = 0;
+
+    runtime.keyPress(19, "down"); // → header row 0
+    runtime.keyPress(20, "down"); // → the live channel row again
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK on live: fullscreen only
+    await settle();
+    expect(calls.filter((c) => c.startsWith("prepare:"))).toHaveLength(0);
+    expect(calls).toContain(`rect:0,0,${DESIGN_WIDTH},${DESIGN_HEIGHT}`);
   });
 
   test("zapping moves the visible now-playing caption", async () => {
-    const { media } = fakeMedia();
+    const { media, calls } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
     await settle();
 
-    expect(runtime.keyPress(22, "down")).toBe(true); // card → 02
-    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 02, fullscreen
+    runtime.keyPress(20, "down"); // row 1 = channel 01
+    expect(runtime.keyPress(23, "down")).toBe(true); // OK: play 01, fullscreen
+    runtime.keyPress(20, "down"); // fullscreen DOWN: zap → 02
     runtime.keyPress(21, "down"); // LEFT back to browse
     await settle();
 
@@ -316,17 +293,18 @@ describe("TN-196 KEY zone journeys (the IPTV reference layout)", () => {
     const { media } = fakeMedia();
     const runtime = new TvplayerRuntime({ media });
 
-    runtime.keyPress(19, "down"); // cards → tabs
-    runtime.keyPress(19, "down"); // tabs → rail
+    runtime.keyPress(19, "down"); // list row 0 → rail
+    runtime.keyPress(19, "down"); // rail: Live (clamp)
     runtime.keyPress(20, "down"); // → Set
     expect(runtime.keyPress(23, "down")).toBe(true); // OK → Settings
     expect(runtime.route()).toBe("settings");
+    expect(runtime.keyPress(20, "down")).toBe(false); // typing keys not consumed there
     expect(runtime.keyPress(21, "down")).toBe(true); // LEFT returns
     expect(runtime.route()).toBe("player");
 
     runtime.navigate("settings");
-    expect(runtime.goBack()).toBe(true);
-    expect(runtime.route()).toBe("player");
+    expect(runtime.goBack()).toBe(true); // settings → player
+    expect(runtime.goBack()).toBe(false); // player is root: host decides
   });
 });
 
@@ -350,6 +328,7 @@ describe("TN-196 media orchestration", () => {
 
   test("zap against the unsupported stub fails VISIBLE — the placeholder carries the reason", async () => {
     const runtime = new TvplayerRuntime(); // unsupportedMedia
+    runtime.keyPress(20, "down"); // header row 0 → the first channel row
     expect(runtime.keyPress(23, "down")).toBe(true); // OK: play + fullscreen
     runtime.keyPress(21, "down"); // LEFT exits fullscreen to see the placeholder
     await settle();

@@ -16,6 +16,7 @@ import {
   KEY_DPAD_UP,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
+  buildSidebarRows,
   type FocusState,
   type FormFactor,
   type LoadResult,
@@ -29,21 +30,22 @@ import { parsePlaylist, type PlaylistEntry } from "./playlist";
 // The shared layout/input constants live in the leaf module (the graph
 // gate forbids cycles); re-exported here for the public surface.
 export {
-  CARD_H,
-  CARD_W,
-  CARDS_VISIBLE,
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
   DESIGN_WIDTH_PHONE,
   FULLSCREEN_RECT,
   GAP_MD,
   GAP_SM,
+  HEADER_H,
   HERO_H,
   HERO_W,
+  HERO_X,
   PAD_LG,
   PAD_SM,
   RAIL_W,
-  TABS_H,
+  ROW_H,
+  SIDEBAR_VISIBLE,
+  SIDEBAR_W,
   VIDEO_RECT,
   VIDEO_RECT_PHONE,
   KEY_DPAD_UP,
@@ -56,7 +58,7 @@ export {
   KEYCODE_CHANNEL_DOWN,
 } from "./layout";
 export type { FormFactor } from "./layout";
-export type { FocusState, NowPlaying, LoadResult } from "./layout";
+export type { FocusState, NowPlaying, LoadResult, SidebarRow } from "./layout";
 
 type AnyScreen = ScreenDefinition<any, any>;
 
@@ -70,16 +72,17 @@ type AnyScreen = ScreenDefinition<any, any>;
  *    "media" host service bridge; browser/tests: fail-closed stub or
  *    a fake). The runtime has NO player knowledge beyond the contract.
  *
- * D-pad model (TN-196 item 3; the IPTV reference layout):
- *   cards:   LEFT/RIGHT step the channel cards (clamped at the ends);
- *            UP to the tabs; OK plays the focused card FULLSCREEN
- *   tabs:    LEFT/RIGHT cycle the group filter (never touches
- *            playback); DOWN to the cards; UP to the rail
- *   rail:    UP/DOWN between [Live, Settings]; OK opens; RIGHT to tabs
- *   CH+/CH-: zap prev/next from any zone (view stays put)
+ * D-pad model (TN-196 item 3; the NusaTV web Studio layout):
+ *   list:    UP/DOWN walk the accordion sidebar (group headers +
+ *            channels of expanded groups, clamped); UP past the first
+ *            row reaches the rail; OK on a header collapses/expands
+ *            its group; OK on a channel plays it FULLSCREEN
+ *   rail:    UP/DOWN between [Live, Settings]; OK opens; RIGHT to list
+ *   CH+/CH-: zap prev/next from any zone (the sidebar cursor follows
+ *            the live channel, like the web's auto-scroll)
  *   fullscreen: UP/DOWN/CH zap and STAY fullscreen; any other key
  *            returns to browse with playback continuing
- *   phone:   UP/DOWN move the list cursor, OK plays; RIGHT → Settings
+ *   phone:   UP/DOWN move the row cursor, OK plays; RIGHT → Settings
  * phase "down" acts; phase "up" never consumes (TN-194 sends both).
  *
  * Data flow is push-driven (TN-142), the polytron pattern: the runtime
@@ -103,31 +106,42 @@ export class TvplayerRuntime {
   private readonly form: FormFactor;
   private readonly videoRect: Readonly<{ x: number; y: number; w: number; h: number }>;
   private channels: readonly PlaylistEntry[] = STARTER_PLAYLIST;
-  /** Active group filter; null = All (the parser's group-title). */
+  /** Phone-only group filter (the chips); the TV sidebar shows all
+   *  groups at once, so this stays null on the TV form. */
   private activeGroup: string | null = null;
   /** Playback identity (urls are stable across filter changes; filtered
    *  array indexes are not — a group switch never interrupts playback). */
   private currentUrl: string | null = null;
+  /** Cursor within the rail zone (0 Live, 1 Settings). */
   private focusIndex = 0;
-  /** The channel-card cursor — tracked independently of the ring's
-   *  zone so the card window and the hero preview hold still while the
-   *  ring visits the tabs or the rail. */
-  private cardIndex = 0;
-  private focusZone: "rail" | "tabs" | "cards" = "cards";
+  /** TV: the flat sidebar cursor (headers + expanded channels). Phone:
+   *  the row cursor. One field — the forms never coexist. */
+  private listIndex = 0;
+  /** TV accordion: which groups are expanded (web parity — all by
+   *  default). OK on a header toggles its membership. */
+  private expandedGroups: Set<string>;
+  private focusZone: "rail" | "list" = "list";
   /** TV form: fullscreen playback (browse ↔ player, the YouTube flow). */
   private fullscreen = false;
   private status: MediaStatus = { state: "idle" };
 
-  /** The channel list under the active group filter. */
+  /** The channel list under the active group filter (phone chips). */
   private get vis(): readonly PlaylistEntry[] {
     return this.activeGroup === null
       ? this.channels
       : this.channels.filter((c) => c.group === this.activeGroup);
   }
 
-  /** Distinct groups in playlist order (the chips: All + these). */
+  /** Distinct groups in playlist order. */
   private groups(): string[] {
     return [...new Set(this.channels.map((c) => c.group).filter((g) => g !== ""))];
+  }
+
+  /** ALL groups including the ungrouped "" bucket (the sidebar's
+   *  "Lainnya" header) — the accordion starts with every group
+   *  expanded, so the default expansion set must include it. */
+  private allGroups(): string[] {
+    return [...new Set(this.channels.map((c) => c.group))];
   }
 
   /** The playing channel's position in the VISIBLE list; -1 when the
@@ -137,12 +151,25 @@ export class TvplayerRuntime {
     return this.vis.findIndex((c) => c.url === this.currentUrl);
   }
 
+  /** The TV sidebar's flat walk order (the shared leaf derivation —
+   *  the screen builds the SAME rows from the pushed state). */
+  private flatRows() {
+    return buildSidebarRows(this.vis, this.expandedGroups);
+  }
+
+  /** The flat-row position of a channel url (-1 when hidden/collapsed). */
+  private flatIndexOf(url: string): number {
+    return this.flatRows().findIndex(
+      (r) => r.type === "channel" && r.channel.url === url
+    );
+  }
+
   /**
    * @param formFactor "tv" (default — 960-unit 10-foot layout: icon
-   *        rail, video hero, tabs + horizontal channel cards) or
-   *        "phone" (390-unit layout: video hero on top, the channel
-   *        list below as tappable rows). The video rect is static per
-   *        session either way (ADR-0028).
+   *        rail, accordion sidebar, video hero) or "phone" (390-unit
+   *        layout: video hero on top, the channel list below as
+   *        tappable rows). The video rect is static per session either
+   *        way (ADR-0028).
    */
   constructor(
     host: TvplayerHostServices & { designWidth?: number; formFactor?: FormFactor } = {}
@@ -151,6 +178,7 @@ export class TvplayerRuntime {
     this.media = media ?? unsupportedMedia("tvplayer: no media host bound");
     this.form = formFactor ?? "tv";
     this.videoRect = this.form === "phone" ? VIDEO_RECT_PHONE : VIDEO_RECT;
+    this.expandedGroups = new Set(this.allGroups());
 
     const services = {
       media: this.media,
@@ -316,31 +344,31 @@ export class TvplayerRuntime {
         return true;
       }
       if (keyCode === KEY_DPAD_DOWN && count > 0) {
-        this.setCardIndex((this.cardIndex + 1) % count);
+        this.setListIndex((this.listIndex + 1) % count);
         return true;
       }
       if (keyCode === KEY_DPAD_UP && count > 0) {
-        this.setCardIndex((this.cardIndex - 1 + count) % count);
+        this.setListIndex((this.listIndex - 1 + count) % count);
         return true;
       }
       if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
         if (count === 0) return false;
-        this.select(this.cardIndex);
+        this.select(this.listIndex);
         return true;
       }
       return false;
     }
 
     // CH+/CH- zap from the browse zones too: playback switches, the
-    // view stays put (the live-card highlight follows; the card cursor
-    // follows it).
+    // view stays put (the live-row highlight and the sidebar cursor
+    // follow the live channel).
     if (keyCode === KEYCODE_CHANNEL_UP || keyCode === KEYCODE_CHANNEL_DOWN) {
       this.zapStep(keyCode === KEYCODE_CHANNEL_UP ? 1 : -1);
       return true;
     }
 
     // The icon rail: UP/DOWN between [Live, Settings]; OK opens;
-    // RIGHT returns to the tabs.
+    // RIGHT returns to the sidebar.
     if (this.focusZone === "rail") {
       if (keyCode === KEY_DPAD_UP) {
         this.focusIndex = Math.max(0, this.focusIndex - 1);
@@ -357,68 +385,58 @@ export class TvplayerRuntime {
         return true; // Live is already the open route
       }
       if (keyCode === KEY_DPAD_RIGHT) {
-        this.toZone("tabs");
+        this.toZone("list");
         return true;
       }
       return false;
     }
 
-    // The group tabs: LEFT/RIGHT cycle the filter (never touches
-    // playback); DOWN to the cards; UP to the rail.
-    if (this.focusZone === "tabs") {
-      if (keyCode === KEY_DPAD_LEFT) {
-        this.cycleGroup(-1);
-        return true;
-      }
-      if (keyCode === KEY_DPAD_RIGHT) {
-        this.cycleGroup(1);
-        return true;
-      }
-      if (keyCode === KEY_DPAD_DOWN || keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-        this.toZone("cards");
-        return true;
-      }
+    // The accordion sidebar: UP/DOWN walk the flat rows (headers +
+    // expanded channels, clamped — UP past the first row reaches the
+    // rail); OK toggles a group or watches a channel fullscreen.
+    const rows = this.flatRows();
+    if (rows.length === 0) {
       if (keyCode === KEY_DPAD_UP) {
         this.toZone("rail");
         return true;
       }
       return false;
     }
-
-    // The channel cards: LEFT/RIGHT step (clamped — the reference's
-    // rows stop at their ends); UP to the tabs; OK watches fullscreen.
-    const count = this.vis.length;
-    if (keyCode === KEY_DPAD_LEFT && count > 0) {
-      this.setCardIndex(Math.max(0, this.cardIndex - 1));
-      return true;
-    }
-    if (keyCode === KEY_DPAD_RIGHT && count > 0) {
-      this.setCardIndex(Math.min(count - 1, this.cardIndex + 1));
+    if (keyCode === KEY_DPAD_DOWN) {
+      this.setListIndex(Math.min(rows.length - 1, this.listIndex + 1));
       return true;
     }
     if (keyCode === KEY_DPAD_UP) {
-      this.toZone("tabs");
+      if (this.listIndex === 0) this.toZone("rail");
+      else this.setListIndex(this.listIndex - 1);
+      return true;
+    }
+    if (keyCode === KEY_DPAD_LEFT) {
+      this.toZone("rail");
       return true;
     }
     if (keyCode === KEY_DPAD_CENTER || keyCode === KEYCODE_ENTER) {
-      if (count === 0) return false;
-      // OK: the reference flow — the focused card plays FULLSCREEN
+      const row = rows[this.listIndex];
+      if (!row) return false;
+      if (row.type === "header") {
+        this.toggleGroup(row.group);
+        return true;
+      }
+      // OK: the reference flow — the focused channel plays FULLSCREEN
       // (edge-to-edge video). A different channel switches playback
-      // first; the live card enters fullscreen without a re-prepare.
-      if (this.cardIndex !== this.currentIndex) this.zapTo(this.cardIndex);
+      // first; the live channel enters fullscreen without a re-prepare.
+      if (row.index !== this.currentIndex) this.zapTo(row.index);
       this.enterFullscreen();
       return true;
     }
     return false;
   }
 
-  /** Moves the ring to a zone; each zone gets its natural cursor
-   *  (cards restore their cursor, tabs the active chip, rail Live). */
-  private toZone(zone: "rail" | "tabs" | "cards"): void {
-    if (zone === "cards") {
-      this.focusIndex = this.cardIndex;
-    } else if (zone === "tabs") {
-      this.focusIndex = this.chipPosition();
+  /** Moves the ring to a zone; each zone gets its natural cursor (the
+   *  sidebar restores its row, the rail Live). */
+  private toZone(zone: "rail" | "list"): void {
+    if (zone === "list") {
+      this.listIndex = Math.min(this.listIndex, Math.max(0, this.flatRows().length - 1));
     } else {
       this.focusIndex = 0; // Live
     }
@@ -426,10 +444,20 @@ export class TvplayerRuntime {
     this.pushFocus();
   }
 
-  /** Sets the card cursor; the ring rides along (cards zone). */
-  private setCardIndex(index: number): void {
-    this.cardIndex = index;
-    this.focusIndex = index;
+  /** Sets the list cursor; the ring rides along (list zone). */
+  private setListIndex(index: number): void {
+    this.listIndex = index;
+    this.pushFocus();
+  }
+
+  /** Collapses/expands an accordion group. The cursor stays on the
+   *  header (its flat position never moves — only the rows BELOW it
+   *  appear/disappear); clamped if the list shrank past it. */
+  private toggleGroup(group: string): void {
+    if (this.expandedGroups.has(group)) this.expandedGroups.delete(group);
+    else this.expandedGroups.add(group);
+    this.listIndex = Math.min(this.listIndex, Math.max(0, this.flatRows().length - 1));
+    this.pushChannels();
     this.pushFocus();
   }
 
@@ -437,7 +465,7 @@ export class TvplayerRuntime {
   private enterFullscreen(): void {
     if (this.form !== "tv") return; // phone keeps its video-hero layout
     this.fullscreen = true;
-    this.focusZone = "cards";
+    this.focusZone = "list";
     this.ensureVideoRect();
     this.pushFocus();
   }
@@ -446,14 +474,16 @@ export class TvplayerRuntime {
   exitFullscreen(): void {
     if (!this.fullscreen) return;
     this.fullscreen = false;
-    this.focusZone = "cards";
-    this.setCardIndex(Math.max(0, this.currentIndex));
+    this.focusZone = "list";
+    if (this.form === "phone") {
+      this.setListIndex(Math.max(0, this.currentIndex));
+    } else {
+      // The sidebar cursor lands on the live channel's row (web parity:
+      // exiting fullscreen is an auto-scroll to the on-air row).
+      const flat = this.currentUrl === null ? -1 : this.flatIndexOf(this.currentUrl);
+      this.setListIndex(Math.max(0, flat));
+    }
     this.ensureVideoRect();
-  }
-
-  /** Index of the active group in the chip row [All, …groups]. */
-  private chipPosition(): number {
-    return this.activeGroup === null ? 0 : 1 + this.groups().indexOf(this.activeGroup);
   }
 
   /** Zaps ±1 from the LIVE channel (CH± keys; UP/DOWN in fullscreen).
@@ -470,28 +500,12 @@ export class TvplayerRuntime {
     if (next !== this.currentIndex) this.zapTo(next);
   }
 
-  /** Cycles the group filter; NEVER touches playback. */
-  private cycleGroup(dir: number): void {
-    this.setGroupAt((this.chipPosition() + dir + this.groups().length + 1) % (this.groups().length + 1));
-  }
-
-  /** Sets the group filter by chip index (0 = All); the ring stays on
-   *  the tabs, the card cursor resets to the filtered top. */
-  private setGroupAt(chip: number): void {
-    this.activeGroup = chip === 0 ? null : (this.groups()[chip - 1] ?? null);
-    this.cardIndex = 0;
-    this.focusIndex = chip;
-    this.focusZone = "tabs";
-    this.pushChannels();
-    this.pushFocus();
-  }
-
-  /** Group selection from the UI (phone chip taps / screen action). */
+  /** Group selection from the UI (phone chip taps / screen action).
+   *  The TV sidebar shows every group at once — no filter to set. */
   setGroup(group: string | null): void {
     this.activeGroup = group === null || group === "" ? null : group;
-    this.cardIndex = 0;
-    this.focusIndex = 0;
-    this.focusZone = "cards";
+    this.listIndex = 0;
+    this.focusZone = "list";
     this.pushChannels();
     this.pushFocus();
   }
@@ -508,8 +522,16 @@ export class TvplayerRuntime {
     const channel = this.vis[index];
     if (!channel) return;
     this.currentUrl = channel.url;
-    this.cardIndex = index;
-    this.focusIndex = index;
+    if (this.form === "phone") {
+      this.listIndex = index;
+    } else {
+      // The sidebar cursor follows the live channel; its group is
+      // auto-expanded so the row is always reachable (web parity).
+      this.expandedGroups.add(channel.group || "");
+      const flat = this.flatIndexOf(channel.url);
+      if (flat >= 0) this.listIndex = flat;
+    }
+    this.pushChannels();
     this.pushNowPlaying();
     this.pushFocus();
     this.ensureVideoRect();
@@ -557,10 +579,8 @@ export class TvplayerRuntime {
    *  live channel is a no-op re-prepare-wise. */
   select(index: number): void {
     if (index < 0 || index >= this.vis.length) return;
-    this.cardIndex = index;
-    this.focusIndex = index;
     if (index !== this.currentIndex) this.zapTo(index);
-    this.pushFocus();
+    else this.pushFocus();
   }
 
   /** Settings screen: fetch a playlist URL through the media seam's
@@ -587,9 +607,10 @@ export class TvplayerRuntime {
     this.channels = entries;
     this.activeGroup = null;
     this.currentUrl = null;
+    this.expandedGroups = new Set(this.allGroups());
     this.pushChannels();
     this.zapTo(0);
-    this.focusZone = "cards";
+    this.focusZone = "list";
     this.pushFocus();
     this.navigate("player");
     this.app.pushTo("settings", "loadResult", {
@@ -613,13 +634,14 @@ export class TvplayerRuntime {
       channels: this.vis,
       groups: this.groups(),
       activeGroup: this.activeGroup,
+      expanded: [...this.expandedGroups],
     });
   }
 
   private pushFocus(): void {
     const focus: FocusState = {
-      index: this.focusIndex,
-      cardIndex: this.cardIndex,
+      index: this.focusZone === "rail" ? this.focusIndex : this.listIndex,
+      listIndex: this.listIndex,
       zone: this.focusZone,
       fullscreen: this.fullscreen,
     };
