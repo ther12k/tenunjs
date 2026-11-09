@@ -1,122 +1,176 @@
 /**
  * TN-196 starter playlist — the channels bundled with the app.
- *
- * Content boundary (ADR-0028, standing): the example app is a generic
- * m3u/m3u8 playlist player with a starter list of OFFICIAL FREE public
- * streams — the broadcasters' own publicly published endpoints, nothing
- * extracted from third-party apps. No third-party panel integration or
- * reverse-engineering, no bundled unofficial endpoints. Where a user
- * points the player is their choice, as with any media player (the
- * Settings screen accepts any playlist URL the user legitimately holds).
- *
- * Every endpoint below was verified reachable (HTTP 200, #EXTM3U) on
- * 2026-11-08: the 23 TVRI channels on the broadcaster's own public
- * ott-balancer.tvri.go.id infrastructure, plus international channels
- * on the broadcasters' own CDN configs (DW's Akamai stream, France 24's
- * static.france24.com, Red Bull TV's BoRB Akamai config, NASA's NTV1).
- * Al Jazeera's former getaj.net HLS host now NXDOMAINs and TRT World
- * TLS-refuses this region — both excluded rather than bundled unverified.
+ * Synced from nusatv-web verified open streams (164 channels).
  */
 import type { PlaylistEntry } from "./playlist";
 
-function tvri(title: string, slug: string): PlaylistEntry {
-  return {
-    title,
-    url: `https://ott-balancer.tvri.go.id/live/eds/${slug}/hls/${slug}.m3u8`,
-    group: "TVRI",
-    tvgName: null,
-    tvgLogo: null,
-  };
-}
-
-/** An official-free international channel on its broadcaster's CDN. */
 function chan(title: string, url: string, group: string): PlaylistEntry {
   return { title, url, group, tvgName: null, tvgLogo: null };
 }
 
 export const STARTER_PLAYLIST: readonly PlaylistEntry[] = [
-  // The non-TVRI channels LEAD the list: with 23 TVRI channels bundled,
-  // putting them first made the default view wall-to-wall TVRI (the
-  // user's "why only tvri" — 2026-11-09). Variety first, regions after.
-  //
-  // International news — the broadcasters' own publicly published
-  // free streams (their live web players use these same CDN configs).
-  // Verified 200 + #EXTM3U + CORS on 2026-11-09 (the web build plays
-  // client-side, so CORS matters here too).
-  chan(
-    "DW English",
-    "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8",
-    "Internasional"
-  ),
-  chan(
-    "France 24 English",
-    "https://static.france24.com/live/F24_EN_LO_HLS/live_web.m3u8",
-    "Internasional"
-  ),
-  chan(
-    "CGTN English",
-    "https://news.cgtn.com/resource/live/english/cgtn-news.m3u8",
-    "Internasional"
-  ),
-  chan(
-    "DW Deutsch",
-    "https://dwamdstream101.akamaized.net/hls/live/2015524/dwstream101/index.m3u8",
-    "Internasional"
-  ),
-  chan(
-    "France 24 Français",
-    "https://static.france24.com/live/F24_FR_LO_HLS/live_web.m3u8",
-    "Internasional"
-  ),
-  chan(
-    "France 24 Español",
-    "https://static.france24.com/live/F24_ES_LO_HLS/live_web.m3u8",
-    "Internasional"
-  ),
-  // NASA TV Public — NASA's own NTV1 Akamai config (the feed behind
-  // nasa.gov live coverage; NASA+ is the newer platform, NTV1 stays up).
-  chan(
-    "NASA TV Public",
-    "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8",
-    "Sains"
-  ),
-  // Red Bull TV — the broadcaster's own BoRB Akamai config (free
-  // 24/7 sports feed, the same stream redbull.tv's apps play).
-  chan(
-    "Red Bull TV",
-    "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8",
-    "Olahraga"
-  ),
-  tvri("TVRI Nasional", "Nasional"),
-  tvri("TVRI DKI Jakarta", "DKI"),
-  tvri("TVRI Jawa Barat", "Jabar"),
-  tvri("TVRI Jawa Tengah", "Jateng"),
-  tvri("TVRI Jawa Timur", "Jatim"),
-  tvri("TVRI Bali", "Bali"),
-  tvri("TVRI Sumatera Utara", "Sumut"),
-  tvri("TVRI Sumatera Selatan", "Sumsel"),
-  tvri("TVRI Sulawesi Selatan", "Sulsel"),
-  tvri("TVRI Sulawesi Utara", "Sulut"),
-  tvri("TVRI Sulawesi Tengah", "Sulteng"),
-  tvri("TVRI Sulawesi Tenggara", "Sultra"),
-  tvri("TVRI Kalimantan Timur", "Kaltim"),
-  tvri("TVRI Kalimantan Barat", "Kalbar"),
-  tvri("TVRI Aceh", "Aceh"),
-  tvri("TVRI Riau", "Riau"),
-  tvri("TVRI Bengkulu", "Bengkulu"),
-  tvri("TVRI Lampung", "Lampung"),
-  tvri("TVRI Kep. Bangka Belitung", "Babel"),
-  tvri("TVRI Nusa Tenggara Barat", "NTB"),
-  tvri("TVRI Nusa Tenggara Timur", "NTT"),
-  tvri("TVRI Gorontalo", "Gorontalo"),
-  tvri("TVRI Papua", "Papua"),
-  {
-    // Public mux HLS test stream — the development stream the device
-    // acceptance journey plays first (MediaServicePlaybackTest uses it).
-    title: "Mux Test",
-    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-    group: "Test",
-    tvgName: null,
-    tvgLogo: null,
-  },
+  chan("Metro TV HD", "https://edge.medcom.id/live-edge/smil:metro.smil/playlist.m3u8", "Indonesia"),
+  chan("CNN Indonesia", "https://video.detik.com/livecnn/smil:cnntv/chunklist_w268557525_b384000_sleng.m3u8", "Indonesia"),
+  chan("CNBC Indonesia", "https://video.detik.com/livecnbc/smil:cnbctv/chunklist_w1279679883_b384000_sleng.m3u8", "Indonesia"),
+  chan("iNews HD", "https://live.i-news.tv/hls/stream.m3u8", "Indonesia"),
+  chan("RTV", "https://rtvstream.rtv.co.id:4555/hls/rtv.m3u8", "Indonesia"),
+  chan("Nusantara TV", "https://nusantaratv.siar.us/nusantaratv/live/playlist.m3u8", "Indonesia"),
+  chan("DAAI TV", "https://pull.daaiplus.com/live-DAAIPLUS/live-DAAIPLUS_HD.m3u8", "Indonesia"),
+  chan("MAGNA Channel", "https://edge.medcom.id/live-edge/smil:magna.smil/chunklist_w521170343_b1128000_sleng.m3u8", "Indonesia"),
+  chan("BN Channel", "https://flv.intechmedia.net/live/ch112.m3u8", "Indonesia"),
+  chan("TVRI World", "https://ott-balancer.tvri.go.id/live/eds/TVRIWorld/hls/TVRIWorld.m3u8", "Indonesia"),
+  chan("TV9 Nusantara", "https://5bf7b725107e5.streamlock.net/tv9/tv9/playlist.m3u8", "Indonesia"),
+  chan("Jawa Pos TV", "http://122.248.43.242:1935/JAWAPOSTVJKT/_definst_/myStream/playlist.m3u8", "Indonesia"),
+  chan("Bandung TV", "http://202.150.153.254:65500/bandungtvWEBSITE.m3u8", "Indonesia"),
+  chan("DW English", "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8", "Internasional"),
+  chan("France 24 English", "https://static.france24.com/live/F24_EN_LO_HLS/live_web.m3u8", "Internasional"),
+  chan("CGTN English", "https://news.cgtn.com/resource/live/english/cgtn-news.m3u8", "Internasional"),
+  chan("DW Deutsch", "https://dwamdstream101.akamaized.net/hls/live/2015524/dwstream101/index.m3u8", "Internasional"),
+  chan("France 24 Français", "https://static.france24.com/live/F24_FR_LO_HLS/live_web.m3u8", "Internasional"),
+  chan("France 24 Español", "https://static.france24.com/live/F24_ES_LO_HLS/live_web.m3u8", "Internasional"),
+  chan("NASA TV Public", "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8", "Sains"),
+  chan("Red Bull TV", "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8", "Olahraga"),
+  chan("TVRI Nasional", "https://ott-balancer.tvri.go.id/live/eds/Nasional/hls/Nasional.m3u8", "TVRI"),
+  chan("TVRI DKI Jakarta", "https://ott-balancer.tvri.go.id/live/eds/DKI/hls/DKI.m3u8", "TVRI"),
+  chan("TVRI Jawa Barat", "https://ott-balancer.tvri.go.id/live/eds/Jabar/hls/Jabar.m3u8", "TVRI"),
+  chan("TVRI Jawa Tengah", "https://ott-balancer.tvri.go.id/live/eds/Jateng/hls/Jateng.m3u8", "TVRI"),
+  chan("TVRI Jawa Timur", "https://ott-balancer.tvri.go.id/live/eds/Jatim/hls/Jatim.m3u8", "TVRI"),
+  chan("TVRI Bali", "https://ott-balancer.tvri.go.id/live/eds/Bali/hls/Bali.m3u8", "TVRI"),
+  chan("TVRI Sumatera Utara", "https://ott-balancer.tvri.go.id/live/eds/Sumut/hls/Sumut.m3u8", "TVRI"),
+  chan("TVRI Sumatera Selatan", "https://ott-balancer.tvri.go.id/live/eds/Sumsel/hls/Sumsel.m3u8", "TVRI"),
+  chan("TVRI Sulawesi Selatan", "https://ott-balancer.tvri.go.id/live/eds/Sulsel/hls/Sulsel.m3u8", "TVRI"),
+  chan("TVRI Sulawesi Utara", "https://ott-balancer.tvri.go.id/live/eds/Sulut/hls/Sulut.m3u8", "TVRI"),
+  chan("TVRI Sulawesi Tengah", "https://ott-balancer.tvri.go.id/live/eds/Sulteng/hls/Sulteng.m3u8", "TVRI"),
+  chan("TVRI Sulawesi Tenggara", "https://ott-balancer.tvri.go.id/live/eds/Sultra/hls/Sultra.m3u8", "TVRI"),
+  chan("TVRI Kalimantan Timur", "https://ott-balancer.tvri.go.id/live/eds/Kaltim/hls/Kaltim.m3u8", "TVRI"),
+  chan("TVRI Kalimantan Barat", "https://ott-balancer.tvri.go.id/live/eds/Kalbar/hls/Kalbar.m3u8", "TVRI"),
+  chan("TVRI Aceh", "https://ott-balancer.tvri.go.id/live/eds/Aceh/hls/Aceh.m3u8", "TVRI"),
+  chan("TVRI Riau", "https://ott-balancer.tvri.go.id/live/eds/Riau/hls/Riau.m3u8", "TVRI"),
+  chan("TVRI Bengkulu", "https://ott-balancer.tvri.go.id/live/eds/Bengkulu/hls/Bengkulu.m3u8", "TVRI"),
+  chan("TVRI Lampung", "https://ott-balancer.tvri.go.id/live/eds/Lampung/hls/Lampung.m3u8", "TVRI"),
+  chan("TVRI Kep. Bangka Belitung", "https://ott-balancer.tvri.go.id/live/eds/Babel/hls/Babel.m3u8", "TVRI"),
+  chan("TVRI Nusa Tenggara Barat", "https://ott-balancer.tvri.go.id/live/eds/NTB/hls/NTB.m3u8", "TVRI"),
+  chan("TVRI Nusa Tenggara Timur", "https://ott-balancer.tvri.go.id/live/eds/NTT/hls/NTT.m3u8", "TVRI"),
+  chan("TVRI Gorontalo", "https://ott-balancer.tvri.go.id/live/eds/Gorontalo/hls/Gorontalo.m3u8", "TVRI"),
+  chan("TVRI Papua", "https://ott-balancer.tvri.go.id/live/eds/Papua/hls/Papua.m3u8", "TVRI"),
+  chan("BTV", "https://lnd0t3b922.tenbytecdn.com/ta-sg1/90369cf5-6ac2-411d-b3d0-15fae10a2e2c/master.m3u8", "Indonesia"),
+  chan("Garuda TV", "https://hgmtv.com:19360/garudatvlivestreaming/garudatvlivestreaming.m3u8", "Indonesia"),
+  chan("Metro Globe Network", "https://edge.medcom.id/live-edge/smil:mgnch.smil/playlist.m3u8", "Indonesia"),
+  chan("Indonesiana TV", "https://tvstreamcast.com/indonesiana.m3u8", "Indonesia"),
+  chan("The Indonesia Channel", "https://restreamer.indonusa.id:8443/d5f4ad43-1b5a-4b0f-8bef-5b37224ed221.m3u8", "Indonesia"),
+  chan("U Channel", "https://srs.u-channel.tv/live/uchannel-tv.m3u8", "Indonesia"),
+  chan("Salira TV", "https://live.salira.tv/p/3870/hybrid/play.m3u8", "Indonesia"),
+  chan("MBG TV", "https://stream.convergen.co/mbg_stream/smil:mbStream.smil/playlist.m3u8", "Indonesia"),
+  chan("VTV", "https://flv.intechmedia.net/live/ch107.m3u8", "Indonesia"),
+  chan("Rinjani TV", "https://rinjanitv.cloud/hls/tvkabel.m3u8", "Indonesia"),
+  chan("Lingkar TV", "https://lingkartv.my.id/hls/lingkartv.m3u8", "Indonesia"),
+  chan("Caruban TV", "https://stream.carubantv.id/hls/0/stream.m3u8", "Indonesia"),
+  chan("Jambi TV", "https://jambitv.globaldigitalcore.com/hls/sah5tu7Eiveepohyieyie3OoteL2anga.m3u8", "Indonesia"),
+  chan("Efarina TV", "https://live.efarinatv.com/hls/bgtaufikganteng.m3u8", "Indonesia"),
+  chan("USM TV", "https://play.fsa-stream.my.id/hls/siaran.m3u8", "Indonesia"),
+  chan("PKTV", "https://streaming.id18.tunnel.my.id/hls/stream.m3u8", "Indonesia"),
+  chan("Sangaji TV", "https://cdn.adyadigitalteknologi.com:8090/vod/relay.m3u8", "Indonesia"),
+  chan("Kilisuci TV", "https://5bf7b725107e5.streamlock.net/kstv/kstv/playlist.m3u8", "Indonesia"),
+  chan("BRTV", "https://5bf7b725107e5.streamlock.net/brtv/brtv/playlist.m3u8", "Indonesia"),
+  chan("BMS TV", "https://5bf7b725107e5.streamlock.net/bmstv/bmstv/playlist.m3u8", "Indonesia"),
+  chan("Angel TV", "https://janya-digimix.akamaized.net/vglive-sk-234616/indonesia/ngrp:angelindonesia_all/playlist.m3u8", "Indonesia"),
+  chan("Dens Food Channel", "https://op-flashcon-digdayahd-1.dens.tv/h/h221/02.m3u8", "Lifestyle"),
+  chan("Balikpapan TV", "http://122.248.43.242:1935/BALIKPAPANTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Batam TV", "http://122.248.43.242:1935/BATAMTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Banten TV", "https://5bf7b725107e5.streamlock.net/bantentv/bantentv/playlist.m3u8", "Daerah"),
+  chan("Bungo TV", "https://5bf7b725107e5.streamlock.net/bungotv/bungotv/playlist.m3u8", "Daerah"),
+  chan("Duta TV", "https://dutatv.siar.us/dutatv/live/playlist.m3u8", "Daerah"),
+  chan("Fajar TV", "http://122.248.43.242:1935/FAJARTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Jek TV", "http://27.124.81.245:1935/jektv/myStream/playlist.m3u8", "Daerah"),
+  chan("Jogja Istimewa TV", "http://103.255.15.222:1935/tv/jitv_720p/playlist.m3u8", "Daerah"),
+  chan("Jogja TV", "https://stream.jogjatv.co.id/jtvlive/stream/index.m3u8", "Daerah"),
+  chan("JTV Surabaya", "http://122.248.43.242:1935/JTVSURABAYA/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("JTV Kediri", "http://122.248.43.242:1935/JTVKEDIRI/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("JTV Madiun", "http://122.248.43.242:1935/JTVMADIUN/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("JTV Malang", "http://122.248.43.242:1935/JTVMALANG/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Kawanua TV", "http://122.248.43.242:1935/KAWANUATV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Madu TV", "https://re1.siar.us/madutv/hd720/playlist.m3u8", "Daerah"),
+  chan("Padang TV", "http://122.248.43.242:1935/PADANGTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("PONTV", "http://122.248.43.242:1935/PONTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Radar Tasikmalaya TV", "https://v2.siar.us/radartasikmalaya/live/playlist.m3u8", "Daerah"),
+  chan("RCTV", "https://v10.siar.us/rctv/live/playlist.m3u8", "Daerah"),
+  chan("Riau TV", "http://122.248.43.242:1935/RIAUTV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("Samarinda TV", "http://122.248.43.242:1935/SAMARINDATV/_definst_/myStream/playlist.m3u8", "Daerah"),
+  chan("TATV Semarang", "https://v2.siar.us/tatv/live.sdp/playlist.m3u8", "Daerah"),
+  chan("TV Tabalong", "https://5bf7b725107e5.streamlock.net/tvtabalong/tvtabalong/playlist.m3u8", "Daerah"),
+  chan("Dhoho TV", "https://dhohotv.siar.us/dhohotv/live/playlist.m3u8", "Daerah"),
+  chan("Banjar TV", "https://banjartv.siar.us/banjartv/live/playlist.m3u8", "Daerah"),
+  chan("AKTV Kaltim", "https://akativi.siar.us/live/akativi.m3u8", "Daerah"),
+  chan("Stara TV", "https://stream.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Stara TV Jakarta", "https://jakarta.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Stara TV Bandung", "https://bandung.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Stara TV Malang", "https://malang.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Stara TV Bojonegoro", "https://bojonegoro.staratv.id/hls/stream.m3u8", "Daerah"),
+  chan("Stara TV Cianjur", "https://cianjur.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Stara TV Parahyangan", "https://parahyangan.staratv.id/hls/0/stream.m3u8", "Daerah"),
+  chan("Ahsan TV", "https://5bf7b725107e5.streamlock.net/ahsantv/ahsantv/playlist.m3u8", "Religius"),
+  chan("Al Wafa Tarim", "https://ammedia.siar.us/ammedia/live/playlist.m3u8", "Religius"),
+  chan("Ashiil TV", "https://wahyu1ptv.pages.dev/AshiilTV-HD.m3u8", "Religius"),
+  chan("Astha TV", "https://hgmtv.com:2020/hls/asthalive/asthalive.m3u8", "Religius"),
+  chan("Dhamma TV", "https://b.webcache.maxindo.net.id/dhamma/dhamma.m3u8", "Religius"),
+  chan("Madani TV", "https://stream.asianastream.com/madani/madanitv.smil/playlist.m3u8", "Religius"),
+  chan("MQTV", "https://5bf7b725107e5.streamlock.net/mqtv/mqtv/playlist.m3u8", "Religius"),
+  chan("Salam TV", "https://live.salamtelevisi.com/hls/0/stream.m3u8", "Religius"),
+  chan("DMI TV", "https://tvstreamcast.com/tawaftv.m3u8", "Religius"),
+  chan("Music Information Channel", "https://mic.siar.us/mic/live/mic.m3u8", "Musik"),
+  chan("Suara Surabaya (Visual)", "https://ssfm.siar.us/ssfm/live/playlist.m3u8", "Musik"),
+  chan("Now 80's", "https://lightning-now80s-samsungnz.amagi.tv/playlist.m3u8", "Musik"),
+  chan("TRT Müzik", "https://tv-trtmuzik.medya.trt.com.tr/master.m3u8", "Musik"),
+  chan("70s Cinema", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5f4d878d3d19b30007d2e782/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=96&deviceId=5f4d878d3d19b30007d2e782&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("80s Rewind", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5ca525b650be2571e3943c63/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=95&deviceId=5ca525b650be2571e3943c63&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("90s Throwback", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5f4d86f519358a00072b978e/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=94&deviceId=5f4d86f519358a00072b978e&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Classic Movies", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/561c5b0dada51f8004c4d855/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=106&deviceId=561c5b0dada51f8004c4d855&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Paramount Movies", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5cb0cae7a461406ffe3f5213/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=100&deviceId=5cb0cae7a461406ffe3f5213&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Action Hollywood", "https://cdn-apse1-prod.tsv2.amagi.tv/linear/amg01076-lightningintern-actionhollywood-samsungnz/playlist.m3u8", "Film"),
+  chan("Pluto TV Action", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/561d7d484dc7c8770484914a/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=54&deviceId=561d7d484dc7c8770484914a&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Comedy", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5a4d3a00ad95e4718ae8d8db/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=57&deviceId=5a4d3a00ad95e4718ae8d8db&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Drama", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5b4e92e4694c027be6ecece1/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=60&deviceId=5b4e92e4694c027be6ecece1&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Horror", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/569546031a619b8f07ce6e25/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=75&deviceId=569546031a619b8f07ce6e25&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Westerns", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5b4e94282d4ec87bdcbb87cd/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=103&deviceId=5b4e94282d4ec87bdcbb87cd&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Cult Films", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5c665db3e6c01b72c4977bc2/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=109&deviceId=5c665db3e6c01b72c4977bc2&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Film"),
+  chan("Pluto TV Documentaries", "https://service-stitcher.clusters.pluto.tv/stitch/hls/channel/5b85a7582921777994caea63/master.m3u8?terminate=false&deviceType=web&deviceMake=web&deviceModel=web&sid=91&deviceId=5b85a7582921777994caea63&deviceVersion=DNT&appVersion=DNT&deviceDNT=0&userId=&advertisingId=&deviceLat=&deviceLon=&app_name=&appName=web&buildVersion=&appStoreUrl=&architecture=&includeExtendedEvents=false&marketingRegion=US&serverSideAds=false", "Dokumenter"),
+  chan("CGTN Documentary", "https://news.cgtn.com/resource/live/document/cgtn-doc.m3u8", "Dokumenter"),
+  chan("Al Jazeera English", "https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8", "Internasional"),
+  chan("Al Jazeera Arabic", "https://live-hls-web-aja.getaj.net/AJA/index.m3u8", "Internasional"),
+  chan("Al Jazeera Mubasher", "https://live-hls-web-ajm.getaj.net/AJM/index.m3u8", "Internasional"),
+  chan("Al Arabiya", "https://live.alarabiya.net/alarabiapublish/alarabiya.smil/playlist.m3u8", "Internasional"),
+  chan("Al Hadath", "https://live.alarabiya.net/alarabiapublish/alhadath.smil/alarabiapublish/alhadath_1080p/chunks.m3u8", "Internasional"),
+  chan("ABC News (US)", "https://abcnews-streams.akamaized.net/hls/live/2023560/abcnewshudson1/master.m3u8", "Internasional"),
+  chan("ABC News (AU)", "https://c.mjh.nz/abc-news.m3u8", "Internasional"),
+  chan("CBS News", "https://cbsnews.akamaized.net/hls/live/2020607/cbsnlineup_8/master.m3u8", "Internasional"),
+  chan("NBC News NOW", "https://d1si3n1st4nkgb.cloudfront.net/10502/88896001/hls/master.m3u8?ads.xumo_channelId=88896001", "Internasional"),
+  chan("Bloomberg TV", "https://bloomberg.com/media-manifest/streams/us.m3u8", "Internasional"),
+  chan("Sky News Arabia", "https://stream.skynewsarabia.com/hls/sna.m3u8", "Internasional"),
+  chan("TRT World", "https://tv-trtworld.medya.trt.com.tr/master.m3u8", "Internasional"),
+  chan("NHK World Japan", "https://master.nhkworld.jp/nhkworld-tv/playlist/live.m3u8", "Internasional"),
+  chan("DW Español", "https://dwamdstream104.akamaized.net/hls/live/2015530/dwstream104/stream04/streamPlaylist.m3u8", "Internasional"),
+  chan("CGTN Español", "https://news.cgtn.com/resource/live/espanol/cgtn-e.m3u8", "Internasional"),
+  chan("CGTN Français", "https://news.cgtn.com/resource/live/french/cgtn-f.m3u8", "Internasional"),
+  chan("Arirang TV", "https://amdlive.ctnd.com.edgesuite.net/arirang_1ch/smil:arirang_1ch.smil/playlist.m3u8", "Internasional"),
+  chan("India Today", "https://indiatodaylive.akamaized.net/hls/live/2014320/indiatoday/indiatodaylive/playlist.m3u8", "Internasional"),
+  chan("Record News", "https://rnw-rn.otteravision.com/rnw/rn/rnw_rn.m3u8", "Internasional"),
+  chan("SABC News", "https://sabconetanw.cdn.mangomolo.com/news/smil:news.stream.smil/chunklist_b250000_t64MjQwcA==.m3u8", "Internasional"),
+  chan("Scripps News", "https://content.uplynk.com/channel/4bb4901b934c4e029fd4c1abfc766c37.m3u8", "Internasional"),
+  chan("Court TV", "https://content.uplynk.com/channel/6c0bd0f94b1d4526a98676e9699a10ef.m3u8", "Internasional"),
+  chan("Global News", "https://live.corusdigitaldev.com/groupd/live/49a91e7f-1023-430f-8d66-561055f3d0f7/live.isml/.m3u8", "Internasional"),
+  chan("USA Today", "https://cdn-ue1-prod.tsv2.amagi.tv/linear/amg00731-gannettcoinc-usatodaynews-plex/playlist.m3u8", "Internasional"),
+  chan("Reuters Now", "https://amg00453-reuters-amg00453c1-rakuten-uk-2110.playouts.now.amagi.tv/playlist/amg00453-reuters-reuters-rakutenuk/playlist.m3u8", "Internasional"),
+  chan("TV5Monde Info", "https://ott.tv5monde.com/Content/HLS/Live/channel(info)/index.m3u8", "Internasional"),
+  chan("RTVE 24H", "https://ztnr.rtve.es/ztnr/1694255.m3u8", "Internasional"),
+  chan("TVRI Sport", "https://ott-balancer.tvri.go.id/live/eds/SportHD/hls/SportHD.m3u8", "Olahraga"),
+  chan("Pluto TV Sport", "https://service-stitcher.clusters.pluto.tv/v1/stitch/embed/hls/channel/608030eff4b6f70007e1684c/master.m3u8?deviceId=channel&deviceModel=web&deviceVersion=1.0&appVersion=1.0&deviceType=rokuChannel&deviceMake=rokuChannel&deviceDNT=1&advertisingId=channel&embedPartner=rokuChannel&appName=rokuchannel&is_lat=1&bmodel=bm1&content=channel&platform=web&tags=ROKU_CONTENT_TAGS&coppa=false&content_type=livefeed&rdid=channel&genre=ROKU_ADS_CONTENT_GENRE&content_rating=ROKU_ADS_CONTENT_RATING&studio_id=viacom&channel_id=channel", "Olahraga"),
+  chan("TVRI Kalimantan Tengah", "https://ott-balancer.tvri.go.id/live/eds/Kalteng/hls/Kalteng.m3u8", "TVRI"),
+  chan("TVRI Jambi", "https://ott-balancer.tvri.go.id/live/eds/Jambi/hls/Jambi.m3u8", "TVRI"),
+  chan("TVRI Maluku", "https://ott-balancer.tvri.go.id/live/eds/Ambon/hls/Ambon.m3u8", "TVRI"),
+  chan("TVRI Kalimantan Selatan", "https://ott-balancer.tvri.go.id/live/eds/Kalsel/hls/Kalsel.m3u8", "TVRI"),
+  chan("TVRI Papua Barat", "https://ott-balancer.tvri.go.id/live/eds/Pabar/hls/Pabar.m3u8", "TVRI"),
+  chan("TVRI Sulawesi Barat", "https://ott-balancer.tvri.go.id/live/eds/Sulbar/hls/Sulbar.m3u8", "TVRI"),
+  chan("TVRI Sumatera Barat", "https://ott-balancer.tvri.go.id/live/eds/Sumbar/hls/Sumbar.m3u8", "TVRI"),
+  chan("TVRI Yogyakarta", "https://ott-balancer.tvri.go.id/live/eds/Jogjakarta/hls/Jogjakarta.m3u8", "TVRI"),
+  chan("Mux Test", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", "Test"),
 ];

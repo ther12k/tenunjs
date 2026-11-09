@@ -42,10 +42,17 @@ export const tvTheme = defineTheme({
  * tiles; the group's hue is the identity).
  */
 export const GROUP_COLORS: Readonly<Record<string, string>> = {
+  Indonesia: "#C62828",
+  Daerah: "#00695C",
   TVRI: "#1E6FEB",
   Internasional: "#E4572E",
-  Sains: "#4D96FF",
+  Film: "#5E35B1",
+  Dokumenter: "#004D40",
+  Religius: "#2E7D32",
+  Musik: "#8E24AA",
   Olahraga: "#6BCB77",
+  Sains: "#4D96FF",
+  Lifestyle: "#8D6E63",
   Test: "#CCA700",
 };
 
