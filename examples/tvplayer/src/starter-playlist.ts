@@ -12,7 +12,7 @@ export const STARTER_PLAYLIST: readonly PlaylistEntry[] = [
   chan("Metro TV HD", "https://edge.medcom.id/live-edge/smil:metro.smil/playlist.m3u8", "Indonesia"),
   chan("CNN Indonesia", "https://video.detik.com/livecnn/smil:cnntv/chunklist_w268557525_b384000_sleng.m3u8", "Indonesia"),
   chan("CNBC Indonesia", "https://video.detik.com/livecnbc/smil:cnbctv/chunklist_w1279679883_b384000_sleng.m3u8", "Indonesia"),
-  chan("iNews HD", "https://live.i-news.tv/hls/stream.m3u8", "Indonesia"),
+  chan("iNews (Irak)", "https://live.i-news.tv/hls/stream.m3u8", "Internasional"),
   chan("RTV", "https://rtvstream.rtv.co.id:4555/hls/rtv.m3u8", "Indonesia"),
   chan("Nusantara TV", "https://nusantaratv.siar.us/nusantaratv/live/playlist.m3u8", "Indonesia"),
   chan("DAAI TV", "https://pull.daaiplus.com/live-DAAIPLUS/live-DAAIPLUS_HD.m3u8", "Indonesia"),
