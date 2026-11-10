@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Touch flavor overlay: the phone UI is a portrait layout (390 design
+     units wide, video hero on top) — lock it so rotation can't stretch
+     the scene sideways, and label the app NusaTV (the shared default is
+     the old Polytron Wash demo name). The tv flavor stays unlocked (TVs
+     are landscape by definition and the 10-foot layout fills them). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:label="NusaTV"
+        tools:replace="android:label">
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="portrait" />
+    </application>
+</manifest>

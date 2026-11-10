@@ -21,7 +21,7 @@
  * honestly strict.
  */
 import Hls from "hls.js";
-import type { MediaCapability, MediaStatus } from "@tenunjs/platform";
+import type { MediaCapability, MediaStatus, StorageCapability } from "@tenunjs/platform";
 import { TvplayerRuntime, type FormFactor } from "./src/runtime";
 
 const canvas = document.getElementById("preview") as HTMLCanvasElement;
@@ -171,7 +171,55 @@ function createPreviewMedia(dispatch: (action: string, payload: unknown) => void
 let dispatchRef: ((action: string, payload: unknown) => void) | null = null;
 const previewMedia = createPreviewMedia((action, payload) => dispatchRef?.(action, payload));
 
-const runtime = new TvplayerRuntime({ formFactor: form, media: previewMedia });
+/**
+ * Browser storage fixture: localStorage behind the platform
+ * StorageCapability contract — the same persistence the Android host
+ * gets from StorageService (SharedPreferences), so favorites/recents
+ * survive reloads in the preview too.
+ */
+const previewStorage: StorageCapability = {
+  contractVersion: 1,
+  availability: () => ({ status: "supported" }),
+  permissionPrerequisites: () => [],
+  async get(key) {
+    try {
+      const v = localStorage.getItem(`tvplayer.${key}`);
+      return { ok: true, value: v };
+    } catch {
+      return { ok: false, failure: { kind: "unavailable", message: "localStorage blocked" } };
+    }
+  },
+  async set(key, value) {
+    try {
+      localStorage.setItem(`tvplayer.${key}`, value);
+      return { ok: true, value: undefined };
+    } catch {
+      return { ok: false, failure: { kind: "unavailable", message: "localStorage blocked" } };
+    }
+  },
+  async remove(key) {
+    try {
+      localStorage.removeItem(`tvplayer.${key}`);
+      return { ok: true, value: undefined };
+    } catch {
+      return { ok: false, failure: { kind: "unavailable", message: "localStorage blocked" } };
+    }
+  },
+  async keys() {
+    try {
+      const out: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith("tvplayer.")) out.push(k.slice("tvplayer.".length));
+      }
+      return { ok: true, value: out };
+    } catch {
+      return { ok: false, failure: { kind: "unavailable", message: "localStorage blocked" } };
+    }
+  },
+};
+
+const runtime = new TvplayerRuntime({ formFactor: form, media: previewMedia, storage: previewStorage });
 dispatchRef = (action, payload) => runtime.dispatch(action, payload);
 
 interface SceneOp {

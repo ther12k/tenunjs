@@ -350,6 +350,12 @@ class MainActivity : Activity() {
             })
         }
 
+        // TN-196: the "storage" host service — app-private SharedPreferences
+        // behind the platform StorageCapability contract (favorites, recents,
+        // and other small app state persist across launches). Direct replies;
+        // no event funnel (request/response only, like "system").
+        hostRegistry.register("storage", StorageService(this))
+
         // TN-193: the "media" host service — Media3 playback with the
         // TextureView overlay composited over the scene (ADR-0028). The
         // video view is created HERE because registration precedes view
@@ -548,9 +554,10 @@ class MainActivity : Activity() {
 
     private fun readAssetBundle(): ByteArray? {
         return try {
-            // TN-196: tvplayer_app.js lives in src/tv/assets — ONLY tv
-            // flavor builds package it, so this branch is inert for the
-            // touch flavor.
+            // TN-196: tvplayer_app.js is packaged by BOTH app flavors, each
+            // source set carrying its own form (src/tv/assets = the 10-foot
+            // layout, src/touch/assets = the 390-unit phone layout with the
+            // portrait lock).
             assetBundleName = "tvplayer_app.js"
             assets.open("tvplayer_app.js").use { it.readBytes() }
         } catch (e0: Exception) {

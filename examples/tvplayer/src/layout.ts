@@ -127,14 +127,31 @@ export type SidebarRow<T extends { url: string; group: string }> =
   | { readonly type: "header"; readonly group: string }
   | { readonly type: "channel"; readonly group: string; readonly channel: T; readonly index: number };
 
+/** The synthetic favorites group key (TV accordion header + phone chip). */
+export const FAVORITES_GROUP = "★ Favorit";
+
 /** Groups channels (playlist order) into accordion rows: a header per
  *  group, then that group's channels when expanded. `index` is the
- *  channel's position in the source list (its true channel number). */
+ *  channel's position in the source list (its true channel number).
+ *  `favorites` pins a TiviMate-style "★ Favorit" section above the
+ *  groups — only when non-empty; its rows repeat source indexes so
+ *  OK-zap stays correct. */
 export function buildSidebarRows<T extends { url: string; group: string }>(
   channels: readonly T[],
   expanded: ReadonlySet<string>,
+  favorites?: ReadonlySet<string>,
 ): SidebarRow<T>[] {
   const rows: SidebarRow<T>[] = [];
+  if (favorites && favorites.size > 0) {
+    rows.push({ type: "header", group: FAVORITES_GROUP });
+    if (expanded.has(FAVORITES_GROUP)) {
+      channels.forEach((channel, index) => {
+        if (favorites.has(channel.url)) {
+          rows.push({ type: "channel", group: FAVORITES_GROUP, channel, index });
+        }
+      });
+    }
+  }
   const byGroup = new Map<string, number[]>();
   channels.forEach((channel, index) => {
     const g = channel.group || "";

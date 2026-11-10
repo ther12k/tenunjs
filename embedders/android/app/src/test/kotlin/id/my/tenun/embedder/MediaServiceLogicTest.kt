@@ -62,10 +62,13 @@ class MediaServiceLogicTest {
     }
 
     @Test
-    fun `textual content types include the playlist MIME family, never binary media`() {
+    fun `textual content types include the playlist MIME family and JSON, never binary media`() {
         assertTrue(MediaService.isTextualContentType("text/plain"))
         assertTrue(MediaService.isTextualContentType("text/plain; charset=utf-8"))
         assertTrue(MediaService.isTextualContentType("application/xml"))
+        // TN-196: the BitTV-style JSON channel feed arrives through fetchText.
+        assertTrue(MediaService.isTextualContentType("application/json"))
+        assertTrue(MediaService.isTextualContentType("application/json; charset=utf-8"))
         assertTrue(MediaService.isTextualContentType("application/vnd.apple.mpegurl"))
         assertTrue(MediaService.isTextualContentType("audio/x-mpegurl"))
         assertTrue(MediaService.isTextualContentType("APPLICATION/OCTET-STREAM"))

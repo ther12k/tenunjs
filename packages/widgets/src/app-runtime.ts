@@ -704,6 +704,24 @@ export class ApplicationRuntime {
     const text = field.props.value;
     this.activeTextInput = { id, sessionId, revision: 0, text,
       selection: { base: text.length, extent: text.length }, composing: null };
+    // The focused descriptor (keyboard affordance, caret) differs from the
+    // unfocused one — hosts subscribed to the invalidation signal must see
+    // this even when the focus came from a timer (search-open) instead of
+    // a synchronous tap dispatch.
+    this.notifyStale();
+  }
+
+  /**
+   * Public focus for app-driven text entry (the search-open pattern: the
+   * opener schedules this after the overlay's first commit). A no-op when
+   * the field is not in the current scene — unlike the tap path, there is
+   * no user gesture to blame, so absence must not throw.
+   */
+  focusTextField(id: string): void {
+    this.assertLive();
+    const field = this.textFields.get(id);
+    if (!field || field.props.readOnly) return;
+    this.focusTextInput(id);
   }
 
   /** IME "next": advance to the following editable field in layout order. */

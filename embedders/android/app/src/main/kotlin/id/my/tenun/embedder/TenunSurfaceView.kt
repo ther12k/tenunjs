@@ -19,6 +19,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeProvider
 import android.view.inputmethod.BaseInputConnection
@@ -1299,6 +1300,10 @@ class TenunSurfaceView @JvmOverloads constructor(
     private val accessibilityHost = object : AccessibilityHost {
         override val hostView: TenunSurfaceView get() = this@TenunSurfaceView
 
+        /** Per-call lookup (cheap; the surface lives as long as the app). */
+        private fun accessibilityManager(): AccessibilityManager =
+            hostView.context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+
         override fun dispatchSemanticAction(action: String, tapId: Int): Boolean {
             // TalkBack activation ≡ touch activation: same verb, same
             // payload, same dispatch path, same commit/sync.
@@ -1364,7 +1369,12 @@ class TenunSurfaceView @JvmOverloads constructor(
         override fun sendVirtualViewEvent(virtualViewId: Int, eventType: Int) {
             // Virtual-view events route through the parent (the framework
             // helper pattern): sendAccessibilityEvent takes a type int, and
-            // a no-op when no service is connected is exactly right.
+            // a no-op when no service is connected is exactly right. On
+            // Android 12+ requestSendAccessibilityEvent THROWS
+            // ("Accessibility off. Did you forget to check that?") when no
+            // accessibility service is bound — so check first (the manager's
+            // own contract), don't rely on the throw being absent.
+            if (!accessibilityManager().isEnabled) return
             val event = AccessibilityEvent.obtain(eventType)
             event.setSource(hostView, virtualViewId)
             event.packageName = hostView.context.packageName
@@ -1374,6 +1384,7 @@ class TenunSurfaceView @JvmOverloads constructor(
         }
 
         override fun announce(text: String) {
+            if (!accessibilityManager().isEnabled) return
             val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_ANNOUNCEMENT)
             event.setSource(hostView)
             event.packageName = hostView.context.packageName

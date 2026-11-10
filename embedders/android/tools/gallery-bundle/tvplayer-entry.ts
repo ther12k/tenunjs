@@ -5,7 +5,7 @@
  * action path (TN-194) — the polytron-entry pattern.
  */
 import { installHostHandoff } from "@tenunjs/widgets";
-import type { CapabilityFailure, CapabilityResult } from "@tenunjs/platform";
+import type { CapabilityFailure, CapabilityResult, StorageCapability } from "@tenunjs/platform";
 import { TvplayerRuntime } from "../../../../examples/tvplayer/src/runtime";
 
 const host = globalThis as Record<string, unknown>;
@@ -174,8 +174,42 @@ function resolveTicket(payloadJson: string): void {
   }
 }
 
+// Form factor: the phone (touch flavor) build injects
+// globalThis.__TVPLAYER_FORM__ = "phone" ahead of this bundle
+// (build-tvplayer-apk-asset.mjs); every other build path — tv flavor,
+// gallery, tests — leaves it unset and boots the 10-foot TV form.
+const form =
+  (host as { __TVPLAYER_FORM__?: unknown }).__TVPLAYER_FORM__ === "phone"
+    ? ("phone" as const)
+    : ("tv" as const);
+
+/**
+ * The "storage" NativeService bridge (the StorageCapability contract):
+ * direct request/reply against SharedPreferences-backed StorageService
+ * (no ticket — reads are in-memory, writes are apply()). A null reply
+ * (host without the service) degrades to a structured unsupported
+ * failure, so favorites/recents stay in-memory instead of crashing.
+ */
+const nativeStorageBridge: StorageCapability = {
+  contractVersion: 1,
+  availability: () => ({ status: "supported" }),
+  permissionPrerequisites: () => [],
+  get: (key: string) => storageJson<string | null>("get", { key }),
+  set: (key: string, value: string) => storageJson<void>("set", { key, value }),
+  remove: (key: string) => storageJson<void>("remove", { key }),
+  keys: () => storageJson<readonly string[]>("keys", {}),
+};
+
+function storageJson<T>(method: string, payload: Record<string, unknown>): Promise<CapabilityResult<T>> {
+  if (typeof hostCall !== "function") return Promise.resolve(UNSUPPORTED);
+  const parsed = parseReply(hostCall("storage", method, JSON.stringify(payload)));
+  return Promise.resolve((parsed ?? UNSUPPORTED) as CapabilityResult<T>);
+}
+
 const app = new TvplayerRuntime({
   media: nativeMediaBridge,
+  storage: nativeStorageBridge,
+  formFactor: form,
 });
 
 const handoff = installHostHandoff({

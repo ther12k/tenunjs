@@ -409,10 +409,13 @@ describe("TN-196 phone form factor", () => {
     }).scene;
     const taps = scene.taps ?? [];
     expect(taps.length).toBeGreaterThan(1);
-    // Phone taps: the group chips come first (All + one per group),
-    // then the visible channel rows.
-    const chips = 1 + GROUPS.length;
-    const thirdRowTapId = taps[chips + 2]!.payload!.id;
+    // Phone tap order (tree order): hero play/pause, the header ⌕ search
+    // opener, the category rail (windowed to 4 chips — Favorit, All and
+    // up to two groups), then the visible rows — TWO taps per row (play
+    // body + favorite star), in row order.
+    const prefix = 2 + Math.min(4, 2 + GROUPS.length);
+    const tapsPerRow = 2;
+    const thirdRowTapId = taps[prefix + 2 * tapsPerRow]!.payload!.id;
     runtime.dispatch("TAP", { id: thirdRowTapId });
     await settle();
 

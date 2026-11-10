@@ -240,9 +240,16 @@ export async function buildPolytronBundle(): Promise<BundleArtifact> {
 /**
  * Builds the TN-196 NusaTV bundle: the TvplayerRuntime composition
  * (screens + media host-service bridge + KEY focus path) through the
- * public host-handoff contract, as the tv flavor's bundled APK asset.
+ * public host-handoff contract, as the flavor APKs' bundled asset.
+ *
+ * form "tv" (default) → the 10-foot layout the tv flavor boots.
+ * form "phone" → the 390-unit phone layout (video hero + tappable rows);
+ *   the touch flavor's asset. The form rides as a globalThis hint the entry
+ *   reads at boot — every other build path keeps the TV default.
  */
-export async function buildTvplayerBundle(): Promise<BundleArtifact> {
+export async function buildTvplayerBundle(
+  form: "tv" | "phone" = "tv"
+): Promise<BundleArtifact> {
   const result = await build({
     entrypoints: [tvplayerEntry],
     target: "browser",
@@ -254,10 +261,14 @@ export async function buildTvplayerBundle(): Promise<BundleArtifact> {
     throw new Error(`tvplayer bundle build failed:\n${result.logs.map(String).join("\n")}`);
   }
   let code = await result.outputs[0].text();
-  if (/^\s*(import|export)\s/m.test(code)) {
-    code = `(function(){\n${code}\n})();`;
+  // Always IIFE-wrap: this build emits no imports (external: []), and an
+  // unwrapped top-level declaration would leak into the smoke VM — a second
+  // build's smoke run in the same process then trips "duplicate variable".
+  code = `(function(){\n${code}\n})();`;
+  if (form === "phone") {
+    code = `globalThis.__TVPLAYER_FORM__="phone";\n${code}`;
   }
-  smokeRun(code, "tvplayer_app.js", ['NusaTV', 'Metro TV HD']);
+  smokeRun(code, `tvplayer_app.js(${form})`, ['NusaTV', 'Metro TV HD']);
   return {
     code,
     hash: crypto.createHash("sha256").update(code).digest("hex").slice(0, 16),

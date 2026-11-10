@@ -95,14 +95,16 @@ class MediaService(
         /**
          * Textual responses only (media.md), where "textual" includes the
          * playlist MIME family — servers label .m3u8 audio/x-mpegurl far
-         * more often than text/plain, and playlists are fetchText's only
-         * user. Binary media types stay refused.
+         * more often than text/plain — and JSON: fetchText's users are the
+         * m3u playlist loader and the BitTV-style JSON channel feed (TN-196).
+         * Binary media types stay refused.
          */
         fun isTextualContentType(type: String?): Boolean {
             if (type.isNullOrBlank()) return true // servers omit it; bytes are bounded either way
             val t = type.substringBefore(';').trim().lowercase()
             return t.startsWith("text/") ||
                 t == "application/xml" ||
+                t == "application/json" ||
                 t.endsWith("mpegurl") ||
                 // Playlist endpoints frequently label .m3u8 octet-stream;
                 // the 2 MB bound keeps whatever arrives harmless.
