@@ -482,7 +482,7 @@ class DiscoveryService(
                     listener.onServiceResolved(
                         host,
                         info.port,
-                        info.txtRecord?.mapValues { (_, v) -> String(v, Charsets.UTF_8) } ?: emptyMap(),
+                        info.attributes.mapValues { (_, v) -> String(v, Charsets.UTF_8) },
                     )
                 }
             })
