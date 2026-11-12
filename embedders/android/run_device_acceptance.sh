@@ -303,8 +303,51 @@ echo "== 6. Standard suite: :app:connectedDebugAndroidTest on the booted emulato
 # OverlayInteractionTest likewise needs the gallery-bundle APK from stage 10;
 # FailVisibleTest needs the injection build from stage 11. The two
 # KeysProcessPersistenceTest methods require separate processes in stage 7b.
+
+# TN-188 TLS pairing gate: the API-30 emulator guest's SERVER-mode Conscrypt
+# handshake fails even though the ClientHello reaches the peer (raw-byte
+# probe, 2026-11-09), while guest CLIENT-mode TLS works. The gate's TLS
+# server therefore runs HERE on the host, reachable from the guest through
+# the emulator's 10.0.2.2 alias; the guest exercises only client mode. The
+# server presents a self-signed cert, captures the phone's Keystore client
+# certificate, and reports both fingerprints back over the TLS channel —
+# the device test asserts them self-contained (see NetBridgeTest).
+TLS_CERT="$OUT_DIR/tn188_server.crt"
+TLS_KEY="$OUT_DIR/tn188_server.key"
+TLS_PORT_FILE="$OUT_DIR/tn188_tls.port"
+TLS_PID=""
+if command -v openssl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+  openssl ecparam -genkey -name prime256v1 -noout -out "$TLS_KEY" 2>/dev/null \
+    && openssl req -x509 -new -nodes -key "$TLS_KEY" -sha256 -days 2 \
+       -subj "/CN=tn188-device-gate" -out "$TLS_CERT" 2>/dev/null \
+    && node "$SCRIPT_DIR/tools/tn188_tls_server.mjs" "$TLS_CERT" "$TLS_KEY" "$TLS_PORT_FILE" \
+       >"$OUT_DIR/tn188_tls_server.log" 2>&1 &
+  TLS_PID=$!
+  for _ in $(seq 1 30); do
+    [ -s "$TLS_PORT_FILE" ] && break
+    kill -0 "$TLS_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+fi
+if [ ! -s "$TLS_PORT_FILE" ]; then
+  kill "$TLS_PID" 2>/dev/null || true
+  env_fail "the TN-188 host TLS server did not start (openssl+node required)"
+fi
+TLS_PORT="$(cat "$TLS_PORT_FILE")"
+echo "tn188 host TLS server on 127.0.0.1:$TLS_PID PID"
+
+cleanup_tls() {
+  if [ -n "$TLS_PID" ] && kill -0 "$TLS_PID" 2>/dev/null; then
+    kill "$TLS_PID" 2>/dev/null || true
+  fi
+}
+# Chain with the existing emulator cleanup: a second EXIT trap would REPLACE
+# the first, losing the emulator teardown.
+trap 'cleanup_tls; cleanup' EXIT
+
 if ! ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest,$APP_ID.FailVisibleTest,$APP_ID.KeysProcessPersistenceTest" \
+  -Pandroid.testInstrumentationRunnerArguments.tn188TlsPort="$TLS_PORT" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   # Preserve the decisive app-side evidence BEFORE failing the run. The

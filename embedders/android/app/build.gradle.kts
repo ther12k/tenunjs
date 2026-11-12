@@ -21,8 +21,23 @@ val buildKeysFixture by tasks.registering(Exec::class) {
     inputs.dir(repoRoot.resolve("packages/platform/src"))
     outputs.dir(keysFixtureAssets)
 }
+// TN-188: same discipline for the net adapter fixture (contract + bridge
+// compiled from the public package, instrumentation-only asset).
+val netFixtureAssets = layout.buildDirectory.dir("generated/androidTest/net-fixture")
+val buildNetFixture by tasks.registering(Exec::class) {
+    val repoRoot = rootProject.projectDir.resolve("../..")
+    val tools = rootProject.projectDir.resolve("tools/gallery-bundle")
+    workingDir(repoRoot)
+    commandLine("bun", tools.resolve("build-net-fixture.ts"), netFixtureAssets.get().file("net_fixture.js").asFile)
+    inputs.files(tools.resolve("build-net-fixture.ts"), tools.resolve("net-fixture-entry.ts"), tools.resolve("tsconfig.json"))
+    inputs.dir(repoRoot.resolve("packages/platform/src"))
+    outputs.dir(netFixtureAssets)
+}
 tasks.configureEach {
-    if (name.startsWith("merge") && name.endsWith("AndroidTestAssets")) dependsOn(buildKeysFixture)
+    if (name.startsWith("merge") && name.endsWith("AndroidTestAssets")) {
+        dependsOn(buildKeysFixture)
+        dependsOn(buildNetFixture)
+    }
 }
 
 android {
@@ -70,6 +85,7 @@ android {
     }
 
     sourceSets.getByName("androidTest").assets.srcDir(keysFixtureAssets)
+    sourceSets.getByName("androidTest").assets.srcDir(netFixtureAssets)
 }
 
 dependencies {

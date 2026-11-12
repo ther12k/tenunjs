@@ -55,6 +55,28 @@ export type {
   LauncherLaunchOptions,
   LauncherCapability,
 } from "./launcher";
+export { NET_PERMISSIONS } from "./net";
+export type {
+  NetTlsOptions,
+  NetConnectOptions,
+  NetLinkState,
+  NetSession,
+  NetCapability,
+} from "./net";
+export { previewNetCapability, createFakeNetEndpoint } from "./net-preview";
+export type { FakeNetServer } from "./net-preview";
+export { createHostNetBridge, NET_EVENT_ACTION } from "./net-native";
+export type { NetHostCall, HostNetBridge } from "./net-native";
+export {
+  MAX_NET_WRITE_BYTES,
+  MAX_NET_TIMEOUT_MS,
+  validNetHost,
+  validNetPort,
+  validNetTimeout,
+  validCertSha256,
+  validNetTlsOptions,
+  netConnectArgumentError,
+} from "./net-validation";
 export { KEYS_PERMISSIONS } from "./keys";
 export type { KeyHandle, KeyIdentity, KeysCapability } from "./keys";
 export { previewKeyring } from "./keys-preview";
@@ -69,5 +91,6 @@ export {
   unsupportedCamera,
   unsupportedLauncher,
   unsupportedKeys,
+  unsupportedNet,
 } from "./host";
 export type { HostCapabilities, PartialHostCapabilities } from "./host";

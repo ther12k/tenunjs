@@ -64,10 +64,12 @@ const platformError = (message: string): CapabilityResult<never> => ({
 });
 
 // --- pure-JS base64 (standard alphabet, padded; QuickJS-safe) -----------
+// Exported for the other bridge adapters (net-native.ts) — binary payloads
+// cross the JSON bridge the same way in both services.
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-function encodeBase64(bytes: Uint8Array): string {
+export function encodeBase64(bytes: Uint8Array): string {
   let out = "";
   for (let i = 0; i < bytes.length; i += 3) {
     const b0 = bytes[i]!;
@@ -81,7 +83,7 @@ function encodeBase64(bytes: Uint8Array): string {
   return out;
 }
 
-function decodeBase64(text: string): Uint8Array | null {
+export function decodeBase64(text: string): Uint8Array | null {
   if (text.length % 4 !== 0) return null;
   let length = (text.length / 4) * 3;
   if (text.endsWith("====")) return null;

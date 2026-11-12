@@ -5,6 +5,7 @@ import {
   STORAGE_PERMISSIONS,
   BLE_PERMISSIONS,
   LAUNCHER_PERMISSIONS,
+  NET_PERMISSIONS,
   createCancelSource,
   defineHostCapabilities,
   fromAbortSignal,
@@ -119,6 +120,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.camera).toBeDefined();
     expect(host.launcher).toBeDefined();
     expect(host.keys).toBeDefined();
+    expect(host.net).toBeDefined();
   });
 
   test("every storage operation returns a structured unsupported failure", async () => {
@@ -131,6 +133,16 @@ describe("TN-141 fail-closed host defaults", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.failure.kind).toBe("unsupported");
     }
+  });
+
+  test("net operations fail the same way — never a throw, never ok (TN-188)", async () => {
+    const connected = await host.net.connect({ host: "tv.lan", port: 6466 });
+    expect(connected.ok).toBe(false);
+    if (!connected.ok) expect(connected.failure.kind).toBe("unsupported");
+    expect(host.net.availability()).toEqual({
+      status: "unsupported",
+      reason: "test host: nothing bound",
+    });
   });
 
   test("ble and camera operations fail the same way — never a throw, never ok", async () => {
@@ -168,6 +180,7 @@ describe("TN-141 fail-closed host defaults", () => {
   test("permission tables describe the capability, so even stubs expose them", () => {
     expect(host.ble.permissionPrerequisites()).toBe(BLE_PERMISSIONS);
     expect(host.storage.permissionPrerequisites()).toEqual([]);
+    expect(host.net.permissionPrerequisites()).toEqual(NET_PERMISSIONS);
   });
 
   test("implemented capabilities pass through untouched", async () => {
