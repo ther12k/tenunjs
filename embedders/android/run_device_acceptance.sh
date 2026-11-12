@@ -249,6 +249,13 @@ if ! command -v bun >/dev/null 2>&1; then
   export PATH="$HOME/.bun/bin:$PATH"
 fi
 command -v bun >/dev/null 2>&1 || accept_fail "bun unavailable: cannot build the keys fixture"
+# TN-192: the tvremote latency fixture transitively compiles packages/*
+# sources whose bare imports (@tenunjs/protocol, @tenunjs/jsx-runtime)
+# resolve through the workspace node_modules — present after a repo
+# checkout only if bun install ran (verify:ts does; the device gate must
+# too, or the fixture build fails on a clean CI runner).
+(cd "$SCRIPT_DIR/../.." && bun install --frozen-lockfile) >"$OUT_DIR/bun_install.txt" 2>&1 \
+  || accept_fail "bun install failed (needed by the tvremote latency fixture build); see device-acceptance-output/bun_install.txt"
 # TN-185: the skia-host parity cdylib rides in jniLibs so the device gate
 # dual-renders committed scenes through both painters. Built for the
 # emulator's ABI (x86_64; rust-skia ships prebuilt android bindings, so
