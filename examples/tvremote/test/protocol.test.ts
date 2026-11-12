@@ -23,6 +23,8 @@ import {
   createRemoteTextInject,
   createRemoteAppLinkLaunch,
   parseRemoteMessage,
+  utf8Encode,
+  utf8Decode,
   ProtoWriter,
 } from "../src/protocol";
 
@@ -79,6 +81,52 @@ describe("TN-191 protocol: zero-dep SHA-256 implementation", () => {
     const abcHash = sha256Sync(abc);
     const abcHex = Array.from(abcHash).map((b) => b.toString(16).padStart(2, "0")).join("");
     expect(abcHex).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  });
+});
+
+describe("TN-191 protocol: pure-TS UTF-8 codec (QuickJS has no TextEncoder)", () => {
+  // The device fixture evaluates this module inside QuickJS, where
+  // TextEncoder/TextDecoder do not exist — delete them (as the embedded
+  // realm effectively does) and prove the wire codec still round-trips.
+  const savedEnc = globalThis.TextEncoder;
+  const savedDec = globalThis.TextDecoder;
+
+  test("utf8Encode/utf8Decode round-trip ASCII, Latin-1, CJK, emoji, and pairing names", () => {
+    (globalThis as { TextEncoder?: unknown }).TextEncoder = undefined;
+    (globalThis as { TextDecoder?: unknown }).TextDecoder = undefined;
+    try {
+      const samples = [
+        "atvremote",
+        "Living Room TV",
+        "Televisi kamar (utama)",
+        "café — naïve résumé",
+        "日系テレビ",
+        "TV 📺 remote",
+        " Télécommande ",
+      ];
+      for (const s of samples) {
+        const bytes = utf8Encode(s);
+        expect(utf8Decode(bytes)).toBe(s);
+      }
+      // A 3-byte character round-trips through the RemoteMessage path too.
+      const framed = createRemoteAppLinkLaunch("https://tv.example/é日");
+      const parsed = parseRemoteMessage(framed);
+      expect(parsed.appLink).toBe("https://tv.example/é日");
+    } finally {
+      (globalThis as { TextEncoder?: unknown }).TextEncoder = savedEnc;
+      (globalThis as { TextDecoder?: unknown }).TextDecoder = savedDec;
+    }
+  });
+
+  test("unpaired surrogates degrade to U+FFFD instead of corrupting the wire", () => {
+    (globalThis as { TextEncoder?: unknown }).TextEncoder = undefined;
+    try {
+      const bytes = utf8Encode("\uD800x");
+      expect(Array.from(bytes)).toEqual([0xef, 0xbf, 0xbd, 0x78]);
+      expect(utf8Decode(new Uint8Array([0xff]))).toBe("\uFFFD");
+    } finally {
+      (globalThis as { TextEncoder?: unknown }).TextEncoder = savedEnc;
+    }
   });
 });
 
