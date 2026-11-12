@@ -33,10 +33,22 @@ val buildNetFixture by tasks.registering(Exec::class) {
     inputs.dir(repoRoot.resolve("packages/platform/src"))
     outputs.dir(netFixtureAssets)
 }
+// TN-190: same discipline for the discovery adapter fixture.
+val discoveryFixtureAssets = layout.buildDirectory.dir("generated/androidTest/discovery-fixture")
+val buildDiscoveryFixture by tasks.registering(Exec::class) {
+    val repoRoot = rootProject.projectDir.resolve("../..")
+    val tools = rootProject.projectDir.resolve("tools/gallery-bundle")
+    workingDir(repoRoot)
+    commandLine("bun", tools.resolve("build-discovery-fixture.ts"), discoveryFixtureAssets.get().file("discovery_fixture.js").asFile)
+    inputs.files(tools.resolve("build-discovery-fixture.ts"), tools.resolve("discovery-fixture-entry.ts"), tools.resolve("tsconfig.json"))
+    inputs.dir(repoRoot.resolve("packages/platform/src"))
+    outputs.dir(discoveryFixtureAssets)
+}
 tasks.configureEach {
     if (name.startsWith("merge") && name.endsWith("AndroidTestAssets")) {
         dependsOn(buildKeysFixture)
         dependsOn(buildNetFixture)
+        dependsOn(buildDiscoveryFixture)
     }
 }
 
@@ -86,6 +98,7 @@ android {
 
     sourceSets.getByName("androidTest").assets.srcDir(keysFixtureAssets)
     sourceSets.getByName("androidTest").assets.srcDir(netFixtureAssets)
+    sourceSets.getByName("androidTest").assets.srcDir(discoveryFixtureAssets)
 }
 
 dependencies {

@@ -299,7 +299,7 @@ status: accepted
 | 06-issues/tn-187-environment-dispatch.md | 72920a7e140b3696f036138690798f30c137f854a1a08ed20d5c8643e4e4b25d |
 | 06-issues/tn-188-net-capability.md | 0f26f1e81b07e5aa46462f3a1968630c13a2e9b17588fc6a38cf74e0397ad3a2 |
 | 06-issues/tn-189-keys-capability.md | 776822fe77adc04f54bdadf6b70c0911063f2dd1bdfe7f0e834e141b42d2db89 |
-| 06-issues/tn-190-discovery-capability.md | 069cd6553a44f7a3aa1c7efe70770bdf6c2c1e0a551829fa32c0079f4674524c |
+| 06-issues/tn-190-discovery-capability.md | c8c5a58ddbcd68aa866b2f6a867492516f9beb951683723a518d3329ea41b9ca |
 | 06-issues/tn-191-tvremote-example.md | a592a06306ce43c509bc97875456859431423b0a0ae973d329899aa2935d1077 |
 | 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
