@@ -1,0 +1,19 @@
+{
+  "name": "@tenunjs-examples/tvremote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android TV Remote companion app (discovery, pairing, D-pad, IME, app links) — TenunJS example using discovery, keys, and net capabilities",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@tenunjs-examples/ui-kit": "workspace:*",
+    "@tenunjs/core": "workspace:*",
+    "@tenunjs/jsx-runtime": "workspace:*",
+    "@tenunjs/navigation": "workspace:*",
+    "@tenunjs/platform": "workspace:*",
+    "@tenunjs/widgets": "workspace:*"
+  },
+  "devDependencies": {
+    "@tenunjs/cli": "workspace:*"
+  }
+}
