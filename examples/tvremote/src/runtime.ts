@@ -372,13 +372,21 @@ export class TvRemoteRuntime {
     this.app.pushState("linkPhase", "searching");
     this.app.pushState("tvName", this.activeTv.name);
 
+    // TLS tier: the real TV requires a client certificate, so the session
+    // carries the keys identity when the host provides keys (plus the pin
+    // once paired). A host with neither (the TN-192 gate's plain-TCP echo
+    // server) connects PLAIN — the transport segment then measures the
+    // socket round trip, not TLS.
+    const useTls = this.host.keys !== undefined || this.serverCertFingerprint !== null;
     const connRes = await this.host.net.connect({
       host,
       port,
-      tls: {
-        clientIdentity: this.clientIdentityHandle,
-        expectedServerCertSha256: pinnedSha,
-      },
+      tls: useTls
+        ? {
+            ...(this.host.keys !== undefined ? { clientIdentity: this.clientIdentityHandle } : {}),
+            ...(pinnedSha !== undefined ? { expectedServerCertSha256: pinnedSha } : {}),
+          }
+        : undefined,
       timeoutMs: 15_000,
     });
 
