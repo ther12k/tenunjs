@@ -86,8 +86,84 @@ export function decodeFrames(buffer: Uint8Array): {
   };
 }
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
+/**
+ * Pure-TypeScript UTF-8 codec. QuickJS ships neither TextEncoder nor
+ * TextDecoder, and this module must evaluate in the embedded runtime —
+ * the TV remote wire is UTF-8, so the codec is part of the protocol.
+ */
+export function utf8Encode(text: string): Uint8Array {
+  const out: number[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) {
+      out.push(code);
+      i += 1;
+    } else if (code < 0x800) {
+      out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+      i += 1;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // Surrogate pair — combine, then encode as a 4-byte sequence.
+      const low = text.charCodeAt(i + 1);
+      if (low < 0xdc00 || low > 0xdfff) {
+        out.push(0xef, 0xbf, 0xbd); // unpaired high surrogate → U+FFFD
+        i += 1;
+        continue;
+      }
+      const point = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+      out.push(
+        0xf0 | (point >> 18),
+        0x80 | ((point >> 12) & 0x3f),
+        0x80 | ((point >> 6) & 0x3f),
+        0x80 | (point & 0x3f),
+      );
+      i += 2;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      out.push(0xef, 0xbf, 0xbd); // unpaired low surrogate → U+FFFD
+      i += 1;
+    } else {
+      out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+      i += 1;
+    }
+  }
+  return new Uint8Array(out);
+}
+
+export function utf8Decode(bytes: Uint8Array): string {
+  let result = "";
+  let i = 0;
+  while (i < bytes.length) {
+    const b0 = bytes[i]!;
+    if (b0 < 0x80) {
+      result += String.fromCharCode(b0);
+      i += 1;
+    } else if (b0 >> 5 === 0b110 && i + 1 < bytes.length) {
+      result += String.fromCharCode(((b0 & 0x1f) << 6) | (bytes[i + 1]! & 0x3f));
+      i += 2;
+    } else if (b0 >> 4 === 0b1110 && i + 2 < bytes.length) {
+      result += String.fromCharCode(
+        ((b0 & 0x0f) << 12) | ((bytes[i + 1]! & 0x3f) << 6) | (bytes[i + 2]! & 0x3f),
+      );
+      i += 3;
+    } else if (b0 >> 3 === 0b11110 && i + 3 < bytes.length) {
+      const point =
+        ((b0 & 0x07) << 18) |
+        ((bytes[i + 1]! & 0x3f) << 12) |
+        ((bytes[i + 2]! & 0x3f) << 6) |
+        (bytes[i + 3]! & 0x3f);
+      // String.fromCharCode needs surrogate pairs for > 0xFFFF.
+      result += String.fromCharCode(
+        0xd800 + ((point - 0x10000) >> 10),
+        0xdc00 + ((point - 0x10000) & 0x3ff),
+      );
+      i += 4;
+    } else {
+      result += "\uFFFD"; // invalid sequence → replacement character
+      i += 1;
+    }
+  }
+  return result;
+}
 
 export class ProtoWriter {
   private chunks: Uint8Array[] = [];
@@ -112,7 +188,7 @@ export class ProtoWriter {
   }
 
   writeString(fieldNumber: number, value: string) {
-    const encoded = textEncoder.encode(value);
+    const encoded = utf8Encode(value);
     this.writeTag(fieldNumber, 2);
     this.push(encodeVarint(encoded.length));
     this.push(encoded);
@@ -378,7 +454,7 @@ export function createPairingSecretAck(secret: Uint8Array): Uint8Array {
 export function parseOuterMessage(bytes: Uint8Array): OuterMessage {
   const fields = readProtoFields(bytes);
   let protocolVersion = 1;
-  let status = POLO_STATUS.STATUS_OK;
+  let status: number = POLO_STATUS.STATUS_OK;
   let hasPairingRequest = false;
   let hasPairingRequestAck = false;
   let hasOptions = false;
@@ -670,9 +746,9 @@ export function parseRemoteMessage(bytes: Uint8Array): RemoteMessage {
               const devFields = readProtoFields(cf.lengthDelimitedValue);
               for (const df of devFields) {
                 if (df.fieldNumber === 1 && df.lengthDelimitedValue) {
-                  msg.deviceModel = textDecoder.decode(df.lengthDelimitedValue);
+                  msg.deviceModel = utf8Decode(df.lengthDelimitedValue);
                 } else if (df.fieldNumber === 2 && df.lengthDelimitedValue) {
-                  msg.deviceVendor = textDecoder.decode(df.lengthDelimitedValue);
+                  msg.deviceVendor = utf8Decode(df.lengthDelimitedValue);
                 }
               }
             }
@@ -721,7 +797,7 @@ export function parseRemoteMessage(bytes: Uint8Array): RemoteMessage {
             if (sf.fieldNumber === 1 && sf.lengthDelimitedValue) {
               const appInfo = readProtoFields(sf.lengthDelimitedValue);
               const pkg = appInfo.find((x) => x.fieldNumber === 12 && x.lengthDelimitedValue);
-              if (pkg?.lengthDelimitedValue) msg.currentAppPackage = textDecoder.decode(pkg.lengthDelimitedValue);
+              if (pkg?.lengthDelimitedValue) msg.currentAppPackage = utf8Decode(pkg.lengthDelimitedValue);
               const c = appInfo.find((x) => x.fieldNumber === 1 && x.varintValue !== undefined);
               if (c?.varintValue !== undefined) msg.imeCounter = c.varintValue;
             } else if (sf.fieldNumber === 2 && sf.lengthDelimitedValue) {
@@ -767,7 +843,7 @@ export function parseRemoteMessage(bytes: Uint8Array): RemoteMessage {
         if (f.lengthDelimitedValue) {
           const aFields = readProtoFields(f.lengthDelimitedValue);
           const link = aFields.find((x) => x.fieldNumber === 1 && x.lengthDelimitedValue);
-          if (link?.lengthDelimitedValue) msg.appLink = textDecoder.decode(link.lengthDelimitedValue);
+          if (link?.lengthDelimitedValue) msg.appLink = utf8Decode(link.lengthDelimitedValue);
         }
         break;
       }

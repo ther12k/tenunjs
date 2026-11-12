@@ -20,6 +20,7 @@ import { tvRemoteTheme } from "./theme";
 import { DiscoverScreen, type DiscoveredTv } from "./screens/discover.screen";
 import { PairingScreen } from "./screens/pairing.screen";
 import { RemoteScreen } from "./screens/remote.screen";
+import { LatencyRecorder } from "./latency";
 import {
   decodeFrames,
   frameMessage,
@@ -59,6 +60,12 @@ export interface TvRemoteHostServices {
     get(key: string): string | null;
     set(key: string, value: string): void;
   };
+  /**
+   * TN-192 latency probe: when present, every sendKey() is timed end to
+   * end (t0 action entry → t3 device frame observed). The runtime never
+   * interprets the numbers — the harness owns them.
+   */
+  latency?: LatencyRecorder;
 }
 
 export class TvRemoteRuntime {
@@ -70,6 +77,8 @@ export class TvRemoteRuntime {
   private remoteSession: NetSession | null = null;
   private clientIdentityHandle: string = "tvremote.identity";
   private serverCertFingerprint: string | null = null;
+  /** The last link phase the runtime pushed (TN-192: the fixture's truth). */
+  private lastLinkPhase: NetLinkState = "offline";
 
   private pairingBuffer: Uint8Array = new Uint8Array(0);
   private remoteBuffer: Uint8Array = new Uint8Array(0);
@@ -90,7 +99,8 @@ export class TvRemoteRuntime {
       submitPin: (pin: string) => this.submitPin(pin),
       cancelPairing: () => this.cancelPairing(),
       proceedToRemote: () => this.connectRemoteSession(),
-      sendKey: (keyCode: number, direction: RemoteDirectionVal) => this.sendKey(keyCode, direction),
+      sendKey: (keyCode: number, direction: RemoteDirectionVal, dispatchedAt?: number) =>
+        this.sendKey(keyCode, direction, dispatchedAt),
       sendText: (text: string) => this.sendText(text),
       launchApp: (appLink: string) => this.launchApp(appLink),
       disconnect: () => this.disconnect(),
@@ -109,6 +119,16 @@ export class TvRemoteRuntime {
     return this.app.route();
   }
 
+  /** The injected latency recorder (TN-192), or null when not instrumented. */
+  hostLatency(): LatencyRecorder | null {
+    return this.host.latency ?? null;
+  }
+
+  /** The last link phase pushed (offline/searching/linked). */
+  linkPhase(): NetLinkState {
+    return this.lastLinkPhase;
+  }
+
   routes(): string[] {
     return this.app.routes();
   }
@@ -121,8 +141,8 @@ export class TvRemoteRuntime {
     this.app.navigate(route);
   }
 
-  dispatchAction(action: string, payloadJson: string): string | null {
-    return this.app.dispatch(action, payloadJson);
+  dispatchAction(action: string, payloadJson: string): void {
+    this.app.dispatch(action, payloadJson);
   }
 
   // --------------------------------------------------------------------------
@@ -344,23 +364,35 @@ export class TvRemoteRuntime {
   async connectRemoteSession() {
     if (!this.host.net || !this.activeTv) return;
     const host = this.activeTv.host ?? "127.0.0.1";
-    const port = 6466; // Standard Android TV Remote control port
+    // The advertised/entered endpoint carries the remote port (6466 on a
+    // real TV); the device gate points activeTv at its echo server instead.
+    const port = this.activeTv.port ?? 6466;
     const pinnedSha = this.serverCertFingerprint ?? undefined;
 
+    this.lastLinkPhase = "searching";
     this.app.pushState("linkPhase", "searching");
     this.app.pushState("tvName", this.activeTv.name);
 
+    // TLS tier: the real TV requires a client certificate, so the session
+    // carries the keys identity when the host provides keys (plus the pin
+    // once paired). A host with neither (the TN-192 gate's plain-TCP echo
+    // server) connects PLAIN — the transport segment then measures the
+    // socket round trip, not TLS.
+    const useTls = this.host.keys !== undefined || this.serverCertFingerprint !== null;
     const connRes = await this.host.net.connect({
       host,
       port,
-      tls: {
-        clientIdentity: this.clientIdentityHandle,
-        expectedServerCertSha256: pinnedSha,
-      },
+      tls: useTls
+        ? {
+            ...(this.host.keys !== undefined ? { clientIdentity: this.clientIdentityHandle } : {}),
+            ...(pinnedSha !== undefined ? { expectedServerCertSha256: pinnedSha } : {}),
+          }
+        : undefined,
       timeoutMs: 15_000,
     });
 
     if (!connRes.ok) {
+      this.lastLinkPhase = "offline";
       this.app.pushState("linkPhase", "offline");
       this.app.pushState("lastAction", `Connect failed: ${connRes.failure.message}`);
       return;
@@ -368,6 +400,7 @@ export class TvRemoteRuntime {
 
     this.remoteSession = connRes.value;
     this.remoteBuffer = new Uint8Array(0);
+    this.lastLinkPhase = "linked";
     this.app.pushState("linkPhase", "linked");
     this.app.pushState("lastAction", "Connected to TV");
 
@@ -384,6 +417,7 @@ export class TvRemoteRuntime {
     });
 
     this.remoteSession.onLinkStateChange((state: NetLinkState) => {
+      this.lastLinkPhase = state;
       this.app.pushState("linkPhase", state);
     });
 
@@ -394,6 +428,12 @@ export class TvRemoteRuntime {
 
   private handleRemoteFrame(frame: Uint8Array) {
     const msg = parseRemoteMessage(frame);
+
+    // t3: a device frame arrived — over the serial transport echoes return
+    // in write order, so this completes the oldest pending latency probe.
+    if (this.host.latency && this.host.latency.pendingCount() > 0) {
+      this.host.latency.markAckObserved();
+    }
 
     if (msg.hasPingRequest && msg.pingVal1 !== undefined) {
       // Respond to TV keepalive ping
@@ -411,10 +451,32 @@ export class TvRemoteRuntime {
     }
   }
 
-  async sendKey(keyCode: number, direction: RemoteDirectionVal = RemoteDirection.SHORT) {
+  async sendKey(
+    keyCode: number,
+    direction: RemoteDirectionVal = RemoteDirection.SHORT,
+    /** t0 override: the SCREEN action handler's entry time (TN-192). */
+    dispatchedAt?: number,
+  ) {
     if (!this.remoteSession) return;
+    const probe = this.host.latency;
+    if (probe) {
+      // t0: the widget press dispatched. Screen actions pass their own
+      // entry timestamp, so uiDispatch spans the REAL action→capability
+      // distance; runtime-internal callers omit it and t0 lands here.
+      probe.begin(keyCode, direction, dispatchedAt);
+      probe.markCapabilityEntered(); // t1: capability call entered
+    }
     const msg = frameMessage(createRemoteKeyInject(keyCode, direction));
-    await this.remoteSession.write(msg);
+    try {
+      await this.remoteSession.write(msg);
+      probe?.markWriteResolved(); // t2: write() resolved
+    } catch (error) {
+      // The transport rejected the write: retire THIS probe so its
+      // timestamps never contaminate the next press's segments, and
+      // surface the failure through the result contract, not a throw.
+      probe?.abandonOldestUnwritten();
+      throw error;
+    }
   }
 
   async sendText(text: string) {
@@ -434,6 +496,7 @@ export class TvRemoteRuntime {
     this.remoteSession = null;
     this.pairingSession?.close();
     this.pairingSession = null;
+    this.lastLinkPhase = "offline";
     this.app.pushState("linkPhase", "offline");
   }
 

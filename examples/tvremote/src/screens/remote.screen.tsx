@@ -18,11 +18,15 @@ export interface RemoteState {
 
 export interface RemoteServices {
   navigate(route: string): void;
-  sendKey(keyCode: number, direction: RemoteDirectionVal): void;
+  /** dispatchedAt (TN-192) captures the screen action's entry as t0. */
+  sendKey(keyCode: number, direction: RemoteDirectionVal, dispatchedAt?: number): void;
   sendText(text: string): void;
   launchApp(appLink: string): void;
   disconnect(): void;
 }
+
+/** The runtime injects services as unknown; narrow to the screen's seam. */
+const svc = (services: unknown): RemoteServices => services as RemoteServices;
 
 export const RemoteScreen = defineScreen({
   name: "Remote",
@@ -40,55 +44,57 @@ export const RemoteScreen = defineScreen({
   }),
 
   actions: {
-    keyTap: defineAction<RemoteState, number, RemoteServices>({
-      run: ({ state, payload, services }) => {
-        services.sendKey(payload, RemoteDirection.SHORT);
-        return { ...state, lastAction: `Tap key ${payload}` };
+    keyTap: defineAction<RemoteState, number>({
+      run: ({ state, input, services }) => {
+        // t0 captured at ACTION entry — the honest "widget press
+        // dispatched" timestamp the TN-192 harness segments from.
+        svc(services).sendKey(input, RemoteDirection.SHORT, Date.now());
+        return { ...state, lastAction: `Tap key ${input}` };
       },
     }),
 
-    keyPressDown: defineAction<RemoteState, number, RemoteServices>({
-      run: ({ state, payload, services }) => {
+    keyPressDown: defineAction<RemoteState, number>({
+      run: ({ state, input, services }) => {
         // START_LONG begins held key repeat on the TV
-        services.sendKey(payload, RemoteDirection.START_LONG);
-        return { ...state, lastAction: `Hold start key ${payload}` };
+        svc(services).sendKey(input, RemoteDirection.START_LONG, Date.now());
+        return { ...state, lastAction: `Hold start key ${input}` };
       },
     }),
 
-    keyPressUp: defineAction<RemoteState, number, RemoteServices>({
-      run: ({ state, payload, services }) => {
+    keyPressUp: defineAction<RemoteState, number>({
+      run: ({ state, input, services }) => {
         // END_LONG terminates held key repeat on the TV
-        services.sendKey(payload, RemoteDirection.END_LONG);
-        return { ...state, lastAction: `Hold end key ${payload}` };
+        svc(services).sendKey(input, RemoteDirection.END_LONG, Date.now());
+        return { ...state, lastAction: `Hold end key ${input}` };
       },
     }),
 
     setInputText: defineAction<RemoteState, string>({
-      run: ({ state, payload }) => ({
+      run: ({ state, input }) => ({
         ...state,
-        inputText: payload,
+        inputText: input,
       }),
     }),
 
-    submitText: defineAction<RemoteState, void, RemoteServices>({
+    submitText: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
         const text = state.inputText.trim();
         if (!text) return state;
-        services.sendText(text);
+        svc(services).sendText(text);
         return { ...state, inputText: "", lastAction: `Sent text: "${text}"` };
       },
     }),
 
-    launchApp: defineAction<RemoteState, string, RemoteServices>({
-      run: ({ state, payload, services }) => {
-        services.launchApp(payload);
-        return { ...state, lastAction: `Launching ${payload}...` };
+    launchApp: defineAction<RemoteState, string>({
+      run: ({ state, input, services }) => {
+        svc(services).launchApp(input);
+        return { ...state, lastAction: `Launching ${input}...` };
       },
     }),
 
-    volUp: defineAction<RemoteState, void, RemoteServices>({
+    volUp: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
-        services.sendKey(RemoteKeyCode.KEYCODE_VOLUME_UP, RemoteDirection.SHORT);
+        svc(services).sendKey(RemoteKeyCode.KEYCODE_VOLUME_UP, RemoteDirection.SHORT);
         return {
           ...state,
           volumeLevel: Math.min(state.volumeMax, state.volumeLevel + 1),
@@ -97,9 +103,9 @@ export const RemoteScreen = defineScreen({
       },
     }),
 
-    volDown: defineAction<RemoteState, void, RemoteServices>({
+    volDown: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
-        services.sendKey(RemoteKeyCode.KEYCODE_VOLUME_DOWN, RemoteDirection.SHORT);
+        svc(services).sendKey(RemoteKeyCode.KEYCODE_VOLUME_DOWN, RemoteDirection.SHORT);
         return {
           ...state,
           volumeLevel: Math.max(0, state.volumeLevel - 1),
@@ -108,9 +114,9 @@ export const RemoteScreen = defineScreen({
       },
     }),
 
-    toggleMute: defineAction<RemoteState, void, RemoteServices>({
+    toggleMute: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
-        services.sendKey(RemoteKeyCode.KEYCODE_VOLUME_MUTE, RemoteDirection.SHORT);
+        svc(services).sendKey(RemoteKeyCode.KEYCODE_VOLUME_MUTE, RemoteDirection.SHORT);
         return {
           ...state,
           volumeMuted: !state.volumeMuted,
@@ -119,23 +125,23 @@ export const RemoteScreen = defineScreen({
       },
     }),
 
-    power: defineAction<RemoteState, void, RemoteServices>({
+    power: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
-        services.sendKey(RemoteKeyCode.KEYCODE_POWER, RemoteDirection.SHORT);
+        svc(services).sendKey(RemoteKeyCode.KEYCODE_POWER, RemoteDirection.SHORT);
         return { ...state, lastAction: "Power toggle" };
       },
     }),
 
-    backToDiscover: defineAction<RemoteState, void, RemoteServices>({
+    backToDiscover: defineAction<RemoteState, void>({
       run: ({ state, services }) => {
-        services.disconnect();
-        services.navigate("discover");
+        svc(services).disconnect();
+        svc(services).navigate("discover");
         return state;
       },
     }),
   },
 
-  view: ({ state, dispatch }) => {
+  view: ({ state, actions }) => {
     const isOnline = state.linkPhase === "linked";
     const statusColor =
       state.linkPhase === "linked"
@@ -145,7 +151,7 @@ export const RemoteScreen = defineScreen({
         : TV_PALETTE.red;
 
     return (
-      <Scaffold background={TV_PALETTE.bg}>
+      <Scaffold>
         <Column padding={16} gap={16}>
           {/* Top Bar: TV Name, Connection Badge, Power */}
           <Row gap={12}>
@@ -176,7 +182,7 @@ export const RemoteScreen = defineScreen({
               radius={8}
               color={TV_PALETTE.card}
               textColor={TV_PALETTE.textMuted}
-              onPress={() => dispatch("backToDiscover", undefined)}
+              onPress={() => actions.backToDiscover(undefined)}
             />
             <RemoteButton
               label="⏻ POWER"
@@ -185,7 +191,7 @@ export const RemoteScreen = defineScreen({
               radius={8}
               color={TV_PALETTE.red}
               textColor="#FFFFFF"
-              onPress={() => dispatch("power", undefined)}
+              onPress={() => actions.power(undefined)}
               disabled={!isOnline}
             />
           </Row>
@@ -209,19 +215,19 @@ export const RemoteScreen = defineScreen({
           {/* D-PAD (with explicit press, hold start, and hold end) */}
           <Center>
             <DPad
-              onUp={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_DPAD_UP)}
-              onUpHoldStart={() => dispatch("keyPressDown", RemoteKeyCode.KEYCODE_DPAD_UP)}
-              onUpHoldEnd={() => dispatch("keyPressUp", RemoteKeyCode.KEYCODE_DPAD_UP)}
-              onDown={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_DPAD_DOWN)}
-              onDownHoldStart={() => dispatch("keyPressDown", RemoteKeyCode.KEYCODE_DPAD_DOWN)}
-              onDownHoldEnd={() => dispatch("keyPressUp", RemoteKeyCode.KEYCODE_DPAD_DOWN)}
-              onLeft={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_DPAD_LEFT)}
-              onLeftHoldStart={() => dispatch("keyPressDown", RemoteKeyCode.KEYCODE_DPAD_LEFT)}
-              onLeftHoldEnd={() => dispatch("keyPressUp", RemoteKeyCode.KEYCODE_DPAD_LEFT)}
-              onRight={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
-              onRightHoldStart={() => dispatch("keyPressDown", RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
-              onRightHoldEnd={() => dispatch("keyPressUp", RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
-              onCenter={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_DPAD_CENTER)}
+              onUp={() => actions.keyTap(RemoteKeyCode.KEYCODE_DPAD_UP)}
+              onUpHoldStart={() => actions.keyPressDown(RemoteKeyCode.KEYCODE_DPAD_UP)}
+              onUpHoldEnd={() => actions.keyPressUp(RemoteKeyCode.KEYCODE_DPAD_UP)}
+              onDown={() => actions.keyTap(RemoteKeyCode.KEYCODE_DPAD_DOWN)}
+              onDownHoldStart={() => actions.keyPressDown(RemoteKeyCode.KEYCODE_DPAD_DOWN)}
+              onDownHoldEnd={() => actions.keyPressUp(RemoteKeyCode.KEYCODE_DPAD_DOWN)}
+              onLeft={() => actions.keyTap(RemoteKeyCode.KEYCODE_DPAD_LEFT)}
+              onLeftHoldStart={() => actions.keyPressDown(RemoteKeyCode.KEYCODE_DPAD_LEFT)}
+              onLeftHoldEnd={() => actions.keyPressUp(RemoteKeyCode.KEYCODE_DPAD_LEFT)}
+              onRight={() => actions.keyTap(RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
+              onRightHoldStart={() => actions.keyPressDown(RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
+              onRightHoldEnd={() => actions.keyPressUp(RemoteKeyCode.KEYCODE_DPAD_RIGHT)}
+              onCenter={() => actions.keyTap(RemoteKeyCode.KEYCODE_DPAD_CENTER)}
               disabled={!isOnline}
             />
           </Center>
@@ -233,7 +239,7 @@ export const RemoteScreen = defineScreen({
                 label="↩ BACK"
                 width={88}
                 height={48}
-                onPress={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_BACK)}
+                onPress={() => actions.keyTap(RemoteKeyCode.KEYCODE_BACK)}
                 disabled={!isOnline}
               />
               <RemoteButton
@@ -241,14 +247,14 @@ export const RemoteScreen = defineScreen({
                 width={88}
                 height={48}
                 color={TV_PALETTE.cardHighlight}
-                onPress={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_HOME)}
+                onPress={() => actions.keyTap(RemoteKeyCode.KEYCODE_HOME)}
                 disabled={!isOnline}
               />
               <RemoteButton
                 label="⚙ MENU"
                 width={88}
                 height={48}
-                onPress={() => dispatch("keyTap", RemoteKeyCode.KEYCODE_SETTINGS)}
+                onPress={() => actions.keyTap(RemoteKeyCode.KEYCODE_SETTINGS)}
                 disabled={!isOnline}
               />
             </Row>
@@ -257,9 +263,9 @@ export const RemoteScreen = defineScreen({
           {/* Volume Control */}
           <Center>
             <VolumeRow
-              onVolDown={() => dispatch("volDown", undefined)}
-              onMute={() => dispatch("toggleMute", undefined)}
-              onVolUp={() => dispatch("volUp", undefined)}
+              onVolDown={() => actions.volDown(undefined)}
+              onMute={() => actions.toggleMute(undefined)}
+              onVolUp={() => actions.volUp(undefined)}
               level={state.volumeLevel}
               max={state.volumeMax}
               muted={state.volumeMuted}
@@ -277,7 +283,7 @@ export const RemoteScreen = defineScreen({
                 <TextField
                   id="remote-input"
                   value={state.inputText}
-                  onChanged={(v: string) => dispatch("setInputText", v)}
+                  onChanged={(v: string) => actions.setInputText(v)}
                 />
               </Container>
               <RemoteButton
@@ -286,7 +292,7 @@ export const RemoteScreen = defineScreen({
                 textColor="#FFFFFF"
                 width={90}
                 height={42}
-                onPress={() => dispatch("submitText", undefined)}
+                onPress={() => actions.submitText(undefined)}
                 disabled={!isOnline || !state.inputText.trim()}
               />
             </Row>
@@ -301,25 +307,25 @@ export const RemoteScreen = defineScreen({
               <AppTile
                 name="YouTube"
                 color="#7F1D1D"
-                onLaunch={() => dispatch("launchApp", "https://www.youtube.com")}
+                onLaunch={() => actions.launchApp("https://www.youtube.com")}
                 disabled={!isOnline}
               />
               <AppTile
                 name="Netflix"
                 color="#450A0A"
-                onLaunch={() => dispatch("launchApp", "https://www.netflix.com/title")}
+                onLaunch={() => actions.launchApp("https://www.netflix.com/title")}
                 disabled={!isOnline}
               />
               <AppTile
                 name="Prime"
                 color="#1E3A8A"
-                onLaunch={() => dispatch("launchApp", "https://app.primevideo.com")}
+                onLaunch={() => actions.launchApp("https://app.primevideo.com")}
                 disabled={!isOnline}
               />
               <AppTile
                 name="Spotify"
                 color="#064E3B"
-                onLaunch={() => dispatch("launchApp", "spotify:")}
+                onLaunch={() => actions.launchApp("spotify:")}
                 disabled={!isOnline}
               />
             </Row>

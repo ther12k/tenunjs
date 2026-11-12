@@ -249,6 +249,13 @@ if ! command -v bun >/dev/null 2>&1; then
   export PATH="$HOME/.bun/bin:$PATH"
 fi
 command -v bun >/dev/null 2>&1 || accept_fail "bun unavailable: cannot build the keys fixture"
+# TN-192: the tvremote latency fixture transitively compiles packages/*
+# sources whose bare imports (@tenunjs/protocol, @tenunjs/jsx-runtime)
+# resolve through the workspace node_modules — present after a repo
+# checkout only if bun install ran (verify:ts does; the device gate must
+# too, or the fixture build fails on a clean CI runner).
+(cd "$SCRIPT_DIR/../.." && bun install --frozen-lockfile) >"$OUT_DIR/bun_install.txt" 2>&1 \
+  || accept_fail "bun install failed (needed by the tvremote latency fixture build); see device-acceptance-output/bun_install.txt"
 # TN-185: the skia-host parity cdylib rides in jniLibs so the device gate
 # dual-renders committed scenes through both painters. Built for the
 # emulator's ABI (x86_64; rust-skia ships prebuilt android bindings, so
@@ -336,9 +343,35 @@ fi
 TLS_PORT="$(cat "$TLS_PORT_FILE")"
 echo "tn188 host TLS server on 127.0.0.1:$TLS_PID PID"
 
+# TN-192: the latency device gate needs a host-side byte-echo server (the
+# guest reaches it via 10.0.2.2); plain TCP keeps the transport segment
+# measuring the socket round trip rather than TLS.
+ECHO_PORT_FILE="$WORK_DIR/tn192_echo_port.txt"
+: >"$ECHO_PORT_FILE"
+ECHO_PID=""
+if command -v node >/dev/null 2>&1; then
+  node "$SCRIPT_DIR/tools/tn192_echo_server.mjs" "$ECHO_PORT_FILE" \
+    >"$OUT_DIR/tn192_echo_server.log" 2>&1 &
+  ECHO_PID=$!
+  for _ in $(seq 1 30); do
+    [ -s "$ECHO_PORT_FILE" ] && break
+    kill -0 "$ECHO_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+fi
+if [ ! -s "$ECHO_PORT_FILE" ]; then
+  [ -z "$ECHO_PID" ] || kill "$ECHO_PID" 2>/dev/null || true
+  env_fail "the TN-192 host echo server did not start (node required)"
+fi
+ECHO_PORT="$(cat "$ECHO_PORT_FILE")"
+echo "tn192 host echo server on 127.0.0.1:$ECHO_PORT"
+
 cleanup_tls() {
   if [ -n "$TLS_PID" ] && kill -0 "$TLS_PID" 2>/dev/null; then
     kill "$TLS_PID" 2>/dev/null || true
+  fi
+  if [ -n "$ECHO_PID" ] && kill -0 "$ECHO_PID" 2>/dev/null; then
+    kill "$ECHO_PID" 2>/dev/null || true
   fi
 }
 # Chain with the existing emulator cleanup: a second EXIT trap would REPLACE
@@ -348,6 +381,7 @@ trap 'cleanup_tls; cleanup' EXIT
 if ! ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notClass="$APP_ID.VariantCustomizationTest,$APP_ID.OverlayInteractionTest,$APP_ID.FailVisibleTest,$APP_ID.KeysProcessPersistenceTest" \
   -Pandroid.testInstrumentationRunnerArguments.tn188TlsPort="$TLS_PORT" \
+  -Pandroid.testInstrumentationRunnerArguments.tn192EchoPort="$ECHO_PORT" \
   >"$OUT_DIR/connected_debug_android_test.txt" 2>&1; then
   tail -80 "$OUT_DIR/connected_debug_android_test.txt"
   # Preserve the decisive app-side evidence BEFORE failing the run. The

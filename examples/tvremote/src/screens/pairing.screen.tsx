@@ -20,6 +20,9 @@ export interface PairingServices {
   proceedToRemote(): void;
 }
 
+/** The runtime injects services as unknown; narrow to the screen's seam. */
+const svc = (services: unknown): PairingServices => services as PairingServices;
+
 export const PairingScreen = defineScreen({
   name: "Pairing",
 
@@ -35,44 +38,44 @@ export const PairingScreen = defineScreen({
 
   actions: {
     setPin: defineAction<PairingState, string>({
-      run: ({ state, payload }) => ({
+      run: ({ state, input }) => ({
         ...state,
-        pin: payload.toUpperCase().slice(0, 6),
+        pin: input.toUpperCase().slice(0, 6),
         errorMessage: null,
       }),
     }),
 
-    submitPin: defineAction<PairingState, void, PairingServices>({
+    submitPin: defineAction<PairingState, void>({
       run: ({ state, services }) => {
         const pin = state.pin.trim();
         if (pin.length !== 6 || !/^[0-9A-F]{6}$/i.test(pin)) {
           return { ...state, errorMessage: "PIN must be exactly 6 hex characters (e.g. A1B2C3)" };
         }
-        services.submitPin(pin);
+        svc(services).submitPin(pin);
         return { ...state, phase: "verifying", statusText: "Verifying PIN with TV..." };
       },
     }),
 
-    cancel: defineAction<PairingState, void, PairingServices>({
+    cancel: defineAction<PairingState, void>({
       run: ({ state, services }) => {
-        services.cancelPairing();
-        services.navigate("discover");
+        svc(services).cancelPairing();
+        svc(services).navigate("discover");
         return state;
       },
     }),
 
-    continueToRemote: defineAction<PairingState, void, PairingServices>({
+    continueToRemote: defineAction<PairingState, void>({
       run: ({ state, services }) => {
-        services.proceedToRemote();
-        services.navigate("remote");
+        svc(services).proceedToRemote();
+        svc(services).navigate("remote");
         return state;
       },
     }),
   },
 
-  view: ({ state, dispatch }) => {
+  view: ({ state, actions }) => {
     return (
-      <Scaffold background={TV_PALETTE.bg}>
+      <Scaffold>
         <Column padding={24} gap={20}>
           {/* Header */}
           <Column gap={6}>
@@ -125,7 +128,7 @@ export const PairingScreen = defineScreen({
                   <TextField
                     id="pairing-pin"
                     value={state.pin}
-                    onChanged={(v: string) => dispatch("setPin", v)}
+                    onChanged={(v: string) => actions.setPin(v)}
                   />
                   <Row gap={12}>
                     <RemoteButton
@@ -134,7 +137,7 @@ export const PairingScreen = defineScreen({
                       textColor="#FFFFFF"
                       width={140}
                       height={46}
-                      onPress={() => dispatch("submitPin", undefined)}
+                      onPress={() => actions.submitPin(undefined)}
                       disabled={state.phase === "verifying" || state.pin.length !== 6}
                     />
                     <RemoteButton
@@ -142,7 +145,7 @@ export const PairingScreen = defineScreen({
                       color={TV_PALETTE.cardHighlight}
                       width={100}
                       height={46}
-                      onPress={() => dispatch("cancel", undefined)}
+                      onPress={() => actions.cancel(undefined)}
                     />
                   </Row>
                 </Column>
@@ -156,7 +159,7 @@ export const PairingScreen = defineScreen({
                   textColor="#FFFFFF"
                   width={200}
                   height={46}
-                  onPress={() => dispatch("continueToRemote", undefined)}
+                  onPress={() => actions.continueToRemote(undefined)}
                 />
               ) : null}
             </Column>
