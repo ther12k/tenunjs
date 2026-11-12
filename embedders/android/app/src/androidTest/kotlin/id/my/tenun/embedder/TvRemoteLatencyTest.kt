@@ -77,8 +77,12 @@ class TvRemoteLatencyTest {
             }
             assertEquals("probes still pending after 90s (echoes lost)", 0, pending)
 
-            val digestJson = JSONObject(fixture.dispatch("digest")).getString("digest")
-            assertTrue("no digest (no completed events)", !digestJson.isNullOrEmpty())
+            // dispatch() already yields an org.json.JSONObject; the digest
+            // rides as a STRING field inside it (android.jar's JSONObject
+            // has no JSONObject copy constructor, so parse the field with
+            // JSONObject(String) instead of re-wrapping).
+            val digestJson = fixture.dispatch("digest").optString("digest", "")
+            assertTrue("no digest (no completed events)", digestJson.isNotEmpty())
             val digest = JSONObject(digestJson)
             assertEquals("every event must complete", events, digest.getInt("eventCount"))
             val e2e = digest.getJSONObject("endToEnd")
