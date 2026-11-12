@@ -4,6 +4,8 @@
     <!-- Dev hot reload + prototype OTA channel checks. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- TN-190 discovery: held while an mDNS browse is active. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Legacy BLE (Android 8–11) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

@@ -342,6 +342,24 @@ class MainActivity : Activity() {
                     keyResolver = keys::identityEntry,
                 ),
             )
+            // TN-190: mDNS/NSD browse + resolve. DISCOVERY_EVENT pushes ride
+            // the same host→JS channel: dispatched into the CURRENT engine
+            // on its creating thread (the BLE_LINK/NET_EVENT discipline).
+            hostRegistry.register(
+                "discovery",
+                DiscoveryService(
+                    appContext = this,
+                    onEvent = { action, payloadJson ->
+                        mainHandler.post {
+                            this.engine?.let { eng ->
+                                eng.dispatchAction(action, payloadJson)
+                                surfaceView?.syncFromScene(eng.getLatestScene())
+                                surfaceView?.redraw()
+                            }
+                        }
+                    },
+                ),
+            )
         }
     }
 
