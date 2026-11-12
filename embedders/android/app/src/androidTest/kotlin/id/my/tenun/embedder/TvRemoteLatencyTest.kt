@@ -77,7 +77,9 @@ class TvRemoteLatencyTest {
             }
             assertEquals("probes still pending after 90s (echoes lost)", 0, pending)
 
-            val digest = JSONObject(fixture.dispatch("digest"))
+            val digestJson = JSONObject(fixture.dispatch("digest")).getString("digest")
+            assertTrue("no digest (no completed events)", !digestJson.isNullOrEmpty())
+            val digest = JSONObject(digestJson)
             assertEquals("every event must complete", events, digest.getInt("eventCount"))
             val e2e = digest.getJSONObject("endToEnd")
             val min = digest.getDouble("minEndToEndMs")

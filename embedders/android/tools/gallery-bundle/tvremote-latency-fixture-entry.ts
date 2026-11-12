@@ -41,8 +41,11 @@ function start<T>(operation: Promise<T>, normalize: (value: T) => unknown): stri
 host.__tenun_dispatch_action = (action, payloadJson) => {
   if (action === "result") return completed ?? JSON.stringify({ pending: true });
   if (action === "digest") {
+    // The digest travels as a STRING field so the Kotlin test parses it
+    // with JSONObject(String) — android.jar's JSONObject has no
+    // single-argument JSONObject copy constructor.
     const digest = runtime?.hostLatency()?.digest();
-    return digest ? digestToJson(digest) : "null";
+    return JSON.stringify({ digest: digest ? digestToJson(digest) : null });
   }
   if (action === "pending") return JSON.stringify({ pending: runtime?.hostLatency()?.pendingCount() ?? 0 });
   if (action === "metadata") {
