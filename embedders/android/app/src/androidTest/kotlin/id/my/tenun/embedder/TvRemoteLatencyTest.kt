@@ -56,6 +56,18 @@ class TvRemoteLatencyTest {
             assertNotNull("connect never settled", connected)
             assertTrue("connect failed: $connected", connected!!.optBoolean("ok"))
 
+            // The session must actually be LINKED — a silently failed
+            // connect would leave every press probe-less and the digest
+            // null (this exact false-positive shipped in the first run).
+            val linkDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            var phase = ""
+            while (System.nanoTime() < linkDeadline) {
+                phase = fixture.dispatch("link").getString("phase")
+                if (phase == "linked") break
+                Thread.sleep(50)
+            }
+            assertEquals("remote session never linked (connect likely failed)", "linked", phase)
+
             // 100 key events through the whole pipeline.
             val events = 100
             repeat(events) { i ->
@@ -78,11 +90,11 @@ class TvRemoteLatencyTest {
             assertEquals("probes still pending after 90s (echoes lost)", 0, pending)
 
             // dispatch() already yields an org.json.JSONObject; the digest
-            // rides as a STRING field inside it (android.jar's JSONObject
-            // has no JSONObject copy constructor, so parse the field with
-            // JSONObject(String) instead of re-wrapping).
-            val digestJson = fixture.dispatch("digest").optString("digest", "")
-            assertTrue("no digest (no completed events)", digestJson.isNotEmpty())
+            // rides as a STRING field inside it. Android org.json's
+            // optString returns the literal "null" for a JSON-null field,
+            // so read with getString and treat "null" as no digest.
+            val digestJson = fixture.dispatch("digest").getString("digest")
+            assertTrue("no digest (no completed events)", digestJson != "null")
             val digest = JSONObject(digestJson)
             assertEquals("every event must complete", events, digest.getInt("eventCount"))
             val e2e = digest.getJSONObject("endToEnd")

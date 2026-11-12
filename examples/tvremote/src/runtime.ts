@@ -77,6 +77,8 @@ export class TvRemoteRuntime {
   private remoteSession: NetSession | null = null;
   private clientIdentityHandle: string = "tvremote.identity";
   private serverCertFingerprint: string | null = null;
+  /** The last link phase the runtime pushed (TN-192: the fixture's truth). */
+  private lastLinkPhase: NetLinkState = "offline";
 
   private pairingBuffer: Uint8Array = new Uint8Array(0);
   private remoteBuffer: Uint8Array = new Uint8Array(0);
@@ -119,6 +121,11 @@ export class TvRemoteRuntime {
   /** The injected latency recorder (TN-192), or null when not instrumented. */
   hostLatency(): LatencyRecorder | null {
     return this.host.latency ?? null;
+  }
+
+  /** The last link phase pushed (offline/searching/linked). */
+  linkPhase(): NetLinkState {
+    return this.lastLinkPhase;
   }
 
   routes(): string[] {
@@ -356,9 +363,12 @@ export class TvRemoteRuntime {
   async connectRemoteSession() {
     if (!this.host.net || !this.activeTv) return;
     const host = this.activeTv.host ?? "127.0.0.1";
-    const port = 6466; // Standard Android TV Remote control port
+    // The advertised/entered endpoint carries the remote port (6466 on a
+    // real TV); the device gate points activeTv at its echo server instead.
+    const port = this.activeTv.port ?? 6466;
     const pinnedSha = this.serverCertFingerprint ?? undefined;
 
+    this.lastLinkPhase = "searching";
     this.app.pushState("linkPhase", "searching");
     this.app.pushState("tvName", this.activeTv.name);
 
@@ -373,6 +383,7 @@ export class TvRemoteRuntime {
     });
 
     if (!connRes.ok) {
+      this.lastLinkPhase = "offline";
       this.app.pushState("linkPhase", "offline");
       this.app.pushState("lastAction", `Connect failed: ${connRes.failure.message}`);
       return;
@@ -380,6 +391,7 @@ export class TvRemoteRuntime {
 
     this.remoteSession = connRes.value;
     this.remoteBuffer = new Uint8Array(0);
+    this.lastLinkPhase = "linked";
     this.app.pushState("linkPhase", "linked");
     this.app.pushState("lastAction", "Connected to TV");
 
@@ -396,6 +408,7 @@ export class TvRemoteRuntime {
     });
 
     this.remoteSession.onLinkStateChange((state: NetLinkState) => {
+      this.lastLinkPhase = state;
       this.app.pushState("linkPhase", state);
     });
 
@@ -458,6 +471,7 @@ export class TvRemoteRuntime {
     this.remoteSession = null;
     this.pairingSession?.close();
     this.pairingSession = null;
+    this.lastLinkPhase = "offline";
     this.app.pushState("linkPhase", "offline");
   }
 
