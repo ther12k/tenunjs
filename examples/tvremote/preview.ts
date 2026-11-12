@@ -246,6 +246,9 @@ class SimulatedNetSession implements NetSession {
       const keyStr = `Key: ${msg.keyCode} (${dirStr})`;
       logWire(`[KeyInject] ${keyStr}`, true);
       if (tvLastKey) tvLastKey.textContent = `Last received: ${keyStr}`;
+      // TN-192: the fake TV ECHOES the key frame back — the latency
+      // harness's acknowledgement observation point.
+      this.send(frame);
     } else if (msg.hasImeBatchEdit) {
       logWire("[IME] Text injected into TV input field.");
     } else if (msg.hasAppLinkLaunch) {

@@ -378,7 +378,7 @@ export function createPairingSecretAck(secret: Uint8Array): Uint8Array {
 export function parseOuterMessage(bytes: Uint8Array): OuterMessage {
   const fields = readProtoFields(bytes);
   let protocolVersion = 1;
-  let status = POLO_STATUS.STATUS_OK;
+  let status: number = POLO_STATUS.STATUS_OK;
   let hasPairingRequest = false;
   let hasPairingRequestAck = false;
   let hasOptions = false;

@@ -44,11 +44,25 @@ val buildDiscoveryFixture by tasks.registering(Exec::class) {
     inputs.dir(repoRoot.resolve("packages/platform/src"))
     outputs.dir(discoveryFixtureAssets)
 }
+// TN-192: the tvremote latency fixture compiles the PUBLIC example runtime
+// (TvRemoteRuntime + protocol) over the compiled public net adapter.
+val tvremoteLatencyFixtureAssets = layout.buildDirectory.dir("generated/androidTest/tvremote-latency-fixture")
+val buildTvremoteLatencyFixture by tasks.registering(Exec::class) {
+    val repoRoot = rootProject.projectDir.resolve("../..")
+    val tools = rootProject.projectDir.resolve("tools/gallery-bundle")
+    workingDir(repoRoot)
+    commandLine("bun", tools.resolve("build-tvremote-latency-fixture.ts"), tvremoteLatencyFixtureAssets.get().file("tvremote_latency_fixture.js").asFile)
+    inputs.files(tools.resolve("build-tvremote-latency-fixture.ts"), tools.resolve("tvremote-latency-fixture-entry.ts"), tools.resolve("tsconfig.json"))
+    inputs.dir(repoRoot.resolve("packages/platform/src"))
+    inputs.dir(repoRoot.resolve("examples/tvremote/src"))
+    outputs.dir(tvremoteLatencyFixtureAssets)
+}
 tasks.configureEach {
     if (name.startsWith("merge") && name.endsWith("AndroidTestAssets")) {
         dependsOn(buildKeysFixture)
         dependsOn(buildNetFixture)
         dependsOn(buildDiscoveryFixture)
+        dependsOn(buildTvremoteLatencyFixture)
     }
 }
 
@@ -99,6 +113,7 @@ android {
     sourceSets.getByName("androidTest").assets.srcDir(keysFixtureAssets)
     sourceSets.getByName("androidTest").assets.srcDir(netFixtureAssets)
     sourceSets.getByName("androidTest").assets.srcDir(discoveryFixtureAssets)
+    sourceSets.getByName("androidTest").assets.srcDir(tvremoteLatencyFixtureAssets)
 }
 
 dependencies {

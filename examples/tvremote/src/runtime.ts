@@ -20,6 +20,7 @@ import { tvRemoteTheme } from "./theme";
 import { DiscoverScreen, type DiscoveredTv } from "./screens/discover.screen";
 import { PairingScreen } from "./screens/pairing.screen";
 import { RemoteScreen } from "./screens/remote.screen";
+import { LatencyRecorder } from "./latency";
 import {
   decodeFrames,
   frameMessage,
@@ -59,6 +60,12 @@ export interface TvRemoteHostServices {
     get(key: string): string | null;
     set(key: string, value: string): void;
   };
+  /**
+   * TN-192 latency probe: when present, every sendKey() is timed end to
+   * end (t0 action entry → t3 device frame observed). The runtime never
+   * interprets the numbers — the harness owns them.
+   */
+  latency?: LatencyRecorder;
 }
 
 export class TvRemoteRuntime {
@@ -109,6 +116,11 @@ export class TvRemoteRuntime {
     return this.app.route();
   }
 
+  /** The injected latency recorder (TN-192), or null when not instrumented. */
+  hostLatency(): LatencyRecorder | null {
+    return this.host.latency ?? null;
+  }
+
   routes(): string[] {
     return this.app.routes();
   }
@@ -121,8 +133,8 @@ export class TvRemoteRuntime {
     this.app.navigate(route);
   }
 
-  dispatchAction(action: string, payloadJson: string): string | null {
-    return this.app.dispatch(action, payloadJson);
+  dispatchAction(action: string, payloadJson: string): void {
+    this.app.dispatch(action, payloadJson);
   }
 
   // --------------------------------------------------------------------------
@@ -395,6 +407,12 @@ export class TvRemoteRuntime {
   private handleRemoteFrame(frame: Uint8Array) {
     const msg = parseRemoteMessage(frame);
 
+    // t3: a device frame arrived — over the serial transport echoes return
+    // in write order, so this completes the oldest pending latency probe.
+    if (this.host.latency && this.host.latency.pendingCount() > 0) {
+      this.host.latency.markAckObserved();
+    }
+
     if (msg.hasPingRequest && msg.pingVal1 !== undefined) {
       // Respond to TV keepalive ping
       this.remoteSession?.write(frameMessage(createRemotePingResponse(msg.pingVal1)));
@@ -413,8 +431,14 @@ export class TvRemoteRuntime {
 
   async sendKey(keyCode: number, direction: RemoteDirectionVal = RemoteDirection.SHORT) {
     if (!this.remoteSession) return;
+    const probe = this.host.latency;
+    if (probe) {
+      probe.begin(keyCode, direction); // t0: widget press dispatched
+      probe.markCapabilityEntered(); // t1: capability call entered
+    }
     const msg = frameMessage(createRemoteKeyInject(keyCode, direction));
     await this.remoteSession.write(msg);
+    probe?.markWriteResolved(); // t2: write() resolved
   }
 
   async sendText(text: string) {

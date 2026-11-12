@@ -301,7 +301,7 @@ status: accepted
 | 06-issues/tn-189-keys-capability.md | 776822fe77adc04f54bdadf6b70c0911063f2dd1bdfe7f0e834e141b42d2db89 |
 | 06-issues/tn-190-discovery-capability.md | c8c5a58ddbcd68aa866b2f6a867492516f9beb951683723a518d3329ea41b9ca |
 | 06-issues/tn-191-tvremote-example.md | 10aaffcbc83ca1d3d3e811d7738201769e891e3434ae8d0f91c18b471ed71b34 |
-| 06-issues/tn-192-companion-latency-harness.md | c576bbf1c42d0fb2eb30975f04b9358666e19ff9606f19d5c2e5f0d784141d1c |
+| 06-issues/tn-192-companion-latency-harness.md | dfb3810997bbfcc64602cd16e03c10cfafe0a5483bcb2c0db3b9502a660ecf93 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

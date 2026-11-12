@@ -27,6 +27,9 @@ export interface DiscoverServices {
   connectManual(host: string, port: number): void;
 }
 
+/** The runtime injects services as unknown; narrow to the screen's seam. */
+const svc = (services: unknown): DiscoverServices => services as DiscoverServices;
+
 export const DiscoverScreen = defineScreen({
   name: "Discover",
 
@@ -39,46 +42,46 @@ export const DiscoverScreen = defineScreen({
   }),
 
   actions: {
-    scan: defineAction<DiscoverState, void, DiscoverServices>({
+    scan: defineAction<DiscoverState, void>({
       run: ({ state, services }) => {
-        services.startDiscovery();
+        svc(services).startDiscovery();
         return { ...state, scanning: true, statusMessage: "Browsing _androidtvremote2._tcp..." };
       },
     }),
 
     setManualHost: defineAction<DiscoverState, string>({
-      run: ({ state, payload }) => ({
+      run: ({ state, input }) => ({
         ...state,
-        manualHost: payload,
+        manualHost: input,
       }),
     }),
 
     setManualPort: defineAction<DiscoverState, string>({
-      run: ({ state, payload }) => ({
+      run: ({ state, input }) => ({
         ...state,
-        manualPort: payload,
+        manualPort: input,
       }),
     }),
 
-    connectManual: defineAction<DiscoverState, void, DiscoverServices>({
+    connectManual: defineAction<DiscoverState, void>({
       run: ({ state, services }) => {
         const port = parseInt(state.manualPort, 10) || 6467;
-        services.connectManual(state.manualHost.trim(), port);
+        svc(services).connectManual(state.manualHost.trim(), port);
         return { ...state, statusMessage: `Connecting to ${state.manualHost}:${port}...` };
       },
     }),
 
-    selectDevice: defineAction<DiscoverState, DiscoveredTv, DiscoverServices>({
-      run: ({ state, payload, services }) => {
-        services.selectDevice(payload);
-        return { ...state, statusMessage: `Selected ${payload.name}...` };
+    selectDevice: defineAction<DiscoverState, DiscoveredTv>({
+      run: ({ state, input, services }) => {
+        svc(services).selectDevice(input);
+        return { ...state, statusMessage: `Selected ${input.name}...` };
       },
     }),
   },
 
-  view: ({ state, dispatch }) => {
+  view: ({ state, actions }) => {
     return (
-      <Scaffold background={TV_PALETTE.bg}>
+      <Scaffold>
         <Column padding={20} gap={16}>
           {/* Header */}
           <Column gap={4}>
@@ -98,7 +101,7 @@ export const DiscoverScreen = defineScreen({
               textColor="#FFFFFF"
               width={120}
               height={44}
-              onPress={() => dispatch("scan", undefined)}
+              onPress={() => actions.scan(undefined)}
               disabled={state.scanning}
             />
             <Center>
@@ -131,7 +134,7 @@ export const DiscoverScreen = defineScreen({
               state.devices.map((tv) => (
                 <GestureDetector
                   key={tv.name}
-                  onTap={() => dispatch("selectDevice", tv)}
+                  onTap={() => actions.selectDevice(tv)}
                 >
                   <Container
                     color={TV_PALETTE.cardHighlight}
@@ -181,7 +184,7 @@ export const DiscoverScreen = defineScreen({
                     <TextField
                       id="manual-host"
                       value={state.manualHost}
-                      onChanged={(v: string) => dispatch("setManualHost", v)}
+                      onChanged={(v: string) => actions.setManualHost(v)}
                     />
                   </Column>
                   <Column gap={4}>
@@ -189,7 +192,7 @@ export const DiscoverScreen = defineScreen({
                     <TextField
                       id="manual-port"
                       value={state.manualPort}
-                      onChanged={(v: string) => dispatch("setManualPort", v)}
+                      onChanged={(v: string) => actions.setManualPort(v)}
                     />
                   </Column>
                 </Row>
@@ -198,7 +201,7 @@ export const DiscoverScreen = defineScreen({
                   color={TV_PALETTE.cardHighlight}
                   width={200}
                   height={40}
-                  onPress={() => dispatch("connectManual", undefined)}
+                  onPress={() => actions.connectManual(undefined)}
                 />
               </Column>
             </Container>
