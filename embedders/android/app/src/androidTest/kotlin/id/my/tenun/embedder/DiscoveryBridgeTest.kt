@@ -110,10 +110,8 @@ class DiscoveryBridgeTest {
                 it.optString("k") == "lost" && it.optString("n") == serviceName
             }
             advertiser.register(serviceName, SERVICE_TYPE, portSocket.localPort)
-            val refound = fixture.awaitEvent(60_000) {
-                it.optString("k") == "found" &&
-                    it.optString("n") == serviceName &&
-                    fixture.events().indexOf(it) > lostIndex
+            val refound = fixture.awaitEvent(60_000, fromIndex = lostIndex + 1) {
+                it.optString("k") == "found" && it.optString("n") == serviceName
             }
             assertNotNull("service never re-found after the loss; events=${fixture.events()}", refound)
 
@@ -304,10 +302,14 @@ internal class DiscoveryBridgeFixture : AutoCloseable {
         return (0 until recorded.length()).map { recorded.getJSONObject(it) }
     }
 
-    fun awaitEvent(timeoutMs: Long, predicate: (JSONObject) -> Boolean): JSONObject? {
+    fun awaitEvent(timeoutMs: Long, fromIndex: Int = 0, predicate: (JSONObject) -> Boolean): JSONObject? {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
         while (System.nanoTime() < deadline) {
-            events().firstOrNull(predicate)?.let { return it }
+            val list = events()
+            for (i in fromIndex until list.size) {
+                val event = list[i]
+                if (predicate(event)) return event
+            }
             Thread.sleep(50)
         }
         return null
