@@ -77,6 +77,27 @@ export {
   validNetTlsOptions,
   netConnectArgumentError,
 } from "./net-validation";
+export { DISCOVERY_PERMISSIONS } from "./discovery";
+export type {
+  DiscoveredService,
+  DiscoveryBrowse,
+  ResolvedEndpoint,
+  DiscoveryCapability,
+} from "./discovery";
+export { createHostDiscoveryBridge, DISCOVERY_EVENT_ACTION } from "./discovery-native";
+export type { DiscoveryHostCall, HostDiscoveryBridge } from "./discovery-native";
+export {
+  MAX_SERVICE_NAME_BYTES,
+  MAX_TXT_ENTRIES,
+  MAX_TXT_VALUE_BYTES,
+  validServiceType,
+  validServiceName,
+  validDiscoveryDomain,
+  isDiscoveredService,
+  discoveryBrowseArgumentError,
+  validTxtRecord,
+  utf8Length,
+} from "./discovery-validation";
 export { KEYS_PERMISSIONS } from "./keys";
 export type { KeyHandle, KeyIdentity, KeysCapability } from "./keys";
 export { previewKeyring } from "./keys-preview";
@@ -92,5 +113,6 @@ export {
   unsupportedLauncher,
   unsupportedKeys,
   unsupportedNet,
+  unsupportedDiscovery,
 } from "./host";
 export type { HostCapabilities, PartialHostCapabilities } from "./host";

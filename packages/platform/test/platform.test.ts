@@ -6,6 +6,7 @@ import {
   BLE_PERMISSIONS,
   LAUNCHER_PERMISSIONS,
   NET_PERMISSIONS,
+  DISCOVERY_PERMISSIONS,
   createCancelSource,
   defineHostCapabilities,
   fromAbortSignal,
@@ -121,6 +122,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.launcher).toBeDefined();
     expect(host.keys).toBeDefined();
     expect(host.net).toBeDefined();
+    expect(host.discovery).toBeDefined();
   });
 
   test("every storage operation returns a structured unsupported failure", async () => {
@@ -143,6 +145,22 @@ describe("TN-141 fail-closed host defaults", () => {
       status: "unsupported",
       reason: "test host: nothing bound",
     });
+  });
+
+  test("discovery operations fail the same way — never a throw, never ok (TN-190)", async () => {
+    const browsed = await host.discovery.browse({ serviceType: "_androidtvremote2._tcp" });
+    expect(browsed.ok).toBe(false);
+    if (!browsed.ok) expect(browsed.failure.kind).toBe("unsupported");
+
+    const resolved = await host.discovery.resolve({
+      serviceType: "_androidtvremote2._tcp",
+      serviceName: "TV",
+      domain: "local",
+    });
+    expect(resolved.ok).toBe(false);
+    if (!resolved.ok) expect(resolved.failure.kind).toBe("unsupported");
+
+    expect(host.discovery.permissionPrerequisites()).toBe(DISCOVERY_PERMISSIONS);
   });
 
   test("ble and camera operations fail the same way — never a throw, never ok", async () => {
@@ -181,6 +199,7 @@ describe("TN-141 fail-closed host defaults", () => {
     expect(host.ble.permissionPrerequisites()).toBe(BLE_PERMISSIONS);
     expect(host.storage.permissionPrerequisites()).toEqual([]);
     expect(host.net.permissionPrerequisites()).toEqual(NET_PERMISSIONS);
+    expect(host.discovery.permissionPrerequisites()).toEqual(DISCOVERY_PERMISSIONS);
   });
 
   test("implemented capabilities pass through untouched", async () => {
