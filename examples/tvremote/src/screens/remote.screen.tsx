@@ -18,7 +18,8 @@ export interface RemoteState {
 
 export interface RemoteServices {
   navigate(route: string): void;
-  sendKey(keyCode: number, direction: RemoteDirectionVal): void;
+  /** dispatchedAt (TN-192) captures the screen action's entry as t0. */
+  sendKey(keyCode: number, direction: RemoteDirectionVal, dispatchedAt?: number): void;
   sendText(text: string): void;
   launchApp(appLink: string): void;
   disconnect(): void;
@@ -45,7 +46,9 @@ export const RemoteScreen = defineScreen({
   actions: {
     keyTap: defineAction<RemoteState, number>({
       run: ({ state, input, services }) => {
-        svc(services).sendKey(input, RemoteDirection.SHORT);
+        // t0 captured at ACTION entry — the honest "widget press
+        // dispatched" timestamp the TN-192 harness segments from.
+        svc(services).sendKey(input, RemoteDirection.SHORT, Date.now());
         return { ...state, lastAction: `Tap key ${input}` };
       },
     }),
@@ -53,7 +56,7 @@ export const RemoteScreen = defineScreen({
     keyPressDown: defineAction<RemoteState, number>({
       run: ({ state, input, services }) => {
         // START_LONG begins held key repeat on the TV
-        svc(services).sendKey(input, RemoteDirection.START_LONG);
+        svc(services).sendKey(input, RemoteDirection.START_LONG, Date.now());
         return { ...state, lastAction: `Hold start key ${input}` };
       },
     }),
@@ -61,7 +64,7 @@ export const RemoteScreen = defineScreen({
     keyPressUp: defineAction<RemoteState, number>({
       run: ({ state, input, services }) => {
         // END_LONG terminates held key repeat on the TV
-        svc(services).sendKey(input, RemoteDirection.END_LONG);
+        svc(services).sendKey(input, RemoteDirection.END_LONG, Date.now());
         return { ...state, lastAction: `Hold end key ${input}` };
       },
     }),

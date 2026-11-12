@@ -14,16 +14,19 @@ status: accepted
 direction) through the full seam and records four timestamps per event
 (client clock, `Date.now`, millisecond resolution):
 
-- **t0** — widget press dispatched (screen action entry)
+- **t0** — widget press dispatched (screen action handler entry, passed
+  as `dispatchedAt` into `sendKey`)
 - **t1** — capability call entered (`net.write` about to run)
 - **t2** — `write()` resolved (bytes handed to the transport)
 - **t3** — device acknowledgement observed (echo frame received)
 
-Segments: **uiDispatch** = t1−t0, **seam** = t2−t1, **transport** =
-t3−t2, **endToEnd** = t3−t0. Percentiles are nearest-rank over all 100
-events. Harness arithmetic is separately proven with a deterministic
-clock (`examples/tvremote/test/latency.test.ts`: synthetic delays
-produce exactly the expected p50/p95/p99).
+Segments: **uiDispatch** = t1−t0 (the real action→capability distance),
+**seam** = t2−t1, **transport** = t3−t2, **endToEnd** = t3−t0.
+Percentiles are nearest-rank over all 100 events. Harness arithmetic is
+separately proven with a deterministic clock
+(`examples/tvremote/test/latency.test.ts`: synthetic delays produce
+exactly the expected p50/p95/p99; a rejected write retires its probe to
+a countable `dropped` instead of contaminating later probes).
 
 ## Environment (first digest, CI run 43279450848, head a2d2f1b)
 
@@ -53,6 +56,14 @@ TN192_LATENCY digest={"eventCount":100,"endToEnd":{"p50":1,"p95":2,"p99":3},"uiD
 | end to end | 1 | 2 | 3 |
 
 min end-to-end 0 ms, max 4 ms, 100/100 events completed.
+
+Reading note on `uiDispatch`: in THIS run the fixture drives
+`runtime.sendKey` directly (no screen action in the loop), so t0 and t1
+land in the same synchronous call and the segment reports 0 by
+construction of the gate, not of the harness — the recorder accepts the
+screen's `dispatchedAt` (proven by the deterministic-clock test) and a
+UI-driven journey would measure the real action→capability distance
+there. The recorded 0 is the gate's floor, honestly labeled.
 
 ## Reading, and what this is NOT
 

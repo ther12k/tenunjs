@@ -99,7 +99,8 @@ export class TvRemoteRuntime {
       submitPin: (pin: string) => this.submitPin(pin),
       cancelPairing: () => this.cancelPairing(),
       proceedToRemote: () => this.connectRemoteSession(),
-      sendKey: (keyCode: number, direction: RemoteDirectionVal) => this.sendKey(keyCode, direction),
+      sendKey: (keyCode: number, direction: RemoteDirectionVal, dispatchedAt?: number) =>
+        this.sendKey(keyCode, direction, dispatchedAt),
       sendText: (text: string) => this.sendText(text),
       launchApp: (appLink: string) => this.launchApp(appLink),
       disconnect: () => this.disconnect(),
@@ -450,16 +451,32 @@ export class TvRemoteRuntime {
     }
   }
 
-  async sendKey(keyCode: number, direction: RemoteDirectionVal = RemoteDirection.SHORT) {
+  async sendKey(
+    keyCode: number,
+    direction: RemoteDirectionVal = RemoteDirection.SHORT,
+    /** t0 override: the SCREEN action handler's entry time (TN-192). */
+    dispatchedAt?: number,
+  ) {
     if (!this.remoteSession) return;
     const probe = this.host.latency;
     if (probe) {
-      probe.begin(keyCode, direction); // t0: widget press dispatched
+      // t0: the widget press dispatched. Screen actions pass their own
+      // entry timestamp, so uiDispatch spans the REAL action→capability
+      // distance; runtime-internal callers omit it and t0 lands here.
+      probe.begin(keyCode, direction, dispatchedAt);
       probe.markCapabilityEntered(); // t1: capability call entered
     }
     const msg = frameMessage(createRemoteKeyInject(keyCode, direction));
-    await this.remoteSession.write(msg);
-    probe?.markWriteResolved(); // t2: write() resolved
+    try {
+      await this.remoteSession.write(msg);
+      probe?.markWriteResolved(); // t2: write() resolved
+    } catch (error) {
+      // The transport rejected the write: retire THIS probe so its
+      // timestamps never contaminate the next press's segments, and
+      // surface the failure through the result contract, not a throw.
+      probe?.abandonOldestUnwritten();
+      throw error;
+    }
   }
 
   async sendText(text: string) {

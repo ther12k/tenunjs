@@ -92,9 +92,9 @@ class TvRemoteLatencyTest {
             // dispatch() already yields an org.json.JSONObject; the digest
             // rides as a STRING field inside it. Android org.json's
             // optString returns the literal "null" for a JSON-null field,
-            // so read with getString and treat "null" as no digest.
-            val digestJson = fixture.dispatch("digest").getString("digest")
-            assertTrue("no digest (no completed events)", digestJson != "null")
+            // so read with optString (no fallback) and compare explicitly.
+            val digestJson = fixture.dispatch("digest").optString("digest")
+            assertTrue("no digest (no completed events)", digestJson.isNotEmpty() && digestJson != "null")
             val digest = JSONObject(digestJson)
             assertEquals("every event must complete", events, digest.getInt("eventCount"))
             val e2e = digest.getJSONObject("endToEnd")

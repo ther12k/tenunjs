@@ -47,7 +47,7 @@ host.__tenun_dispatch_action = (action, payloadJson) => {
     const digest = runtime?.hostLatency()?.digest();
     return JSON.stringify({ digest: digest ? digestToJson(digest) : null });
   }
-  if (action === "pending") return JSON.stringify({ pending: runtime?.hostLatency()?.pendingCount() ?? 0 });
+  if (action === "pending") return JSON.stringify({ pending: runtime?.hostLatency()?.pendingCount() ?? 0, dropped: runtime?.hostLatency()?.droppedCount() ?? 0 });
   if (action === "link") return JSON.stringify({ phase: runtime?.linkPhase() ?? "offline" });
   if (action === "metadata") {
     return JSON.stringify({

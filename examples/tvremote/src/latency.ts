@@ -97,13 +97,16 @@ export interface LatencyRecorderOptions {
 /**
  * FIFO probe pipeline: over a serial transport, echoes return in write
  * order, so each completed `begin()` pairs with the next observed frame.
- * A probe that never sees its ack (link lost) stays pending and is
- * reported through `pendingCount()` — never silently dropped.
+ * A probe whose write never resolved (rejected write, dying link) is
+ * moved to `dropped` by `abandonOldestUnwritten()` — never silently
+ * discarded, never completed with fabricated timestamps — and stays
+ * countable through `droppedCount()`.
  */
 export class LatencyRecorder {
   private readonly now: () => number;
   private readonly maxSamples: number;
   private readonly completed: KeyEventSample[] = [];
+  private dropped = 0;
   private pending: {
     keyCode: number;
     direction: number;
@@ -118,8 +121,14 @@ export class LatencyRecorder {
   }
 
   /** t0 — the widget press dispatched (screen action handler entry). */
-  begin(keyCode: number, direction: number): void {
-    this.pending.push({ keyCode, direction, t0: this.now(), t1: NaN, t2: NaN });
+  begin(keyCode: number, direction: number, dispatchedAt?: number): void {
+    this.pending.push({
+      keyCode,
+      direction,
+      t0: dispatchedAt ?? this.now(),
+      t1: NaN,
+      t2: NaN,
+    });
   }
 
   /** t1 — the capability call is entered (net.write about to run). */
@@ -136,10 +145,28 @@ export class LatencyRecorder {
     head.t2 = this.now();
   }
 
+  /**
+   * The OLDEST unwritten probe's write failed/rejected — retire it to
+   * `dropped` so its timestamps never contaminate a later probe's
+   * segments and the loss stays countable.
+   */
+  abandonOldestUnwritten(): void {
+    const index = this.pending.findIndex((p) => Number.isNaN(p.t2));
+    if (index === -1) return;
+    this.pending.splice(index, 1);
+    this.dropped += 1;
+  }
+
   /** t3 — one device frame observed; completes the OLDEST pending probe. */
   markAckObserved(): void {
     const head = this.pending.shift();
-    if (head === undefined || Number.isNaN(head.t2)) return;
+    if (head === undefined || Number.isNaN(head.t2)) {
+      // A frame pairing with an unwritten probe cannot happen over a
+      // correct serial transport; put it back and let the caller's
+      // abandonment own the loss instead of fabricating a sample.
+      if (head !== undefined) this.pending.unshift(head);
+      return;
+    }
     const sample: KeyEventSample = {
       keyCode: head.keyCode,
       direction: head.direction,
@@ -159,6 +186,11 @@ export class LatencyRecorder {
   /** Probes still awaiting their device echo. */
   pendingCount(): number {
     return this.pending.length;
+  }
+
+  /** Probes lost to failed/rejected writes — visible, never zeroed silently. */
+  droppedCount(): number {
+    return this.dropped;
   }
 
   /** Digest over everything completed; empty runs have no digest. */

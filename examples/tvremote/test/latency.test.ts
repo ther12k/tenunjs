@@ -151,6 +151,66 @@ describe("TN-192 percentiles and segments (deterministic clock)", () => {
     const recorder = new LatencyRecorder({ now: manualClock().now });
     expect(recorder.digest()).toBeNull();
     expect(recorder.pendingCount()).toBe(0);
+    expect(recorder.droppedCount()).toBe(0);
+  });
+
+  test("a rejected write retires its probe to dropped — never a fabricated sample or a stolen t2", () => {
+    const clock = manualClock();
+    const recorder = new LatencyRecorder({ now: clock.now });
+
+    // Press A's write REJECTS (dying link): t1 set, t2 never lands.
+    recorder.begin(19, RemoteDirection.SHORT);
+    clock.advance(2);
+    recorder.markCapabilityEntered();
+    recorder.abandonOldestUnwritten(); // the runtime's catch-path retirement
+    expect(recorder.pendingCount()).toBe(0);
+    expect(recorder.droppedCount()).toBe(1);
+    expect(recorder.samples().length).toBe(0);
+
+    // Press B then measures CLEANLY — A's absence cannot steal B's t2 or
+    // contaminate B's segments.
+    recorder.begin(20, RemoteDirection.SHORT);
+    clock.advance(3);
+    recorder.markCapabilityEntered();
+    clock.advance(1);
+    recorder.markWriteResolved();
+    clock.advance(9);
+    recorder.markAckObserved();
+    expect(recorder.samples().length).toBe(1);
+    const [b] = recorder.samples();
+    expect(b!.keyCode).toBe(20);
+    expect(segmentsFor(b!).uiDispatchMs).toBe(3);
+    expect(segmentsFor(b!).seamMs).toBe(1);
+    expect(segmentsFor(b!).transportMs).toBe(9);
+    expect(recorder.droppedCount()).toBe(1); // A is still countable
+  });
+
+  test("a frame pairing with an unwritten probe is refused, not fabricated", () => {
+    const clock = manualClock();
+    const recorder = new LatencyRecorder({ now: clock.now });
+    recorder.begin(19, RemoteDirection.SHORT);
+    recorder.markCapabilityEntered(); // t1 only — write still in flight
+    recorder.markAckObserved(); // stray/impossible frame
+    expect(recorder.pendingCount()).toBe(1); // probe NOT consumed
+    expect(recorder.samples().length).toBe(0);
+  });
+
+  test("t0 override: dispatchedAt captures the true screen-action entry", () => {
+    const clock = manualClock(1_000);
+    const recorder = new LatencyRecorder({ now: clock.now });
+    const dispatchedAt = 1_000 - 4; // the action started 4ms before sendKey
+    recorder.begin(19, RemoteDirection.SHORT, dispatchedAt);
+    clock.advance(1); // sendKey entry → t1 at 1001
+    recorder.markCapabilityEntered();
+    clock.advance(1); // write resolves → t2 at 1002
+    recorder.markWriteResolved();
+    clock.advance(1); // echo → t3 at 1003
+    recorder.markAckObserved();
+    const [s] = recorder.samples();
+    expect(segmentsFor(s!).uiDispatchMs).toBe(5); // 996 → 1001
+    expect(segmentsFor(s!).seamMs).toBe(1);
+    expect(segmentsFor(s!).transportMs).toBe(1);
+    expect(segmentsFor(s!).endToEndMs).toBe(7); // 996 → 1003
   });
 });
 
