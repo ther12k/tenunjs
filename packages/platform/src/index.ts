@@ -89,7 +89,7 @@ export type { DiscoveryHostCall, HostDiscoveryBridge } from "./discovery-native"
 export {
   MAX_SERVICE_NAME_BYTES,
   MAX_TXT_ENTRIES,
-  MAX_TXT_VALUE_BYTES,
+  MAX_TXT_CONSTITUENT_BYTES,
   validServiceType,
   validServiceName,
   validDiscoveryDomain,

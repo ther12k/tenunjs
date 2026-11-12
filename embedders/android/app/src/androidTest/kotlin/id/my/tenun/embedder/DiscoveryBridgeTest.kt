@@ -102,14 +102,29 @@ class DiscoveryBridgeTest {
             assertNotNull("service lost event never arrived; events=${fixture.events()}", lost)
 
             // 4. It comes back: the SAME live browse re-finds it (names
-            //    survive; addresses change — identity is name@domain).
+            //    survive; addresses change — identity is name@domain). The
+            //    search starts at the LOST event's position so the ORIGINAL
+            //    found event can never satisfy "re-found" — a genuinely new
+            //    found event is required (a stale-history false positive).
+            val lostIndex = fixture.events().indexOfFirst {
+                it.optString("k") == "lost" && it.optString("n") == serviceName
+            }
             advertiser.register(serviceName, SERVICE_TYPE, portSocket.localPort)
-            val refound = fixture.awaitEvent(60_000) { it.optString("k") == "found" && it.optString("n") == serviceName }
-            assertNotNull("service never re-found; events=${fixture.events()}", refound)
+            val refound = fixture.awaitEvent(60_000) {
+                it.optString("k") == "found" &&
+                    it.optString("n") == serviceName &&
+                    fixture.events().indexOf(it) > lostIndex
+            }
+            assertNotNull("service never re-found after the loss; events=${fixture.events()}", refound)
 
-            // 5. stop is idempotent over the bridge; no further events arrive.
+            // 5. stop is idempotent over the bridge; no further events arrive
+            //    for the stopped browse.
+            val eventsBeforeStop = fixture.events().size
             assertTrue(fixture.dispatch("stop").getBoolean("ok"))
             assertTrue(fixture.dispatch("stop").getBoolean("ok"))
+            advertiser.unregister()
+            val quiet = fixture.awaitQuiet(5_000, eventsBeforeStop)
+            assertTrue("events arrived after stop: ${fixture.events().drop(eventsBeforeStop)}", quiet)
         } finally {
             advertiser.unregister()
             portSocket.close()
@@ -117,17 +132,26 @@ class DiscoveryBridgeTest {
     }
 
     @Test
-    fun aCancelledBrowseSettlesCancelled() {
+    fun aCancelledBrowseIsSilencedRegardlessOfStartOrdering() {
+        // Callback ordering is nondeterministic: browseStarted may arrive
+        // before OR after the cancel dispatch. Both are legitimate — the
+        // frozen contract only demands the browse ends cancelled-or-silent
+        // and delivers nothing afterwards.
         val pending = fixture.dispatch(
             "browse",
             JSONObject().put("serviceType", SERVICE_TYPE).put("cancel", true),
         )
         assertTrue(pending.getBoolean("pending"))
         assertTrue(fixture.dispatch("cancel").getBoolean("ok"))
-        val cancelled = fixture.awaitResult(10_000)
-        assertNotNull(cancelled)
-        assertFalse(cancelled!!.getBoolean("ok"))
-        assertEquals("cancelled", cancelled.getJSONObject("failure").getString("kind"))
+        val settled = fixture.awaitResult(10_000)
+        assertNotNull(settled)
+        assertFalse(settled!!.getBoolean("ok"))
+        val kind = settled.getJSONObject("failure").getString("kind")
+        assertTrue("unexpected failure kind $kind", kind == "cancelled" || kind == "unavailable")
+
+        val eventsBefore = fixture.events().size
+        val quiet = fixture.awaitQuiet(3_000, eventsBefore)
+        assertTrue("events arrived after cancellation: ${fixture.events().drop(eventsBefore)}", quiet)
     }
 
     private companion object {
@@ -287,6 +311,16 @@ internal class DiscoveryBridgeFixture : AutoCloseable {
             Thread.sleep(50)
         }
         return null
+    }
+
+    /** True when NO new event lands past [fromIndex] within [timeoutMs]. */
+    fun awaitQuiet(timeoutMs: Long, fromIndex: Int): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (System.nanoTime() < deadline) {
+            if (events().size > fromIndex) return false
+            Thread.sleep(50)
+        }
+        return events().size == fromIndex
     }
 
     override fun close() {

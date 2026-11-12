@@ -73,7 +73,9 @@ describe("TN-190 service-type and name bounds", () => {
     expect(validServiceType("_http._udp")).toBe(true);
     expect(validServiceType("_a._tcp")).toBe(true);
     expect(validServiceType("_abcdefghijklmnopqrstuvwxyz._tcp")).toBe(true); // ≤ DNS label 63
-    expect(validServiceType(`_${"a".repeat(64)}._tcp`)).toBe(false); // label > 63
+    // Underscore + label ≤ 63 bytes: 62 chars after '_' is the ceiling.
+    expect(validServiceType(`_${"a".repeat(62)}._tcp`)).toBe(true);
+    expect(validServiceType(`_${"a".repeat(63)}._tcp`)).toBe(false); // label > 63 bytes
     expect(validServiceType("androidtvremote2._tcp")).toBe(false); // no underscore
     expect(validServiceType("_tv._tcp.local")).toBe(false); // trailing domain
     expect(validServiceType("_tv._tls")).toBe(false); // not a DNS-SD transport
@@ -91,9 +93,11 @@ describe("TN-190 service-type and name bounds", () => {
     // UTF-8 expands: 21 three-byte chars are 63 bytes and pass; 22 are 66.
     expect(validServiceName("日".repeat(21))).toBe(true);
     expect(validServiceName("日".repeat(22))).toBe(false);
-    expect(validServiceName("a.b")).toBe(false); // dots split instance from type
-    expect(validServiceName(" padded")).toBe(false); // NsdManager rejects these
-    expect(validServiceName("padded ")).toBe(false);
+    // RFC 6763 §4.1.1: instance names are RAW labels — dots and spaces are
+    // legal punctuation a device may advertise ("TV 1.0"); only control
+    // characters and the byte ceiling are refused.
+    expect(validServiceName("TV 1.0")).toBe(true);
+    expect(validServiceName("a.b")).toBe(true);
     expect(validServiceName("")).toBe(false);
     expect(validServiceName(null as never)).toBe(false);
   });
@@ -106,12 +110,16 @@ describe("TN-190 service-type and name bounds", () => {
     expect(isDiscoveredService(null)).toBe(false);
   });
 
-  test("validTxtRecord bounds key count, key/value control chars, and value bytes", () => {
+  test("validTxtRecord bounds entries and the complete key=value constituent", () => {
     expect(validTxtRecord({ name: "tv", addr: "10.0.0.5" })).toBe(true);
     expect(validTxtRecord({})).toBe(true);
-    expect(validTxtRecord({ k: "x".repeat(255) })).toBe(true);
-    expect(validTxtRecord({ k: "x".repeat(256) })).toBe(false); // UTF-8 bytes
+    expect(validTxtRecord({ "configuration-url": "x" })).toBe(true); // §6.4 keys are a RECOMMENDATION
+    expect(validTxtRecord({ k: "line1\nline2" })).toBe(true); // §6.5: arbitrary value bytes
+    expect(validTxtRecord({ k: "x".repeat(253) })).toBe(true); // "k=" + 253 = 255 exactly
+    expect(validTxtRecord({ k: "x".repeat(254) })).toBe(false); // constituent > 255 bytes
+    expect(validTxtRecord({ k2: "x".repeat(255) })).toBe(false); // different key shifts the boundary
     expect(validTxtRecord({ "": "x" })).toBe(false); // empty key
+    expect(validTxtRecord({ "k=v": "x" })).toBe(false); // '=' is the constituent grammar separator
     expect(validTxtRecord({ k: 7 as never })).toBe(false);
     expect(validTxtRecord(["a"] as never)).toBe(false);
     const oversize: Record<string, string> = {};
@@ -158,6 +166,51 @@ describe("TN-190 native adapter — availability", () => {
       status: "unavailable",
       reason: "mDNS disabled by policy",
     });
+  });
+
+  test("denied availability names the refused permission; missing permission degrades honestly", () => {
+    const denied = fakeHost({
+      availability: JSON.stringify({
+        ok: true,
+        value: {
+          status: "denied",
+          permission: "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        },
+      }),
+    });
+    expect(createHostDiscoveryBridge(denied.hostCall).capability.availability()).toEqual({
+      status: "denied",
+      permission: "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+    });
+
+    const deniedNoPermission = fakeHost({
+      availability: JSON.stringify({ ok: true, value: { status: "denied" } }),
+    });
+    expect(createHostDiscoveryBridge(deniedNoPermission.hostCall).capability.availability()).toEqual({
+      status: "unavailable",
+      reason: "discovery.availability: denied without a permission",
+    });
+  });
+
+  test("non-boolean ok discriminators fabricate nothing — fail closed", async () => {
+    const stringFalse = fakeHost({
+      availability: JSON.stringify({ ok: "false", value: { status: "supported" } }),
+    });
+    expect(createHostDiscoveryBridge(stringFalse.hostCall).capability.availability()).toMatchObject({
+      status: "unavailable",
+      reason: expect.stringContaining("ok is not a boolean"),
+    });
+
+    const browseStringFalse = fakeHost({
+      browse: JSON.stringify({ ok: "false", value: { browseId: "d:1" } }),
+    });
+    expect(
+      failureKind(
+        await createHostDiscoveryBridge(browseStringFalse.hostCall).capability.browse({
+          serviceType: "_tv._tcp",
+        })
+      )
+    ).toBe("platform-error");
   });
 
   test("malformed availability statuses degrade honestly; non-JSON is surfaced", () => {

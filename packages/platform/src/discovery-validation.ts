@@ -4,11 +4,16 @@
  * refused in TypeScript is refused for the identical reason in Kotlin
  * (the keys/net validation discipline).
  *
- * The bounds follow RFC 6763 DNS-SD where the wire cares: a service type
- * is `_name._tcp`/`_name._udp` (the name label 1..15 chars, the transport
- * spelled out), a service name is 1..63 UTF-8 bytes with no dots (dots
- * are instance separators in DNS-SD), and a domain is 1..253 code units
- * without control characters — `local` is the tier companions use.
+ * The bounds follow RFC 6763 DNS-SD where the wire actually cares:
+ *  - a service type is `_name._tcp`/`_name._udp` — the underscore plus
+ *    the label stay within the DNS 63-byte label ceiling;
+ *  - a service NAME is a RAW instance label (RFC 6763 §4.1.1): dots and
+ *    spaces are legal punctuation inside the label (a device may
+ *    legitimately advertise "TV 1.0"), so the bounds are the wire ones —
+ *    1..63 UTF-8 bytes and no control characters — nothing more;
+ *  - TXT entries are `key=value` constituents whose COMPLETE string is
+ *    ≤255 bytes (§6.5); RFC 6763 only RECOMMENDS short keys (§6.4), so
+ *    no key-length ceiling is imposed beyond that constituent limit.
  */
 import { isNetCancelSignal } from "./net-validation";
 
@@ -16,9 +21,11 @@ import { isNetCancelSignal } from "./net-validation";
  * which is stricter than 63 code units for non-ASCII names). */
 export const MAX_SERVICE_NAME_BYTES = 63;
 
-/** Largest TXT table the seam accepts (keys and total size are bounded). */
+/** Largest TXT table the seam accepts. */
 export const MAX_TXT_ENTRIES = 64;
-export const MAX_TXT_VALUE_BYTES = 255;
+
+/** Longest complete TXT `key=value` constituent (RFC 6763 §6.5 wire limit). */
+export const MAX_TXT_CONSTITUENT_BYTES = 255;
 
 function hasControl(code: number): boolean {
   return code <= 0x1f || code === 0x7f || (code >= 0x80 && code <= 0x9f);
@@ -28,32 +35,33 @@ function hasControl(code: number): boolean {
  * A DNS-SD service type: `_name._tcp` or `_name._udp`. RFC 6763 §7 keeps
  * service names to 15 characters, but real registrations run longer
  * (`_androidtvremote2._tcp` is 16) and NsdManager accepts a full DNS
- * label, so the bound here is the label ceiling of 63 — letters, digits,
- * and hyphen, not starting with a hyphen. Neither `ipps`-style bare
- * names nor `_name._tcp.local.` trailing forms are accepted — the wire
- * carries exactly the pair.
+ * label. The bound is the DNS label ceiling: underscore + label ≤ 63
+ * bytes, letters/digits/hyphen, not starting with a hyphen. Neither
+ * `ipps`-style bare names nor `_name._tcp.local.` trailing forms are
+ * accepted — the wire carries exactly the pair.
  */
 export function validServiceType(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  if (!/^_[A-Za-z0-9][A-Za-z0-9-]{0,62}\._(tcp|udp)$/.test(value)) return false;
+  if (!/^_[A-Za-z0-9][A-Za-z0-9-]{0,61}\._(tcp|udp)$/.test(value)) return false;
   return !value.includes("--");
 }
 
 /**
- * A DNS-SD instance name: 1..63 UTF-8 BYTES, no control characters, no
- * dots (a dot would split the instance from its type on the wire), no
- * leading/trailing space (NsdManager rejects them on Android).
+ * A DNS-SD instance name (RFC 6763 §4.1.1: a RAW label, not a dotted
+ * DNS presentation name): 1..63 UTF-8 bytes, no control characters.
+ * Dots and spaces are LEGAL label punctuation on the wire — a device may
+ * advertise "TV 1.0" — so only the byte bound and control characters are
+ * enforced. Escape-on-the-wire is the HOST's job (NsdManager escapes
+ * internally); the contract carries the raw label the app displays.
  */
 export function validServiceName(value: unknown): value is string {
   if (typeof value !== "string") return false;
   if (value.length === 0 || value.length > MAX_SERVICE_NAME_BYTES) return false;
   if (utf8Length(value) > MAX_SERVICE_NAME_BYTES) return false;
-  if (value.startsWith(" ") || value.endsWith(" ")) return false;
   for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (hasControl(code)) return false;
+    if (hasControl(value.charCodeAt(i))) return false;
   }
-  return !value.includes(".");
+  return true;
 }
 
 /** A DNS domain such as "local": 1..253 code units, no control/whitespace. */
@@ -119,23 +127,26 @@ export function utf8Length(value: string): number {
 
 /**
  * A resolved TXT table as it crosses tiers: plain string→string, at most
- * [MAX_TXT_ENTRIES] entries, each value at most [MAX_TXT_VALUE_BYTES]
- * UTF-8 bytes (the RFC 6763 key/value wire limit).
+ * [MAX_TXT_ENTRIES] entries. Keys are printable ASCII without `=` (the
+ * constituent grammar); each COMPLETE `key=value` string is at most
+ * [MAX_TXT_CONSTITUENT_BYTES] UTF-8 bytes (RFC 6763 §6.5 — the limit is
+ * on the whole constituent, not the value alone). Values carry arbitrary
+ * string content; binary framing is the host's concern.
  */
 export function validTxtRecord(value: unknown): value is Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const entries = Object.entries(value as Record<string, unknown>);
   if (entries.length > MAX_TXT_ENTRIES) return false;
   for (const [key, entryValue] of entries) {
-    if (key.length === 0 || key.length > 15) return false; // key ≤ 9 by RFC; hosts pad
+    if (key.length === 0) return false;
     for (let i = 0; i < key.length; i += 1) {
-      if (hasControl(key.charCodeAt(i))) return false;
+      const code = key.charCodeAt(i);
+      if (code < 0x21 || code > 0x7e || code === 0x3d /* '=' */) return false;
     }
     if (typeof entryValue !== "string") return false;
-    if (utf8Length(entryValue) > MAX_TXT_VALUE_BYTES) return false;
-    for (let i = 0; i < entryValue.length; i += 1) {
-      if (hasControl(entryValue.charCodeAt(i))) return false;
-    }
+    // §6.5 permits arbitrary value bytes; the seam is string-typed, so the
+    // only bound is the COMPLETE key=value constituent byte ceiling.
+    if (utf8Length(`${key}=${entryValue}`) > MAX_TXT_CONSTITUENT_BYTES) return false;
   }
   return true;
 }

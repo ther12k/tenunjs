@@ -94,7 +94,7 @@ class DiscoveryServiceFormatTest {
                             "service",
                             JSONObject()
                                 .put("serviceType", "_androidtvremote2._tcp")
-                                .put("serviceName", "a.b")
+                                .put("serviceName", "\u0001bad")
                                 .put("domain", "local"),
                         )
                         .toString()
@@ -282,7 +282,7 @@ class DiscoveryServiceFormatTest {
                 """{"service":{"serviceType":"_tv._tcp","serviceName":"Gone TV","domain":"local"}}"""
             )!!
         )
-        nsd.resolveListeners.single().onResolveFailed()
+        nsd.resolveListeners.single().onResolveFailed(0)
         val failed = sink.await { it.optString("type") == "resolve" }
         assertNotNull(failed)
         assertFalse(failed!!.getBoolean("ok"))
@@ -313,5 +313,102 @@ class DiscoveryServiceFormatTest {
             )
         }
         assertEquals("busy", failureKind(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")))
+    }
+
+    @Test
+    fun stopReusesTheExactListenerTheDiscoveryWasStartedWith() {
+        // NsdManager identifies registrations by listener OBJECT identity —
+        // the recorded stop listener must be the SAME instance discover got.
+        val nsd = FakeNsd()
+        val service = DiscoveryService(null, { _, _ -> }, nsd)
+        JSONObject(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")!!)
+        nsd.listeners.single().onDiscoveryStarted()
+        val reply = JSONObject(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")!!)
+        val id = reply.getJSONObject("value").getString("browseId")
+        service.invoke("stop", """{"browseId":"$id"}""")
+        assertEquals(1, nsd.stopRequests.size)
+        assertTrue(nsd.stopRequests.single() === nsd.listeners.last())
+    }
+
+    @Test
+    fun stopBeforeTheStartCallbackStillCancelsTheNativeRequest() {
+        val nsd = FakeNsd()
+        val service = DiscoveryService(null, { _, _ -> }, nsd)
+        val reply = JSONObject(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")!!)
+        val id = reply.getJSONObject("value").getString("browseId")
+        service.invoke("stop", """{"browseId":"$id"}""")!! // start callback not yet delivered
+        assertEquals(1, nsd.stopRequests.size) // the pending request IS cancelled
+        assertTrue(nsd.stopRequests.single() === nsd.listeners.single())
+        val before = nsd.listeners.size
+        nsd.listeners.single().onDiscoveryStarted() // late start on a dead browse
+        assertEquals(before, nsd.listeners.size) // no crash, no new state
+    }
+
+    @Test
+    fun platformTrailingDotServiceTypesAreCanonicalized() {
+        // Legacy Android returns "_tv._tcp." — the wire carries "_tv._tcp"
+        // so a discovered identity round-trips into resolve().
+        val nsd = FakeNsd()
+        val sink = Sink()
+        val service = DiscoveryService(null, sink.onEvent, nsd)
+        JSONObject(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")!!)
+        nsd.listeners.single().onDiscoveryStarted()
+        nsd.listeners.single().onServiceFound("_tv._tcp.", "TV 1.0")
+        val found = sink.await { it.optString("type") == "serviceFound" }
+        assertNotNull(found)
+        assertEquals("_tv._tcp", found!!.getJSONObject("service").getString("serviceType"))
+        assertEquals("TV 1.0", found.getJSONObject("service").getString("serviceName"))
+    }
+
+    @Test
+    fun shutdownStopsEveryBrowseAndResolvesAndReleasesTheLock() {
+        val nsd = FakeNsd()
+        val lock = RecordingLock()
+        val sink = Sink()
+        val service = DiscoveryService(null, sink.onEvent, nsd, lock)
+        JSONObject(service.invoke("browse", """{"serviceType":"_tv._tcp"}""")!!)
+        JSONObject(service.invoke("browse", """{"serviceType":"_http._tcp"}""")!!)
+        JSONObject(
+            service.invoke("resolve", """{"service":{"serviceType":"_tv._tcp","serviceName":"TV","domain":"local"}}""")
+        )
+        service.shutdown()
+        assertEquals(2, nsd.stopRequests.size)
+        assertEquals(2, sink.events.count { it.optString("type") == "browseStopped" })
+        assertNotNull(sink.await { it.optString("type") == "resolve" })
+        assertEquals(1, lock.ops.count { it == "release" })
+    }
+
+    @Test
+    fun alreadyActiveResolvesAreBusyNotServiceGone() {
+        // Legacy NSD permits one outstanding resolve per client; the second
+        // fails ALREADY_ACTIVE — our serialization problem, not the service's.
+        val nsd = FakeNsd()
+        val sink = Sink()
+        val service = DiscoveryService(null, sink.onEvent, nsd)
+        JSONObject(
+            service.invoke("resolve", """{"service":{"serviceType":"_tv._tcp","serviceName":"TV","domain":"local"}}""")
+        )
+        nsd.resolveListeners.single().onResolveFailed(3) // FAILURE_ALREADY_ACTIVE
+        val failed = sink.await { it.optString("type") == "resolve" }
+        assertNotNull(failed)
+        assertEquals("busy", failed!!.getJSONObject("failure").getString("kind"))
+    }
+
+    @Test
+    fun longTxtKeysAndNullValueSemanticsPassThrough() {
+        val nsd = FakeNsd()
+        val sink = Sink()
+        val service = DiscoveryService(null, sink.onEvent, nsd)
+        JSONObject(
+            service.invoke("resolve", """{"service":{"serviceType":"_tv._tcp","serviceName":"TV","domain":"local"}}""")
+        )
+        // RFC 6763 §6.4 key length is a RECOMMENDATION; the facade maps
+        // key-only records to "" before this boundary.
+        nsd.resolveListeners.single().onServiceResolved("10.0.0.5", 6467, mapOf("configuration-url" to "x", "flag" to ""))
+        val resolved = sink.await { it.optString("type") == "resolve" }
+        assertNotNull(resolved)
+        val txt = resolved!!.getJSONObject("txt")
+        assertEquals("x", txt.getString("configuration-url"))
+        assertEquals("", txt.getString("flag"))
     }
 }

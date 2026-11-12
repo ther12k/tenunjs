@@ -7,6 +7,7 @@ import android.net.wifi.WifiManager
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -115,7 +116,8 @@ class DiscoveryService(
     }
 
     interface ResolveListener {
-        fun onResolveFailed()
+        /** errorCode mirrors NsdManager's FAILURE_* constants (0 = unknown). */
+        fun onResolveFailed(errorCode: Int)
         fun onServiceResolved(host: String, port: Int, txt: Map<String, String>)
     }
 
@@ -149,6 +151,8 @@ class DiscoveryService(
     ) {
         val stopped = AtomicBoolean(false)
         val started = AtomicBoolean(false)
+        /** Set once the discoverServices REQUEST was accepted (stop needs this). */
+        val requested = AtomicBoolean(false)
         val listener = object : DiscoveryListener {
             override fun onDiscoveryStarted() {
                 if (stopped.get()) return
@@ -157,13 +161,16 @@ class DiscoveryService(
             }
 
             override fun onStartDiscoveryFailed() {
-                if (stopped.get()) return
+                // The request itself failed: nothing is registered natively,
+                // so the terminal stop must not attempt a native stop.
+                requested.set(false)
                 stopBrowse(this@Browse, "unavailable", "NSD could not start discovery for $serviceType")
             }
 
             override fun onServiceFound(foundType: String, foundName: String) {
                 if (stopped.get()) return
                 if (!isValidServiceName(foundName)) return // host bug stays invisible, not fatal
+                val type = canonicalServiceType(foundType) ?: serviceType
                 emit(
                     JSONObject()
                         .put("type", "serviceFound")
@@ -171,7 +178,7 @@ class DiscoveryService(
                         .put(
                             "service",
                             JSONObject()
-                                .put("serviceType", foundType)
+                                .put("serviceType", type)
                                 .put("serviceName", foundName)
                                 .put("domain", LOCAL_DOMAIN),
                         )
@@ -181,6 +188,7 @@ class DiscoveryService(
             override fun onServiceLost(lostType: String, lostName: String) {
                 if (stopped.get()) return
                 if (!isValidServiceName(lostName)) return
+                val type = canonicalServiceType(lostType) ?: serviceType
                 emit(
                     JSONObject()
                         .put("type", "serviceLost")
@@ -188,7 +196,7 @@ class DiscoveryService(
                         .put(
                             "service",
                             JSONObject()
-                                .put("serviceType", lostType)
+                                .put("serviceType", type)
                                 .put("serviceName", lostName)
                                 .put("domain", LOCAL_DOMAIN),
                         )
@@ -207,6 +215,18 @@ class DiscoveryService(
         }
     }
 
+    /**
+     * Legacy Android returns browse/resolve service types in dotted DNS
+     * presentation form (`_androidtvremote2._tcp.`); the contract wire
+     * carries exactly the requested pair. Strip the trailing dot so a
+     * discovered identity round-trips into resolve; null means the
+     * callback carried nothing usable.
+     */
+    private fun canonicalServiceType(platformType: String): String? {
+        val trimmed = platformType.trimEnd('.')
+        return if (isValidServiceType(trimmed)) trimmed else null
+    }
+
     private fun browse(payloadJson: String): String {
         val payload = parse(payloadJson) ?: return malformed()
         val serviceType = stringField(payload, "serviceType")
@@ -220,9 +240,28 @@ class DiscoveryService(
         val id = "d:${nextBrowseId.incrementAndGet()}"
         val browse = Browse(id, serviceType)
         browses[id] = browse
-        holdMulticastLock()
+        // The lock acquisition and the NSD request are one transaction: any
+        // failure rolls back the registration AND the lock accounting, and a
+        // permission refusal is `denied` (naming it), not platform-error.
+        try {
+            holdMulticastLock()
+        } catch (t: Throwable) {
+            browses.remove(id)
+            return if (t is SecurityException) {
+                failure(
+                    "denied",
+                    "the multicast lock was refused: ${t.message ?: t.javaClass.simpleName}",
+                )
+            } else {
+                failure(
+                    "platform-error",
+                    "multicast lock acquisition failed: ${t.message ?: t.javaClass.simpleName}",
+                )
+            }
+        }
         try {
             nsd.discoverServices(serviceType, browse.listener)
+            browse.requested.set(true)
         } catch (t: Throwable) {
             browses.remove(id)
             releaseMulticastLock()
@@ -240,7 +279,11 @@ class DiscoveryService(
         browses.remove(browse.id)
         releaseMulticastLock()
         try {
-            if (browse.started.get()) {
+            // Stop whenever the REQUEST was accepted — even before
+            // onDiscoveryStarted arrives (a stop during pending start must
+            // still cancel the native registration). If the request itself
+            // failed, nothing is registered and stopping is skipped.
+            if (browse.requested.get()) {
                 nsd.stopServiceDiscovery(browse.listener)
             }
         } catch (ignored: Throwable) {
@@ -271,18 +314,21 @@ class DiscoveryService(
     ) {
         val settled = AtomicBoolean(false)
         val listener = object : ResolveListener {
-            override fun onResolveFailed() {
+            override fun onResolveFailed(errorCode: Int) {
+                // Legacy NSD permits ONE outstanding resolve per client;
+                // a second request fails ALREADY_ACTIVE — that is OUR
+                // serialization problem, not the service being gone.
+                val (kind, message) = if (errorCode == FAILURE_ALREADY_ACTIVE) {
+                    "busy" to "another resolve is still in flight on this platform tier"
+                } else {
+                    "unavailable" to "the service is no longer on the network"
+                }
                 settle(
                     JSONObject()
                         .put("type", "resolve")
                         .put("resolveId", id)
                         .put("ok", false)
-                        .put(
-                            "failure",
-                            JSONObject()
-                                .put("kind", "unavailable")
-                                .put("message", "the service is no longer on the network"),
-                        )
+                        .put("failure", JSONObject().put("kind", kind).put("message", message))
                 )
             }
 
@@ -303,10 +349,13 @@ class DiscoveryService(
                     return
                 }
                 val txtJson = JSONObject()
+                var entries = 0
                 for ((key, value) in txt) {
-                    if (key.length in 1..15 && !hasControl(key)) {
-                        txtJson.put(key, value)
-                    }
+                    if (entries >= MAX_TXT_ENTRIES) break
+                    if (!isValidTxtKey(key)) continue
+                    if ("$key=$value".toByteArray(Charsets.UTF_8).size > MAX_TXT_CONSTITUENT_BYTES) continue
+                    txtJson.put(key, value)
+                    entries += 1
                 }
                 settle(
                     JSONObject()
@@ -318,12 +367,31 @@ class DiscoveryService(
                         .put("txt", txtJson)
                 )
             }
+        }
 
-            private fun settle(event: JSONObject) {
-                if (!settled.compareAndSet(false, true)) return
-                resolves.remove(id)
-                emit(event)
-            }
+        /** Exactly-once settlement shared with the deadline timer. */
+        fun settle(event: JSONObject) {
+            if (!settled.compareAndSet(false, true)) return
+            resolves.remove(id)
+            emit(event)
+        }
+
+        /** The contract: resolution is structured, never a hang. */
+        fun armDeadline() {
+            timeouts.schedule({
+                settle(
+                    JSONObject()
+                        .put("type", "resolve")
+                        .put("resolveId", id)
+                        .put("ok", false)
+                        .put(
+                            "failure",
+                            JSONObject()
+                                .put("kind", "timeout")
+                                .put("message", "resolve did not answer within ${RESOLVE_TIMEOUT_MS}ms"),
+                        )
+                )
+            }, RESOLVE_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
         }
     }
 
@@ -355,6 +423,7 @@ class DiscoveryService(
             override val serviceName = serviceName
         })
         resolves[id] = resolve
+        resolve.armDeadline()
         try {
             nsd.resolveService(resolve.request, resolve.listener)
         } catch (t: Throwable) {
@@ -365,6 +434,34 @@ class DiscoveryService(
             )
         }
         return ok(JSONObject().put("resolveId", id))
+    }
+
+    /**
+     * Host-side teardown for engine/activity lifecycle: stop every live
+     * browse, settle every pending resolve, and release the multicast
+     * lock. Called when the owning engine is replaced or destroyed —
+     * discovery is foreground-scoped and must never outlive its owner
+     * (accumulated browses would wedge MAX_BROWSES and hold the lock).
+     */
+    fun shutdown() {
+        for (browse in browses.values.toList()) {
+            stopBrowse(browse, "unavailable", "the discovery host was shut down")
+        }
+        for (resolve in resolves.values.toList()) {
+            resolve.settle(
+                JSONObject()
+                    .put("type", "resolve")
+                    .put("resolveId", resolve.id)
+                    .put("ok", false)
+                    .put(
+                        "failure",
+                        JSONObject()
+                            .put("kind", "unavailable")
+                            .put("message", "the discovery host was shut down"),
+                    )
+            )
+        }
+        timeouts.shutdownNow()
     }
 
     // -- helpers --------------------------------------------------------------------
@@ -410,13 +507,24 @@ class DiscoveryService(
         return !value.contains("--")
     }
 
-    /** Mirrors validServiceName: 1..63 UTF-8 bytes, no dots/control, no edges. */
+    /**
+     * Mirrors validServiceName (RFC 6763 §4.1.1 raw labels): 1..63 UTF-8
+     * bytes, no control characters. Dots and spaces are LEGAL instance
+     * punctuation ("TV 1.0" is a valid advertisement).
+     */
     private fun isValidServiceName(value: String): Boolean {
         if (value.isEmpty()) return false
-        if (value.toByteArray(Charsets.UTF_8).size > 63) return false
-        if (value.startsWith(" ") || value.endsWith(" ")) return false
-        if (value.contains(".")) return false
+        if (value.toByteArray(Charsets.UTF_8).size > MAX_SERVICE_NAME_BYTES) return false
         return !hasControl(value)
+    }
+
+    /** Mirrors validTxtRecord's key grammar: printable ASCII, no '='. */
+    private fun isValidTxtKey(key: String): Boolean {
+        if (key.isEmpty()) return false
+        for (c in key) {
+            if (c.code < 0x21 || c.code > 0x7e || c == '=') return false
+        }
+        return true
     }
 
     /** Mirrors validNetHost's shape rules (no URL delimiters, no whitespace). */
@@ -443,19 +551,29 @@ class DiscoveryService(
 
     private val nsd: NsdFacade = facade ?: AndroidNsdFacade()
 
-    /** The production facade: NsdManager + the browse-lifetime multicast lock. */
+    /** The production facade: NsdManager behind the injectable seam. */
     private inner class AndroidNsdFacade : NsdFacade {
         private val nsdManager: NsdManager by lazy {
             requireNotNull(appContext) { "DiscoveryService needs a Context in production" }
                 .getSystemService(Context.NSD_SERVICE) as NsdManager
         }
 
+        // NsdManager identifies a discovery registration by the LISTENER
+        // OBJECT passed to discoverServices — stopping with a fresh adapter
+        // throws "listener not registered" and leaks the native browse.
+        // One adapted platform listener per facade listener, reused for stop.
+        private val adaptedListeners = ConcurrentHashMap<DiscoveryListener, NsdManager.DiscoveryListener>()
+
         override fun discoverServices(serviceType: String, listener: DiscoveryListener) {
-            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, adapt(listener))
+            val platform = adapt(listener)
+            adaptedListeners[listener] = platform
+            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, platform)
         }
 
         override fun stopServiceDiscovery(listener: DiscoveryListener) {
-            nsdManager.stopServiceDiscovery(adapt(listener))
+            val platform = adaptedListeners.remove(listener)
+                ?: throw IllegalArgumentException("listener not registered")
+            nsdManager.stopServiceDiscovery(platform)
         }
 
         override fun resolveService(info: ResolvedRequest, listener: ResolveListener) {
@@ -466,24 +584,31 @@ class DiscoveryService(
             @Suppress("DEPRECATION") // the only resolver available across our API floor (30)
             nsdManager.resolveService(nsdInfo, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                    listener.onResolveFailed()
+                    listener.onResolveFailed(errorCode)
                 }
 
                 override fun onServiceResolved(info: NsdServiceInfo?) {
                     if (info == null) {
-                        listener.onResolveFailed()
+                        listener.onResolveFailed(0)
                         return
                     }
                     val host = info.host?.hostAddress
                     if (host == null) {
-                        listener.onResolveFailed()
+                        listener.onResolveFailed(0)
                         return
                     }
-                    listener.onServiceResolved(
-                        host,
-                        info.port,
-                        info.attributes.mapValues { (_, v) -> String(v, Charsets.UTF_8) },
-                    )
+                    // Key-only/empty TXT records arrive as NULL byte arrays
+                    // (RFC 6763 §6.3); a decode failure must settle the
+                    // resolve structurally, never crash the NSD thread.
+                    val txt = try {
+                        info.attributes.entries.associate { (key, value) ->
+                            key to if (value == null) "" else String(value, Charsets.UTF_8)
+                        }
+                    } catch (t: Throwable) {
+                        listener.onResolveFailed(0)
+                        return
+                    }
+                    listener.onServiceResolved(host, info.port, txt)
                 }
             })
         }
@@ -544,10 +669,21 @@ class DiscoveryService(
         const val LOCAL_DOMAIN = "local"
         const val MAX_BROWSES = 8
         const val MAX_RESOLVES = 16
-        val serviceTypePattern = Regex("^_[A-Za-z0-9][A-Za-z0-9-]{0,62}\\._(tcp|udp)$")
+        const val MAX_SERVICE_NAME_BYTES = 63
+        const val MAX_TXT_ENTRIES = 64
+        const val MAX_TXT_CONSTITUENT_BYTES = 255
+        const val RESOLVE_TIMEOUT_MS = 15_000
+        /** NsdManager.FAILURE_ALREADY_ACTIVE — mirrored for the JVM tier. */
+        const val FAILURE_ALREADY_ACTIVE = 3
+        val serviceTypePattern = Regex("^_[A-Za-z0-9][A-Za-z0-9-]{0,61}\\._(tcp|udp)$")
         val nextBrowseId = AtomicLong(0)
         val nextResolveId = AtomicLong(0)
     }
+
+    private val timeouts: java.util.concurrent.ScheduledExecutorService =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "tenun-discovery-timeouts").apply { isDaemon = true }
+        }
 
     private val browses = ConcurrentHashMap<String, Browse>()
     private val resolves = ConcurrentHashMap<String, Resolve>()

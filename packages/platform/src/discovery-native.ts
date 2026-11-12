@@ -57,6 +57,7 @@ import {
   isDiscoveredService,
   validTxtRecord,
 } from "./discovery-validation";
+import { validNetHost } from "./net-validation";
 
 /** The synchronous TN-154 bridge an app host injects globally. */
 export type DiscoveryHostCall = (
@@ -104,6 +105,35 @@ const platformError = (message: string): CapabilityResult<never> => ({
   failure: { kind: "platform-error", message },
 });
 
+/**
+ * A host-reported failure table, validated against the frozen alphabet.
+ * A `denied` failure carries the refused permission when the host names
+ * it (the contract routes apps to their permission surface with it);
+ * anything malformed becomes a visible platform-error, never a smuggled
+ * unknown kind.
+ */
+function hostFailureFrom(
+  failure: { kind?: unknown; message?: unknown; permission?: unknown } | undefined,
+  context: string
+): CapabilityResult<never> {
+  if (
+    typeof failure?.kind !== "string" ||
+    !FAILURE_KINDS.includes(failure.kind as CapabilityFailureKind)
+  ) {
+    return platformError(`${context}: host failure kind is not in the frozen alphabet`);
+  }
+  return {
+    ok: false,
+    failure: {
+      kind: failure.kind as CapabilityFailureKind,
+      message: typeof failure.message === "string" ? failure.message : undefined,
+      ...(failure.kind === "denied" && typeof failure.permission === "string"
+        ? { permission: failure.permission }
+        : {}),
+    },
+  };
+}
+
 /** A host reply's inner result, already validated against the alphabet. */
 type NativeInner =
   | { ok: true; value: unknown }
@@ -119,7 +149,12 @@ function parseEnvelope(reply: string, method: string): CapabilityResult<NativeIn
   if (typeof parsed !== "object" || parsed === null || !("ok" in parsed)) {
     return platformError(`discovery.${method}: host reply is not a result envelope`);
   }
-  const envelope = parsed as { ok: boolean; value?: unknown; failure?: { kind?: unknown; message?: unknown } };
+  const envelope = parsed as { ok?: unknown; value?: unknown; failure?: { kind?: unknown; message?: unknown; permission?: unknown } };
+  // The discriminator must be a REAL boolean — a truthy "false" string or
+  // 1 must never fabricate success (fail-closed against malformed hosts).
+  if (envelope.ok !== true && envelope.ok !== false) {
+    return platformError(`discovery.${method}: host reply ok is not a boolean`);
+  }
   if (envelope.ok) return { ok: true, value: { ok: true, value: envelope.value } };
   const kind = envelope.failure?.kind;
   const message =
@@ -262,20 +297,7 @@ export function createHostDiscoveryBridge(hostCall: DiscoveryHostCall): HostDisc
         const pending = browse.settleStart;
         if (pending !== undefined) {
           browse.settleStart = undefined;
-          if (
-            typeof failure?.kind !== "string" ||
-            !FAILURE_KINDS.includes(failure.kind as CapabilityFailureKind)
-          ) {
-            pending(platformError("discovery.browse: host stop failure kind is not in the frozen alphabet"));
-          } else {
-            pending({
-              ok: false,
-              failure: {
-                kind: failure.kind as CapabilityFailureKind,
-                message: typeof failure.message === "string" ? failure.message : undefined,
-              },
-            });
-          }
+          pending(hostFailureFrom(failure, "discovery.browse"));
         }
         stopBrowse(browse);
         return true;
@@ -290,29 +312,19 @@ export function createHostDiscoveryBridge(hostCall: DiscoveryHostCall): HostDisc
         resolve.settle = undefined;
         resolves.delete(resolveId);
         if (event.ok !== true) {
-          const failure = event.failure as { kind?: unknown; message?: unknown } | undefined;
-          if (
-            typeof failure?.kind !== "string" ||
-            !FAILURE_KINDS.includes(failure.kind as CapabilityFailureKind)
-          ) {
-            settle(platformError("discovery.resolve: host failure kind is not in the frozen alphabet"));
-          } else {
-            settle({
-              ok: false,
-              failure: {
-                kind: failure.kind as CapabilityFailureKind,
-                message: typeof failure.message === "string" ? failure.message : undefined,
-              },
-            });
-          }
+          settle(
+            hostFailureFrom(
+              event.failure as { kind?: unknown; message?: unknown; permission?: unknown } | undefined,
+              "discovery.resolve"
+            )
+          );
           return true;
         }
         const host = event.host;
         const port = event.port;
         const txt = event.txt ?? {};
         if (
-          typeof host !== "string" ||
-          host.length === 0 ||
+          !validNetHost(host) ||
           typeof port !== "number" ||
           !Number.isInteger(port) ||
           port < 1 ||
@@ -339,14 +351,22 @@ export function createHostDiscoveryBridge(hostCall: DiscoveryHostCall): HostDisc
       const envelope = parseEnvelope(reply.value, "availability");
       if (!envelope.ok) return { status: "unavailable", reason: envelope.failure.message };
       if (!envelope.value.ok) return { status: "unavailable", reason: "discovery.availability: malformed status" };
-      const statusValue = envelope.value.value as { status?: unknown; reason?: unknown } | undefined;
+      const statusValue = envelope.value.value as
+        | { status?: unknown; reason?: unknown; permission?: unknown }
+        | undefined;
       const status = statusValue?.status;
-      if (
-        status === "supported" ||
-        status === "unsupported" ||
-        status === "denied" ||
-        status === "unavailable"
-      ) {
+      if (status === "denied") {
+        // A denied state NAMES the refused permission (the contract:
+        // apps route to their permission-settings surface with it).
+        if (typeof statusValue?.permission !== "string" || statusValue.permission.length === 0) {
+          return {
+            status: "unavailable",
+            reason: "discovery.availability: denied without a permission",
+          };
+        }
+        return { status: "denied", permission: statusValue.permission };
+      }
+      if (status === "supported" || status === "unsupported" || status === "unavailable") {
         const reason = typeof statusValue?.reason === "string" ? statusValue.reason : undefined;
         return reason === undefined || status === "supported"
           ? ({ status } as CapabilityAvailability)

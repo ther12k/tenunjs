@@ -51,6 +51,11 @@ class MainActivity : Activity() {
     // TN-154: Host Service Bridge registry and native BLE service
     private val hostRegistry = HostServiceRegistry()
     private var bleService: PolytronBleService? = null
+    // TN-190: discovery browses are foreground-scoped to the engine that
+    // started them — the service is retired (browses stopped, resolves
+    // settled, multicast lock released) whenever that engine is replaced
+    // or destroyed, and recreated lazily for the next one.
+    private var discoveryService: DiscoveryService? = null
 
     // OTA trial-confirm criterion state (see scheduleTrialConfirm).
     // Session-scoped: a swap (OTA apply, hot reload) clears the evidence
@@ -345,22 +350,45 @@ class MainActivity : Activity() {
             // TN-190: mDNS/NSD browse + resolve. DISCOVERY_EVENT pushes ride
             // the same host→JS channel: dispatched into the CURRENT engine
             // on its creating thread (the BLE_LINK/NET_EVENT discipline).
-            hostRegistry.register(
-                "discovery",
-                DiscoveryService(
-                    appContext = this,
-                    onEvent = { action, payloadJson ->
-                        mainHandler.post {
-                            this.engine?.let { eng ->
-                                eng.dispatchAction(action, payloadJson)
-                                surfaceView?.syncFromScene(eng.getLatestScene())
-                                surfaceView?.redraw()
-                            }
-                        }
-                    },
-                ),
-            )
+            // Retired with the engine that owns its browses (retireDiscovery).
+            ensureDiscoveryService()
         }
+    }
+
+    private fun ensureDiscoveryService() {
+        if (discoveryService != null) return
+        val service = DiscoveryService(
+            appContext = this,
+            onEvent = { action, payloadJson ->
+                mainHandler.post {
+                    this.engine?.let { eng ->
+                        eng.dispatchAction(action, payloadJson)
+                        surfaceView?.syncFromScene(eng.getLatestScene())
+                        surfaceView?.redraw()
+                    }
+                }
+            },
+        )
+        discoveryService = service
+        hostRegistry.register("discovery", service)
+    }
+
+    /**
+     * TN-190: discovery is foreground-scoped to the engine that started
+     * its browses. On engine replacement or activity destruction the old
+     * engine's operations are stopped (browses torn down, resolves
+     * settled, multicast lock released) — they must never accumulate
+     * into the replacement runtime or wedge MAX_BROWSES.
+     */
+    private fun retireDiscovery() {
+        discoveryService?.let { service ->
+            hostRegistry.unregister("discovery")
+            try {
+                service.shutdown()
+            } catch (ignored: Exception) {
+            }
+        }
+        discoveryService = null
     }
 
     /**
@@ -471,13 +499,17 @@ class MainActivity : Activity() {
             } else {
                 Log.i(TAG, "state schema ${oldStateSchema} -> ${newStateSchema}: restarting with clean state")
             }
-            // Atomic host swap, THEN destroy the old engine.
+            // Atomic host swap, THEN destroy the old engine. TN-190: the
+            // old engine's discovery operations are retired first — they
+            // must not leak into the replacement runtime.
+            retireDiscovery()
             engine = candidate
             surfaceView?.engine = candidate
             try {
                 current?.destroy()
             } catch (ignored: Exception) {
             }
+            ensureDiscoveryService()
             // TN-134: prior scene/dispatch evidence belonged to the OLD
             // engine — a pre-update tap must not confirm this trial.
             trialHealth.onEngineSwapped()
@@ -654,9 +686,13 @@ class MainActivity : Activity() {
                     return
                 }
             }
+            // TN-190: retire the old engine's discovery operations before
+            // the swap; recreate the service for the replacement runtime.
+            retireDiscovery()
             engine = candidate
             surfaceView?.engine = candidate
             try { current?.destroy() } catch (ignored: Exception) {}
+            ensureDiscoveryService()
             // A pending trial must not confirm on the OLD engine's
             // evidence after a hot-reload swap either.
             trialHealth.onEngineSwapped()
@@ -768,6 +804,7 @@ class MainActivity : Activity() {
         super.onDestroy()
         bleService?.shutdown()
         bleService = null
+        retireDiscovery()
         // TN-135: kill the OTA pipeline first — a fetch finishing after
         // this point must not boot a candidate into a dying surface.
         otaManager?.stop()
