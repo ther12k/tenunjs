@@ -24,6 +24,17 @@
  *  - When the application exposes onStateInvalidation (async action
  *    settlement), the handoff commits a fresh scene out-of-band too —
  *    state that changes without a dispatch still reaches the host.
+ *  - TNP-006: ONE commit per dispatch. Invalidations that fire INSIDE a
+ *    host dispatch (Back's route reactivation, a pushState from a TAP
+ *    action, a navigation's channel replay) coalesce into a
+ *    dispatch-end flush instead of committing immediately — the
+ *    standard two-screen Back press renders and commits ONE scene, and
+ *    an explicit dispatch-path commit (TAP/BACK/TENUN_RESTORE/text
+ *    input) satisfies the flush. Outside a dispatch, invalidations
+ *    commit immediately (async settlement, direct runtime-API
+ *    callers); hosts without a subscribed handoff keep the
+ *    commit-after-dispatch behavior. Commits are never suppressed
+ *    globally — only coalesced to the dispatch boundary.
  *  - Malformed payload JSON degrades to `{}` (hosts may send empty
  *    strings); every other contract violation propagates as
  *    ApplicationRuntimeError to the host — never swallowed here.
@@ -129,12 +140,19 @@ function withoutTransition(sceneJson: string): string {
 export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
   const { app } = options;
   let last: string | null = null;
+  // TNP-006 coalescing state. inDispatch counts host dispatches in flight
+  // (depth-safe though dispatch does not recurse today); stalePending marks
+  // invalidations seen inside one that the dispatch-end flush still owes.
+  let inDispatch = 0;
+  let stalePending = false;
 
   const commit = (): void => {
     const json = JSON.stringify(app.render().scene);
     // Track the last committed scene even with a native sink: the stale
     // recovery path republishes it verbatim (see dispatchInBurst).
     last = json;
+    // Fresh bytes cover any earlier invalidation (the flush policy below).
+    stalePending = false;
     if (typeof options.commit === "function") {
       options.commit(json);
     }
@@ -154,10 +172,21 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
     // observe the dispatch's final scene still see the transition. The
     // burst ends when this dispatch does — including the thrown paths,
     // whose recovery commits are byte-identical to the last good scene.
+    inDispatch += 1;
     try {
       return dispatchInBurst(normalized, payload);
     } finally {
+      // The burst ends first so a flush render cannot carry a stale stamp.
       app.endTransitionBurst?.();
+      inDispatch -= 1;
+      // TNP-006 flush: invalidations that fired inside this dispatch commit
+      // exactly once here — unless a dispatch-path commit already painted a
+      // fresher scene (commit() cleared the flag). Outside a dispatch,
+      // invalidations commit immediately (see the subscription below), so
+      // async settlements and direct runtime-API callers are unchanged.
+      if (inDispatch === 0 && stalePending) {
+        commit();
+      }
     }
   };
 
@@ -255,6 +284,8 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
         const fresh = JSON.stringify(app.render().scene);
         const emit = last !== null && withoutTransition(fresh) === withoutTransition(last) ? last : fresh;
         last = emit;
+        // The republished authority covers pending invalidations too.
+        stalePending = false;
         if (typeof options.commit === "function") options.commit(emit);
       }
       throw error;
@@ -269,7 +300,16 @@ export function installHostHandoff(options: HostHandoffOptions): HostHandoff {
   // engines whose job queue the host never drains — the QuickJS bridge
   // today — settlement itself cannot occur, so this path is proven by
   // the browser and headless hosts.)
+  // TNP-006: invalidations inside a host dispatch COALESCE into the
+  // dispatch-end flush (one commit per dispatch — Back's route
+  // reactivation, a pushState from a TAP action, a navigation's channel
+  // replay used to commit immediately and then again on the dispatch
+  // path); outside a dispatch the commit stays immediate.
   const unsubscribe = app.onStateInvalidation?.(() => {
+    if (inDispatch > 0) {
+      stalePending = true;
+      return;
+    }
     commit();
   });
 
