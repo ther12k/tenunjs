@@ -180,6 +180,21 @@
         "@tenunjs/cli": "workspace:*",
       },
     },
+    "examples/tvremote": {
+      "name": "@tenunjs-examples/tvremote",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tenunjs-examples/ui-kit": "workspace:*",
+        "@tenunjs/core": "workspace:*",
+        "@tenunjs/jsx-runtime": "workspace:*",
+        "@tenunjs/navigation": "workspace:*",
+        "@tenunjs/platform": "workspace:*",
+        "@tenunjs/widgets": "workspace:*",
+      },
+      "devDependencies": {
+        "@tenunjs/cli": "workspace:*",
+      },
+    },
     "examples/ui-kit": {
       "name": "@tenunjs-examples/ui-kit",
       "version": "0.1.0",
@@ -291,6 +306,8 @@
     "@tenunjs-examples/theme-contract": ["@tenunjs-examples/theme-contract@workspace:examples/theme-contract"],
 
     "@tenunjs-examples/todo-list": ["@tenunjs-examples/todo-list@workspace:examples/todo-list"],
+
+    "@tenunjs-examples/tvremote": ["@tenunjs-examples/tvremote@workspace:examples/tvremote"],
 
     "@tenunjs-examples/ui-kit": ["@tenunjs-examples/ui-kit@workspace:examples/ui-kit"],
 
