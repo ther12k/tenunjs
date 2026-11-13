@@ -447,13 +447,15 @@ export class ApplicationRuntime {
   }
 
   /**
-   * TN-169 burst semantics: a navigation inside one dispatch may commit
-   * MORE THAN ONE scene (the out-of-band invalidation commit for channel
-   * replay, then the dispatch-return commit). Hosts that only observe
-   * dispatch boundaries — the Android engine returns the FINAL commit —
-   * must still see the transition, so the stamp rides every commit of
-   * the burst and the host handoff ends the burst after its final
-   * dispatch-path commit (see installHostHandoff).
+   * TN-169 burst semantics: the stamp rides EVERY commit of the dispatch
+   * that carried the navigation, and the host handoff ends the burst when
+   * that dispatch ends (see installHostHandoff). Since TNP-006 the handoff
+   * coalesces one dispatch to ONE commit — invalidations that fire inside
+   * it defer to a dispatch-end flush — so a navigation's transition
+   * normally rides its single commit; hosts that only observe the
+   * dispatch's final scene see the transition either way. This runtime
+   * method itself stays a plain field clear: hosts driving the runtime
+   * directly (without the handoff) own their own commit policy.
    */
   endTransitionBurst(): void {
     this.pendingTransition = null;
