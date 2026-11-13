@@ -25,6 +25,7 @@ import java.util.Base64
  *     "channel": "prototype",
  *     "sequence": 42,
  *     "hostApiMin": 1, "hostApiMax": 1,
+ *     "requiredCapabilities": {"discovery": 1},
  *     "stateSchema": 1,
  *     "bundleFormat": "tenun-js-bundle-v1",
  *     "bundleSize": 102400,
@@ -32,13 +33,36 @@ import java.util.Base64
  *     "bundleUrl": "https://..." }
  *
  * Gate order (see [verifyGates]): signature over exact bytes → parse →
- * schema/app/channel match → host-API compatibility → sequence newer than
- * the accepted one and not quarantined → download → size/digest match.
+ * schema/app/channel match → host-API + capability-requirement
+ * compatibility → sequence newer than the accepted one and not
+ * quarantined → download → size/digest match.
+ *
+ * Versioning discipline (TN-195):
+ *   - HOST_API_VERSION is the COARSE host contract; bump it whenever the
+ *     host's gate semantics or native surface change in a way old
+ *     metadata cannot express. It is 2 since capability requirements
+ *     exist; hosts at 1 ignore the field, so a requirement-bearing
+ *     release must set hostApiMin ≥ REQUIREMENTS_MIN_HOST_API — enforced
+ *     at parse time here and at publish time.
+ *   - Per-capability contract versions ([NativeService.contractVersion])
+ *     are the FINE grained gate: a release declares the minimum version
+ *     of each capability it uses; the host refuses a bundle whose
+ *     requirements it does not meet (missing capability or older
+ *     contract) BEFORE download. Additive-compatible service changes
+ *     keep their version; a breaking change bumps it and the release
+ *     declares the new minimum.
  */
 object UpdateProtocol {
 
-    /** Host API contract this APK implements; bump when native capabilities change. */
-    const val HOST_API_VERSION = 1
+    /**
+     * Host API contract this APK implements; bump when native
+     * capabilities or gate semantics change. 2 = capability-aware host
+     * (enforces requiredCapabilities).
+     */
+    const val HOST_API_VERSION = 2
+
+    /** First host API whose hosts enforce requiredCapabilities. */
+    const val REQUIREMENTS_MIN_HOST_API = 2
 
     /** The only bundle format this host evaluates. */
     const val SUPPORTED_BUNDLE_FORMAT = "tenun-js-bundle-v1"
@@ -63,13 +87,17 @@ object UpdateProtocol {
         val bundleFormat: String,
         val bundleSize: Long,
         val bundleSha256: String,
-        val bundleUrl: String
+        val bundleUrl: String,
+        /** Capability name → minimum contract version this bundle needs. */
+        val requiredCapabilities: Map<String, Int> = emptyMap()
     )
 
     data class HostIdentity(
         val appId: String,
         val channel: String,
-        val hostApi: Int
+        val hostApi: Int,
+        /** Capability name → contract version this host provides. */
+        val capabilities: Map<String, Int> = emptyMap()
     )
 
     /**
@@ -112,6 +140,23 @@ object UpdateProtocol {
             val bundleSha256 = obj.optString("bundleSha256").trim().lowercase()
             val bundleUrl = obj.optString("bundleUrl").trim()
 
+            // Optional capability requirements (TN-195). Discipline: a
+            // requirement-bearing release must target hosts that enforce
+            // them — hosts at hostApi 1 ignore the field entirely, so
+            // anything below REQUIREMENTS_MIN_HOST_API is malformed.
+            val requiredCapabilities = HashMap<String, Int>()
+            val requirements = obj.optJSONObject("requiredCapabilities")
+            if (requirements != null) {
+                val keys = requirements.keys()
+                while (keys.hasNext()) {
+                    val name = keys.next().trim()
+                    val minVersion = requirements.optInt(name, -1)
+                    if (name.isEmpty() || minVersion < 1) return null
+                    requiredCapabilities[name] = minVersion
+                }
+            }
+            if (requiredCapabilities.isNotEmpty() && hostApiMin < REQUIREMENTS_MIN_HOST_API) return null
+
             val wellFormed =
                 schema == ENVELOPE_SCHEMA &&
                     appId.isNotEmpty() && channel.isNotEmpty() &&
@@ -129,20 +174,32 @@ object UpdateProtocol {
                 schema, appId, channel, sequence,
                 hostApiMin,
                 if (hasMax) hostApiMax else null,
-                stateSchema, bundleFormat, bundleSize, bundleSha256, bundleUrl
+                stateSchema, bundleFormat, bundleSize, bundleSha256, bundleUrl,
+                requiredCapabilities
             )
         } catch (e: Exception) {
             null
         }
     }
 
-    /** App, channel, and host-API compatibility gate (signed fields only). */
+    /**
+     * App, channel, host-API, and capability-requirement compatibility gate
+     * (signed fields only). A host that does not provide a required
+     * capability at ≥ its declared minimum contract version refuses the
+     * release BEFORE download — a bundle needing a new capability is
+     * rejected by an old APK, not run by it.
+     */
     fun isCompatible(metadata: ReleaseMetadata, host: HostIdentity): Boolean {
         if (metadata.appId != host.appId) return false
         if (metadata.channel != host.channel) return false
         if (host.hostApi < metadata.hostApiMin) return false
         val max = metadata.hostApiMax ?: metadata.hostApiMin
-        return host.hostApi <= max
+        if (host.hostApi > max) return false
+        for ((name, minVersion) in metadata.requiredCapabilities) {
+            val provided = host.capabilities[name] ?: return false
+            if (provided < minVersion) return false
+        }
+        return true
     }
 
     /** Strictly-monotonic sequence gate against the accepted sequence. */

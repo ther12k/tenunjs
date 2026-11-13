@@ -57,6 +57,8 @@ class DiscoveryService(
     multicastLock: MulticastLockHandle? = null,
 ) : NativeService {
 
+    override val contractVersion = 1
+
     /** The multicast lock surface — the Android one plus a recording fake in tests. */
     interface MulticastLockHandle {
         fun acquire()

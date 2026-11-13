@@ -41,12 +41,14 @@ class UpdateProtocolTest {
         bundleFormat: String = "tenun-js-bundle-v1",
         bundleSize: Long = 100,
         sha: String = "a".repeat(64),
-        url: String = "http://127.0.0.1:8898/update-bundle.js"
+        url: String = "http://127.0.0.1:8898/update-bundle.js",
+        requiresRaw: String? = null
     ): String {
         val maxField = hostApiMax?.let { "\"hostApiMax\":$it," } ?: ""
+        val requiresField = requiresRaw?.let { "\"requiredCapabilities\":$it," } ?: ""
         return """{"schema":$schema,"appId":"$appId","channel":"$channel",""" +
             """"sequence":$sequence,"hostApiMin":$hostApiMin,$maxField""" +
-            """"stateSchema":$stateSchema,"bundleFormat":"$bundleFormat",""" +
+            """$requiresField"stateSchema":$stateSchema,"bundleFormat":"$bundleFormat",""" +
             """"bundleSize":$bundleSize,"bundleSha256":"$sha","bundleUrl":"$url"}"""
     }
 
@@ -219,6 +221,50 @@ class UpdateProtocolTest {
 
         // Garbage cache never boots and never throws.
         assertNull(UpdateProtocol.storedBundleUsable("not json", key, host, bytes))
+    }
+
+    @Test
+    fun testRequiredCapabilitiesParseAndGate() {
+        // TN-195: a release may declare minimum contract versions per
+        // capability; the host refuses before download unless it provides
+        // every capability at >= that version. Requirement-bearing
+        // releases must target hostApi >= REQUIREMENTS_MIN_HOST_API —
+        // older hosts ignore the field, so lower pins are malformed.
+        val pair = ecPair()
+        val key = publicB64(pair)
+        fun meta(requiresRaw: String?, hostApiMin: Int = 2) =
+            UpdateProtocol.parseEnvelope(
+                envelopeFor(metadataJson(hostApiMin = hostApiMin, hostApiMax = hostApiMin, requiresRaw = requiresRaw), pair),
+                key
+            )
+
+        // Well-formed requirements parse into the signed metadata.
+        val metadata = meta("""{"net":1}""")
+        assertNotNull(metadata)
+        assertEquals(mapOf("net" to 1), metadata!!.requiredCapabilities)
+        // Absent field = no requirements (legacy manifests stay installable).
+        assertTrue(meta(null)!!.requiredCapabilities.isEmpty())
+
+        // Malformed requirements or discipline violations fail closed.
+        assertNull(meta("""{"net":0}""")) // version below 1
+        assertNull(meta("""{"net":"one"}""")) // non-integer version
+        assertNull(meta("""{"":1}""")) // blank name
+        assertNull(meta("""{"net":1}""", hostApiMin = 1)) // pre-requirement host pin
+
+        // The gate: provide/missing/older/newer against the host inventory.
+        val fullHost = UpdateProtocol.HostIdentity("id.my.tenun.embedder", "prototype", 2, mapOf("net" to 1, "discovery" to 1))
+        val noNetHost = UpdateProtocol.HostIdentity("id.my.tenun.embedder", "prototype", 2, mapOf("discovery" to 1))
+        val emptyHost = UpdateProtocol.HostIdentity("id.my.tenun.embedder", "prototype", 2)
+
+        assertTrue(UpdateProtocol.isCompatible(meta("""{"net":1}""")!!, fullHost))
+        assertFalse(UpdateProtocol.isCompatible(meta("""{"net":1}""")!!, noNetHost)) // capability missing
+        assertFalse(UpdateProtocol.isCompatible(meta("""{"net":1}""")!!, emptyHost)) // host declares nothing
+        assertFalse(UpdateProtocol.isCompatible(meta("""{"net":2}""")!!, fullHost)) // contract too old
+        assertTrue(UpdateProtocol.isCompatible(meta("""{"net":1,"discovery":1}""")!!, fullHost)) // multiple, all met
+
+        // A host with a NEWER contract still satisfies an older requirement.
+        val newerHost = UpdateProtocol.HostIdentity("id.my.tenun.embedder", "prototype", 2, mapOf("net" to 3))
+        assertTrue(UpdateProtocol.isCompatible(meta("""{"net":1}""")!!, newerHost))
     }
 
     @Test

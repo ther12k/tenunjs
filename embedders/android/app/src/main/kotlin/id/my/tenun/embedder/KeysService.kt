@@ -54,6 +54,8 @@ import javax.security.auth.x500.X500Principal
  */
 class KeysService : NativeService {
 
+    override val contractVersion = 1
+
     override fun invoke(method: String, payloadJson: String): String? {
         return try {
             when (method) {

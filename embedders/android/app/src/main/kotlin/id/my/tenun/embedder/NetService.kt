@@ -73,6 +73,8 @@ class NetService(
     private val keyResolver: (handle: String) -> KeyStore.PrivateKeyEntry? = { null },
 ) : NativeService {
 
+    override val contractVersion = 1
+
     override fun invoke(method: String, payloadJson: String): String? {
         return try {
             when (method) {

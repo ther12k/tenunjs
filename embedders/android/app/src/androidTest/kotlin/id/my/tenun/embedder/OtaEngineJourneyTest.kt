@@ -23,7 +23,8 @@ import java.util.concurrent.atomic.AtomicReference
  * ECDSA verification:
  *
  *   A (packaged) boots
- *     → serve signed v2: downloads, verifies, applies live
+ *     → serve signed v2 (requires a capability the host has): downloads,
+ *       verifies, applies live
  *     → confirmed: restart uses v2, and the cached signed envelope
  *       re-verifies at the startup gate (and refuses drifted bytes)
  *     → serve tampered v3: rejected, v2 stays
@@ -31,6 +32,8 @@ import java.util.concurrent.atomic.AtomicReference
  *       back, the sequence is quarantined, and it is never retried
  *     → serve v5 whose body outgrows the signed size mid-stream: the
  *       streaming cap aborts the download (no stage, no quarantine)
+ *     → serve v6 requiring a capability this host lacks, and v7 requiring
+ *       a newer contract: both refused at the gate, before download
  *     → serve an oversized manifest: refused before parse
  *
  * The host here is the engine directly (no Activity UI); UI-level evidence
@@ -119,7 +122,13 @@ class OtaEngineJourneyTest {
         ).toString()
     }
 
-    private fun manifestFor(pair: KeyPair, sequence: Long, bundle: ByteArray, port: Int): String {
+    private fun manifestFor(
+        pair: KeyPair,
+        sequence: Long,
+        bundle: ByteArray,
+        port: Int,
+        requires: Map<String, Int> = emptyMap()
+    ): String {
         val metadata = org.json.JSONObject(
             mapOf(
                 "schema" to 1,
@@ -135,7 +144,25 @@ class OtaEngineJourneyTest {
                 "bundleUrl" to "http://127.0.0.1:$port/update-bundle.js"
             )
         )
+        if (requires.isNotEmpty()) metadata.put("requiredCapabilities", org.json.JSONObject(requires))
         return envelopeFor(pair, metadata)
+    }
+
+    /**
+     * The APK's capability surface, through the REAL registry path: the
+     * five MainActivity-registered service names at contract version 1
+     * (the services themselves are engine-bound and irrelevant here —
+     * only name + contractVersion enter compatibility judgments).
+     */
+    private fun apkCapabilitySnapshot(): Map<String, Int> {
+        val registry = HostServiceRegistry()
+        listOf("ble", "system", "keys", "net", "discovery").forEach { name ->
+            registry.register(name, object : NativeService {
+                override val contractVersion = 1
+                override fun invoke(method: String, payloadJson: String): String? = null
+            })
+        }
+        return registry.capabilitySnapshot()
     }
 
     @Test
@@ -187,10 +214,10 @@ class OtaEngineJourneyTest {
 
         val manager = OtaManager(channelLive, hostIdentity(), store, io, applyBundle)
 
-        // ---- v2: valid update applies ----
+        // ---- v2: valid update applies (declaring a capability the host has) ----
         val bundleB = packaged + "\n// ota v2".toByteArray()
         markerBySha[shaOf(bundleB)] = "B"
-        responses["/update-manifest.json"] = manifestFor(pair, 2, bundleB, server.port).toByteArray()
+        responses["/update-manifest.json"] = manifestFor(pair, 2, bundleB, server.port, requires = mapOf("system" to 1)).toByteArray()
         responses["/update-bundle.js"] = bundleB
 
         manager.checkNow(force = true)
@@ -267,6 +294,32 @@ class OtaEngineJourneyTest {
         assertNull(store.trialSequence())
         assertFalse(store.isQuarantined(5))
 
+        // ---- v6: requires a capability this host does not provide ----
+        // Refused at the compatibility gate, BEFORE download: no staging,
+        // no quarantine (a release for a richer host is not a defect), and
+        // v2 keeps running.
+        val bundleF = packaged + "\n// ota v6".toByteArray()
+        responses["/update-manifest.json"] = manifestFor(pair, 6, bundleF, server.port, requires = mapOf("hologram" to 1)).toByteArray()
+        responses["/update-bundle.js"] = bundleF
+
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertNull(store.trialSequence())
+        assertFalse(store.isQuarantined(6))
+        assertEquals(2L, store.installedVersion())
+
+        // ---- v7: requires a NEWER contract of a capability the host has ----
+        val bundleG = packaged + "\n// ota v7".toByteArray()
+        responses["/update-manifest.json"] = manifestFor(pair, 7, bundleG, server.port, requires = mapOf("net" to 2)).toByteArray()
+        responses["/update-bundle.js"] = bundleG
+
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertNull(store.trialSequence())
+        assertFalse(store.isQuarantined(7))
+
         // ---- oversized manifest: refused before parse ----
         responses["/update-manifest.json"] = ByteArray(UpdateProtocol.MAX_MANIFEST_BYTES.toInt() + 1)
         manager.checkNow(force = true)
@@ -284,7 +337,8 @@ class OtaEngineJourneyTest {
     private fun hostIdentity() = UpdateProtocol.HostIdentity(
         appId = "id.my.tenun.embedder",
         channel = "prototype",
-        hostApi = UpdateProtocol.HOST_API_VERSION
+        hostApi = UpdateProtocol.HOST_API_VERSION,
+        capabilities = apkCapabilitySnapshot()
     )
 
     /** Waits up to 10s for [condition]; the OTA apply runs on the main thread. */
