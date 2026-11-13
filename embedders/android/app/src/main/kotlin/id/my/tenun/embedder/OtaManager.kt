@@ -146,6 +146,14 @@ class OtaManager(
             Log.d(TAG, "update v${metadata.sequence} is quarantined; refusing")
             return
         }
+        // TN-196: a DEFERRED release stays staged until its policy fires —
+        // re-downloading it every check would waste the channel. Immediate
+        // releases never short-circuit: a previously abandoned stage must
+        // re-download and re-apply (TN-135 semantics).
+        if (metadata.activation != UpdateProtocol.ACTIVATION_IMMEDIATE && store.isStaged(metadata.sequence)) {
+            Log.d(TAG, "update v${metadata.sequence} already staged (activation: ${metadata.activation}); nothing to do")
+            return
+        }
 
         // The signed bundleSize caps the read ITSELF, not just the check
         // afterwards: a hostile or broken server cannot balloon memory by
@@ -164,29 +172,114 @@ class OtaManager(
         synchronized(lifecycleLock) {
             if (stopped) return
             store.stageBundle(metadata.sequence, bytes, metadata.stateSchema, manifestJson)
-            // Staged downloads are safe to abandon. A trial means boot has
-            // actually started, not merely that an apply was queued.
-            mainHandler.post {
-                synchronized(lifecycleLock) {
-                    if (stopped) return@post
-                    if (!applyInFlight.compareAndSet(false, true)) return@post
-                    try {
-                        if (!store.promoteTrial(metadata.sequence)) return@post
-                        val applied = try {
-                            applyBundle(bytes, metadata)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "update v${metadata.sequence} apply threw: ${e.message}")
-                            false
-                        }
-                        if (applied) {
-                            Log.i(TAG, "update v${metadata.sequence} applied (trial, awaiting confirm)")
-                        } else {
-                            store.quarantine(metadata.sequence)
-                            Log.w(TAG, "update v${metadata.sequence} failed to apply; quarantined")
-                        }
-                    } finally {
-                        applyInFlight.set(false)
+            when (metadata.activation) {
+                UpdateProtocol.ACTIVATION_IMMEDIATE -> {
+                    // Staged downloads are safe to abandon. A trial means boot has
+                    // actually started, not merely that an apply was queued.
+                    queueApply(metadata.sequence, bytes, metadata, onDone = null)
+                }
+                UpdateProtocol.ACTIVATION_NEXT_LAUNCH ->
+                    Log.i(TAG, "update v${metadata.sequence} staged (activates on next launch)")
+                else ->
+                    Log.i(TAG, "update v${metadata.sequence} staged (activates when idle or explicitly requested)")
+            }
+        }
+    }
+
+    /** STAGED → TRIAL → apply on the main thread; failure quarantines. */
+    private fun queueApply(
+        sequence: Long,
+        bytes: ByteArray,
+        metadata: UpdateProtocol.ReleaseMetadata,
+        onDone: (() -> Unit)?
+    ) {
+        mainHandler.post {
+            synchronized(lifecycleLock) {
+                if (stopped) return@post
+                if (!applyInFlight.compareAndSet(false, true)) return@post
+                try {
+                    if (!store.promoteTrial(sequence)) return@post
+                    val applied = try {
+                        applyBundle(bytes, metadata)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "update v$sequence apply threw: ${e.message}")
+                        false
                     }
+                    if (applied) {
+                        Log.i(TAG, "update v$sequence applied (trial, awaiting confirm)")
+                    } else {
+                        store.quarantine(sequence)
+                        Log.w(TAG, "update v$sequence failed to apply; quarantined")
+                    }
+                } finally {
+                    applyInFlight.set(false)
+                    onDone?.invoke()
+                }
+            }
+        }
+    }
+
+    private data class VerifiedDownload(
+        val bytes: ByteArray,
+        val metadata: UpdateProtocol.ReleaseMetadata
+    )
+
+    /**
+     * Re-proves a staged candidate against its cached envelope (the stage
+     * may be from a previous process): signature → parse → sequence/
+     * compatibility/consistency → size/digest. A failed re-verification
+     * DISCARDS the stale download — a stale stage is not a defect, so no
+     * quarantine and no floor; the next check re-downloads fresh.
+     */
+    private fun verifyPendingStaged(): VerifiedDownload? {
+        val candidate = store.pendingStaged() ?: return null
+        val metadata = UpdateProtocol.parseEnvelope(candidate.envelope, channel.publicKeyB64)
+        if (metadata == null || metadata.sequence != candidate.sequence ||
+            !UpdateProtocol.isCompatible(metadata, host) ||
+            !UpdateProtocol.bundleMatches(metadata, candidate.bytes)
+        ) {
+            Log.w(TAG, "staged v${candidate.sequence} failed re-verification; discarding")
+            store.discard(candidate.sequence)
+            return null
+        }
+        return VerifiedDownload(candidate.bytes, metadata)
+    }
+
+    /**
+     * TN-196: activates the pending STAGED release (its signed policy
+     * deferred it — next-launch or idle). Re-verifies the bytes, then
+     * honors [canApplyNow] unless [force] (explicit app-requested
+     * activation). [onDone] fires when the attempt settles; false means
+     * nothing was activated (nothing pending, failed re-verification,
+     * busy host, or stopped).
+     */
+    fun activatePendingNow(
+        force: Boolean = false,
+        canApplyNow: () -> Boolean = { true },
+        onDone: ((Boolean) -> Unit)? = null
+    ) {
+        if (stopped) {
+            onDone?.invoke(false)
+            return
+        }
+        ioExecutor.execute {
+            val candidate = verifyPendingStaged()
+            if (candidate == null) {
+                onDone?.invoke(false)
+                return@execute
+            }
+            if (!force && !canApplyNow()) {
+                Log.i(TAG, "activation of v${candidate.metadata.sequence} deferred: host busy")
+                onDone?.invoke(false)
+                return@execute
+            }
+            synchronized(lifecycleLock) {
+                if (stopped) {
+                    onDone?.invoke(false)
+                    return@execute
+                }
+                queueApply(candidate.metadata.sequence, candidate.bytes, candidate.metadata) {
+                    onDone?.invoke(true)
                 }
             }
         }

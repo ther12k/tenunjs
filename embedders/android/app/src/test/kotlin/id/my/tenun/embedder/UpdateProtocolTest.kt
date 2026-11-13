@@ -42,13 +42,17 @@ class UpdateProtocolTest {
         bundleSize: Long = 100,
         sha: String = "a".repeat(64),
         url: String = "http://127.0.0.1:8898/update-bundle.js",
-        requiresRaw: String? = null
+        requiresRaw: String? = null,
+        activation: String? = null,
+        migrations: List<Long>? = null
     ): String {
         val maxField = hostApiMax?.let { "\"hostApiMax\":$it," } ?: ""
         val requiresField = requiresRaw?.let { "\"requiredCapabilities\":$it," } ?: ""
+        val activationField = activation?.let { "\"activation\":\"$it\"," } ?: ""
+        val migrationsField = migrations?.let { "\"stateMigrationsFrom\":${it.joinToString(",", "[", "]")}," } ?: ""
         return """{"schema":$schema,"appId":"$appId","channel":"$channel",""" +
             """"sequence":$sequence,"hostApiMin":$hostApiMin,$maxField""" +
-            """$requiresField"stateSchema":$stateSchema,"bundleFormat":"$bundleFormat",""" +
+            """$requiresField$activationField$migrationsField"stateSchema":$stateSchema,"bundleFormat":"$bundleFormat",""" +
             """"bundleSize":$bundleSize,"bundleSha256":"$sha","bundleUrl":"$url"}"""
     }
 
@@ -274,5 +278,56 @@ class UpdateProtocolTest {
         assertFalse(UpdateProtocol.shouldRestore(2, 1))
         assertFalse(UpdateProtocol.shouldRestore(-1, 1)) // unknown old schema
         assertFalse(UpdateProtocol.shouldRestore(0, 0))
+
+        // TN-196: a signed migration declaration carries the old schema
+        // across — the migration itself is app-authored in the new
+        // bundle's restore handler (TN-163 still refuses unacknowledged
+        // restores).
+        assertTrue(UpdateProtocol.shouldRestore(1, 2, migrationsFrom = setOf(1)))
+        assertFalse(UpdateProtocol.shouldRestore(1, 2, migrationsFrom = setOf(2))) // wrong old schema
+        assertFalse(UpdateProtocol.shouldRestore(3, 2, migrationsFrom = setOf(1)))
+        assertFalse(UpdateProtocol.shouldRestore(1, 2, migrationsFrom = emptySet()))
+        assertFalse(UpdateProtocol.shouldRestore(-1, 2, migrationsFrom = setOf(1))) // unknown old still refuses
+    }
+
+    @Test
+    fun testActivationPolicyParse() {
+        // TN-196: signed activation preference + state migrations, with
+        // host-api discipline — deferred semantics below
+        // ACTIVATION_MIN_HOST_API are malformed (older hosts would ignore
+        // the fields: apply immediately / restart clean).
+        val pair = ecPair()
+        val key = publicB64(pair)
+        fun meta(activation: String? = null, migrations: List<Long>? = null, hostApiMin: Int = 3) =
+            UpdateProtocol.parseEnvelope(
+                envelopeFor(
+                    metadataJson(hostApiMin = hostApiMin, hostApiMax = hostApiMin, activation = activation, migrations = migrations),
+                    pair
+                ),
+                key
+            )
+
+        // Absent field = immediate (legacy manifests unchanged).
+        val legacy = meta()!!
+        assertEquals(UpdateProtocol.ACTIVATION_IMMEDIATE, legacy.activation)
+        assertTrue(legacy.stateMigrationsFrom.isEmpty())
+
+        // Explicit values parse.
+        assertEquals(UpdateProtocol.ACTIVATION_NEXT_LAUNCH, meta(activation = "next-launch")!!.activation)
+        assertEquals(UpdateProtocol.ACTIVATION_IDLE, meta(activation = "idle")!!.activation)
+        val migrating = meta(migrations = listOf(1, 2))!!
+        assertEquals(setOf(1L, 2L), migrating.stateMigrationsFrom)
+        assertEquals(UpdateProtocol.ACTIVATION_IMMEDIATE, migrating.activation)
+
+        // Malformed values fail closed.
+        assertNull(meta(activation = "on-tuesday"))
+        assertNull(meta(migrations = listOf(0)))
+        assertNull(meta(migrations = listOf(-3)))
+
+        // Discipline: deferred semantics need hostApi >= 3.
+        assertNull(meta(activation = "idle", hostApiMin = 2))
+        assertNull(meta(migrations = listOf(1), hostApiMin = 2))
+        // ...but an immediate, non-migrating host-api-2 release is fine.
+        assertNotNull(meta(hostApiMin = 2))
     }
 }

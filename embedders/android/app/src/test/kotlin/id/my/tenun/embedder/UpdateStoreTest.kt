@@ -180,6 +180,47 @@ class UpdateStoreTest {
     }
 
     @Test
+    fun testPendingStagedDetection() {
+        // TN-196: the host's deferred-activation candidates — staged,
+        // envelope-cached, newer than accepted, not quarantined.
+        val store = newStore()
+        val envelope = """{"payload":"AA","signature":"BB"}"""
+        assertNull(store.pendingStaged())
+        assertFalse(store.isStaged(2))
+
+        // A staged release with an envelope is the candidate.
+        store.stageBundle(2, "console.log('v2')".toByteArray(), 1, envelope)
+        assertTrue(store.isStaged(2))
+        val pending = store.pendingStaged()!!
+        assertEquals(2L, pending.sequence)
+        assertTrue(pending.bytes.contentEquals("console.log('v2')".toByteArray()))
+        assertEquals(envelope, pending.envelope)
+        assertEquals(1L, pending.stateSchema)
+
+        // Confirmed is no longer pending; a NEWER staged one is.
+        store.promoteTrial(2)
+        store.confirmTrial(2)
+        assertNull(store.pendingStaged())
+        store.stageBundle(3, "v3".toByteArray(), 1, envelope)
+        assertEquals(3L, store.pendingStaged()?.sequence)
+        assertEquals(3L, store.pendingStagedSequence())
+
+        // Staged WITHOUT an envelope (legacy cache shape) never activates.
+        store.stageBundle(4, "v4".toByteArray(), 1)
+        assertEquals(3L, store.pendingStaged()?.sequence)
+
+        // Quarantined staged sequences are skipped.
+        store.quarantine(3)
+        assertNull(store.pendingStaged())
+        assertFalse(store.isStaged(3)) // quarantine deleted the bytes
+
+        // A staged sequence OLDER than accepted is invisible (OtaManager's
+        // isNewer gate never stages one, but the store also refuses).
+        store.stageBundle(1, "old".toByteArray(), 1, envelope)
+        assertNull(store.pendingStaged())
+    }
+
+    @Test
     fun testCorruptMetaFilesFailClosed() {
         val root = tmp.newFolder()
         val store = UpdateStore(root)

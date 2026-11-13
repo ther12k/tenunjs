@@ -31,6 +31,12 @@ class BundleStore(context: Context) {
 
     fun trialSequence(): Long? = delegate.trialSequence()
 
+    fun pendingStaged(): UpdateStore.StagedCandidate? = delegate.pendingStaged()
+
+    fun pendingStagedSequence(): Long? = delegate.pendingStagedSequence()
+
+    fun isStaged(sequence: Long): Boolean = delegate.isStaged(sequence)
+
     fun quarantine(sequence: Long) = delegate.quarantine(sequence)
 
     fun isQuarantined(sequence: Long): Boolean = delegate.isQuarantined(sequence)

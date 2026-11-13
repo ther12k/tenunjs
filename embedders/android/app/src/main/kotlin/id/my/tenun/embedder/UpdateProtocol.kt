@@ -26,6 +26,8 @@ import java.util.Base64
  *     "sequence": 42,
  *     "hostApiMin": 1, "hostApiMax": 1,
  *     "requiredCapabilities": {"discovery": 1},
+ *     "activation": "next-launch",
+ *     "stateMigrationsFrom": [1],
  *     "stateSchema": 1,
  *     "bundleFormat": "tenun-js-bundle-v1",
  *     "bundleSize": 102400,
@@ -57,12 +59,21 @@ object UpdateProtocol {
     /**
      * Host API contract this APK implements; bump when native
      * capabilities or gate semantics change. 2 = capability-aware host
-     * (enforces requiredCapabilities).
+     * (enforces requiredCapabilities); 3 = activation-policy host
+     * (honors deferred activation and state migrations).
      */
-    const val HOST_API_VERSION = 2
+    const val HOST_API_VERSION = 3
 
     /** First host API whose hosts enforce requiredCapabilities. */
     const val REQUIREMENTS_MIN_HOST_API = 2
+
+    /** First host API whose hosts honor activation + state migrations. */
+    const val ACTIVATION_MIN_HOST_API = 3
+
+    /** Activation values (signed; how a release wants to be activated). */
+    const val ACTIVATION_IMMEDIATE = "immediate"
+    const val ACTIVATION_NEXT_LAUNCH = "next-launch"
+    const val ACTIVATION_IDLE = "idle"
 
     /** The only bundle format this host evaluates. */
     const val SUPPORTED_BUNDLE_FORMAT = "tenun-js-bundle-v1"
@@ -89,7 +100,11 @@ object UpdateProtocol {
         val bundleSha256: String,
         val bundleUrl: String,
         /** Capability name → minimum contract version this bundle needs. */
-        val requiredCapabilities: Map<String, Int> = emptyMap()
+        val requiredCapabilities: Map<String, Int> = emptyMap(),
+        /** Signed activation preference; absent = ACTIVATION_IMMEDIATE. */
+        val activation: String = ACTIVATION_IMMEDIATE,
+        /** Old state schemas this release can migrate during restore. */
+        val stateMigrationsFrom: Set<Long> = emptySet()
     )
 
     data class HostIdentity(
@@ -157,6 +172,26 @@ object UpdateProtocol {
             }
             if (requiredCapabilities.isNotEmpty() && hostApiMin < REQUIREMENTS_MIN_HOST_API) return null
 
+            // Activation preference (TN-196). Deferred activation and state
+            // migrations are host-api-3 semantics: older hosts ignore the
+            // fields (applying immediately / restarting with clean state),
+            // so anything below ACTIVATION_MIN_HOST_API is malformed.
+            val activation = obj.optString("activation").ifEmpty { ACTIVATION_IMMEDIATE }
+            if (activation != ACTIVATION_IMMEDIATE && activation != ACTIVATION_NEXT_LAUNCH &&
+                activation != ACTIVATION_IDLE
+            ) return null
+            val migrations = HashSet<Long>()
+            val migrationsArray = obj.optJSONArray("stateMigrationsFrom")
+            if (migrationsArray != null) {
+                for (i in 0 until migrationsArray.length()) {
+                    val from = migrationsArray.optLong(i, -1L)
+                    if (from < 1L) return null
+                    migrations.add(from)
+                }
+            }
+            val deferredSemantics = activation != ACTIVATION_IMMEDIATE || migrations.isNotEmpty()
+            if (deferredSemantics && hostApiMin < ACTIVATION_MIN_HOST_API) return null
+
             val wellFormed =
                 schema == ENVELOPE_SCHEMA &&
                     appId.isNotEmpty() && channel.isNotEmpty() &&
@@ -175,7 +210,9 @@ object UpdateProtocol {
                 hostApiMin,
                 if (hasMax) hostApiMax else null,
                 stateSchema, bundleFormat, bundleSize, bundleSha256, bundleUrl,
-                requiredCapabilities
+                requiredCapabilities,
+                activation,
+                migrations
             )
         } catch (e: Exception) {
             null
@@ -237,10 +274,15 @@ object UpdateProtocol {
 
     /**
      * State carry gate: exported screen state may cross a bundle swap only
-     * when both sides declare the same positive state schema. Anything else
-     * restarts the JS app with clean state — schema migrations must be an
-     * explicit designed mechanism, never an accident of OtaManager.
+     * when both sides declare the same positive state schema, OR when the
+     * release explicitly declares (signed) that it can migrate the old
+     * schema — equal numbers alone prove nothing about app fields; the
+     * migration itself is app-authored inside the new bundle's restore
+     * handler, and an unacknowledged restore still refuses the swap
+     * (TN-163). Anything else restarts the JS app with clean state.
      */
-    fun shouldRestore(oldStateSchema: Long, newStateSchema: Long): Boolean =
-        oldStateSchema > 0L && oldStateSchema == newStateSchema
+    fun shouldRestore(oldStateSchema: Long, newStateSchema: Long, migrationsFrom: Set<Long> = emptySet()): Boolean {
+        if (oldStateSchema <= 0L || newStateSchema <= 0L) return false
+        return oldStateSchema == newStateSchema || oldStateSchema in migrationsFrom
+    }
 }
