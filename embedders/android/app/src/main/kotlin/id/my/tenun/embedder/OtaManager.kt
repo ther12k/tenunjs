@@ -124,9 +124,13 @@ class OtaManager(
     }
 
     private fun performCheck() {
-        val metadata = UpdateProtocol.parseEnvelope(
-            httpGetText(channel.manifestUrl), channel.publicKeyB64
-        )
+        val manifestJson = try {
+            httpGetText(channel.manifestUrl)
+        } catch (e: ResponseTooLargeException) {
+            Log.w(TAG, "update manifest exceeded the ${UpdateProtocol.MAX_MANIFEST_BYTES}-byte cap; refusing")
+            return
+        }
+        val metadata = UpdateProtocol.parseEnvelope(manifestJson, channel.publicKeyB64)
         if (metadata == null) {
             Log.d(TAG, "ignoring update manifest (malformed or bad signature)")
             return
@@ -143,7 +147,15 @@ class OtaManager(
             return
         }
 
-        val bytes = httpGetBytes(metadata.bundleUrl)
+        // The signed bundleSize caps the read ITSELF, not just the check
+        // afterwards: a hostile or broken server cannot balloon memory by
+        // declaring one size and streaming another.
+        val bytes = try {
+            httpGetBytes(metadata.bundleUrl, metadata.bundleSize)
+        } catch (e: ResponseTooLargeException) {
+            Log.w(TAG, "update v${metadata.sequence} download exceeded the signed ${metadata.bundleSize}-byte cap; refusing")
+            return
+        }
         if (!UpdateProtocol.bundleMatches(metadata, bytes)) {
             Log.w(TAG, "update v${metadata.sequence} failed size/digest match; refusing")
             return
@@ -151,7 +163,7 @@ class OtaManager(
 
         synchronized(lifecycleLock) {
             if (stopped) return
-            store.stageBundle(metadata.sequence, bytes, metadata.stateSchema)
+            store.stageBundle(metadata.sequence, bytes, metadata.stateSchema, manifestJson)
             // Staged downloads are safe to abandon. A trial means boot has
             // actually started, not merely that an apply was queued.
             mainHandler.post {
@@ -180,9 +192,20 @@ class OtaManager(
         }
     }
 
-    private fun httpGetText(url: String): String = String(httpGetBytes(url))
+    private fun httpGetText(url: String): String =
+        String(httpGetBytes(url, UpdateProtocol.MAX_MANIFEST_BYTES))
 
-    private fun httpGetBytes(url: String): ByteArray {
+    /** Thrown when a response outgrows its cap mid-transfer (or up front). */
+    private class ResponseTooLargeException(message: String) : java.io.IOException(message)
+
+    /**
+     * Streams the response body under a hard byte cap enforced DURING the
+     * copy — the cap aborts the read instead of comparing sizes after the
+     * whole body is already in memory. [maxBytes] comes from signed state
+     * (bundleSize) or a protocol constant (manifest), never from headers
+     * alone; an honest Content-Length larger than the cap fails early.
+     */
+    private fun httpGetBytes(url: String, maxBytes: Long): ByteArray {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 4000
@@ -190,9 +213,23 @@ class OtaManager(
             if (connection.responseCode != 200) {
                 throw IllegalStateException("HTTP ${connection.responseCode} from $url")
             }
+            val declaredLength = connection.contentLengthLong
+            if (declaredLength > maxBytes) {
+                throw ResponseTooLargeException("declared length $declaredLength exceeds the $maxBytes-byte cap: $url")
+            }
             connection.inputStream.use { input ->
-                val output = ByteArrayOutputStream()
-                input.copyTo(output, 16 * 1024)
+                val output = ByteArrayOutputStream(minOf(maxBytes, 8L * 1024 * 1024).toInt())
+                val buffer = ByteArray(16 * 1024)
+                var total = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > maxBytes) {
+                        throw ResponseTooLargeException("response exceeded the $maxBytes-byte cap: $url")
+                    }
+                    output.write(buffer, 0, read)
+                }
                 return output.toByteArray()
             }
         } finally {

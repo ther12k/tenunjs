@@ -24,10 +24,14 @@ import java.util.concurrent.atomic.AtomicReference
  *
  *   A (packaged) boots
  *     → serve signed v2: downloads, verifies, applies live
- *     → confirmed: restart uses v2
+ *     → confirmed: restart uses v2, and the cached signed envelope
+ *       re-verifies at the startup gate (and refuses drifted bytes)
  *     → serve tampered v3: rejected, v2 stays
  *     → serve validly-signed v4 whose bundle fails to boot: trial rolls
  *       back, the sequence is quarantined, and it is never retried
+ *     → serve v5 whose body outgrows the signed size mid-stream: the
+ *       streaming cap aborts the download (no stage, no quarantine)
+ *     → serve an oversized manifest: refused before parse
  *
  * The host here is the engine directly (no Activity UI); UI-level evidence
  * for the same flows is the manual phone-test checklist in the provenance
@@ -40,6 +44,9 @@ class OtaEngineJourneyTest {
         private val socket = ServerSocket(0)
         private val running = AtomicBoolean(true)
         private val pool = Executors.newSingleThreadExecutor()
+
+        /** Paths served as chunked (no Content-Length) — the client then reads until the terminator, exercising the streaming cap. */
+        val chunkedPaths = ConcurrentHashMap<String, Boolean>()
 
         val port: Int get() = socket.localPort
 
@@ -65,6 +72,17 @@ class OtaEngineJourneyTest {
             val body = responses[path]
             if (body == null) {
                 output.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+            } else if (chunkedPaths.contains(path)) {
+                output.write("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".toByteArray())
+                var offset = 0
+                while (offset < body.size) {
+                    val length = minOf(16 * 1024, body.size - offset)
+                    output.write(("%x\r\n".format(length)).toByteArray())
+                    output.write(body, offset, length)
+                    output.write("\r\n".toByteArray())
+                    offset += length
+                }
+                output.write("0\r\n\r\n".toByteArray())
             } else {
                 output.write(
                     ("HTTP/1.1 200 OK\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n").toByteArray()
@@ -190,6 +208,21 @@ class OtaEngineJourneyTest {
         assertTrue(restarted.getLatestScene().isNotEmpty())
         restarted.destroy()
 
+        // Startup re-verification (MainActivity.bootEngine's gate): the
+        // envelope cached at stage time still proves out against the pinned
+        // key, this host, and the exact stored bytes — and refuses drifted
+        // bytes.
+        val cachedEnvelope = store.activeEnvelope()
+        assertNotNull(cachedEnvelope)
+        val storedBytes = store.activeBundleBytes()!!
+        val host = hostIdentity()
+        assertNotNull(
+            UpdateProtocol.storedBundleUsable(cachedEnvelope!!, publicB64, host, storedBytes)
+        )
+        assertNull(
+            UpdateProtocol.storedBundleUsable(cachedEnvelope, publicB64, host, storedBytes + "!".toByteArray())
+        )
+
         // ---- v3: tampered download is rejected, v2 stays ----
         val bundleC = packaged + "\n// ota v3".toByteArray()
         responses["/update-manifest.json"] = manifestFor(pair, 3, bundleC, server.port).toByteArray()
@@ -217,6 +250,30 @@ class OtaEngineJourneyTest {
         Thread.sleep(SETTLE_MS)
         assertEquals("B", liveMarker.get())
         assertTrue(store.isQuarantined(4))
+
+        // ---- v5: the body outgrows the signed size mid-stream ----
+        // Chunked (no Content-Length), so the host cannot spot the lie up
+        // front: the streaming cap must abort the copy. A transport-level
+        // refusal is not a bundle defect — no stage, no trial, and NO
+        // quarantine, so a corrected server can still serve v5 later.
+        val bundleE = packaged + "\n// ota v5".toByteArray()
+        responses["/update-manifest.json"] = manifestFor(pair, 5, bundleE, server.port).toByteArray()
+        responses["/update-bundle.js"] = bundleE + ByteArray(64 * 1024)
+        server.chunkedPaths["/update-bundle.js"] = true
+
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertNull(store.trialSequence())
+        assertFalse(store.isQuarantined(5))
+
+        // ---- oversized manifest: refused before parse ----
+        responses["/update-manifest.json"] = ByteArray(UpdateProtocol.MAX_MANIFEST_BYTES.toInt() + 1)
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertEquals(2L, store.installedVersion())
+        assertNull(store.trialSequence())
 
         manager.stop()
         server.close()

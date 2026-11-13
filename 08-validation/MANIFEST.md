@@ -303,6 +303,7 @@ status: accepted
 | 06-issues/tn-191-tvremote-example.md | 10aaffcbc83ca1d3d3e811d7738201769e891e3434ae8d0f91c18b471ed71b34 |
 | 06-issues/tn-192-companion-latency-harness.md | dfb3810997bbfcc64602cd16e03c10cfafe0a5483bcb2c0db3b9502a660ecf93 |
 | 06-issues/tn-193-coalesce-dispatch-commits.md | 3eb6d4778812e69e42481652810f4a4d7956c87cbbc35c1421dadbc2661f02d5 |
+| 06-issues/tn-194-ota-download-cap-and-startup-reverification.md | 5e9decfb06b566165edf6a65183e6d089f5ef6eb4b87f7771b667e369e1cc6fd |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

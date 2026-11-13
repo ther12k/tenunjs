@@ -13,7 +13,10 @@ import java.io.File
  *
  *   <root>/bundles/<sequence>/bundle.js     the verified bundle bytes
  *   <root>/bundles/<sequence>/meta.json     {"state":"staged|trial|confirmed",
- *                                            "stateSchema":N}
+ *                                            "stateSchema":N,
+ *                                            "envelope":"<the signed manifest
+ *                                             JSON, when staged by a host
+ *                                             that caches it>"}
  *   <root>/active                           confirmed sequence (atomic file)
  *   <root>/quarantine.json                  failed sequences, never retried
  *
@@ -89,13 +92,26 @@ class UpdateStore(private val root: File) {
         }
     }
 
+    /**
+     * The cached signed manifest envelope of the active (confirmed) bundle,
+     * for the host's startup re-verification gate. Null when absent —
+     * either nothing is active or the meta predates envelope caching.
+     */
+    fun activeEnvelope(): String? {
+        synchronized(lock) {
+            val sequence = acceptedSequence()
+            if (sequence < 0) return null
+            return metaOf(sequence)?.envelope
+        }
+    }
+
     /** Persists a verified download. State starts at STAGED. */
-    fun stageBundle(sequence: Long, bytes: ByteArray, stateSchema: Long) {
+    fun stageBundle(sequence: Long, bytes: ByteArray, stateSchema: Long, envelopeJson: String? = null) {
         synchronized(lock) {
             val dir = versionDir(sequence)
             dir.mkdirs()
             atomicWrite(bundleFile(sequence), bytes)
-            atomicWrite(metaFile(sequence), stateMeta("staged", stateSchema))
+            atomicWrite(metaFile(sequence), stateMeta("staged", stateSchema, envelopeJson))
         }
     }
 
@@ -104,7 +120,7 @@ class UpdateStore(private val root: File) {
         synchronized(lock) {
             val meta = metaOf(sequence) ?: return false
             if (meta.state != "staged") return false
-            atomicWrite(metaFile(sequence), stateMeta("trial", meta.stateSchema))
+            atomicWrite(metaFile(sequence), stateMeta("trial", meta.stateSchema, meta.envelope))
             return true
         }
     }
@@ -114,7 +130,7 @@ class UpdateStore(private val root: File) {
         synchronized(lock) {
             val meta = metaOf(sequence) ?: return false
             if (meta.state != "trial") return false
-            atomicWrite(metaFile(sequence), stateMeta("confirmed", meta.stateSchema))
+            atomicWrite(metaFile(sequence), stateMeta("confirmed", meta.stateSchema, meta.envelope))
             atomicWrite(activeFile(), "$sequence\n".toByteArray())
             return true
         }
@@ -166,21 +182,25 @@ class UpdateStore(private val root: File) {
 
     // ---------- internals ----------
 
-    private data class Meta(val state: String, val stateSchema: Long)
+    private data class Meta(val state: String, val stateSchema: Long, val envelope: String?)
 
     private fun metaOf(sequence: Long): Meta? {
         return try {
             val json = JSONObject(readFile(metaFile(sequence)) ?: return null)
             val state = json.optString("state")
             if (state != "staged" && state != "trial" && state != "confirmed") return null
-            Meta(state, json.optLong("stateSchema", -1L))
+            val envelope = json.optString("envelope").takeIf { it.isNotEmpty() }
+            Meta(state, json.optLong("stateSchema", -1L), envelope)
         } catch (e: Exception) {
             null
         }
     }
 
-    private fun stateMeta(state: String, stateSchema: Long): ByteArray =
-        JSONObject().put("state", state).put("stateSchema", stateSchema).toString().toByteArray()
+    private fun stateMeta(state: String, stateSchema: Long, envelope: String?): ByteArray {
+        val obj = JSONObject().put("state", state).put("stateSchema", stateSchema)
+        if (envelope != null) obj.put("envelope", envelope)
+        return obj.toString().toByteArray()
+    }
 
     private fun quarantined(): Set<Long> {
         return try {
