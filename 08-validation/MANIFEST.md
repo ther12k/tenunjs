@@ -306,6 +306,7 @@ status: accepted
 | 06-issues/tn-194-ota-download-cap-and-startup-reverification.md | 5e9decfb06b566165edf6a65183e6d089f5ef6eb4b87f7771b667e369e1cc6fd |
 | 06-issues/tn-195-ota-capability-requirements-and-host-identity.md | 0c0b6224f6f49a5b602dc8fd36d1d4f922ed212bb62b40ab50a40d766ad17e8d |
 | 06-issues/tn-196-ota-activation-policy-and-state-migrations.md | efc479b9bd9d4344d76b4a3ee6941ba00ccb485c5b5e974fe6ec1bb6710d2f5a |
+| 06-issues/tn-197-ui-activity-ota-journey.md | d569bb4bc5a23bea480926004c8f0ed40b137e58183beb6ba5919c60db65f124 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |

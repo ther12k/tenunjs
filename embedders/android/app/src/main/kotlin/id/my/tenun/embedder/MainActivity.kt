@@ -84,8 +84,9 @@ class MainActivity : Activity() {
 
         bundleStore = BundleStore(this)
         // Loaded BEFORE bootEngine: startup re-verification of a stored
-        // bundle needs the pinned signer key.
-        otaChannel = UpdateChannel.fromAssets(assets)
+        // bundle needs the pinned signer key. The test seam may override
+        // the baked asset (debuggable builds only, see [testChannelFromIntent]).
+        otaChannel = testChannelFromIntent() ?: UpdateChannel.fromAssets(assets)
 
         // Process-death rollback: a TRIAL found at start means the previous
         // process died before confirming it. Quarantine that sequence (it
@@ -266,6 +267,43 @@ class MainActivity : Activity() {
     var startupFailed: Boolean = false
         private set
 
+    /**
+     * TN-197 TEST SEAM: intent extras override the baked update channel so
+     * the on-device journey can point this activity's REAL OTA stack at a
+     * loopback server. Honored ONLY when the APK is debuggable — a release
+     * build never accepts a channel (and thereby a signer key) from another
+     * app's intent.
+     */
+    private fun testChannelFromIntent(): UpdateChannel? {
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+        val url = intent?.getStringExtra(EXTRA_OTA_MANIFEST_URL) ?: return null
+        val key = intent?.getStringExtra(EXTRA_OTA_PUBLIC_KEY) ?: return null
+        val name = intent?.getStringExtra(EXTRA_OTA_CHANNEL) ?: "prototype"
+        return UpdateChannel(url, name, key)
+    }
+
+    // ---- TN-197 read-only OTA observability for the on-device journey ----
+
+    /** Confirmed OTA sequence (-1 = packaged), via the real store. */
+    val otaInstalledSequenceForTest: Long
+        get() = bundleStore?.installedVersion() ?: -1L
+
+    /** Sequence currently in TRIAL, or null. */
+    val otaTrialSequenceForTest: Long?
+        get() = bundleStore?.trialSequence()
+
+    /** Staged-but-unactivated sequence (deferred policy), or null. */
+    val otaPendingStagedSequenceForTest: Long?
+        get() = bundleStore?.pendingStagedSequence()
+
+    /** Boot-source correlation of the current engine ("packaged", "stored-vN", "activated-vN"). */
+    val otaBootSourceForTest: String
+        get() = lastBootCorrelation
+
+    /** The live surface (real touches/scenes go through it). */
+    val surfaceForTest: TenunSurfaceView?
+        get() = surfaceView
+
     /** TN-195: the running host's compatibility identity for [channel]. */
     private fun currentHostIdentity(channel: UpdateChannel) = UpdateProtocol.HostIdentity(
         appId = packageName,
@@ -275,11 +313,14 @@ class MainActivity : Activity() {
     )
 
     /**
-     * Boots the stored (confirmed) OTA bundle only after startup
-     * re-verification ([UpdateProtocol.storedBundleUsable]: cached signed
-     * envelope against the pinned key, the running host, and the stored
-     * bytes themselves); activates a staged next-launch release (TN-196);
-     * otherwise falls back to the packaged asset.
+     * Boot order (TN-196): a staged NEXT-LAUNCH release activates FIRST —
+     * a fresh boot is its policy moment and it outranks the confirmed
+     * bundle — re-verified ([UpdateProtocol.storedBundleUsable]: cached
+     * signed envelope against the pinned key, the running host, and the
+     * stored bytes) and promoted to TRIAL before booting, so an
+     * unconfirmed death quarantines on the next start. Otherwise the
+     * stored (confirmed) bundle boots after the same re-verification;
+     * otherwise the packaged asset.
      *
      * Verification failure shapes, deliberately different:
      *   - Verification ran and FAILED (tampered meta, drifted bytes, host
@@ -287,10 +328,48 @@ class MainActivity : Activity() {
      *   - Verification CANNOT run (no channel asset, legacy cache without
      *     an envelope): nothing proven, nothing destroyed — the store keeps
      *     the bundle, but packaged boots this launch.
+     *   - A staged candidate that is not next-launch (idle) simply stays
+     *     staged — its activation moment is a foreground-return resume.
      */
     fun bootEngine(): TenunEngine? {
         val store = bundleStore
         val channel = otaChannel
+        if (store != null && channel != null) {
+            val pending = store.pendingStaged()
+            if (pending != null) {
+                val stagedMetadata = UpdateProtocol.storedBundleUsable(
+                    pending.envelope,
+                    channel.publicKeyB64,
+                    currentHostIdentity(channel),
+                    pending.bytes
+                )
+                when {
+                    stagedMetadata == null -> {
+                        // A stale stage is not a defect: discard, re-download later.
+                        Log.w(TAG, "staged OTA candidate v${store.pendingStagedSequence()} failed boot re-verification; discarding")
+                        store.discard(store.pendingStagedSequence() ?: -1L)
+                    }
+                    stagedMetadata.activation == UpdateProtocol.ACTIVATION_NEXT_LAUNCH -> {
+                        try {
+                            Log.i(TAG, "activating staged OTA bundle v${stagedMetadata.sequence} (next-launch policy)")
+                            if (!store.promoteTrial(stagedMetadata.sequence)) {
+                                Log.w(TAG, "staged v${stagedMetadata.sequence} could not enter trial; booting the next candidate")
+                            } else {
+                                bootBundleSha = sha256Hex(pending.bytes)
+                                return newEngine(pending.bytes).also {
+                                    lastBootCorrelation = "activated-v${stagedMetadata.sequence}"
+                                    scheduleTrialConfirm(stagedMetadata.sequence)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "staged OTA bundle v${stagedMetadata.sequence} failed to boot; quarantining: ${e.message}")
+                            store.quarantine(stagedMetadata.sequence)
+                        }
+                    }
+                    else -> Unit // idle: stays staged; activates on a foreground-return resume
+                }
+            }
+        }
         if (store != null) {
             val stored = store.activeBundleBytes()
             if (stored != null) {
@@ -324,40 +403,6 @@ class MainActivity : Activity() {
                 } else {
                     Log.w(TAG, "stored OTA bundle v${store.installedVersion()} failed startup re-verification; quarantining")
                     store.quarantine(store.installedVersion())
-                }
-            }
-
-            // TN-196: a staged release whose signed policy is next-launch
-            // activates NOW — a fresh boot has no live user state at risk,
-            // and the process-death discipline still guards it: promote to
-            // TRIAL first, so an unconfirmed death quarantines on the NEXT
-            // start. The candidate is re-verified before anything runs.
-            if (channel != null) {
-                val pending = store.pendingStaged()
-                if (pending != null) {
-                    val metadata = UpdateProtocol.storedBundleUsable(
-                        pending.envelope,
-                        channel.publicKeyB64,
-                        currentHostIdentity(channel),
-                        pending.bytes
-                    )
-                    if (metadata != null && metadata.activation == UpdateProtocol.ACTIVATION_NEXT_LAUNCH) {
-                        try {
-                            Log.i(TAG, "activating staged OTA bundle v${metadata.sequence} (next-launch policy)")
-                            if (!store.promoteTrial(metadata.sequence)) {
-                                Log.w(TAG, "staged v${metadata.sequence} could not enter trial; booting packaged")
-                            } else {
-                                bootBundleSha = sha256Hex(pending.bytes)
-                                return newEngine(pending.bytes).also {
-                                    lastBootCorrelation = "activated-v${metadata.sequence}"
-                                    scheduleTrialConfirm(metadata.sequence)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "staged OTA bundle v${metadata.sequence} failed to boot; quarantining: ${e.message}")
-                            store.quarantine(metadata.sequence)
-                        }
-                    }
                 }
             }
         }
@@ -929,6 +974,12 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "TenunMainActivity"
+
+        /** TN-197: intent extras for the on-device OTA journey (debuggable builds only). */
+        const val EXTRA_OTA_MANIFEST_URL = "tenun.ota.MANIFEST_URL"
+        const val EXTRA_OTA_PUBLIC_KEY = "tenun.ota.PUBLIC_KEY_B64"
+        const val EXTRA_OTA_CHANNEL = "tenun.ota.CHANNEL"
+
         private const val POLL_INTERVAL_MS = 2500L
         private const val OTA_FIRST_CHECK_MS = 4000L
         private const val OTA_INTERVAL_MS = 30_000L
