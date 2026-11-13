@@ -11,6 +11,7 @@ class HostServiceRegistryTest {
         var called = false
 
         registry.register("ble", object : NativeService {
+            override val contractVersion = 1
             override fun invoke(method: String, payloadJson: String): String {
                 called = true
                 assertEquals("write", method)
@@ -35,6 +36,7 @@ class HostServiceRegistryTest {
     fun testHostServiceCatchesExceptionsSafely() {
         val registry = HostServiceRegistry()
         registry.register("failing", object : NativeService {
+            override val contractVersion = 1
             override fun invoke(method: String, payloadJson: String): String {
                 throw SecurityException("simulated permission denial")
             }
@@ -46,9 +48,32 @@ class HostServiceRegistryTest {
     }
 
     @Test
+    fun testCapabilitySnapshotTracksRegistrationAndVersions() {
+        // TN-195: the snapshot is the host's capability inventory — what
+        // the OTA compatibility gate compares signed requirements against.
+        val registry = HostServiceRegistry()
+        assertTrue(registry.capabilitySnapshot().isEmpty())
+
+        registry.register("net", object : NativeService {
+            override val contractVersion = 1
+            override fun invoke(method: String, payloadJson: String): String? = null
+        })
+        registry.register("discovery", object : NativeService {
+            override val contractVersion = 2
+            override fun invoke(method: String, payloadJson: String): String? = null
+        })
+        assertEquals(mapOf("net" to 1, "discovery" to 2), registry.capabilitySnapshot())
+
+        // Unregistration removes the capability from the inventory.
+        registry.unregister("discovery")
+        assertEquals(mapOf("net" to 1), registry.capabilitySnapshot())
+    }
+
+    @Test
     fun testBleWriteQueuePurgesOnEmergencyStop() {
         var queueRef: java.util.ArrayDeque<String>? = null
         val service = object : NativeService {
+            override val contractVersion = 1
             val queue = java.util.ArrayDeque<String>()
             init { queueRef = queue }
             override fun invoke(method: String, payloadJson: String): String {

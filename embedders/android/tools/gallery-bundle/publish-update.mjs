@@ -13,7 +13,10 @@
  * Signed metadata fields (verified by the app BEFORE any download):
  *   schema, appId, channel, sequence (monotonic anti-replay),
  *   hostApiMin/hostApiMax (host compatibility), stateSchema (state-carry
- *   gate), bundleFormat, bundleSize, bundleSha256, bundleUrl.
+ *   gate), bundleFormat, bundleSize, bundleSha256, bundleUrl,
+ *   requiredCapabilities (TN-195: capability name → minimum contract
+ *   version; the host refuses a release whose requirements it does not
+ *   meet BEFORE download).
  *
  * Never re-serialize the metadata after signing: the manifest's payload is
  * the exact byte string that was signed, and the app parses those same
@@ -23,6 +26,12 @@
  *   node publish-update.mjs --init
  *   node publish-update.mjs --version 2 --base-url http://192.168.1.55:8898 \
  *        [--bundle path] [--key path] [--channel prototype]
+ *        [--host-api 2] [--requires-capability discovery:1]...
+ *
+ * Capability-requirement discipline (keep in sync with
+ * UpdateProtocol.REQUIREMENTS_MIN_HOST_API): a requirement-bearing release
+ * must target host-api ≥ 2 — host-api-1 APKs predate capability checks
+ * and would silently ignore the field.
  *
  * Key handling: the private key lives OUT of git (gitignored). Never run
  * `git add -A` in a tree that holds it — stage explicit paths. A production
@@ -41,10 +50,23 @@ const outDirDefault = join(repoRoot, "examples/gallery-preview/.out/ota");
 
 const BUNDLE_FORMAT = "tenun-js-bundle-v1";
 const APP_ID = "id.my.tenun.embedder";
+// Keep in sync with UpdateProtocol.HOST_API_VERSION (currently 2 =
+// capability-aware host) and REQUIREMENTS_MIN_HOST_API.
+const DEFAULT_HOST_API = 2;
+const REQUIREMENTS_MIN_HOST_API = 2;
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
   return index > 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
+}
+
+/** All values of a repeatable flag: --flag a:1 --flag b:2 → ["a:1","b:2"]. */
+function args(name) {
+  const values = [];
+  for (let i = 0; i < process.argv.length - 1; i++) {
+    if (process.argv[i] === `--${name}` && process.argv[i + 1]) values.push(process.argv[i + 1]);
+  }
+  return values;
 }
 
 function initKeys(keyPath) {
@@ -72,7 +94,31 @@ function main() {
     process.exit(1);
   }
   const channelName = arg("channel", "prototype");
-  const hostApi = Number(arg("host-api", "1"));
+  const hostApi = Number(arg("host-api", String(DEFAULT_HOST_API)));
+  if (!Number.isInteger(hostApi) || hostApi < 1) {
+    console.error("--host-api must be a positive integer");
+    process.exit(1);
+  }
+  // TN-195: capability requirements. Each --requires-capability name:version
+  // becomes a signed minimum-contract-version requirement; the host refuses
+  // the release before download unless it provides every capability at >=
+  // that version.
+  const requiredCapabilities = {};
+  for (const spec of args("requires-capability")) {
+    const match = /^([A-Za-z0-9_-]+):(\d+)$/.exec(spec);
+    if (!match || Number(match[2]) < 1) {
+      console.error(`--requires-capability must be name:version (got "${spec}")`);
+      process.exit(1);
+    }
+    requiredCapabilities[match[1]] = Number(match[2]);
+  }
+  if (Object.keys(requiredCapabilities).length > 0 && hostApi < REQUIREMENTS_MIN_HOST_API) {
+    console.error(
+      `a requirement-bearing release needs --host-api >= ${REQUIREMENTS_MIN_HOST_API} ` +
+        `(host-api-1 APKs predate capability checks and would ignore the field)`
+    );
+    process.exit(1);
+  }
   const stateSchema = Number(arg("state-schema", "1"));
   const baseUrl = (arg("base-url", "") || "").replace(/\/+$/, "");
   if (!/^https?:\/\//.test(baseUrl)) {
@@ -99,6 +145,9 @@ function main() {
     bundleSha256: createHash("sha256").update(bundle).digest("hex"),
     bundleUrl: `${baseUrl}/update-bundle.js`,
   };
+  if (Object.keys(requiredCapabilities).length > 0) {
+    metadata.requiredCapabilities = requiredCapabilities;
+  }
 
   // The payload bytes are EXACTLY what gets signed and served — the app
   // verifies the signature over these bytes, then parses them.
@@ -131,6 +180,9 @@ function main() {
 
   console.log(`OTA release v${version} published to ${outDir}`);
   console.log(`  appId ${APP_ID} channel ${channelName} hostApi ${hostApi} stateSchema ${stateSchema}`);
+  if (Object.keys(requiredCapabilities).length > 0) {
+    console.log(`  requires capabilities: ${JSON.stringify(requiredCapabilities)}`);
+  }
   console.log(`  bundle sha256: ${metadata.bundleSha256} (${bundle.length} bytes)`);
   console.log(`  bake update_channel.json into app assets, then serve this directory`);
 }

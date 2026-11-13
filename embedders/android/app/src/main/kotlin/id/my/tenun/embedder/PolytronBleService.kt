@@ -50,6 +50,8 @@ class PolytronBleService(
     private val onEvent: (action: String, payloadJson: String) -> Unit
 ) : NativeService {
 
+    override val contractVersion = 1
+
     companion object {
         private const val TAG = "PolytronBleService"
         val SVC: UUID = UUID.fromString("9f6d1c30-5f2e-4d8a-b7c3-00a1b2c3e001")

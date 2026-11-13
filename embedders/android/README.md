@@ -231,6 +231,8 @@ node embedders/android/tools/gallery-bundle/publish-update.mjs --init
 bun embedders/android/tools/gallery-bundle/rebuild.ts
 node embedders/android/tools/gallery-bundle/publish-update.mjs \
   --version 2 --base-url http://<laptop-ip>:8898
+# a bundle using discovery may declare its requirement (repeatable flag):
+#   --requires-capability discovery:1
 # -> examples/gallery-preview/.out/ota/{update-manifest.json,update-bundle.js,update_channel.json}
 
 # bake the channel into the APK (once): copy update_channel.json to
@@ -249,11 +251,16 @@ contract, so replays and misattributed releases fail closed:
     schema, appId, channel,
     sequence          (monotonic; the anti-replay floor),
     hostApiMin/hostApiMax (an old APK refuses a bundle needing a newer host),
+    requiredCapabilities (capability name → minimum contract version; the
+                      host refuses a release it cannot serve BEFORE
+                      download — TN-195; requirement-bearing releases pin
+                      hostApiMin ≥ 2, the first capability-aware host),
     stateSchema       (state carry across swaps only when equal),
     bundleFormat ("tenun-js-bundle-v1"), bundleSize, bundleSha256, bundleUrl
 
-Gate order: signature → parse → app/channel/host match → sequence newer
-than accepted and not quarantined → download → size/digest match → stage.
+Gate order: signature → parse → app/channel/host/capability-requirement
+match → sequence newer than accepted and not quarantined → download →
+size/digest match → stage.
 
 ### Lifecycle and rollback
 

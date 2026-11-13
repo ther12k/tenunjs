@@ -167,10 +167,15 @@ class MainActivity : Activity() {
         val channel = otaChannel
         val store = bundleStore
         if (channel != null && store != null) {
+            // TN-195: the host identity carries the capability snapshot
+            // (registered services → contract versions) taken once here;
+            // the transient unregister during engine swaps never affects
+            // compatibility judgments.
             val host = UpdateProtocol.HostIdentity(
                 appId = packageName,
                 channel = channel.channel,
-                hostApi = UpdateProtocol.HOST_API_VERSION
+                hostApi = UpdateProtocol.HOST_API_VERSION,
+                capabilities = hostRegistry.capabilitySnapshot()
             )
             otaManager = OtaManager(
                 channel = channel,
@@ -279,7 +284,8 @@ class MainActivity : Activity() {
                         UpdateProtocol.HostIdentity(
                             appId = packageName,
                             channel = channel.channel,
-                            hostApi = UpdateProtocol.HOST_API_VERSION
+                            hostApi = UpdateProtocol.HOST_API_VERSION,
+                            capabilities = hostRegistry.capabilitySnapshot()
                         ),
                         stored
                     )
@@ -350,6 +356,8 @@ class MainActivity : Activity() {
             // the shared registry has no caller identity, and the timer's
             // owner must be the engine that REQUESTED it.
             hostRegistry.register("system", object : NativeService {
+                override val contractVersion = 1
+
                 override fun invoke(method: String, payloadJson: String): String? {
                     return when (method) {
                         "clockNow" -> {
