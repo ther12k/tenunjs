@@ -34,6 +34,12 @@ import java.util.concurrent.atomic.AtomicReference
  *       streaming cap aborts the download (no stage, no quarantine)
  *     → serve v6 requiring a capability this host lacks, and v7 requiring
  *       a newer contract: both refused at the gate, before download
+ *     → serve v8 (activation next-launch): staged, NOT applied; the host
+ *       re-verifies and activates it at boot, engine-level stand-in
+ *     → serve v9 (activation idle): idle gate closed defers it; an
+ *       explicit request forces it through
+ *     → serve v10 (stateSchema 2, migrates 1): applies immediately, the
+ *       signed migration declaration rides to the host's apply callback
  *     → serve an oversized manifest: refused before parse
  *
  * The host here is the engine directly (no Activity UI); UI-level evidence
@@ -127,7 +133,9 @@ class OtaEngineJourneyTest {
         sequence: Long,
         bundle: ByteArray,
         port: Int,
-        requires: Map<String, Int> = emptyMap()
+        requires: Map<String, Int> = emptyMap(),
+        activation: String = "immediate",
+        migrations: List<Long> = emptyList()
     ): String {
         val metadata = org.json.JSONObject(
             mapOf(
@@ -145,6 +153,8 @@ class OtaEngineJourneyTest {
             )
         )
         if (requires.isNotEmpty()) metadata.put("requiredCapabilities", org.json.JSONObject(requires))
+        if (activation != "immediate") metadata.put("activation", activation)
+        if (migrations.isNotEmpty()) metadata.put("stateMigrationsFrom", org.json.JSONArray(migrations))
         return envelopeFor(pair, metadata)
     }
 
@@ -320,13 +330,83 @@ class OtaEngineJourneyTest {
         assertNull(store.trialSequence())
         assertFalse(store.isQuarantined(7))
 
+        // ---- v8: next-launch activation ----
+        // Staged but NOT applied: the release deferred to a fresh boot.
+        val bundleH = packaged + "\n// ota v8".toByteArray()
+        markerBySha[shaOf(bundleH)] = "H"
+        responses["/update-manifest.json"] = manifestFor(pair, 8, bundleH, server.port, activation = "next-launch").toByteArray()
+        responses["/update-bundle.js"] = bundleH
+
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertNull(store.trialSequence())
+        assertEquals(8L, store.pendingStaged()?.sequence)
+
+        // MainActivity.bootEngine's next-launch path, at engine level: the
+        // host re-verifies the staged candidate, promotes it to TRIAL, and
+        // boots it; a process death before confirm quarantines (TN-138).
+        val pending8 = store.pendingStaged()!!
+        val meta8 = UpdateProtocol.storedBundleUsable(pending8.envelope, publicB64, host, pending8.bytes)!!
+        assertEquals("next-launch", meta8.activation)
+        assertTrue(store.promoteTrial(8))
+        val activated = TenunEngine(pending8.bytes)
+        assertTrue(activated.getLatestScene().isNotEmpty())
+        activated.destroy()
+        assertTrue(store.confirmTrial(8))
+        assertEquals(8L, store.installedVersion())
+        assertNull(store.pendingStaged())
+
+        // ---- v9: idle activation — busy host defers, explicit request forces ----
+        val bundleI = packaged + "\n// ota v9".toByteArray()
+        markerBySha[shaOf(bundleI)] = "I"
+        responses["/update-manifest.json"] = manifestFor(pair, 9, bundleI, server.port, activation = "idle").toByteArray()
+        responses["/update-bundle.js"] = bundleI
+
+        manager.checkNow(force = true)
+        Thread.sleep(SETTLE_MS)
+        assertEquals("B", liveMarker.get())
+        assertEquals(9L, store.pendingStaged()?.sequence)
+
+        // Idle gate closed (a form is open): deferred, still staged.
+        var busy = true
+        val deferredSettled = AtomicBoolean(false)
+        manager.activatePendingNow(canApplyNow = { !busy }) { deferredSettled.set(true) }
+        spinUntil { deferredSettled.get() }
+        assertEquals("B", liveMarker.get())
+        assertEquals(9L, store.pendingStaged()?.sequence)
+
+        // Explicit app request (system.activateUpdate) forces past the gate.
+        val forcedSettled = AtomicBoolean(false)
+        manager.activatePendingNow(force = true, canApplyNow = { !busy }) { forcedSettled.set(true) }
+        spinUntil { liveMarker.get() == "I" }
+        spinUntil { forcedSettled.get() }
+        assertEquals(9L, store.trialSequence()) // applied: TRIAL, not yet accepted
+        assertNull(store.pendingStaged())
+        assertTrue(store.confirmTrial(9))
+        assertEquals(9L, store.installedVersion())
+
+        // ---- v10: migration-bearing release (stateSchema 2, migrates 1) ----
+        // Applies immediately (default activation); the signed migration
+        // declaration rides the metadata the host hands applyBundle.
+        val bundleJ = packaged + "\n// ota v10".toByteArray()
+        markerBySha[shaOf(bundleJ)] = "J"
+        responses["/update-manifest.json"] =
+            manifestFor(pair, 10, bundleJ, server.port, activation = "immediate", migrations = listOf(1)).toByteArray()
+        responses["/update-bundle.js"] = bundleJ
+
+        manager.checkNow(force = true)
+        spinUntil { liveMarker.get() == "J" }
+        assertEquals(10L, store.trialSequence())
+        assertNull(store.pendingStaged())
+
         // ---- oversized manifest: refused before parse ----
         responses["/update-manifest.json"] = ByteArray(UpdateProtocol.MAX_MANIFEST_BYTES.toInt() + 1)
         manager.checkNow(force = true)
         Thread.sleep(SETTLE_MS)
-        assertEquals("B", liveMarker.get())
-        assertEquals(2L, store.installedVersion())
-        assertNull(store.trialSequence())
+        assertEquals("J", liveMarker.get())
+        assertEquals(9L, store.installedVersion())
+        assertEquals(10L, store.trialSequence())
 
         manager.stop()
         server.close()

@@ -179,6 +179,9 @@ class TenunSurfaceView @JvmOverloads constructor(
     private var textInputConnection: DisplayListInputConnection? = null
     private var acceptsTextInput = true
 
+    /** TN-196: true while a text-input session is live — deferred OTA activation waits for it to end. */
+    fun hasActiveTextInputSession(): Boolean = textInputSession.current != null
+
     /** Set while the latest adoption restarted the connection ONLY because
      *  the accepted edit changed keyboard/return intent — the logical session
      *  continues, so the editor action flushed by that same edit must still

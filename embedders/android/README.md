@@ -233,6 +233,11 @@ node embedders/android/tools/gallery-bundle/publish-update.mjs \
   --version 2 --base-url http://<laptop-ip>:8898
 # a bundle using discovery may declare its requirement (repeatable flag):
 #   --requires-capability discovery:1
+# defer activation, or declare state migrations (need --host-api >= 3):
+#   --activation next-launch   (activates at the next cold boot)
+#   --activation idle          (activates when no text input is live, or
+#                               when the app calls system.activateUpdate)
+#   --migrates-state-from 1    (old state schemas this release migrates)
 # -> examples/gallery-preview/.out/ota/{update-manifest.json,update-bundle.js,update_channel.json}
 
 # bake the channel into the APK (once): copy update_channel.json to
@@ -255,7 +260,15 @@ contract, so replays and misattributed releases fail closed:
                       host refuses a release it cannot serve BEFORE
                       download — TN-195; requirement-bearing releases pin
                       hostApiMin ≥ 2, the first capability-aware host),
-    stateSchema       (state carry across swaps only when equal),
+    activation        (immediate | next-launch | idle — TN-196; deferred
+                      policies pin hostApiMin ≥ 3, the first host that
+                      honors them; idle releases activate when no
+                      text-input session is live or on an explicit
+                      system.activateUpdate request),
+    stateMigrationsFrom (old state schemas this release can migrate in
+                      its restore handler — TN-196; an unacknowledged
+                      restore still refuses the swap, TN-163),
+    stateSchema       (state carry across swaps when equal OR migrated),
     bundleFormat ("tenun-js-bundle-v1"), bundleSize, bundleSha256, bundleUrl
 
 Gate order: signature → parse → app/channel/host/capability-requirement

@@ -105,6 +105,60 @@ class UpdateStore(private val root: File) {
         }
     }
 
+    /** A staged-but-not-activated release, for TN-196 deferred activation. */
+    data class StagedCandidate(
+        val sequence: Long,
+        val bytes: ByteArray,
+        val envelope: String,
+        val stateSchema: Long
+    )
+
+    /**
+     * The highest staged sequence newer than the accepted one (and the
+     * anti-replay floor), with its bytes and cached signed envelope — what
+     * next-launch activation boots and idle/explicit activation applies.
+     * Null when nothing is waiting. The envelope must be re-verified by
+     * the caller (signature + compatibility + size/digest) before use.
+     */
+    fun pendingStaged(): StagedCandidate? {
+        synchronized(lock) {
+            val candidate = pendingStagedLocked() ?: return null
+            val bytes = try {
+                bundleFile(candidate).readBytes()
+            } catch (e: Exception) {
+                return null
+            }
+            val meta = metaOf(candidate) ?: return null
+            return StagedCandidate(candidate, bytes, meta.envelope ?: return null, meta.stateSchema)
+        }
+    }
+
+    /** Lightweight variant: just the waiting sequence, or null. */
+    fun pendingStagedSequence(): Long? {
+        synchronized(lock) { return pendingStagedLocked() }
+    }
+
+    /** True when the sequence exists on disk in STAGED state. */
+    fun isStaged(sequence: Long): Boolean {
+        synchronized(lock) { return metaOf(sequence)?.state == "staged" }
+    }
+
+    private fun pendingStagedLocked(): Long? {
+        val accepted = acceptedSequence()
+        val dirs = bundlesDir().listFiles { file -> file.isDirectory } ?: return null
+        var best: Long = -1L
+        for (dir in dirs) {
+            val sequence = dir.name.toLongOrNull() ?: continue
+            if (sequence <= accepted || sequence <= best) continue
+            if (isQuarantined(sequence)) continue
+            val meta = metaOf(sequence) ?: continue
+            if (meta.state != "staged" || meta.envelope == null) continue
+            if (!bundleFile(sequence).exists()) continue
+            best = sequence
+        }
+        return if (best > 0) best else null
+    }
+
     /** Persists a verified download. State starts at STAGED. */
     fun stageBundle(sequence: Long, bytes: ByteArray, stateSchema: Long, envelopeJson: String? = null) {
         synchronized(lock) {

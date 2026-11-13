@@ -49,7 +49,7 @@ class MainActivity : Activity() {
 
     /** Pinned update channel (manifest URL + signer key); null when the asset is absent. */
     private var otaChannel: UpdateChannel? = null
-    private var otaManager: OtaManager? = null
+    @Volatile private var otaManager: OtaManager? = null
 
     // TN-154: Host Service Bridge registry and native BLE service
     private val hostRegistry = HostServiceRegistry()
@@ -171,12 +171,7 @@ class MainActivity : Activity() {
             // (registered services → contract versions) taken once here;
             // the transient unregister during engine swaps never affects
             // compatibility judgments.
-            val host = UpdateProtocol.HostIdentity(
-                appId = packageName,
-                channel = channel.channel,
-                hostApi = UpdateProtocol.HOST_API_VERSION,
-                capabilities = hostRegistry.capabilitySnapshot()
-            )
+            val host = currentHostIdentity(channel)
             otaManager = OtaManager(
                 channel = channel,
                 host = host,
@@ -200,7 +195,21 @@ class MainActivity : Activity() {
         super.onResume()
         // Production-shaped cadence: foreground/resume check, throttled
         // inside OtaManager (MIN_CHECK_GAP_MS).
-        if (devServerUrl == null) otaManager?.checkNow()
+        if (devServerUrl == null) {
+            otaManager?.checkNow()
+            // TN-196: idle-policy releases activate when no text-input
+            // session is live — the resume cadence is the same one the
+            // checks use, so no extra scheduling surface exists.
+            otaManager?.activatePendingNow(canApplyNow = { !hasActiveTextInput() })
+        }
+    }
+
+    /** True while a text-input session is live on the surface (idle gate). */
+    private fun hasActiveTextInput(): Boolean = surfaceView?.hasActiveTextInputSession() == true
+
+    /** TN-196: activates the pending staged release (see [OtaManager.activatePendingNow]). */
+    private fun activatePendingOta(force: Boolean) {
+        otaManager?.activatePendingNow(force = force, canApplyNow = { !hasActiveTextInput() })
     }
 
     /**
@@ -257,13 +266,22 @@ class MainActivity : Activity() {
     var startupFailed: Boolean = false
         private set
 
+    /** TN-195: the running host's compatibility identity for [channel]. */
+    private fun currentHostIdentity(channel: UpdateChannel) = UpdateProtocol.HostIdentity(
+        appId = packageName,
+        channel = channel.channel,
+        hostApi = UpdateProtocol.HOST_API_VERSION,
+        capabilities = hostRegistry.capabilitySnapshot()
+    )
+
     /**
      * Boots the stored (confirmed) OTA bundle only after startup
      * re-verification ([UpdateProtocol.storedBundleUsable]: cached signed
      * envelope against the pinned key, the running host, and the stored
-     * bytes themselves); otherwise falls back to the packaged asset.
+     * bytes themselves); activates a staged next-launch release (TN-196);
+     * otherwise falls back to the packaged asset.
      *
-     * Two failure shapes, deliberately different:
+     * Verification failure shapes, deliberately different:
      *   - Verification ran and FAILED (tampered meta, drifted bytes, host
      *     API moved on): proven defect → quarantine, like a failed trial.
      *   - Verification CANNOT run (no channel asset, legacy cache without
@@ -281,12 +299,7 @@ class MainActivity : Activity() {
                     UpdateProtocol.storedBundleUsable(
                         envelope,
                         channel.publicKeyB64,
-                        UpdateProtocol.HostIdentity(
-                            appId = packageName,
-                            channel = channel.channel,
-                            hostApi = UpdateProtocol.HOST_API_VERSION,
-                            capabilities = hostRegistry.capabilitySnapshot()
-                        ),
+                        currentHostIdentity(channel),
                         stored
                     )
                 } else {
@@ -311,6 +324,40 @@ class MainActivity : Activity() {
                 } else {
                     Log.w(TAG, "stored OTA bundle v${store.installedVersion()} failed startup re-verification; quarantining")
                     store.quarantine(store.installedVersion())
+                }
+            }
+
+            // TN-196: a staged release whose signed policy is next-launch
+            // activates NOW — a fresh boot has no live user state at risk,
+            // and the process-death discipline still guards it: promote to
+            // TRIAL first, so an unconfirmed death quarantines on the NEXT
+            // start. The candidate is re-verified before anything runs.
+            if (channel != null) {
+                val pending = store.pendingStaged()
+                if (pending != null) {
+                    val metadata = UpdateProtocol.storedBundleUsable(
+                        pending.envelope,
+                        channel.publicKeyB64,
+                        currentHostIdentity(channel),
+                        pending.bytes
+                    )
+                    if (metadata != null && metadata.activation == UpdateProtocol.ACTIVATION_NEXT_LAUNCH) {
+                        try {
+                            Log.i(TAG, "activating staged OTA bundle v${metadata.sequence} (next-launch policy)")
+                            if (!store.promoteTrial(metadata.sequence)) {
+                                Log.w(TAG, "staged v${metadata.sequence} could not enter trial; booting packaged")
+                            } else {
+                                bootBundleSha = sha256Hex(pending.bytes)
+                                return newEngine(pending.bytes).also {
+                                    lastBootCorrelation = "activated-v${metadata.sequence}"
+                                    scheduleTrialConfirm(metadata.sequence)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "staged OTA bundle v${metadata.sequence} failed to boot; quarantining: ${e.message}")
+                            store.quarantine(metadata.sequence)
+                        }
+                    }
                 }
             }
         }
@@ -368,6 +415,15 @@ class MainActivity : Activity() {
                             mainHandler.post {
                                 showEditProgramDialog(payloadJson)
                             }
+                            "true"
+                        }
+                        // TN-196: explicit app-requested OTA activation —
+                        // the app decides the moment is right and forces
+                        // the pending staged release through (bypassing
+                        // the idle gate). "true" = request queued, not
+                        // that an update existed.
+                        "activateUpdate" -> {
+                            mainHandler.post { activatePendingOta(force = true) }
                             "true"
                         }
                         else -> null
@@ -535,7 +591,9 @@ class MainActivity : Activity() {
         }
 
         return try {
-            if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema) && exported != null && exported.length > 2) {
+            if (UpdateProtocol.shouldRestore(oldStateSchema, newStateSchema, metadata.stateMigrationsFrom) &&
+                exported != null && exported.length > 2
+            ) {
                 // TN-163: the restore rides the RESULT channel. A thrown
                 // restore (rejected snapshot) yields a NULL reply there,
                 // while the legacy scene channel swallows the throw and

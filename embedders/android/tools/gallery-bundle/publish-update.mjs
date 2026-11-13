@@ -16,7 +16,12 @@
  *   gate), bundleFormat, bundleSize, bundleSha256, bundleUrl,
  *   requiredCapabilities (TN-195: capability name → minimum contract
  *   version; the host refuses a release whose requirements it does not
- *   meet BEFORE download).
+ *   meet BEFORE download),
+ *   activation (TN-196: immediate | next-launch | idle — how the host
+ *   activates the staged release),
+ *   stateMigrationsFrom (TN-196: old state schemas this release can
+ *   migrate in its restore handler; equal schema numbers alone prove
+ *   nothing about app fields).
  *
  * Never re-serialize the metadata after signing: the manifest's payload is
  * the exact byte string that was signed, and the app parses those same
@@ -26,12 +31,14 @@
  *   node publish-update.mjs --init
  *   node publish-update.mjs --version 2 --base-url http://192.168.1.55:8898 \
  *        [--bundle path] [--key path] [--channel prototype]
- *        [--host-api 2] [--requires-capability discovery:1]...
+ *        [--host-api 3] [--requires-capability discovery:1]...
+ *        [--activation immediate|next-launch|idle] [--migrates-state-from 1]...
  *
- * Capability-requirement discipline (keep in sync with
- * UpdateProtocol.REQUIREMENTS_MIN_HOST_API): a requirement-bearing release
- * must target host-api ≥ 2 — host-api-1 APKs predate capability checks
- * and would silently ignore the field.
+ * Version discipline (keep in sync with UpdateProtocol constants): a
+ * requirement-bearing release must target host-api ≥ 2 — host-api-1 APKs
+ * predate capability checks and would silently ignore the field; deferred
+ * activation or migrations need host-api ≥ 3 (ACTIVATION_MIN_HOST_API) —
+ * host-api-2 APKs apply immediately and restore only on equal schemas.
  *
  * Key handling: the private key lives OUT of git (gitignored). Never run
  * `git add -A` in a tree that holds it — stage explicit paths. A production
@@ -50,10 +57,13 @@ const outDirDefault = join(repoRoot, "examples/gallery-preview/.out/ota");
 
 const BUNDLE_FORMAT = "tenun-js-bundle-v1";
 const APP_ID = "id.my.tenun.embedder";
-// Keep in sync with UpdateProtocol.HOST_API_VERSION (currently 2 =
-// capability-aware host) and REQUIREMENTS_MIN_HOST_API.
-const DEFAULT_HOST_API = 2;
+// Keep in sync with UpdateProtocol.HOST_API_VERSION (currently 3 =
+// activation-policy host), REQUIREMENTS_MIN_HOST_API and
+// ACTIVATION_MIN_HOST_API.
+const DEFAULT_HOST_API = 3;
 const REQUIREMENTS_MIN_HOST_API = 2;
+const ACTIVATION_MIN_HOST_API = 3;
+const ACTIVATIONS = new Set(["immediate", "next-launch", "idle"]);
 
 function arg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -120,6 +130,31 @@ function main() {
     process.exit(1);
   }
   const stateSchema = Number(arg("state-schema", "1"));
+  // TN-196: activation policy + state migrations. Both are host-api-3
+  // semantics — older hosts ignore the fields (immediate apply / clean
+  // restart), so a release relying on them must pin hostApiMin >= 3.
+  const activation = arg("activation", "immediate");
+  if (!ACTIVATIONS.has(activation)) {
+    console.error(`--activation must be one of: ${[...ACTIVATIONS].join(", ")} (got "${activation}")`);
+    process.exit(1);
+  }
+  const stateMigrationsFrom = [];
+  for (const spec of args("migrates-state-from")) {
+    const value = Number(spec);
+    if (!Number.isInteger(value) || value < 1) {
+      console.error(`--migrates-state-from must be a positive integer (got "${spec}")`);
+      process.exit(1);
+    }
+    stateMigrationsFrom.push(value);
+  }
+  const deferredSemantics = activation !== "immediate" || stateMigrationsFrom.length > 0;
+  if (deferredSemantics && hostApi < ACTIVATION_MIN_HOST_API) {
+    console.error(
+      `deferred activation or state migrations need --host-api >= ${ACTIVATION_MIN_HOST_API} ` +
+        `(older APKs would apply immediately / restart with clean state)`
+    );
+    process.exit(1);
+  }
   const baseUrl = (arg("base-url", "") || "").replace(/\/+$/, "");
   if (!/^https?:\/\//.test(baseUrl)) {
     console.error("--base-url must be http(s)://host[:port]");
@@ -147,6 +182,12 @@ function main() {
   };
   if (Object.keys(requiredCapabilities).length > 0) {
     metadata.requiredCapabilities = requiredCapabilities;
+  }
+  if (activation !== "immediate") {
+    metadata.activation = activation;
+  }
+  if (stateMigrationsFrom.length > 0) {
+    metadata.stateMigrationsFrom = stateMigrationsFrom;
   }
 
   // The payload bytes are EXACTLY what gets signed and served — the app
@@ -182,6 +223,12 @@ function main() {
   console.log(`  appId ${APP_ID} channel ${channelName} hostApi ${hostApi} stateSchema ${stateSchema}`);
   if (Object.keys(requiredCapabilities).length > 0) {
     console.log(`  requires capabilities: ${JSON.stringify(requiredCapabilities)}`);
+  }
+  if (activation !== "immediate") {
+    console.log(`  activation: ${activation}`);
+  }
+  if (stateMigrationsFrom.length > 0) {
+    console.log(`  migrates state schemas: ${JSON.stringify(stateMigrationsFrom)}`);
   }
   console.log(`  bundle sha256: ${metadata.bundleSha256} (${bundle.length} bytes)`);
   console.log(`  bake update_channel.json into app assets, then serve this directory`);
