@@ -49,6 +49,9 @@ object UpdateProtocol {
     /** Hard cap on downloaded bundle size (bytes) — DoS guard. */
     const val MAX_BUNDLE_BYTES = 50 * 1024 * 1024L
 
+    /** Hard cap on the manifest envelope itself (bytes) — DoS guard. */
+    const val MAX_MANIFEST_BYTES = 1024 * 1024L
+
     data class ReleaseMetadata(
         val schema: Int,
         val appId: String,
@@ -150,6 +153,29 @@ object UpdateProtocol {
     fun bundleMatches(metadata: ReleaseMetadata, bytes: ByteArray): Boolean {
         if (bytes.size.toLong() != metadata.bundleSize) return false
         return BundleUpdateVerifier.sha256Hex(bytes).equals(metadata.bundleSha256, ignoreCase = true)
+    }
+
+    /**
+     * Startup re-verification of a stored bundle against its cached signed
+     * envelope: signature over exact payload bytes → parse → host/channel
+     * compatibility → size/SHA-256 match of the stored bytes themselves.
+     *
+     * Download-time verification proves a release ONCE; this re-proves the
+     * specific bytes that are about to boot — the cache may predate an APK
+     * whose host API moved on, its meta may be tampered with, and its bytes
+     * may have drifted on disk. Returns the verified metadata, or null when
+     * the stored bundle must NOT boot.
+     */
+    fun storedBundleUsable(
+        envelopeJson: String,
+        publicKeyB64: String,
+        host: HostIdentity,
+        bytes: ByteArray
+    ): ReleaseMetadata? {
+        val metadata = parseEnvelope(envelopeJson, publicKeyB64) ?: return null
+        if (!isCompatible(metadata, host)) return null
+        if (!bundleMatches(metadata, bytes)) return null
+        return metadata
     }
 
     /**

@@ -181,6 +181,47 @@ class UpdateProtocolTest {
     }
 
     @Test
+    fun testStoredBundleUsableGate() {
+        // Startup re-verification: download-time proof does not carry
+        // forward — the cached envelope, the running host, and the stored
+        // bytes must all still prove out before a stored bundle boots.
+        val pair = ecPair()
+        val key = publicB64(pair)
+        val bytes = "stored-bundle".toByteArray()
+        val envelope = envelopeFor(
+            metadataJson(sequence = 7, bundleSize = bytes.size.toLong(), sha = BundleUpdateVerifier.sha256Hex(bytes)),
+            pair
+        )
+
+        // Valid cache + matching bytes + compatible host: boots.
+        val verified = UpdateProtocol.storedBundleUsable(envelope, key, host, bytes)
+        assertNotNull(verified)
+        assertEquals(7L, verified!!.sequence)
+
+        // Tampered cache: the stored payload no longer holds its signature.
+        val envelopeObj = org.json.JSONObject(envelope)
+        val payload = String(Base64.getDecoder().decode(envelopeObj.getString("payload")))
+        val mutated = payload.replace("\"sequence\":7", "\"sequence\":8").toByteArray()
+        val tampered = """{"payload":"${Base64.getEncoder().encodeToString(mutated)}",""" +
+            """"signature":"${envelopeObj.getString("signature")}"}"""
+        assertNull(UpdateProtocol.storedBundleUsable(tampered, key, host, bytes))
+
+        // Wrong pinned key: the cache belongs to a different signer.
+        assertNull(UpdateProtocol.storedBundleUsable(envelope, publicB64(ecPair()), host, bytes))
+
+        // The APK moved on: bundle pinned to hostApi 1, running host is 2.
+        val newerHost = UpdateProtocol.HostIdentity("id.my.tenun.embedder", "prototype", 2)
+        assertNull(UpdateProtocol.storedBundleUsable(envelope, key, newerHost, bytes))
+
+        // Stored bytes drifted on disk: size/digest no longer match.
+        assertNull(UpdateProtocol.storedBundleUsable(envelope, key, host, "stored-bundle!".toByteArray()))
+        assertNull(UpdateProtocol.storedBundleUsable(envelope, key, host, "stored-bundl".toByteArray()))
+
+        // Garbage cache never boots and never throws.
+        assertNull(UpdateProtocol.storedBundleUsable("not json", key, host, bytes))
+    }
+
+    @Test
     fun testStateCarryGate() {
         assertTrue(UpdateProtocol.shouldRestore(1, 1))
         assertFalse(UpdateProtocol.shouldRestore(1, 2)) // schema drift: clean restart

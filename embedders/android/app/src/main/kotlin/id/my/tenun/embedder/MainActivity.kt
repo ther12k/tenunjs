@@ -46,6 +46,9 @@ class MainActivity : Activity() {
     private var assetBundleBytes: ByteArray? = null
 
     private var bundleStore: BundleStore? = null
+
+    /** Pinned update channel (manifest URL + signer key); null when the asset is absent. */
+    private var otaChannel: UpdateChannel? = null
     private var otaManager: OtaManager? = null
 
     // TN-154: Host Service Bridge registry and native BLE service
@@ -80,6 +83,9 @@ class MainActivity : Activity() {
         devServerUrl = readDevServerAsset()
 
         bundleStore = BundleStore(this)
+        // Loaded BEFORE bootEngine: startup re-verification of a stored
+        // bundle needs the pinned signer key.
+        otaChannel = UpdateChannel.fromAssets(assets)
 
         // Process-death rollback: a TRIAL found at start means the previous
         // process died before confirming it. Quarantine that sequence (it
@@ -158,7 +164,7 @@ class MainActivity : Activity() {
             schedulePoll(POLL_INTERVAL_MS)
         }
 
-        val channel = UpdateChannel.fromAssets(assets)
+        val channel = otaChannel
         val store = bundleStore
         if (channel != null && store != null) {
             val host = UpdateProtocol.HostIdentity(
@@ -246,19 +252,58 @@ class MainActivity : Activity() {
     var startupFailed: Boolean = false
         private set
 
-    /** Boots stored (confirmed) OTA bundle, falling back to packaged asset. */
+    /**
+     * Boots the stored (confirmed) OTA bundle only after startup
+     * re-verification ([UpdateProtocol.storedBundleUsable]: cached signed
+     * envelope against the pinned key, the running host, and the stored
+     * bytes themselves); otherwise falls back to the packaged asset.
+     *
+     * Two failure shapes, deliberately different:
+     *   - Verification ran and FAILED (tampered meta, drifted bytes, host
+     *     API moved on): proven defect → quarantine, like a failed trial.
+     *   - Verification CANNOT run (no channel asset, legacy cache without
+     *     an envelope): nothing proven, nothing destroyed — the store keeps
+     *     the bundle, but packaged boots this launch.
+     */
     fun bootEngine(): TenunEngine? {
         val store = bundleStore
+        val channel = otaChannel
         if (store != null) {
             val stored = store.activeBundleBytes()
             if (stored != null) {
-                try {
-                    Log.i(TAG, "booting confirmed OTA bundle v${store.installedVersion()}")
-                    bootBundleSha = sha256Hex(stored)
-                    return newEngine(stored).also { lastBootCorrelation = "stored-v${store.installedVersion()}" }
-                } catch (e: Exception) {
-                    Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
-                    // Confirmed-but-broken is treated like a failed trial.
+                val envelope = store.activeEnvelope()
+                val verified = if (channel != null && envelope != null) {
+                    UpdateProtocol.storedBundleUsable(
+                        envelope,
+                        channel.publicKeyB64,
+                        UpdateProtocol.HostIdentity(
+                            appId = packageName,
+                            channel = channel.channel,
+                            hostApi = UpdateProtocol.HOST_API_VERSION
+                        ),
+                        stored
+                    )
+                } else {
+                    null
+                }
+                if (verified != null) {
+                    try {
+                        Log.i(TAG, "booting re-verified OTA bundle v${verified.sequence}")
+                        bootBundleSha = sha256Hex(stored)
+                        return newEngine(stored).also { lastBootCorrelation = "stored-v${verified.sequence}" }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "confirmed OTA bundle failed to boot; using packaged: ${e.message}")
+                        // Confirmed-but-broken is treated like a failed trial.
+                        store.quarantine(verified.sequence)
+                    }
+                } else if (channel == null || envelope == null) {
+                    Log.w(
+                        TAG,
+                        "stored OTA bundle v${store.installedVersion()} cannot be re-verified " +
+                            "(no pinned key or cached release); booting packaged"
+                    )
+                } else {
+                    Log.w(TAG, "stored OTA bundle v${store.installedVersion()} failed startup re-verification; quarantining")
                     store.quarantine(store.installedVersion())
                 }
             }

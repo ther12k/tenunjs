@@ -18,10 +18,12 @@ class BundleStore(context: Context) {
 
     fun activeBundleBytes(): ByteArray? = delegate.activeBundleBytes()
 
+    fun activeEnvelope(): String? = delegate.activeEnvelope()
+
     fun activeStateSchema(): Long = delegate.activeStateSchema()
 
-    fun stageBundle(sequence: Long, bytes: ByteArray, stateSchema: Long) =
-        delegate.stageBundle(sequence, bytes, stateSchema)
+    fun stageBundle(sequence: Long, bytes: ByteArray, stateSchema: Long, envelopeJson: String? = null) =
+        delegate.stageBundle(sequence, bytes, stateSchema, envelopeJson)
 
     fun promoteTrial(sequence: Long): Boolean = delegate.promoteTrial(sequence)
 

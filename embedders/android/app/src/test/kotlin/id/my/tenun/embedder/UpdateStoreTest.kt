@@ -153,6 +153,33 @@ class UpdateStoreTest {
     }
 
     @Test
+    fun testEnvelopePersistsThroughLifecycle() {
+        // The signed manifest envelope must survive staged → trial →
+        // confirmed so the host can re-verify the bundle at every boot.
+        val store = newStore()
+        val envelope = """{"payload":"AA","signature":"BB"}"""
+        store.stageBundle(2, ByteArray(4), stateSchema = 1, envelopeJson = envelope)
+        assertNull(store.activeEnvelope()) // staged: not accepted yet
+
+        assertTrue(store.promoteTrial(2))
+        assertTrue(store.confirmTrial(2))
+        assertEquals(envelope, store.activeEnvelope())
+    }
+
+    @Test
+    fun testStageWithoutEnvelopeReadsNull() {
+        // Caches written before envelope caching (and stages without one)
+        // read as null: the host declines to boot them, but the store
+        // itself treats them as ordinary lifecycle state.
+        val store = newStore()
+        store.stageBundle(2, ByteArray(4), 1)
+        store.promoteTrial(2)
+        store.confirmTrial(2)
+        assertNull(store.activeEnvelope())
+        assertTrue(store.activeBundleBytes()!!.contentEquals(ByteArray(4)))
+    }
+
+    @Test
     fun testCorruptMetaFilesFailClosed() {
         val root = tmp.newFolder()
         val store = UpdateStore(root)
