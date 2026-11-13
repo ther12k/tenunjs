@@ -146,6 +146,15 @@ class OtaManager(
             Log.d(TAG, "update v${metadata.sequence} is quarantined; refusing")
             return
         }
+        // TN-196: a boot-activated next-launch release is mid-TRIAL — its
+        // sequence is not yet accepted, so the sequence gate alone would
+        // re-download and RE-STAGE over the running trial (clobbering the
+        // trial state confirmTrial needs). An in-flight trial of the served
+        // sequence is simply up to date.
+        if (store.trialSequence() == metadata.sequence) {
+            Log.d(TAG, "update v${metadata.sequence} is already in trial; nothing to do")
+            return
+        }
         // TN-196: a DEFERRED release stays staged until its policy fires —
         // re-downloading it every check would waste the channel. Immediate
         // releases never short-circuit: a previously abandoned stage must
@@ -246,12 +255,13 @@ class OtaManager(
     }
 
     /**
-     * TN-196: activates the pending STAGED release (its signed policy
-     * deferred it — next-launch or idle). Re-verifies the bytes, then
-     * honors [canApplyNow] unless [force] (explicit app-requested
-     * activation). [onDone] fires when the attempt settles; false means
-     * nothing was activated (nothing pending, failed re-verification,
-     * busy host, or stopped).
+     * TN-196: activates the pending STAGED release. Without [force] this is
+     * the IDLE policy's resume path: only idle-policy releases activate,
+     * and only while [canApplyNow] holds (no live text session) — a
+     * next-launch release waits for its own policy (a cold boot). [force]
+     * is the app's explicit request (system.activateUpdate) and overrides
+     * both the policy and the idle gate. [onDone] fires when the attempt
+     * settles; false means nothing was activated.
      */
     fun activatePendingNow(
         force: Boolean = false,
@@ -265,6 +275,14 @@ class OtaManager(
         ioExecutor.execute {
             val candidate = verifyPendingStaged()
             if (candidate == null) {
+                onDone?.invoke(false)
+                return@execute
+            }
+            if (!force && candidate.metadata.activation != UpdateProtocol.ACTIVATION_IDLE) {
+                Log.i(
+                    TAG,
+                    "staged v${candidate.metadata.sequence} activation is '${candidate.metadata.activation}'; waiting for its own policy"
+                )
                 onDone?.invoke(false)
                 return@execute
             }

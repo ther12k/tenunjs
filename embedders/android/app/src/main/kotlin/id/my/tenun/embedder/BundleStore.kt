@@ -37,6 +37,8 @@ class BundleStore(context: Context) {
 
     fun isStaged(sequence: Long): Boolean = delegate.isStaged(sequence)
 
+    fun discard(sequence: Long) = delegate.discard(sequence)
+
     fun quarantine(sequence: Long) = delegate.quarantine(sequence)
 
     fun isQuarantined(sequence: Long): Boolean = delegate.isQuarantined(sequence)
