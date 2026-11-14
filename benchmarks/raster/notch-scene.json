@@ -10,8 +10,8 @@
     { "op": "rect", "x": 56, "y": 56, "w": 448, "h": 96, "r": 16, "color": "#2e3346" },
 
     { "op": "circle", "cx": 280, "cy": 280, "r": 170, "color": "#14141a" },
-    { "op": "ring", "cx": 280, "cy": 280, "r": 140, "width": 1.5, "color": "#2a2d3a" },
-    { "op": "ring", "cx": 280, "cy": 280, "r": 100, "width": 1.5, "color": "#2a2d3a" },
+    { "op": "ring", "cx": 280, "cy": 280, "r": 140, "width": 1.5, "color": "#2a2d3a", "progress": 1 },
+    { "op": "ring", "cx": 280, "cy": 280, "r": 100, "width": 1.5, "color": "#2a2d3a", "progress": 1 },
     { "op": "circle", "cx": 280, "cy": 280, "r": 56, "color": "#1c1e26" },
     { "op": "ring", "cx": 280, "cy": 280, "r": 190, "width": 4, "color": "#7c5cff", "progress": 0.42, "track": "#2a2d3a" },
     { "op": "circle", "cx": 280, "cy": 280, "r": 10, "color": "#7c5cff" },
