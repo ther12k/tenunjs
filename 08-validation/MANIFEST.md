@@ -75,7 +75,8 @@ status: accepted
 | 03-decisions/adr-0025-scene-semantics-wire-v1.md | 7b16a0cda20347a39bef78dc41327426d34a73b1de664248a6b55d7e53ab81a4 |
 | 03-decisions/adr-0026-staged-skia-adoption.md | f9da28ccac0a4a97f0a9f3ca2a18d107387c06a34090811d342e73c9e5f1b446 |
 | 03-decisions/adr-0027-companion-connectivity-capabilities.md | ec5e35766d31467a00266df27ff2821b507e290f5e10e1def3271fab846a29f9 |
-| 03-decisions/index.md | dc01bb76aedf133a17c8e68a1d61986d78fe253bb94707bf3e9cb47ae58f7de5 |
+| 03-decisions/adr-0028-desktop-pilot-carve-out.md | 31bee255567cfe55804a6fbeffc5a3a06cf10bfd7d7236c308ead5b55898247f |
+| 03-decisions/index.md | f1287b9443b539fc7eef18c96828ce9467b0a700c0b4fe4b35b43e3506d51e48 |
 | 04-api/actions-and-effects.md | 469a436152d9d9bf31ef2d15cccefe0a67b1139d75cdb0c75d1e25f8f3d30039 |
 | 04-api/animation.md | 2f0de0b1ebb539fd8e48461320545da3ae667e2a78fac14b65e967a18a432c78 |
 | 04-api/application-entry.md | 408a5f8c22700453c58d75df6763c97329f8b33536c61bc3fc3154b9ca71510d |

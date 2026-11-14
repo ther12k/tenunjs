@@ -37,3 +37,4 @@ status: accepted
 | [ADR-0025](adr-0025-scene-semantics-wire-v1.md) | Scene semantics wire v1 | accepted |
 | [ADR-0026](adr-0026-staged-skia-adoption.md) | Staged Skia adoption | accepted |
 | [ADR-0027](adr-0027-companion-connectivity-capabilities.md) | Companion-connectivity capabilities: net, keys, discovery | accepted |
+| [ADR-0028](adr-0028-desktop-pilot-carve-out.md) | Desktop pilot carve-out — lekuvo under a firewall | accepted |
