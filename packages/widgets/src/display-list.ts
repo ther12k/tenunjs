@@ -51,7 +51,8 @@ export interface LayoutViewport {
 
 export type LayoutErrorCode =
   | "INVALID_VIEWPORT" | "INVALID_CONSTRAINT" | "UNBOUNDED_FLEX"
-  | "INVALID_TRANSITION" | "INVALID_COLOR_REF" | "INVALID_THEME_TOKEN";
+  | "INVALID_TRANSITION" | "INVALID_COLOR_REF" | "INVALID_THEME_TOKEN"
+  | "INVALID_TRANSPARENCY";
 
 /** Supported target platform tags for platform-adaptive UI context (TN-068). */
 export type PlatformKind = "android" | "ios" | "web";
@@ -422,6 +423,17 @@ export interface DisplayListScene {
   designWidth: number;
   contentHeight: number;
   background: string;
+  /**
+   * TN-199: declared transparent scene — hosts that know it paint NO
+   * background fill and output premultiplied RGBA for the window
+   * compositor; hosts that predate the field ignore it (the unknown-
+   * top-level-field precedent, semantics?/scene.transition) and
+   * degrade to the opaque background fill. `background` stays on the
+   * wire for exactly that degradation — transparent-aware hosts never
+   * paint it. No 8-digit-hex background: alpha belongs here, because
+   * #AARRGGBB (Android) and #RRGGBBAA (CSS) disagree on channel order.
+   */
+  transparent?: true;
   ops: DisplayOp[];
   taps: SerializedTap[];
   /**
@@ -543,6 +555,8 @@ interface InternalContext extends RenderContext {
   textScale: number;
   /** TN-068: current target platform environment ("android" | "ios" | "web"). */
   platform: PlatformKind;
+  /** TN-199: declared transparent scene (emitted as scene.transparent). */
+  transparent: boolean;
   /** TN-179: the scene's accessibility semantics projection. */
   semantics: SemanticNode[];
   /** TN-179: >0 while descendant text is absorbed by an interactive
@@ -2399,6 +2413,14 @@ export interface LayoutOptions {
   textScale?: number;
   /** TN-068: target platform environment (default "android"). */
   platform?: PlatformKind;
+  /**
+   * TN-199: declare the scene transparent (the lekuvo notch is a
+   * composited overlay). Emitting `transparent: true` on the scene
+   * makes transparent-aware hosts paint no background fill and output
+   * premultiplied RGBA; hosts that predate the field degrade to the
+   * opaque background fill. Non-boolean fails the commit (fail-visible).
+   */
+  transparent?: boolean;
 }
 
 export function layoutScreen(
@@ -2422,6 +2444,10 @@ export function layoutScreen(
   const platform = options?.platform !== undefined
     ? validatePlatform(options.platform, "options.platform")
     : "android";
+  if (options?.transparent !== undefined && typeof options.transparent !== "boolean") {
+    throw new LayoutError("INVALID_TRANSPARENCY", "options.transparent must be a boolean");
+  }
+  const transparent = options?.transparent === true;
   const ctx: InternalContext = {
     theme,
     designWidth,
@@ -2433,6 +2459,7 @@ export function layoutScreen(
     locale,
     textScale,
     platform,
+    transparent,
     usedRefs: false,
     ops: [],
     tapRegions: [],
@@ -2450,6 +2477,7 @@ export function layoutScreen(
         designWidth,
         contentHeight: 0,
         background: theme.colors?.surface ?? "#101014",
+        ...(transparent ? { transparent: true as const } : {}),
         ops: ctx.ops,
         taps: ctx.tapRegions,
         // TN-179: the semantics projection rides every atomic commit and

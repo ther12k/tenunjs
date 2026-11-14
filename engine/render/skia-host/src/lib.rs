@@ -52,6 +52,13 @@ struct Scene {
     design_width: f32,
     #[serde(default)]
     background: String,
+    /// TN-199: declared transparent scene — clear to premul-transparent
+    /// instead of painting the background fill; hosts that predate the
+    /// field ignore it and degrade to the opaque fill. `background`
+    /// stays on the wire for exactly that degradation and is not parsed
+    /// (let alone painted) when this is set.
+    #[serde(default)]
+    transparent: bool,
     ops: Vec<Op>,
 }
 
@@ -344,7 +351,14 @@ pub fn render_scene(scene_json: &str, width: i32, height: i32) -> Result<Vec<u8>
     let mut surface = skia_safe::surfaces::raster_n32_premul(ISize::new(width, height))
         .ok_or_else(|| RenderError("could not allocate Skia surface".into()))?;
     let canvas = surface.canvas();
-    canvas.clear(parse_color(&scene.background, "background")?);
+    if scene.transparent {
+        // TN-199: premul-transparent clear; the host composites. The
+        // readback is already AlphaType::Premul, so painted pixels keep
+        // their alpha and unpainted pixels are (0,0,0,0).
+        canvas.clear(Color4f::new(0.0, 0.0, 0.0, 0.0));
+    } else {
+        canvas.clear(parse_color(&scene.background, "background")?);
+    }
 
     let scale = if scene.design_width > 0.0 {
         width as f32 / scene.design_width
@@ -889,6 +903,42 @@ mod tests {
         for y in [0, 50, 99] {
             for x in [0, 50, 99] {
                 assert_eq!(px(&pixels, x, y), (0, 0, 0, 255), "at {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn transparent_scene_clears_to_premul_transparent() {
+        // TN-199: the transparent field paints no background fill —
+        // unpainted pixels are (0,0,0,0) (premul), painted pixels keep
+        // their color at full alpha. Hosts composite this buffer; the
+        // scene's background string is never parsed, let alone painted.
+        let json = "{\"tenun\":\"display-list\",\"version\":1,\"designWidth\":100,\
+             \"contentHeight\":100,\"background\":\"#000000\",\"transparent\":true,\
+             \"ops\":[{\"op\":\"rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"r\":0,\
+             \"color\":\"#FF0000\"}],\"taps\":[]}";
+        let pixels = render_scene(json, W, H).expect("render");
+        assert_eq!(
+            px(&pixels, 5, 5),
+            (0, 0, 0, 0),
+            "unpainted stays transparent"
+        );
+        assert_eq!(
+            px(&pixels, 50, 50),
+            (255, 0, 0, 255),
+            "painted stays opaque"
+        );
+        assert_eq!(px(&pixels, 12, 12), (255, 0, 0, 255));
+        // Premul invariant across the whole surface: any pixel at alpha 0
+        // must carry no color.
+        for i in 0..(W * H) as usize {
+            let a = pixels[i * 4 + 3];
+            if a == 0 {
+                assert_eq!(
+                    (pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2]),
+                    (0, 0, 0),
+                    "at pixel index {i}"
+                );
             }
         }
     }
