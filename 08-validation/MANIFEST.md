@@ -316,7 +316,7 @@ status: accepted
 | 08-validation/android-host-review-2026-09-28.md | 38387b9da6dcb9bddbf45d784b54b7c0f661d4d335769824474a2315db8769cb |
 | 08-validation/bundle-report.md | 8c30d2ade2d3f8c4d8f9cd9e0f120379eb8c711d14353105a58a98a5f7abd727 |
 | 08-validation/companion-class-review-2026-11-07.md | 7c5ecd4bf069d4917e9e0c128970cc16cd7097a786c1fe0cbc6a3e11d7752aa9 |
-| 08-validation/skia-raster-baseline-2026-11-14.md | 8da4a08a3c2c9dccb5f704b441906ef84e84ce5c8f908bd7a81e3821ba7845cb |
+| 08-validation/skia-raster-baseline-2026-11-14.md | 6d710dbc519e740322d67ab036542d69c4698da8a06f20a9ffe796db563b0d50 |
 | 08-validation/tvremote-latency-baseline.md | 800e41ee89638cefa421a74a11790bca6ce7766abb375ccdd6c3f92289dc2e70 |
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |

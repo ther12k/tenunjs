@@ -60,6 +60,36 @@ p95 3.024 / p99 3.277 — same order of magnitude, ~40% higher tails
 (laptop turbo/thermal noise). Threshold claims should therefore cite
 p99, not p50, and leave ≥5× margin.
 
+## Fixture correction and arc probe (2026-11-15)
+
+1. **The two vinyl groove rings were invalid wire.** `RingOp.progress`
+   is required (display-list.ts:269, "0..1 swept from 12 o'clock"); the
+   fixture omitted it, and the skia-host painter tolerated that through
+   `serde(default)` — painting *nothing* (progress 0 → no arc). The
+   committed baseline therefore undercounted two arcs. Both grooves now
+   carry `progress: 1` (the only contract-valid full-circle ring). The
+   corrected scene re-measured p50 1.310 / p95 1.692 in a quiet window
+   — within the run-to-run band. Packet re-recorded at e8e0143 from a
+   clean detached worktree (`dirty: false`).
+2. **The re-record landed under co-load and is annotated as such.** At
+   recording time another process on this laptop ran at ~110% CPU
+   (load average 4–11), and the packet measures p50 2.850 / p95 6.566 /
+   max 17.647 — machine-state noise, not a scene regression. The packet
+   is structurally valid (steps, artifacts, digests all pass) and its
+   absolute values are conservative-high. The clean-machine band across
+   five independent runs of the corrected/superseded scene is
+   p50 1.17–1.75. Decision-relevant readings come from that band; the
+   pilot ADR's target-hardware re-run remains the decider.
+3. **There is deliberately no full-circle arc fast path.** A 360°
+   `draw_arc` with round caps is *not* pixel-identical to a stroked
+   `draw_circle`: a direct pixel diff through skia-safe 0.87 shows 15
+   differing bytes of 921,600 (max 6/255), localized at the start-angle
+   cap seam, and the seam moves with the start angle. A skia-host-only
+   fast path would break TN-184 pixel parity; a cross-host semantics
+   change is not justified at 14× inside budget. Arc cost stays a
+   documented known-cost (~0.15 ms on this scene, ~40 µs/op measured by
+   scene ablation; text re-shaping ablated to ≈0).
+
 ## Interpretation
 
 1. **CPU raster at notch scale is not a bottleneck.** p95 1.54 ms is
