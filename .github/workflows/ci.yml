@@ -185,6 +185,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libclang-18-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-18/lib" >> "$GITHUB_ENV"
+      # skia-bindings links freetype/fontconfig when no prebuilt matches the
+      # runner; the skia-raster-bench-v1 replay chain (TN-198) compiles
+      # engine/render/skia-host, so this job now needs them too. No effect on
+      # the existing packets: their artifacts embed gcc output and the
+      # gcc/libclang pins above are untouched.
+      - name: Install Skia link dependencies
+        run: sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       - name: Validator mutation selftest
         run: python3 ./.github/scripts/verify-evidence.py --selftest
       - name: Production integration mutation test

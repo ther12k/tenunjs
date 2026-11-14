@@ -101,7 +101,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | ae14c85947d979c23734f5e7be832234d2c3872d9c0befeaa93ba267175d15ea |
+| 06-issues/index.md | 3c5f0e8761e6bc9ffed5a76a3ddb9d3a2c424ed1ce9e8e5ecbabf4ac7be91569 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -307,6 +307,7 @@ status: accepted
 | 06-issues/tn-195-ota-capability-requirements-and-host-identity.md | 0c0b6224f6f49a5b602dc8fd36d1d4f922ed212bb62b40ab50a40d766ad17e8d |
 | 06-issues/tn-196-ota-activation-policy-and-state-migrations.md | efc479b9bd9d4344d76b4a3ee6941ba00ccb485c5b5e974fe6ec1bb6710d2f5a |
 | 06-issues/tn-197-ui-activity-ota-journey.md | d569bb4bc5a23bea480926004c8f0ed40b137e58183beb6ba5919c60db65f124 |
+| 06-issues/tn-198-raster-throughput-benchmark.md | 8c1d34aa1b10968216d57d61c79a0bc1d28cfb2f4ac6dcad66106f59ef0637b4 |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
@@ -315,6 +316,7 @@ status: accepted
 | 08-validation/android-host-review-2026-09-28.md | 38387b9da6dcb9bddbf45d784b54b7c0f661d4d335769824474a2315db8769cb |
 | 08-validation/bundle-report.md | 8c30d2ade2d3f8c4d8f9cd9e0f120379eb8c711d14353105a58a98a5f7abd727 |
 | 08-validation/companion-class-review-2026-11-07.md | 7c5ecd4bf069d4917e9e0c128970cc16cd7097a786c1fe0cbc6a3e11d7752aa9 |
+| 08-validation/skia-raster-baseline-2026-11-14.md | 6d710dbc519e740322d67ab036542d69c4698da8a06f20a9ffe796db563b0d50 |
 | 08-validation/tvremote-latency-baseline.md | 800e41ee89638cefa421a74a11790bca6ce7766abb375ccdd6c3f92289dc2e70 |
 | 08-validation/validation-report.md | 5c2477a3fd696f6a3a13a4060454794ea668ccbfe35904cb758773b414eb1714 |
 | 08-validation/votol-consumer-feedback-2026-10-02.md | 210a9b6bc63c9b4bac5b00d5b2c8dc80ee6ae6e85da431c8563c70b85e2ceb99 |

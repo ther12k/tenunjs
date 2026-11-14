@@ -292,3 +292,14 @@ not to a milestone.
 | [TN-190](tn-190-discovery-capability.md) | P1 | TN-141 | Discovery capability — mDNS/NSD browse and resolve |
 | [TN-191](tn-191-tvremote-example.md) | P1 | TN-188, TN-189, TN-190 | examples/tvremote — companion-class vertical slice against a real Android TV |
 | [TN-192](tn-192-companion-latency-harness.md) | P2 | TN-188, TN-191 | Companion latency harness — measured end-to-end event latency |
+
+## Raster evidence (2026-11-14)
+
+First frame-time evidence in the repo (08-validation/
+skia-raster-baseline-2026-11-14.md): notch-scale 760×560 CPU raster
+p95 1.54 ms — the baseline ADR-0026 stage-3 shadow pricing and the
+desktop-pilot ADR's kill criterion cite.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-198](tn-198-raster-throughput-benchmark.md) | P1 | TN-184 | Raster throughput benchmark — skia-host frame-time baseline |
