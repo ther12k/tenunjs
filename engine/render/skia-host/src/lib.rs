@@ -913,13 +913,11 @@ mod tests {
         // unpainted pixels are (0,0,0,0) (premul), painted pixels keep
         // their color at full alpha. Hosts composite this buffer; the
         // scene's background string is never parsed, let alone painted.
-        let json = format!(
-            "{{\"tenun\":\"display-list\",\"version\":1,\"designWidth\":100,\
+        let json = "{\"tenun\":\"display-list\",\"version\":1,\"designWidth\":100,\
              \"contentHeight\":100,\"background\":\"#000000\",\"transparent\":true,\
-             \"ops\":[{{\"op\":\"rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"r\":0,\
-             \"color\":\"#FF0000\"}}],\"taps\":[]}}"
-        );
-        let pixels = render_scene(&json, W, H).expect("render");
+             \"ops\":[{\"op\":\"rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"r\":0,\
+             \"color\":\"#FF0000\"}],\"taps\":[]}";
+        let pixels = render_scene(json, W, H).expect("render");
         assert_eq!(
             px(&pixels, 5, 5),
             (0, 0, 0, 0),
