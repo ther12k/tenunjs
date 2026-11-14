@@ -102,7 +102,7 @@ status: accepted
 | 05-delivery/risk-register.md | 65dbf43285abc603f65dbd8a15bdc8bbcb63d414626ff7de8e0fe33cd3375219 |
 | 05-delivery/roadmap.md | 4b0defde7c21a01f0c48d0657d7293af971272e1233fea65be1cbf79085aa34d |
 | 05-delivery/traceability.md | 4401e835716fe6581d452a81bc089269a4f45114fa35743e41e479cba715250c |
-| 06-issues/index.md | 3c5f0e8761e6bc9ffed5a76a3ddb9d3a2c424ed1ce9e8e5ecbabf4ac7be91569 |
+| 06-issues/index.md | 7e2b4f8bf52afac65875baa4ed8c6a86fdd005400dd492287222a8a0c0c357b0 |
 | 06-issues/m0-index.md | bba40918bb603b716de6e131ff843d7d0f23cbc31556e021280b0593c6bac595 |
 | 06-issues/m1-index.md | 1beddebb18838eabc2104a13103fbb19a5ace129b2f4327f784cd548ea26af5f |
 | 06-issues/m2-index.md | 83e519f386b97296d39f3d58560e02ba8ebe7207ecd6898230383614d19a4321 |
@@ -309,6 +309,10 @@ status: accepted
 | 06-issues/tn-196-ota-activation-policy-and-state-migrations.md | efc479b9bd9d4344d76b4a3ee6941ba00ccb485c5b5e974fe6ec1bb6710d2f5a |
 | 06-issues/tn-197-ui-activity-ota-journey.md | d569bb4bc5a23bea480926004c8f0ed40b137e58183beb6ba5919c60db65f124 |
 | 06-issues/tn-198-raster-throughput-benchmark.md | 8c1d34aa1b10968216d57d61c79a0bc1d28cfb2f4ac6dcad66106f59ef0637b4 |
+| 06-issues/tn-199-scene-transparency-contract.md | 7a18d04f62d61b00babae7393f9d1967c7efe39eb297cf2847f1612d5b3a0383 |
+| 06-issues/tn-200-linux-platform-tags.md | d6fe17ab69e9430564dc550ac7122b01a09ec6425d00d707e8422b036da646bd |
+| 06-issues/tn-201-mpris-media-capability.md | 51fc2d30bf287504f7db781f668afec530a137a172a5ebe4c557e03bb20c30f3 |
+| 06-issues/tn-202-linux-embedder.md | 0e057fcb6de173986877d009a16f112f7189fe36ed4695fdeb647e76f9fb18ed |
 | 07-agent/agent-execution-protocol.md | 2cab647a3c3b0e30bd8219845c7cbd0d63a6406786c2f35a9d5a94f3319f2b22 |
 | 07-agent/evidence-packet-template.md | fae643c417903e52b95b8850e790f2b976960de3109652deaf6501a824580741 |
 | 07-agent/multi-agent-coordination.md | 756564f12a87a4737d72c4f8c1798e2e0dcb8aea616334cc3973eeba17838cb7 |
