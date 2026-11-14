@@ -50,8 +50,8 @@ fn surface_churn_frames(width: i32, height: i32, warmup: usize, frames: usize) -
     let mut samples = Vec::with_capacity(frames);
     for i in 0..warmup + frames {
         let start = Instant::now();
-        let mut surface = surfaces::raster_n32_premul(ISize::new(width, height))
-            .expect("surface allocation");
+        let mut surface =
+            surfaces::raster_n32_premul(ISize::new(width, height)).expect("surface allocation");
         surface.canvas().clear(skia_safe::Color::BLACK);
         let ok = surface.read_pixels(&info, &mut pixels, (width * 4) as usize, (0, 0));
         assert!(ok, "readback failed");
@@ -108,9 +108,8 @@ fn main() {
 
     // --decompose: measure the surface-alloc/clear/readback share (the
     // per-frame cost a persistent-surface present path would eliminate).
-    let churn = arg_flag("--decompose").then(|| {
-        surface_churn_frames(width, height, warmup, frames)
-    });
+    let churn =
+        arg_flag("--decompose").then(|| surface_churn_frames(width, height, warmup, frames));
     let churn_stat = churn.as_ref().map(|c| {
         let mut s = c.clone();
         s.sort_by(|a, b| a.partial_cmp(b).expect("no NaN durations"));
