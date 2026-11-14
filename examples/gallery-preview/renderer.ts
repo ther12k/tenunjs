@@ -391,8 +391,13 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.fillStyle = toCss(to.background);
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    // TN-199: a transparent scene paints no background fill — the
+    // browser compositor supplies the alpha. Hosts predating the field
+    // keep the fill (graceful degradation).
+    if (!to.transparent) {
+      ctx.fillStyle = toCss(to.background);
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, to.designWidth, visibleHeight);
@@ -414,8 +419,11 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.fillStyle = toCss(scene.background);
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    // TN-199: see the transition frame — transparent scenes skip the fill.
+    if (!scene.transparent) {
+      ctx.fillStyle = toCss(scene.background);
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
     this.paintScene(scene, scrollY, 0, 1, rect.width / scene.designWidth, rect.height * scene.designWidth / rect.width);
   }
 
