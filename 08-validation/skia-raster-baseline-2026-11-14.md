@@ -69,18 +69,27 @@ p99, not p50, and leave ≥5× margin.
    committed baseline therefore undercounted two arcs. Both grooves now
    carry `progress: 1` (the only contract-valid full-circle ring). The
    corrected scene re-measured p50 1.310 / p95 1.692 in a quiet window
-   — within the run-to-run band. Packet re-recorded at e8e0143 from a
-   clean detached worktree (`dirty: false`).
-2. **The re-record landed under co-load and is annotated as such.** At
-   recording time another process on this laptop ran at ~110% CPU
-   (load average 4–11), and the packet measures p50 2.850 / p95 6.566 /
-   max 17.647 — machine-state noise, not a scene regression. The packet
-   is structurally valid (steps, artifacts, digests all pass) and its
-   absolute values are conservative-high. The clean-machine band across
-   five independent runs of the corrected/superseded scene is
-   p50 1.17–1.75. Decision-relevant readings come from that band; the
-   pilot ADR's target-hardware re-run remains the decider.
-3. **There is deliberately no full-circle arc fast path.** A 360°
+   — within the run-to-run band.
+2. **Squash merges break packet ancestry; the packet is recorded at the
+   post-merge commit.** The fixture fix landed on the PR branch
+   (e8e0143) and its packet was recorded there; squashing the PR into
+   09b9626 removed e8e0143 from main's ancestry, which fails the
+   validator's identity model ("recorded commit must be an ancestor of
+   HEAD") — and did fail main's verify-evidence until re-recorded. The
+   shipped packet is recorded at 09b9626 itself from a clean detached
+   worktree (`dirty: false`): p50 1.286 / p95 1.647 / p99 1.950, inside
+   the clean-machine band despite co-load. House rule this cements:
+   **evidence packets are recorded at post-merge commits, not PR
+   branch tips** — a squash merge abandons branch commits.
+3. **The first re-record attempt landed under co-load and is superseded
+   but kept as history.** Recording while another process on this
+   laptop ran at ~110% CPU (load average 4–11) measured p50 2.850 /
+   p95 6.566 / max 17.647 at e8e0143 — machine-state noise, not a scene
+   regression. The clean-machine band across five independent runs of
+   the corrected/superseded scene is p50 1.17–1.75. Decision-relevant
+   readings come from that band; the pilot ADR's target-hardware
+   re-run remains the decider.
+4. **There is deliberately no full-circle arc fast path.** A 360°
    `draw_arc` with round caps is *not* pixel-identical to a stroked
    `draw_circle`: a direct pixel diff through skia-safe 0.87 shows 15
    differing bytes of 921,600 (max 6/255), localized at the start-angle
