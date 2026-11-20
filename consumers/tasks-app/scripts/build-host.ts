@@ -6,10 +6,12 @@
 import { build } from "bun";
 import { mkdirSync } from "node:fs";
 
+const android = process.argv[2] === "--android";
+const output = android ? ".out/android-app.js" : ".out/host-app.js";
 const result = await build({
   entrypoints: ["src/host.ts"],
   target: "browser",
-  format: "esm",
+  format: android ? "iife" : "esm",
   minify: false,
   external: [],
 });
@@ -20,5 +22,5 @@ if (!result.success) {
 }
 
 mkdirSync(".out", { recursive: true });
-await Bun.write(".out/host-app.js", result.outputs[0]!);
-console.log("host bundle: .out/host-app.js");
+await Bun.write(output, result.outputs[0]!);
+console.log(`host bundle: ${output}`);

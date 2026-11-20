@@ -83,7 +83,7 @@ status: accepted
 | 04-api/canvas.md | a4797457f2ed26d3a8057b92d5955d64f4a72061bb90271eb0306f83c262d878 |
 | 04-api/counter-app-example.md | 1275574fede4c648c43dd5e7ff18f95980999d48da51851c8b7b1daa83f56965 |
 | 04-api/discovery.md | 3aab447eaf28328a135284c4f508f87968ea219e6b846dce9ffa291d61de7e46 |
-| 04-api/external-consumer-guide.md | 5a95464af0a9426c2edab968824967480e72f4bbed899760a181c0068e086af0 |
+| 04-api/external-consumer-guide.md | 202d59aa3b14ed2617adee775f18f931069b0eb3fd961d4f2819a9285cdda171 |
 | 04-api/flutter-migration.md | fcf7f9141e6e150ba4e6a10d35fc44634157ceb28a9d21e2fcacd29ce0415aef |
 | 04-api/index.md | 955097c4b68065796a3b552c19be5969391c86d2a78b081e80ece2e52e2679b1 |
 | 04-api/keys.md | da3c08bacd870faf1ca4d8d76fd5ff3b3eaf64e7c8c863d85d4ce479ef7c00d1 |

@@ -10,6 +10,16 @@
 # repository-relative paths (the independence boundary).
 set -euo pipefail
 
+ANDROID_OUTPUT=""
+if [ "$#" -ne 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "--android-output" ] || [ -z "$2" ]; then
+    printf 'usage: %s [--android-output DIR]\n' "$0" >&2
+    exit 2
+  fi
+  mkdir -p -- "$2"
+  ANDROID_OUTPUT="$(cd -- "$2" && pwd)"
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FIXTURE="$REPO_ROOT/consumers/tasks-app"
 WORK="$(mktemp -d /tmp/tenun-consumer-rehearsal.XXXXXX)"
@@ -97,6 +107,11 @@ HOST_OUT="$(bun run check:host)" || {
 echo "$HOST_OUT" | grep -q "HOST-CONTRACT-OK" || {
   echo "CONSUMER-REHEARSAL-FAILURE: host-contract check did not pass"; echo "$HOST_OUT"; exit 1; }
 
+if [ -n "$ANDROID_OUTPUT" ]; then
+  bun run build:host --android
+  cp .out/android-app.js "$ANDROID_OUTPUT/consumer-stock.js"
+fi
+
 echo "== consumer rehearsal: application-only change through the contract =="
 # TN-133 acceptance shape: change a label AND an action's behavior in
 # APPLICATION code only (framework untouched), rebuild, and observe both
@@ -129,5 +144,10 @@ MOD_OUT="$(bun run check:host -- --modified)" || {
   echo "CONSUMER-REHEARSAL-FAILURE: modified-variant host-contract check failed"; echo "$MOD_OUT"; exit 1; }
 echo "$MOD_OUT" | grep -q "HOST-CONTRACT-OK (application-only variant)" || {
   echo "CONSUMER-REHEARSAL-FAILURE: modified variant did not pass"; echo "$MOD_OUT"; exit 1; }
+
+if [ -n "$ANDROID_OUTPUT" ]; then
+  bun run build:host --android
+  cp .out/android-app.js "$ANDROID_OUTPUT/consumer-modified.js"
+fi
 
 echo "CONSUMER REHEARSAL PASS (install, author, both JSX transforms, runtime subpaths, host-contract execution, application-only change, independence guard)"

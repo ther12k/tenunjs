@@ -709,10 +709,14 @@ fi
 if printf '%s' "$FV_OUT" | grep -q "FAILURES"; then
   accept_fail "fail-visible instrumentation reported failures"
 fi
+echo "== 12. External consumer APK: stock and application-only rebuild =="
+ADB="$ADB" bash "$SCRIPT_DIR/verify_consumer_apk.sh" "$OUT_DIR/consumer-apk" \
+  || accept_fail "external consumer APK journey failed; see consumer-apk logs"
+
 # Restore the standard artifact for the record (stage digests unchanged).
 cp "$STD_APK_KEEP" "$STD_APK"
 
-echo "== 12. Evidence collection: screenshots, logcat, environment summary =="
+echo "== 13. Evidence collection: screenshots, logcat, environment summary =="
 
 # AGP captures one logcat file per instrumented test under app/build/outputs;
 # those runner-local files are what a rerun would otherwise orphan — always
@@ -776,7 +780,8 @@ cat >"$OUT_DIR/summary.json" <<EOF
   "overlay_suite": {"executed": 1, "failures": 0, "runner": "adb shell am instrument -e class OverlayInteractionTest"},
   "injection_apk_sha256_pushed": "$INJ_SHA_PUSH",
   "injection_apk_sha256_pulled_from_device": "$INJ_SHA_PULLED",
-  "failvisible_suite": {"executed": 4, "failures": 0, "runner": "adb shell am instrument -e class FailVisibleTest", "note": "injection build (-Ptenun.testInjection=true); forced boot failure, forced eval failure, recreation-while-injected, injection-removed fresh boot"}
+  "failvisible_suite": {"executed": 4, "failures": 0, "runner": "adb shell am instrument -e class FailVisibleTest", "note": "injection build (-Ptenun.testInjection=true); forced boot failure, forced eval failure, recreation-while-injected, injection-removed fresh boot"},
+  "consumer_apk_suite": {"executed": 2, "failures": 0, "runner": "verify_consumer_apk.sh", "scope": "external stock and application-only bundles, installed via the pilot APK path"}
 }
 EOF
 
@@ -792,5 +797,5 @@ echo "  variant APK:  $VAR_SHA_PULLED"
 echo "  overlay APK:  $OVL_SHA_PULLED (gallery bundle $GALLERY_SHA, built from the reviewed revision)"
 echo "  injection APK: $INJ_SHA_PULLED (test-only init-failure injection build)"
 echo "  reload mode:  packaged-only (dev_server.txt and update_channel.json asserted absent)"
-echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), keys-process=2 (OK), variant=1 (OK), overlay=1 (OK), fail-visible=4 (OK)"
+echo "  executed tests: standard=$SUM_TESTS (0 failures/0 errors/0 skipped), keys-process=2 (OK), variant=1 (OK), overlay=1 (OK), fail-visible=4 (OK), consumer-apk=2 (OK)"
 echo "  evidence: $OUT_DIR"

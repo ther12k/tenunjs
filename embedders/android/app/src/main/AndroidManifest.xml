@@ -19,7 +19,7 @@
          embedder label/icon would show as "TenunJS Prototype" with the
          system default icon on the launcher. -->
     <application
-        android:label="Polytron Wash"
+        android:label="${tenunAppLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"

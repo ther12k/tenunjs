@@ -66,6 +66,30 @@ tasks.configureEach {
     }
 }
 
+// Opt-in pilot APK: the supplied bundle is the only packaged app asset.
+// Use the existing packaged entry name so the runtime needs no special path.
+val pilotBundle = providers.gradleProperty("tenun.pilotBundle").orNull?.let { path ->
+    require(path.isNotBlank()) { "-Ptenun.pilotBundle requires a bundle file path" }
+    rootProject.file(path)
+}
+if (pilotBundle != null) {
+    val pilotAsset = layout.buildDirectory.file("generated/pilot-assets/tenun_app.js")
+    val stagePilotBundle by tasks.registering {
+        inputs.file(pilotBundle).withPropertyName("pilotBundle")
+        outputs.file(pilotAsset)
+        doLast {
+            check(pilotBundle.length() > 0) { "Pilot bundle is empty: $pilotBundle" }
+            pilotBundle.copyTo(pilotAsset.get().asFile, overwrite = true)
+        }
+    }
+    tasks.configureEach {
+        if (name == "mergeDebugAssets") dependsOn(stagePilotBundle)
+    }
+    androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) {
+        it.enable = false
+    }
+}
+
 android {
     namespace = "id.my.tenun.embedder"
     compileSdk = 36
@@ -73,6 +97,7 @@ android {
 
     defaultConfig {
         applicationId = "id.my.tenun.embedder"
+        manifestPlaceholders["tenunAppLabel"] = "Polytron Wash"
         minSdk = 26
         targetSdk = 36
         versionCode = 12
@@ -108,6 +133,16 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    if (pilotBundle != null) {
+        sourceSets.getByName("main").assets.setSrcDirs(emptyList<String>())
+        sourceSets.getByName("debug").assets.setSrcDirs(listOf(layout.buildDirectory.dir("generated/pilot-assets")))
+        sourceSets.getByName("androidTest").java.srcDir("src/pilotAndroidTest/kotlin")
+        buildTypes.getByName("debug").apply {
+            applicationIdSuffix = ".pilot"
+            manifestPlaceholders["tenunAppLabel"] = "TenunJS Pilot"
+        }
     }
 
     sourceSets.getByName("androidTest").assets.srcDir(keysFixtureAssets)

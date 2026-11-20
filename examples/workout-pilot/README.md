@@ -44,11 +44,33 @@ test/focus-screen.test.ts   named-action tests + fixture model unit coverage
 bun test examples/workout-pilot/   # journey + named-action tests
 ```
 
+### Build and install the Android pilot APK
+
+From the repository root, with Bun and the [Android build tools](../../embedders/android/README.md) installed:
+
+```sh
+bun install --frozen-lockfile
+bun examples/workout-pilot/scripts/build-host.ts embedders/android/app/build/pilot/workout-app.js
+(cd embedders/android && ./gradlew :app:assembleDebug -Ptenun.pilotBundle=app/build/pilot/workout-app.js)
+adb install -r embedders/android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n id.my.tenun.embedder.pilot/id.my.tenun.embedder.MainActivity
+```
+
+`tenun.pilotBundle` is resolved relative to `embedders/android` (or can be an
+absolute path). The opt-in build packages the supplied file as `tenun_app.js`
+without touching the source assets. It uses application ID
+`id.my.tenun.embedder.pilot`, so it can coexist with the normal embedder. The
+output path is shared with the normal debug build; copy the APK out if you
+need to keep both artifacts. Omit the property to restore the normal build.
+
+On a physical phone, follow the [Gate A journey](docs/fixture-journeys.md#journey-1--focus-workout-gate-a)
+and record the commit, device model, Android version, text scale, and any failures.
+
 ## Recorded limitations
 
 - Physical-device acceptance (live soft keyboard, TalkBack journeys, insets on a
-  real IME) is **pending** — this environment has no Android SDK/emulator; see
-  `docs/phase0-baseline.md`. Emulator results would be diagnostic only.
+  real IME) is **pending**; see `docs/phase0-baseline.md`. Emulator results are
+  diagnostic only.
 - The number/decimal *keyboard* shown on Android follows `inputTypeFor()`;
   content gating is enforced framework-side (`numericDraftError`), and
   committed-value validation (ranges, separator) is application-owned here

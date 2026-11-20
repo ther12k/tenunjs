@@ -18,7 +18,27 @@ was executed twice in two clean directories with byte-identical output.
 No package is published to any registry. `bun pm pack` produces private
 tarballs; the pinned toolchain is bun 1.4.0 / TypeScript 7.0.2.
 
-## What works today
+## Install the fixture on an Android emulator
+
+The Android device gate now rehearses the packed external fixture through a
+real APK. From the repository root, with the Android SDK and Bun set up and a
+single test emulator running:
+
+```sh
+bun install --frozen-lockfile
+bash embedders/android/verify_consumer_apk.sh "$(mktemp -d)"
+```
+
+The gate builds the fixture outside the checkout, using only packed TenunJS
+packages. It packages an IIFE via the opt-in `tenun.pilotBundle` property and
+installs it as `id.my.tenun.embedder.pilot`. Instrumentation launches
+`MainActivity`, taps the rendered controls, and checks the scene. It repeats
+that journey after changing only the app label and action behavior. This is
+an emulator acceptance path for a prebuilt bundle, not a published CLI or an
+arbitrary-entry compiler. The rehearsal history below records the earlier
+boundaries.
+
+## What the original rehearsal proved
 
 ### 1. Pack the packages (inside a pinned framework checkout)
 

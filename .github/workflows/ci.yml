@@ -105,6 +105,9 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
       # TN-185: the device gate cross-builds the skia-host parity cdylib
       # (engine/render/skia-host) for the emulator ABI before assembling.
       # rust-skia ships prebuilt android bindings, so this is fast; the
