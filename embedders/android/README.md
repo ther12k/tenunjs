@@ -287,6 +287,28 @@ sequence immediately — a bad release is never retried. Storage is
 versioned directories (`bundles/<sequence>/`) with atomic temp-file
 renames and one lock; pointers never point at partial state.
 
+### Physical acceptance: interrupted trial
+
+Use a dedicated test phone, a release-equivalent APK, and a signed HTTPS
+**test** channel. Use three visibly distinct bundle markers: packaged,
+confirmed (N), and candidate (N+1). Do not clear app data between steps.
+
+1. Confirm N through normal app interaction. Verify it survives a cold
+   launch and that `TenunMainActivity` reports it booted the stored bundle.
+2. Offer N+1 with `next-launch` activation. Once it is staged, cold-launch
+   the APK and wait for the N+1 marker. Do not interact with the app: a
+   successful dispatch is one of the conditions for trial confirmation.
+   Force-stop the test APK before confirmation; a run that logs N+1 as
+   confirmed does not exercise this case.
+3. Leave the server offering N+1. Launch again and verify that the app
+   shows N, not the packaged bundle or N+1. Check the log for the
+   unconfirmed trial being quarantined and the verified N bundle booting.
+   Cold-launch once more and verify N still boots and N+1 is not restaged.
+
+Record the commit, APK and bundle hashes, phone/OS, sequence numbers, and
+sanitized logs. This is a physical acceptance check; emulator runs do not
+prove the signed HTTPS channel or release APK on a real phone.
+
 ### Network posture
 
 - HTTPS for production channels; release builds ship with a Network

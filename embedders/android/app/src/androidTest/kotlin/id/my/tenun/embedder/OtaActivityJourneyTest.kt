@@ -248,6 +248,55 @@ class OtaActivityJourneyTest : DeviceAcceptanceBase() {
     }
 
     @Test
+    fun interruptedTrialRecoversOnFreshActivityStartup() {
+        val storeDir = java.io.File(context.filesDir, "bundles")
+        assertTrue("clear the installed OTA store before seeding", storeDir.deleteRecursively())
+        val pair = ecPair()
+        val confirmed = 2L
+        val interrupted = 3L
+
+        try {
+            val store = BundleStore(context)
+            fun startStoredTrial(sequence: Long) {
+                val bytes = updateBundle("recovery-v$sequence")
+                store.stageBundle(sequence, bytes, 1L, manifestFor(pair, sequence, bytes))
+                assertTrue("v$sequence entered trial", store.promoteTrial(sequence))
+            }
+
+            startStoredTrial(confirmed)
+            assertTrue("establish the last confirmed release", store.confirmTrial(confirmed))
+            // Persist the boundary after activation is recorded but before confirmation.
+            // This simulates interrupted process state; no Android process is killed.
+            startStoredTrial(interrupted)
+            assertEquals(interrupted, store.trialSequence())
+            assertEquals(confirmed, store.installedVersion())
+            assertFalse("the fixture must not pre-quarantine the trial", store.isQuarantined(interrupted))
+
+            // The loopback server offers no manifest: only persisted state drives recovery.
+            // Close each scenario before the next launch to get a fresh MainActivity.
+            repeat(2) { index ->
+                val startup = "startup ${index + 1}"
+                launchOta(pair).use { scenario ->
+                    withActivity(scenario) { activity ->
+                        assertEquals(startup, "stored-v$confirmed", activity.otaBootSourceForTest)
+                        assertEquals(startup, confirmed, activity.otaInstalledSequenceForTest)
+                        assertNull("$startup: no active trial", activity.otaTrialSequenceForTest)
+                    }
+                    awaitDisplayScene(scenario, 15_000, "$startup: confirmed bundle rendered") {
+                        sceneTexts(it).contains("Day Plan")
+                    }
+                    assertTrue(
+                        "$startup: interrupted v$interrupted must be durably quarantined",
+                        BundleStore(context).isQuarantined(interrupted)
+                    )
+                }
+            }
+        } finally {
+            assertTrue("clear the installed OTA store after recovery", storeDir.deleteRecursively())
+        }
+    }
+
+    @Test
     fun otaJourneyThroughTheRealActivity() {
         // Clean slate: the activity's real store lives in filesDir and
         // survives across runs on the emulator.
