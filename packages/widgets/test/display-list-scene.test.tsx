@@ -23,6 +23,7 @@ import {
   Card,
   Column,
   GestureDetector,
+  LayoutError,
   layoutScreen,
   Scaffold,
   Text,
@@ -221,5 +222,38 @@ describe("TN-148 long-press regions", () => {
     const { scene } = layoutScreen(theme as never, tree as never, 720);
     expect(scene.taps).toHaveLength(1);
     expect(scene.taps[0]!.action).toBe("long-press");
+  });
+});
+
+describe("TN-199 scene transparency", () => {
+  const tree = Column({ children: [Text({ children: "notch" })] }) as never;
+  const theme = { colors: { surface: "#101014" } } as never;
+
+  test("transparent option emits scene.transparent and leaves background for degradation", () => {
+    const { scene } = layoutScreen(theme as never, tree, 720, undefined, {
+      transparent: true,
+    });
+    expect(scene.transparent).toBe(true);
+    // background stays on the wire: older hosts degrade to the opaque fill.
+    expect(scene.background).toBe("#101014");
+  });
+
+  test("absent option leaves the field off the scene (byte-identical to before)", () => {
+    const { scene } = layoutScreen(theme as never, tree, 720);
+    expect(scene.transparent).toBeUndefined();
+    expect(JSON.stringify(scene)).not.toContain('"transparent"');
+  });
+
+  test("non-boolean fails the commit (fail-visible)", () => {
+    let caught: unknown;
+    try {
+      layoutScreen(theme as never, tree, 720, undefined, {
+        transparent: "yes" as never,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(LayoutError);
+    expect((caught as LayoutError).code).toBe("INVALID_TRANSPARENCY");
   });
 });

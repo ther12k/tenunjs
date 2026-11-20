@@ -88,6 +88,14 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   if (transitionViolation) {
     return `invalid transition: ${transitionViolation}`;
   }
+  // TN-199: the transparent flag is optional, but a present malformed one
+  // is a contract violation — the paint paths decide the background fill
+  // from it, and the skia-host parser rejects non-boolean values at parse,
+  // so a truthy string like "false" would diverge the renderers.
+  const transparent = (scene as { transparent?: unknown }).transparent;
+  if (transparent !== undefined && typeof transparent !== "boolean") {
+    return `scene.transparent must be a boolean when present (got ${typeof transparent})`;
+  }
   const inputIds = new Set<string>();
   let hasFocusedInput = false;
   // TN-166: the per-op contract checks (op kind, text clip, text-input
@@ -391,8 +399,13 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.fillStyle = toCss(to.background);
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    // TN-199: a transparent scene paints no background fill — the
+    // browser compositor supplies the alpha. Hosts predating the field
+    // keep the fill (graceful degradation).
+    if (!to.transparent) {
+      ctx.fillStyle = toCss(to.background);
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, to.designWidth, visibleHeight);
@@ -414,8 +427,11 @@ export class CanvasPreviewRenderer implements PreviewRenderer {
     const ctx = this.context;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    ctx.fillStyle = toCss(scene.background);
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    // TN-199: see the transition frame — transparent scenes skip the fill.
+    if (!scene.transparent) {
+      ctx.fillStyle = toCss(scene.background);
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
     this.paintScene(scene, scrollY, 0, 1, rect.width / scene.designWidth, rect.height * scene.designWidth / rect.width);
   }
 
