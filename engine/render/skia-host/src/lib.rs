@@ -944,6 +944,65 @@ mod tests {
     }
 
     #[test]
+    fn transparent_scene_partial_alpha_stays_premul() {
+        // TN-199 parity: circle anti-aliasing produces 0<a<255 pixels; the
+        // premul contract demands color <= alpha at EVERY pixel, not only
+        // at the (0,0,0,0) and fully-opaque endpoints.
+        let json = "{\"tenun\":\"display-list\",\"version\":1,\"designWidth\":100,\
+             \"contentHeight\":100,\"background\":\"#000000\",\"transparent\":true,\
+             \"ops\":[{\"op\":\"circle\",\"cx\":50,\"cy\":50,\"r\":40,\"color\":\"#FF0000\"}],\"taps\":[]}";
+        let pixels = render_scene(json, W, H).expect("render");
+        let mut partial_alpha = 0;
+        for i in 0..(W * H) as usize {
+            let (r, g, b, a) = (
+                pixels[i * 4],
+                pixels[i * 4 + 1],
+                pixels[i * 4 + 2],
+                pixels[i * 4 + 3],
+            );
+            assert!(
+                r <= a && g <= a && b <= a,
+                "premul violation at pixel index {i}: ({r},{g},{b},{a})"
+            );
+            if a > 0 && a < 255 {
+                partial_alpha += 1;
+            }
+        }
+        assert!(
+            partial_alpha > 0,
+            "fixture must exercise partial alpha (AA edge pixels)"
+        );
+        assert_eq!(
+            px(&pixels, 5, 5),
+            (0, 0, 0, 0),
+            "unpainted corner stays transparent"
+        );
+        assert_eq!(
+            px(&pixels, 50, 50),
+            (255, 0, 0, 255),
+            "circle center stays opaque"
+        );
+    }
+
+    #[test]
+    fn malformed_transparent_wire_value_fails_closed() {
+        // TN-199: serde rejects non-boolean transparent values at parse —
+        // the browser validator (sceneContractError) must reject the same
+        // shapes, so neither renderer ever truthiness-paints "false".
+        for value in ["\"false\"", "\"true\"", "1", "null"] {
+            let json = format!(
+                "{{\"tenun\":\"display-list\",\"version\":1,\"designWidth\":100,\
+                 \"contentHeight\":100,\"background\":\"#000000\",\"transparent\":{value},\
+                 \"ops\":[],\"taps\":[]}}"
+            );
+            assert!(
+                render_scene(&json, W, H).is_err(),
+                "transparent={value} must fail closed at parse"
+            );
+        }
+    }
+
+    #[test]
     fn rect_fills_its_bounds_and_radius_clears_corners() {
         let pixels = render(
             "{\"op\":\"rect\",\"x\":10,\"y\":10,\"w\":80,\"h\":80,\"r\":0,\"color\":\"#FF0000\"}",

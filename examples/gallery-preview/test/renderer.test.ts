@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DisplayListScene, DisplayOp, SerializedTap } from "../../ui-kit/src/display-list";
-import { anchorOffsetForTest, hitTestTaps, sceneContractError } from "../renderer";
+import { anchorOffsetForTest, CanvasPreviewRenderer, hitTestTaps, sceneContractError } from "../renderer";
 
 function scene(): DisplayListScene {
   return {
@@ -153,6 +153,16 @@ describe("scene contract validation (browser twin of the Android parser)", () =>
       expect(sceneContractError(scene({ ops: [{ ...text, clip } as unknown as DisplayOp] }))).toContain("invalid text clip");
     }
   });
+
+  test("TN-199: transparent is optional but must be a boolean — a truthy string is a violation, not a skipped fill", () => {
+    // The skia-host parser (serde bool) rejects these at parse; the browser
+    // twin must reject them at validation instead of truthiness-painting.
+    expect(sceneContractError(scene({ transparent: true }))).toBeNull();
+    for (const malformed of ["false", "true", 1, null]) {
+      const error = sceneContractError(scene({ transparent: malformed as never }));
+      expect(error).toContain("scene.transparent must be a boolean");
+    }
+  });
 });
 
 describe("TN-152 gesture-filtered hit-testing (dual regions, same frame)", () => {
@@ -210,5 +220,75 @@ describe("scene contract validation rejects malformed shapes as violations, not 
     // this describe block makes the parameterized scene() unreachable.
     const withNull = { ...scene(), ops: [null] } as never;
     expect(sceneContractError(withNull)).toContain("ops[0]");
+  });
+});
+
+describe("TN-199 transparent scenes: browser twin of the skia-host pixel test", () => {
+  // Recorded-canvas harness (the route-transition suite's shape): every
+  // background fill in the renderer is a fillRect, and op painting never
+  // calls fillRect, so a recorded fill op IS the background fill.
+  interface FrameOp { kind: "fill" | "text"; a: number; b: number }
+  function recordingCanvas(width: number, height: number): {
+    canvas: HTMLCanvasElement; ops: FrameOp[];
+  } {
+    const ops: FrameOp[] = [];
+    const context = {
+      setTransform() {}, save() {}, restore() {},
+      scale() {}, translate() {}, clip() {}, beginPath() {}, rect() {}, clearRect() {},
+      fill() {}, stroke() {}, moveTo() {}, lineTo() {}, arc() {}, roundRect() {},
+      globalAlpha: 1,
+      fillRect(a: number, b: number) { ops.push({ kind: "fill", a, b }); },
+      fillText(text: string, a: number, b: number) { ops.push({ kind: "text", text, a, b }); },
+      measureText(text: string) { return { width: text.length * 8 }; },
+    };
+    const canvas = {
+      width, height, clientWidth: width, clientHeight: height,
+      getContext: () => context,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),
+    } as unknown as HTMLCanvasElement;
+    (globalThis as { window?: unknown }).window = { devicePixelRatio: 1 };
+    return { canvas, ops };
+  }
+
+  const paintScene = (transparent?: boolean): DisplayListScene => ({
+    tenun: "display-list",
+    version: 1,
+    designWidth: 300,
+    contentHeight: 500,
+    background: "#101014",
+    ...(transparent ? { transparent: true as const } : {}),
+    ops: [{ op: "text", x: 10, y: 60, text: "overlay ink", size: 17, weight: 400, color: "#fff" }],
+    taps: [],
+  });
+
+  test("an opaque scene keeps the background fill; a transparent scene paints ink only", () => {
+    const opaque = recordingCanvas(300, 500);
+    new CanvasPreviewRenderer(opaque.canvas).render(paintScene(), 0);
+    expect(opaque.ops.some((entry) => entry.kind === "fill")).toBe(true);
+
+    const transparent = recordingCanvas(300, 500);
+    new CanvasPreviewRenderer(transparent.canvas).render(paintScene(true), 0);
+    // The browser compositor owns the alpha: no fill op at all, ink still paints.
+    expect(transparent.ops.some((entry) => entry.kind === "fill")).toBe(false);
+    expect(transparent.ops.some((entry) => entry.kind === "text" && entry.text === "overlay ink")).toBe(true);
+  });
+
+  test("a transparent incoming scene skips the fill during transition frames too", () => {
+    const { canvas, ops } = recordingCanvas(300, 500);
+    let pumped: ((t: number) => void) | null = null;
+    const renderer = new CanvasPreviewRenderer(canvas, {
+      raf: (callback) => { pumped = callback; return 1; },
+      cancelRaf: () => { pumped = null; },
+      now: () => 0,
+    });
+    const from = paintScene();
+    const to = { ...paintScene(true), transition: { kind: "fade" as const, direction: "forward" as const, durationMs: 200 } };
+    renderer.render(from, 0);
+    ops.length = 0;
+    renderer.render(to, 0); // frame one: transition frame paints from+to
+    // Both painters treat transparency identically: no background fill, ink present.
+    expect(ops.some((entry) => entry.kind === "fill")).toBe(false);
+    expect(ops.some((entry) => entry.kind === "text" && entry.text === "overlay ink")).toBe(true);
+    pumped?.(0);
   });
 });

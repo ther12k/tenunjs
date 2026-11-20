@@ -88,6 +88,14 @@ export function sceneContractError(scene: DisplayListScene): string | null {
   if (transitionViolation) {
     return `invalid transition: ${transitionViolation}`;
   }
+  // TN-199: the transparent flag is optional, but a present malformed one
+  // is a contract violation — the paint paths decide the background fill
+  // from it, and the skia-host parser rejects non-boolean values at parse,
+  // so a truthy string like "false" would diverge the renderers.
+  const transparent = (scene as { transparent?: unknown }).transparent;
+  if (transparent !== undefined && typeof transparent !== "boolean") {
+    return `scene.transparent must be a boolean when present (got ${typeof transparent})`;
+  }
   const inputIds = new Set<string>();
   let hasFocusedInput = false;
   // TN-166: the per-op contract checks (op kind, text clip, text-input
