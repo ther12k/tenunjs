@@ -36,26 +36,33 @@ deployments degrade gracefully to the opaque fill and nothing breaks.
    do not paint it; older hosts paint it (graceful degradation, never
    corruption). No 8-digit-hex background support — the field is
    boolean by design.
-2. **TS engine**: the app declares it through the theme input
-   (`transparent?: boolean`, fail-visible validation — non-boolean
-   fails the commit). The scene builder emits `transparent: true` when
-   declared; widgets, ops, and color slots are unchanged (per-widget
-   alpha is NOT this issue).
+2. **TS engine**: the app declares it through the layout options —
+   `layoutScreen(..., { transparent?: boolean })` (fail-visible
+   validation: a non-boolean option throws `INVALID_TRANSPARENCY`; it
+   is not part of `ThemeConfig`). The scene builder emits
+   `transparent: true` only when declared; widgets, ops, and color
+   slots are unchanged (per-widget alpha is NOT this issue).
 3. **skia-host**: a transparent scene clears to premul-transparent
    (never paints the background fill) and outputs premultiplied RGBA8
    — the existing `raster_n32_premul` + `read_pixels(Premul)` output
    already is premul; only the clear path changes. Opaque scenes are
-   byte-identical to today.
+   byte-identical to today. Malformed wire values (`"transparent":
+   "false"`, numbers, `null`) fail closed at parse (serde rejects
+   non-booleans).
 4. **gallery-preview renderer**: honors the field (skips the
    background fill after `clearRect` — the browser compositor supplies
-   the alpha); the fixed-anchor pass is unaffected.
+   the alpha); the fixed-anchor pass is unaffected. `sceneContractError`
+   rejects the same malformed wire values as skia-host, so neither
+   renderer truthiness-paints a non-boolean field.
 5. **Android painter**: unchanged by design — `SurfaceView` is
    opaque-format and mobile apps do not request transparency; the
    field is ignored and the background paints as today (verified, not
    assumed).
-6. **Parity**: a transparent-scene case in the TN-184 parity harness —
-   skia-host and the preview renderer must agree on which pixels carry
-   alpha (unpainted regions alpha 0, painted regions as painted).
+6. **Parity**: transparent-scene cases in the skia-host scene-parity
+   suite (TN-184) and the preview renderer tests — skia-host and the
+   preview renderer must agree on which pixels carry alpha (unpainted
+   regions alpha 0, painted regions as painted, premul color ≤ alpha
+   everywhere, no background fill on plain or transition frames).
 
 ## Non-goals
 

@@ -309,7 +309,7 @@ status: accepted
 | 06-issues/tn-196-ota-activation-policy-and-state-migrations.md | efc479b9bd9d4344d76b4a3ee6941ba00ccb485c5b5e974fe6ec1bb6710d2f5a |
 | 06-issues/tn-197-ui-activity-ota-journey.md | d569bb4bc5a23bea480926004c8f0ed40b137e58183beb6ba5919c60db65f124 |
 | 06-issues/tn-198-raster-throughput-benchmark.md | 8c1d34aa1b10968216d57d61c79a0bc1d28cfb2f4ac6dcad66106f59ef0637b4 |
-| 06-issues/tn-199-scene-transparency-contract.md | 7a18d04f62d61b00babae7393f9d1967c7efe39eb297cf2847f1612d5b3a0383 |
+| 06-issues/tn-199-scene-transparency-contract.md | 938814f468f13dadc3e7c75505441d2114b7207a3a1c8768f884f0d84e7f1c7e |
 | 06-issues/tn-200-linux-platform-tags.md | d6fe17ab69e9430564dc550ac7122b01a09ec6425d00d707e8422b036da646bd |
 | 06-issues/tn-201-mpris-media-capability.md | 51fc2d30bf287504f7db781f668afec530a137a172a5ebe4c557e03bb20c30f3 |
 | 06-issues/tn-202-linux-embedder.md | 0e057fcb6de173986877d009a16f112f7189fe36ed4695fdeb647e76f9fb18ed |
