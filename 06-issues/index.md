@@ -303,3 +303,19 @@ desktop-pilot ADR's kill criterion cite.
 | Issue | Priority | Depends on | Title |
 | --- | --- | --- | --- |
 | [TN-198](tn-198-raster-throughput-benchmark.md) | P1 | TN-184 | Raster throughput benchmark — skia-host frame-time baseline |
+
+## Desktop pilot (ADR-0028, 2026-11-15)
+
+Filed with the accepted desktop-pilot carve-out: exactly one named
+pilot (lekuvo — host-owned fixed 760x560 transparent media/notch
+overlay, Linux only), four issues, firewall enforced by review
+(nothing beyond these survives the ADR). Deliberately filed without a
+`milestone:` field — they belong to the pilot track running parallel
+to the mobile roadmap.
+
+| Issue | Priority | Depends on | Title |
+| --- | --- | --- | --- |
+| [TN-199](tn-199-scene-transparency-contract.md) | P0 | — | Scene transparency contract — optional transparent scenes, premultiplied RGBA output |
+| [TN-200](tn-200-linux-platform-tags.md) | P0 | — | Linux platform tags — CapabilityPlatform and platform metadata |
+| [TN-201](tn-201-mpris-media-capability.md) | P1 | TN-200 | MPRIS/DBus media capability — desktop metadata and playback state |
+| [TN-202](tn-202-linux-embedder.md) | P1 | TN-199, TN-200, TN-201 | Linux embedder — lekuvo-host vertical slice |
